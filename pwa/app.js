@@ -15441,8 +15441,8 @@ function activePreviousCaption(values, bodyweight) {
   const weight = activeStepNumber(last.weight);
   const reps = last.reps;
   const text = showsWeight
-    ? tx3(`previous ${weight} × ${reps}`, `минулого разу ${weight} × ${reps}`, `прошлый раз ${weight} × ${reps}`)
-    : tx3(`previous × ${reps}`, `минулого разу × ${reps}`, `прошлый раз × ${reps}`);
+    ? tx3(`previous ${weight}\u00A0×\u00A0${reps}`, `минулого разу ${weight}\u00A0×\u00A0${reps}`, `прошлый раз ${weight}\u00A0×\u00A0${reps}`)
+    : tx3(`previous ×\u00A0${reps}`, `минулого разу ×\u00A0${reps}`, `прошлый раз ×\u00A0${reps}`);
   const ukReps = ["повторення", "повторення", "повторень"][slavicPluralIndex(reps)];
   const ruReps = ["повторение", "повторения", "повторений"][slavicPluralIndex(reps)];
   const aria = showsWeight

@@ -3299,16 +3299,16 @@ test("previous caption hides a zero weight unless bodyweight and repeats without
     `JSON.stringify(activePreviousCaption({ previous: ${JSON.stringify(previous)}, repeat: ${JSON.stringify(previous)} }, ${bodyweight}))`,
     context
   ));
-  assert.equal(caption({ weight: 60, reps: 8 }, false).text, "previous 60 × 8");
+  assert.equal(caption({ weight: 60, reps: 8 }, false).text, "previous 60\u00a0×\u00a08");
   assert.equal(caption({ weight: 60, reps: 8 }, false).aria, "Repeat previous, 60 kilograms by 8");
   assert.equal(caption({ weight: 0, reps: 8 }, false), null);
-  assert.equal(caption({ weight: 0, reps: 8 }, true).text, "previous × 8");
+  assert.equal(caption({ weight: 0, reps: 8 }, true).text, "previous ×\u00a08");
   assert.equal(caption({ weight: 0, reps: 8 }, true).aria, "Repeat previous, 8 bodyweight reps");
   assert.equal(vm.runInContext("activePreviousCaption(null, false)", context), null);
   vm.runInContext(`state.language = "ru"`, context);
-  assert.equal(caption({ weight: 60, reps: 8 }, false).text, "прошлый раз 60 × 8");
+  assert.equal(caption({ weight: 60, reps: 8 }, false).text, "прошлый раз 60\u00a0×\u00a08");
   vm.runInContext(`state.language = "uk"`, context);
-  assert.equal(caption({ weight: 62.5, reps: 8 }, false).text, "минулого разу 62,5 × 8");
+  assert.equal(caption({ weight: 62.5, reps: 8 }, false).text, "минулого разу 62,5\u00a0×\u00a08");
 });
 
 test("upcoming and completed rows are bare rows that keep their inputs in the DOM", async () => {

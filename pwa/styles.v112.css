@@ -1492,7 +1492,7 @@ svg.filled-icon.small-icon {
   padding: 2px 0;
 }
 
-.exercise-builder-heading > div {
+.exercise-builder-heading > div:first-child {
   display: grid;
   gap: 3px;
   min-width: 0;

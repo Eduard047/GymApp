@@ -131,7 +131,7 @@
     }
   },
   "pwaReleaseCoupling": {
-    "appBundle": "app.v144.js",
+    "appBundle": "app.v145.js",
     "styleBundle": "styles.v112.css",
     "russianBundle": "russian-text.v93.js",
     "liveWorkoutBundle": "live-workout.v3.js",
