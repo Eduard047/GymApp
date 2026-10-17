@@ -1034,6 +1034,7 @@ a:focus-visible,
 .icon-button svg,
 .tab-button svg,
 .small-icon {
+  flex-shrink: 0;
   width: 21px;
   height: 21px;
   fill: none;
@@ -1473,6 +1474,7 @@ svg.filled-icon.small-icon {
 
 .exercise-builder-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -1508,11 +1510,12 @@ svg.filled-icon.small-icon {
 .exercise-builder-add svg,
 .exercise-builder-voice svg { flex-shrink: 0; }
 
-.exercise-builder-heading > div { flex: 1 1 auto; }
+.exercise-builder-heading > div { flex: 1 1 10rem; }
 .exercise-builder-heading .pill {
   justify-self: start;
   max-width: 100%;
   white-space: normal;
+  padding-block: 4px;
 }
 
 /* Voice workout dictation sheet */
@@ -7213,7 +7216,17 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .garmin-header,
 .workout-comparison-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
+}
+
+/* Tiles drop to one column as soon as two would not fit (large text), and never push the card wider. */
+.workout-comparison-card .metric-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+}
+
+.workout-comparison-card .metric-grid > div {
+  min-width: 0;
 }
 
 .workout-detail-hero {
@@ -8446,7 +8459,8 @@ a.settings-row .settings-row-text strong { white-space: normal; overflow-wrap: b
   color: var(--hero-muted);
   font-size: 0.75rem;
   line-height: 1rem;
-  overflow-wrap: break-word;
+  overflow-wrap: normal;
+  hyphens: auto;
 }
 .summary-hero-stats strong {
   display: block;
