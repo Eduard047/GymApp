@@ -264,9 +264,21 @@ private fun WorkoutFeedbackCard(
         WorkoutFeedback.Normal to stringResource(R.string.workout_feedback_normal),
         WorkoutFeedback.Hard to stringResource(R.string.workout_feedback_hard)
     )
-    val stacked = LocalDensity.current.fontScale >= 1.5f
+    val density = LocalDensity.current
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
 
     AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = selected != null) {
+        androidx.compose.foundation.layout.BoxWithConstraints {
+            // Three chips in a row only while every label fits whole at its natural size (chip
+            // padding included); otherwise they stack, so a label is never shrunk or cut off.
+            val stacked = remember(options, labelStyle, constraints.maxWidth, density.density, density.fontScale) {
+                val padding = with(density) { (14.dp * 2 + 8.dp * 2 + 8.dp * 2).toPx() }
+                val chipWidth = (constraints.maxWidth - padding) / 3f
+                options.any { (_, label) ->
+                    measurer.measure(label, labelStyle, maxLines = 1, softWrap = false).size.width > chipWidth
+                }
+            }
         Column(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -295,6 +307,7 @@ private fun WorkoutFeedbackCard(
                     }
                 }
             }
+        }
         }
     }
 }
