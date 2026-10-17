@@ -542,18 +542,35 @@ struct ProfileView: View {
     }
 
     private var languageRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "globe")
-                .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
-                .foregroundStyle(GymTheme.primary)
-                .frame(width: settingsRowIconWidth)
-                .accessibilityHidden(true)
-            Text(gymText("Language", "Мова", "Язык", languageCode: languageCode))
-                .font(.body.weight(.semibold))
-                .foregroundStyle(GymTheme.textPrimary)
-            Spacer(minLength: 6)
-            AppLanguageMenu(style: .inline)
+        let icon = Image(systemName: "globe")
+            .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
+            .foregroundStyle(GymTheme.primary)
+            .frame(width: settingsRowIconWidth)
+            .accessibilityHidden(true)
+        let title = Text(gymText("Language", "Мова", "Язык", languageCode: languageCode))
+            .font(.body.weight(.semibold))
+            .foregroundStyle(GymTheme.textPrimary)
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                // The title keeps the full width (never "Lan-guage"); the menu sits on its own line.
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 12) {
+                        icon
+                        title
+                    }
+                    AppLanguageMenu(style: .inline)
+                        .padding(.leading, settingsRowIconWidth + 12)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    icon
+                    title
+                    Spacer(minLength: 6)
+                    AppLanguageMenu(style: .inline)
+                }
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 12)
         .frame(minHeight: 48)
     }
@@ -590,6 +607,7 @@ struct ProfileView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 12)
         .frame(minHeight: 48)
     }
