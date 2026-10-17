@@ -17269,7 +17269,7 @@ function workoutHeader(session, editing = false) {
     ];
   if (duration) parts.push(duration);
   const note = String(session.note || "").trim();
-  return `<section class="hero-panel workout-detail-hero"><div class="row-head"><h2>${escapeHtml(fmtShortDate(session.startedAt))}</h2>${savedWorkoutHeroDelete(session, editing)}</div><p class="hero-summary-line">${escapeHtml(parts.join(" · "))}</p>${note ? `<p class="hero-note">${t("note")}: ${escapeHtml(note)}</p>` : ""}${savedWorkoutHeroToggle(session, editing)}</section>`;
+  return `<section class="hero-panel workout-detail-hero"><div class="row-head"><h2>${escapeHtml(fmtShortDate(session.startedAt))}</h2>${savedWorkoutHeroDelete(session, editing)}</div><p class="hero-summary-line">${escapeHtml(parts.join("\u00A0· "))}</p>${note ? `<p class="hero-note">${t("note")}: ${escapeHtml(note)}</p>` : ""}${savedWorkoutHeroToggle(session, editing)}</section>`;
 }
 
 function workoutComparisonForSession(session) {

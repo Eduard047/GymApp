@@ -10,7 +10,7 @@ const [
   worker
 ] = await Promise.all([
   readFile("pwa/app.js", "utf8"),
-  readFile("pwa/app.v143.js", "utf8"),
+  readFile("pwa/app.v144.js", "utf8"),
   readFile("pwa/state-contract.js", "utf8"),
   readFile("pwa/progression-rules.js", "utf8"),
   readFile("pwa/russian-text.js", "utf8"),
