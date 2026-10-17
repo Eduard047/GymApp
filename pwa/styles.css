@@ -320,14 +320,19 @@ a:focus-visible,
 .topbar h1 {
   min-width: 0;
   margin: 0;
-  font-size: 1.375rem;
+  /* The bar keeps its 64px height, so the title is capped relative to the screen width (like a system navigation bar)
+     and wraps to two lines at large text instead of being cut off with an ellipsis. */
+  font-size: min(1.375rem, 5.8vw);
   font-weight: 700;
-  line-height: 1.75rem;
+  line-height: 1.2;
   letter-spacing: -0.0091em;
   text-align: center;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 
 .screen {
@@ -1521,7 +1526,7 @@ svg.filled-icon.small-icon {
 .exercise-builder-add svg,
 .exercise-builder-voice svg { flex-shrink: 0; }
 
-.exercise-builder-heading > div:first-child { flex: 1 1 10rem; }
+.exercise-builder-heading > div:first-child { flex: 1 1 6rem; }
 .exercise-builder-heading > .plan-menu-wrap { flex: 0 0 auto; }
 .exercise-builder-heading .pill {
   justify-self: start;
