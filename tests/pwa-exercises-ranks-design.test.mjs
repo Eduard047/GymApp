@@ -311,7 +311,11 @@ test("training settings keeps its title and Done pinned above the scrolling body
 
 test("sheets with their own Done or Cancel drop the X close button and the others keep it", () => {
   const context = loadPwaContext();
-  const render = modalState => run(context, `(() => { state = defaultAppState(); modal = ${JSON.stringify(modalState)}; return modalMarkup(); })()`);
+  // The modal state travels as data in the context, never spliced into the evaluated source.
+  const render = modalState => {
+    context.__modal = modalState;
+    return run(context, "(() => { state = defaultAppState(); modal = __modal; return modalMarkup(); })()");
+  };
   for (const modalState of [{ type: "training-settings" }, { type: "account-settings" }, { type: "offline-account" }, { type: "confirm-finish-active-workout" }]) {
     const markup = render(modalState);
     assert.ok(markup.includes('<section class="modal-panel no-sheet-close">'), `${modalState.type} has its own dismiss`);
