@@ -254,12 +254,12 @@ private fun MissionLevelRow(
             )
             Text(
                 text = summary,
-                modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                // Wraps by words at large font sizes instead of cutting off the XP total.
+                maxLines = 3,
+                modifier = Modifier.weight(1f).padding(vertical = 10.dp)
             )
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
