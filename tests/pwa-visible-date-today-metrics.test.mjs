@@ -814,7 +814,7 @@ test("summary feedback chips stay one row of three equal columns and stack only 
   const button = rule(".segmented.workout-feedback-options button");
   assert.match(button, /min-height:\s*44px/);
   assert.match(button, /border:\s*1px solid/);
-  assert.match(button, /white-space:\s*nowrap/);
+  assert.match(button, /white-space:\s*normal/);
   assert.match(rule(".segmented.workout-feedback-options button.selected"), /background:\s*var\(--brand-fill\)/);
   assert.match(stylesSource, /@media \(max-width: 340px\) \{\s*\.segmented\.workout-feedback-options \{ grid-template-columns: 1fr; \}/);
 });

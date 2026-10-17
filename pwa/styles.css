@@ -4248,15 +4248,16 @@ button.leaderboard-row {
   background: var(--surface-2);
   font-size: 0.9375rem;
   text-align: center;
-  white-space: nowrap;
+  /* Wraps by words at large text instead of cutting the label with an ellipsis. */
+  white-space: normal;
+  border-radius: 22px;
 }
 
 .segmented.workout-feedback-options button strong {
   display: block;
   max-width: 100%;
-  overflow: hidden;
   font-weight: 600;
-  text-overflow: ellipsis;
+  overflow-wrap: break-word;
 }
 
 .segmented.workout-feedback-options button.selected {
@@ -4451,10 +4452,10 @@ button.leaderboard-row {
   border-radius: var(--radius-capsule);
   padding: 8px;
   text-align: center;
-  white-space: nowrap;
+  white-space: normal;
 }
 
-.workout-feedback-options button strong { display: block; overflow: hidden; text-overflow: ellipsis; }
+.workout-feedback-options button strong { display: block; overflow-wrap: break-word; }
 
 @media (max-width: 340px) {
   .workout-feedback-options { grid-template-columns: 1fr; }
