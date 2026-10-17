@@ -1385,6 +1385,7 @@ svg.filled-icon.small-icon {
   gap: 10px;
   /* A bare grid column would grow to the widest unbreakable word and push the tiles past the card edge at large text. */
   grid-template-columns: minmax(0, 1fr);
+  container-type: inline-size;
 }
 
 .progress-month-empty { justify-items: center; text-align: center; }
@@ -1671,7 +1672,7 @@ svg.filled-icon.small-icon {
 
 .summary-hero { gap: 16px; }
 .summary-hero-title > div { min-width: 0; }
-.summary-hero-title h2 { overflow-wrap: break-word; hyphens: auto; }
+.summary-hero .summary-hero-title h2 { overflow-wrap: break-word; font-size: min(1.375rem, 8vw); line-height: 1.2; }
 
 .summary-hero-title {
   display: flex;
@@ -4238,12 +4239,15 @@ button.leaderboard-row {
   animation: social-push-arrival 900ms ease-in-out 2;
 }
 
-.workout-feedback { padding: 12px; }
+.workout-feedback { padding: 12px; container-type: inline-size; }
 .workout-feedback h2 { margin: 0 4px 8px; font-size: 1rem; }
 .segmented.workout-feedback-options {
-  /* Three chips per row at normal text; fewer per row at large text so no label overflows its chip. */
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 4.5rem), 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+/* Three chips per row while each can be 4.5rem wide, otherwise one per row (never two plus one). */
+@container (max-width: 14.5rem) {
+  .segmented.workout-feedback-options { grid-template-columns: 1fr; }
 }
 
 .segmented.workout-feedback-options button {
@@ -8478,10 +8482,13 @@ a.settings-row .settings-row-text strong { white-space: normal; overflow-wrap: b
 
 .summary-hero-stats {
   display: grid;
-  /* Three tiles per row at normal text; fewer per row as large text makes a tile too narrow for its label. */
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 4.5rem), 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   margin: 0;
+}
+/* Three tiles per row while each can be 4.5rem wide, otherwise one per row (never two plus one). */
+@container (max-width: 14.5rem) {
+  .summary-hero-stats { grid-template-columns: 1fr; }
 }
 .summary-hero-stats > div {
   min-width: 0;

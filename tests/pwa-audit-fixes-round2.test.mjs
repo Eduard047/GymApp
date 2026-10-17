@@ -171,12 +171,18 @@ test("summary metrics tiles go one per row when two do not fit, and keep two col
   assert.match(rule(".summary-metrics .metric-grid"), /repeat\(auto-fit,\s*minmax\(min\(100%,\s*8\.5rem\),\s*1fr\)\)/);
 });
 
-test("hero stats and feedback chips reflow instead of overflowing at large text", () => {
-  assert.match(rule(".summary-hero-stats"), /repeat\(auto-fit,\s*minmax\(min\(100%,\s*4\.5rem\),\s*1fr\)\)/);
-  assert.match(rule(".segmented.workout-feedback-options"), /repeat\(auto-fit,\s*minmax\(min\(100%,\s*4\.5rem\),\s*1fr\)\)/);
+test("hero stats and feedback chips are three per row or one per row, never two plus one", () => {
+  for (const [selector, container] of [[".summary-hero-stats", ".summary-hero"], [".segmented.workout-feedback-options", ".workout-feedback"]]) {
+    assert.match(rule(selector), /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+    assert.match(rule(container), /container-type:\s*inline-size/);
+    assert.ok(stylesSource.includes(`@container (max-width: 14.5rem) {\n  ${selector} { grid-template-columns: 1fr; }`), `${selector} stacks in a narrow container`);
+  }
+  assert.doesNotMatch(rule(".summary-hero-stats"), /auto-fit/);
 });
 
 test("the summary hero grid column cannot grow past the card at large text", () => {
   assert.match(rule(".summary-hero"), /grid-template-columns:\s*minmax\(0,\s*1fr\)/);
   assert.match(rule(".summary-hero-title > div"), /min-width:\s*0/);
+  assert.doesNotMatch(rule(".summary-hero .summary-hero-title h2"), /hyphens/, "headings wrap by words, never by syllables");
+  assert.match(rule(".summary-hero .summary-hero-title h2"), /overflow-wrap:\s*break-word/);
 });
