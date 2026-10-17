@@ -47,6 +47,14 @@ class VisibleDateFormatterTest {
     }
 
     @Test
+    fun longDateWithoutYearUsesGenitiveMonthForRussianAndUkrainian() {
+        val sunday = LocalDate.of(2026, 10, 11)
+        assertEquals("воскресенье, 11 октября", DateTimeUtils.formatLongDateWithoutYear(sunday, Locale("ru")))
+        assertEquals("неділя, 11 жовтня", DateTimeUtils.formatLongDateWithoutYear(sunday, Locale("uk")))
+        assertEquals("Sunday, 11 October", DateTimeUtils.formatLongDateWithoutYear(sunday, Locale.UK))
+    }
+
+    @Test
     fun shortDateMatchesSharedIosOutputForSameAndOtherYear() {
         val now = LocalDate.of(2026, 9, 29).atStartOfDay(zoneId).toInstant().toEpochMilli()
         fun at(year: Int, month: Int, day: Int) =

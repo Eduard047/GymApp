@@ -116,6 +116,20 @@ object DateTimeUtils {
         return date.format(formatter("EEEE, d MMMM yyyy", locale))
     }
 
+    /** The wide weekday and day with a genitive month and no year: "субота, 15 серпня". */
+    fun formatLongDateWithoutYear(
+        date: LocalDate,
+        locale: Locale = Locale.getDefault()
+    ): String {
+        val months = when (locale.language.lowercase(Locale.ROOT)) {
+            "uk" -> ukrainianGenitiveMonths
+            "ru" -> russianGenitiveMonths
+            else -> return date.format(formatter("EEEE, d MMMM", locale))
+        }
+        val weekday = date.format(formatter("EEEE", locale))
+        return "$weekday, ${date.dayOfMonth} ${months[date.monthValue - 1]}"
+    }
+
     /**
      * "Sat, Sep 26" / "сб, 26 вер." / "Сб, 26 сент." — abbreviated weekday, day and
      * month; the year (with the locale's year suffix) is added only when it differs

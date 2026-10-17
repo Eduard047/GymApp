@@ -2751,7 +2751,6 @@ private fun ExerciseHistoryBottomSheetContent(
     val locale = remember(languageTag) { Locale.forLanguageTag(languageTag) }
     val zoneId = ZoneId.systemDefault()
     val monthFormatter = remember(locale) { DateTimeFormatter.ofPattern("LLLL yyyy", locale) }
-    val dayFormatter = remember(locale) { DateTimeFormatter.ofPattern("EEEE, d MMMM", locale) }
     val systemTimeFormatter = remember(context) { AndroidDateFormat.getTimeFormat(context) }
 
     val sessionGroups = remember(history) {
@@ -2885,7 +2884,7 @@ private fun ExerciseHistoryBottomSheetContent(
             sessionsByDay.forEach { (day, daySessions) ->
                 item(key = "day_${month}_$day") {
                     Text(
-                        text = day.format(dayFormatter).replaceFirstChar {
+                        text = DateTimeUtils.formatLongDateWithoutYear(day, locale).replaceFirstChar {
                             if (it.isLowerCase()) it.titlecase(locale) else it.toString()
                         },
                         style = MaterialTheme.typography.labelLarge,
