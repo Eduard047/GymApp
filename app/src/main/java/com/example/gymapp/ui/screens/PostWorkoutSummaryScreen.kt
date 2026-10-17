@@ -314,7 +314,8 @@ private fun WorkoutFeedbackCard(
                 val words = options.map { (_, label) ->
                     label.split(' ', '\u00A0').filter { it.isNotEmpty() }.map(::widthDp)
                 }
-                FeedbackChipsLayout.stacks(cardWidthDp, words, spaceDp = widthDp(" "))
+                // A trailing space can measure as almost nothing, so the gap is the difference of "a a" and two "a".
+                FeedbackChipsLayout.stacks(cardWidthDp, words, spaceDp = widthDp("a a") - 2 * widthDp("a"))
             }
             Column(
                 modifier = Modifier.padding(FeedbackChipsLayout.CardPaddingDp.dp),
