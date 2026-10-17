@@ -808,9 +808,9 @@ test("workout comparison card tints only increases with Recovery Mint and keeps 
   assert.match(stylesSource, /--mint:\s*#77ddb7/i);
 });
 
-test("summary feedback chips stay one row of three equal columns and stack only on very narrow screens", () => {
+test("summary feedback chips share one row of equal columns while they fit and stack on very narrow screens", () => {
   const rule = selector => stylesSource.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`))?.[1] || "";
-  assert.match(rule(".segmented.workout-feedback-options"), /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(rule(".segmented.workout-feedback-options"), /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*4\.5rem\),\s*1fr\)\)/);
   const button = rule(".segmented.workout-feedback-options button");
   assert.match(button, /min-height:\s*44px/);
   assert.match(button, /border:\s*1px solid/);

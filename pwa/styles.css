@@ -1383,6 +1383,8 @@ svg.filled-icon.small-icon {
 .summary-hero {
   display: grid;
   gap: 10px;
+  /* A bare grid column would grow to the widest unbreakable word and push the tiles past the card edge at large text. */
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .progress-month-empty { justify-items: center; text-align: center; }
@@ -1668,6 +1670,8 @@ svg.filled-icon.small-icon {
 }
 
 .summary-hero { gap: 16px; }
+.summary-hero-title > div { min-width: 0; }
+.summary-hero-title h2 { overflow-wrap: break-word; hyphens: auto; }
 
 .summary-hero-title {
   display: flex;
@@ -3494,6 +3498,11 @@ button.leaderboard-row {
   margin-top: 12px;
 }
 
+/* Summary metrics: two tiles per row only while both really fit; a single column at large text. */
+.summary-metrics .metric-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+}
+
 .metric-grid.three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -4232,7 +4241,8 @@ button.leaderboard-row {
 .workout-feedback { padding: 12px; }
 .workout-feedback h2 { margin: 0 4px 8px; font-size: 1rem; }
 .segmented.workout-feedback-options {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Three chips per row at normal text; fewer per row at large text so no label overflows its chip. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 4.5rem), 1fr));
   gap: 8px;
 }
 
@@ -8468,7 +8478,8 @@ a.settings-row .settings-row-text strong { white-space: normal; overflow-wrap: b
 
 .summary-hero-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Three tiles per row at normal text; fewer per row as large text makes a tile too narrow for its label. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 4.5rem), 1fr));
   gap: 6px;
   margin: 0;
 }

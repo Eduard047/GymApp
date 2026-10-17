@@ -166,3 +166,17 @@ test("large-text layout: comparison tiles reflow, header actions wrap, icons nev
   assert.match(rule(".summary-hero-stats span"), /hyphens:\s*auto/);
   assert.match(rule(".summary-hero-stats span"), /overflow-wrap:\s*break-word/);
 });
+
+test("summary metrics tiles go one per row when two do not fit, and keep two columns at normal text", () => {
+  assert.match(rule(".summary-metrics .metric-grid"), /repeat\(auto-fit,\s*minmax\(min\(100%,\s*8\.5rem\),\s*1fr\)\)/);
+});
+
+test("hero stats and feedback chips reflow instead of overflowing at large text", () => {
+  assert.match(rule(".summary-hero-stats"), /repeat\(auto-fit,\s*minmax\(min\(100%,\s*4\.5rem\),\s*1fr\)\)/);
+  assert.match(rule(".segmented.workout-feedback-options"), /repeat\(auto-fit,\s*minmax\(min\(100%,\s*4\.5rem\),\s*1fr\)\)/);
+});
+
+test("the summary hero grid column cannot grow past the card at large text", () => {
+  assert.match(rule(".summary-hero"), /grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.match(rule(".summary-hero-title > div"), /min-width:\s*0/);
+});
