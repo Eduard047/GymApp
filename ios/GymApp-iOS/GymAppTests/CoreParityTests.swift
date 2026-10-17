@@ -18612,17 +18612,15 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(exercises.contains(".accessibilityAddTraits(isSelected ? .isSelected : [])"))
     }
 
-    /// Rest lives compactly on the latest completed row (no standing rest
-    /// panel or full-width "Undo" button any more): a countdown plus
-    /// "−15"/"+15"/"Стоп" capsules calling the same `adjustManualRest`/
-    /// `stopManualRest` actions, and undo reachable via long-press +
-    /// accessibility action instead of a standing button.
     func testIOSWorkoutFeedbackChipsAreEqualWidthWrapByWordsAndStackOnlyWhenAWordDoesNotFit() throws {
         let summary = try iosSource("GymApp/UI/Screens/PostWorkoutSummaryView.swift")
         // One row of equal-width chips while every label fits in two lines, otherwise a stack.
         XCTAssertTrue(summary.contains("ViewThatFits(in: .horizontal) {\n                EqualWidthHStack("))
         XCTAssertTrue(summary.contains("private struct EqualWidthHStack: Layout"))
-        XCTAssertTrue(summary.contains(".lineLimit(wraps ? 2 : 1)"))
+        XCTAssertTrue(summary.contains("private func feedbackButton(_ feedback: WorkoutFeedback) -> some View {"))
+        XCTAssertFalse(summary.contains(".lineLimit(wraps"))
+        // Bold Text widens the labels, so the measurement reads the legibility weight too.
+        XCTAssertTrue(summary.contains("UITraitCollection(legibilityWeight:"))
         // No shrinking and no truncation of the label.
         XCTAssertFalse(summary.contains("minimumScaleFactor(0.8)\n                .frame(maxWidth: .infinity, minHeight: 44)"))
         // The measurement uses the view's own Dynamic Type size and the best two-line split.
@@ -18632,6 +18630,11 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(summary.contains("(selected ? GymTheme.primaryAction : GymTheme.surfaceVariant)"))
     }
 
+    /// Rest lives compactly on the latest completed row (no standing rest
+    /// panel or full-width "Undo" button any more): a countdown plus
+    /// "−15"/"+15"/"Стоп" capsules calling the same `adjustManualRest`/
+    /// `stopManualRest` actions, and undo reachable via long-press +
+    /// accessibility action instead of a standing button.
     func testIOSActiveWorkoutExposesRecordRestAndUndoLifecycle() throws {
         let source = try iosSource("GymApp/UI/Screens/ActiveWorkoutView.swift")
 

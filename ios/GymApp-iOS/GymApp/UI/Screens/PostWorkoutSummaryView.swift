@@ -127,6 +127,7 @@ struct PostWorkoutSummaryView: View {
     @ObservedObject private var store: WorkoutStore
     @Environment(\.calendar) private var calendar
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.legibilityWeight) private var legibilityWeight
 
     @State private var feedbackErrorMessage: String?
     @State private var failedFeedback: WorkoutFeedback?
@@ -453,7 +454,13 @@ struct PostWorkoutSummaryView: View {
                     title: "Training metrics",
                     supporting: workout.note
                 )
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 112), spacing: 10)], spacing: 10) {
+                // One tile per row at accessibility sizes: two narrow columns would hyphenate and cut the labels.
+                LazyVGrid(
+                    columns: dynamicTypeSize.isAccessibilitySize
+                        ? [GridItem(.flexible())]
+                        : [GridItem(.adaptive(minimum: 112), spacing: 10)],
+                    spacing: 10
+                ) {
                     GymMetricTile(label: "Exercises", value: workout.exercises.count.formatted(.number.locale(gymAppLocale())))
                     GymMetricTile(
                         label: "Top muscle",
@@ -505,7 +512,7 @@ struct PostWorkoutSummaryView: View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(spacing: 8) {
                 ForEach(WorkoutFeedback.allCases) { feedback in
-                    feedbackButton(feedback, wraps: false)
+                    feedbackButton(feedback)
                 }
             }
         } else {
@@ -514,12 +521,12 @@ struct PostWorkoutSummaryView: View {
             ViewThatFits(in: .horizontal) {
                 EqualWidthHStack(spacing: 8, minimumChildWidth: feedbackMinimumChipWidth) {
                     ForEach(WorkoutFeedback.allCases) { feedback in
-                        feedbackButton(feedback, wraps: true)
+                        feedbackButton(feedback)
                     }
                 }
                 VStack(spacing: 8) {
                     ForEach(WorkoutFeedback.allCases) { feedback in
-                        feedbackButton(feedback, wraps: false)
+                        feedbackButton(feedback)
                     }
                 }
             }
@@ -530,10 +537,14 @@ struct PostWorkoutSummaryView: View {
     /// split of its words into two lines, plus the chip's horizontal padding, measured at the
     /// view's own Dynamic Type size.
     private var feedbackMinimumChipWidth: CGFloat {
-        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        let traits = UITraitCollection(traitsFrom: [
+            UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize)),
+            UITraitCollection(legibilityWeight: legibilityWeight == .bold ? .bold : .regular)
+        ])
+        // "Bold Text" in the system settings makes the semibold labels heavier (and wider).
         let font = UIFont.systemFont(
             ofSize: UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits).pointSize,
-            weight: .semibold
+            weight: legibilityWeight == .bold ? .bold : .semibold
         )
         func width(_ text: String) -> CGFloat {
             (text as NSString).size(withAttributes: [.font: font]).width
@@ -552,14 +563,13 @@ struct PostWorkoutSummaryView: View {
 
     private static let feedbackChipPadding: CGFloat = 12
 
-    private func feedbackButton(_ feedback: WorkoutFeedback, wraps: Bool) -> some View {
+    private func feedbackButton(_ feedback: WorkoutFeedback) -> some View {
         let selected = store.feedback(for: workoutID) == feedback
         return Button {
             saveFeedback(feedback)
         } label: {
             Text(feedbackTitle(feedback))
                 .font(.subheadline.weight(.semibold))
-                .lineLimit(wraps ? 2 : 1)
                 .fixedSize(horizontal: false, vertical: true)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, Self.feedbackChipPadding)
