@@ -382,6 +382,7 @@ a:focus-visible,
 }
 .workouts-screen-copy {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -1034,6 +1035,7 @@ a:focus-visible,
 .icon-button svg,
 .tab-button svg,
 .small-icon {
+  flex-shrink: 0;
   width: 21px;
   height: 21px;
   fill: none;
@@ -1041,6 +1043,16 @@ a:focus-visible,
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* Inline icons next to text scale with it; bar icons keep their fixed hit-target size. */
+.button .small-icon,
+.hero-text-button .small-icon,
+.focus-lens-edit .small-icon,
+.focus-lens-action .small-icon,
+.pill .small-icon {
+  width: 1.3125rem;
+  height: 1.3125rem;
 }
 
 .icon-button svg.filled-icon,
@@ -1473,13 +1485,14 @@ svg.filled-icon.small-icon {
 
 .exercise-builder-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   padding: 2px 0;
 }
 
-.exercise-builder-heading > div {
+.exercise-builder-heading > div:first-child {
   display: grid;
   gap: 3px;
   min-width: 0;
@@ -1508,11 +1521,13 @@ svg.filled-icon.small-icon {
 .exercise-builder-add svg,
 .exercise-builder-voice svg { flex-shrink: 0; }
 
-.exercise-builder-heading > div { flex: 1 1 auto; }
+.exercise-builder-heading > div:first-child { flex: 1 1 10rem; }
+.exercise-builder-heading > .plan-menu-wrap { flex: 0 0 auto; }
 .exercise-builder-heading .pill {
   justify-self: start;
   max-width: 100%;
   white-space: normal;
+  padding-block: 4px;
 }
 
 /* Voice workout dictation sheet */
@@ -3872,6 +3887,7 @@ button.leaderboard-row {
 }
 .training-history-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -4465,7 +4481,7 @@ button.leaderboard-row {
 }
 
 .focus-lens-edit span,
-.focus-lens-action span { text-wrap: balance; }
+.focus-lens-action span { text-wrap: balance; text-align: center; }
 
 .focus-lens-edit:focus-visible { background: color-mix(in srgb, var(--hero-action) 10%, var(--hero-tile)); }
 
@@ -5043,11 +5059,13 @@ textarea:focus {
 
 .active-workout-exercise {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 
 .active-workout-exercise > details {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 
@@ -5254,6 +5272,9 @@ textarea:focus {
 }
 
 .active-set-list { gap: 0; }
+.active-set-list,
+.active-set-list > *,
+.active-set-row { min-width: 0; max-width: 100%; box-sizing: border-box; }
 
 /* Set rows: upcoming and completed sets are bare rows split by hairlines; only the current set is a card. */
 .active-set-row {
@@ -5338,7 +5359,8 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .active-set-title { color: var(--accent-on-tint); font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
 
 .active-set-previous {
-  white-space: nowrap;
+  white-space: normal;
+  text-align: right;
   margin: -8px 0 -8px auto;
   min-height: 44px;
   padding: 0 4px;
@@ -7071,12 +7093,15 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   gap: 6px;
   min-height: 44px;
   padding: 0 14px;
-  border-radius: 999px;
+  border-radius: 22px;
   color: var(--hero-action-label);
   background: var(--hero-tile);
   font-size: 0.875rem;
   font-weight: 600;
-  white-space: nowrap;
+  /* Wraps at large text instead of running past the hero's edge. */
+  white-space: normal;
+  text-align: left;
+  padding-block: 8px;
 }
 
 .garmin-metrics-disclosure { padding: 0; }
@@ -7213,7 +7238,17 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .garmin-header,
 .workout-comparison-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
+}
+
+/* Tiles drop to one column as soon as two would not fit (large text), and never push the card wider. */
+.workout-comparison-card .metric-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+}
+
+.workout-comparison-card .metric-grid > div {
+  min-width: 0;
 }
 
 .workout-detail-hero {
@@ -8173,6 +8208,7 @@ a.settings-row .settings-row-text strong { white-space: normal; overflow-wrap: b
 }
 .active-hero-main {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -8217,10 +8253,11 @@ a.settings-row .settings-row-text strong { white-space: normal; overflow-wrap: b
 .active-hero-ring {
   position: relative;
   flex: none;
-  width: 68px;
-  height: 68px;
+  /* 68px at the default text size; grows with it so the count stays inside the ring. */
+  width: max(68px, 4.25rem);
+  height: max(68px, 4.25rem);
 }
-.active-hero-ring svg { display: block; width: 68px; height: 68px; }
+.active-hero-ring svg { display: block; width: 100%; height: 100%; }
 .active-hero-ring-track { stroke: var(--hero-track); }
 .active-hero-ring-arc { stroke: var(--hero-accent); transition: stroke-dasharray 300ms cubic-bezier(0.22, 1, 0.36, 1); }
 .active-hero-ring-text {
@@ -8447,6 +8484,7 @@ a.settings-row .settings-row-text strong { white-space: normal; overflow-wrap: b
   font-size: 0.75rem;
   line-height: 1rem;
   overflow-wrap: break-word;
+  hyphens: auto;
 }
 .summary-hero-stats strong {
   display: block;
