@@ -1019,8 +1019,7 @@ private fun SmartCoachPanel(
                         Text(
                             text = trainingProfile.trainingSettingsSummary(),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 4
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }

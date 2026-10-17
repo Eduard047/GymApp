@@ -139,7 +139,9 @@ fun WorkoutComparisonCard(
                     DateTimeUtils.formatDate(comparison.previousSessionDate)
                 )
             )
-            metrics.chunked(2).forEach { rowMetrics ->
+            // One tile per row at large font sizes, so "Раньше 13 · без изменений" is never cut off.
+            val tilesPerRow = if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) 1 else 2
+            metrics.chunked(tilesPerRow).forEach { rowMetrics ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -147,7 +149,7 @@ fun WorkoutComparisonCard(
                     rowMetrics.forEach { metric ->
                         ComparisonMetricCell(metric = metric, modifier = Modifier.weight(1f))
                     }
-                    if (rowMetrics.size == 1) {
+                    if (rowMetrics.size == 1 && tilesPerRow == 2) {
                         Spacer(modifier = Modifier.weight(1f))
                     }
                 }
@@ -233,7 +235,7 @@ private fun ComparisonMetricCell(
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
+            maxLines = 4,
             overflow = TextOverflow.Ellipsis
         )
     }

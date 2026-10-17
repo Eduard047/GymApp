@@ -875,8 +875,9 @@ private fun WorkoutEditModeButton(
 ) {
     FilledTonalButton(
         onClick = onToggleEdit,
-        modifier = Modifier.height(40.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+        // Grows with the text so a long label wraps instead of being clipped at large font sizes.
+        modifier = Modifier.heightIn(min = 40.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         colors = ButtonDefaults.filledTonalButtonColors(
             containerColor = HeroTone.tile,
             contentColor = HeroTone.actionLabel
