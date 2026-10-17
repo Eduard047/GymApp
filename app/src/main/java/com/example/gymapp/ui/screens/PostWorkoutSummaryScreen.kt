@@ -3,6 +3,7 @@ package com.example.gymapp.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
@@ -235,22 +236,29 @@ private fun TrainingMetricsCard(uiState: PostWorkoutSummaryUiState) {
                     )
                 }
             }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                MetricTile(
-                    label = stringResource(R.string.post_workout_metric_exercises),
-                    value = NumberFormat.getIntegerInstance(locale).format(uiState.exerciseCount),
-                    modifier = Modifier.weight(1f)
-                )
-                MetricTile(
-                    label = stringResource(R.string.post_workout_metric_top_muscle),
-                    value = topMuscle,
-                    modifier = Modifier.weight(1f)
-                )
+            val exercisesLabel = stringResource(R.string.post_workout_metric_exercises)
+            val exercisesValue = NumberFormat.getIntegerInstance(locale).format(uiState.exerciseCount)
+            val topMuscleLabel = stringResource(R.string.post_workout_metric_top_muscle)
+            // Two tiles side by side only when two scaled tiles really fit the card; otherwise one per row,
+            // so "Главная мышца" and its value are never squeezed, whatever the screen width or font size.
+            val fontScale = LocalDensity.current.fontScale
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                if (maxWidth >= 130.dp * fontScale * 2 + 10.dp) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(IntrinsicSize.Min),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        MetricTile(label = exercisesLabel, value = exercisesValue, modifier = Modifier.weight(1f))
+                        MetricTile(label = topMuscleLabel, value = topMuscle, modifier = Modifier.weight(1f))
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        MetricTile(label = exercisesLabel, value = exercisesValue, modifier = Modifier.fillMaxWidth())
+                        MetricTile(label = topMuscleLabel, value = topMuscle, modifier = Modifier.fillMaxWidth())
+                    }
+                }
             }
         }
     }
