@@ -186,3 +186,22 @@ test("the summary hero grid column cannot grow past the card at large text", () 
   assert.doesNotMatch(rule(".summary-hero .summary-hero-title h2"), /hyphens/, "headings wrap by words, never by syllables");
   assert.match(rule(".summary-hero .summary-hero-title h2"), /overflow-wrap:\s*break-word/);
 });
+
+test("large text: history rows and navigators wrap by words, rows and heading controls drop under the text, titles never break inside a word", () => {
+  const last = selector => {
+    const re = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`, "g");
+    return [...stylesSource.matchAll(re)].map(m => m[1]).at(-1) || "";
+  };
+  for (const selector of [".training-history-row strong", ".training-history-current strong", ".month-nav-month"]) {
+    const rules = [...stylesSource.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(m => m[1].split(",").some(part => part.trim().endsWith(selector)));
+    assert.ok(rules.at(-1)[2].includes("white-space: normal"), `${selector} wraps instead of an ellipsis`);
+  }
+  assert.match(last(".screen-copy h2"), /font-size:\s*min\(2rem,\s*9vw\)/);
+  assert.match(last(".exercise-card-head"), /flex-wrap:\s*wrap/);
+  assert.match(last(".draft-exercise-head"), /flex-wrap:\s*wrap/);
+  assert.match(last(".smart-coach-header"), /flex-wrap:\s*wrap/);
+  assert.match(last(".weekly-summary-metrics"), /auto-fit/);
+  assert.match(last(".achievement-gallery"), /auto-fit/);
+  assert.match(last(".progress-hub"), /container-type:\s*inline-size/);
+  assert.ok(stylesSource.includes("@container (max-width: 14rem) {\n  .progress-hub-switch {"), "progress tabs stack in a narrow container");
+});

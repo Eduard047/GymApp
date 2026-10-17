@@ -506,7 +506,7 @@ const RUSSIAN_TEXT = new Map([
   ["All muscles", "Все мышцы"],
   ["All saved exercises are already in this workout.", "Все сохранённые упражнения уже добавлены в эту тренировку."],
   ["All time", "Всё время"],
-  ["All-time best", "Лучшее за все время"],
+  ["All-time best", "Лучшее за всё время"],
   ["An account with this email already exists. Log in or resend the confirmation email.", "Аккаунт с этим адресом электронной почты уже существует. Войди или повторно отправь письмо для подтверждения."],
   ["An exercise or its set list is invalid.", "Упражнение или список его подходов некорректны."],
   ["An exercise with this name already exists.", "Упражнение с таким названием уже существует."],

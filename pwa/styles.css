@@ -8978,3 +8978,54 @@ button.workout-template-row:focus-visible {
 
   .root-route-shell .screen-exercises .exercise-list { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Large text: labels wrap by words instead of being cut with an ellipsis, and two-line clamps leave room for a third word. */
+.training-history-current strong,
+.training-history-current span,
+.training-history-row strong,
+.training-history-row small,
+.month-nav-month {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+.month-nav-current { flex-wrap: wrap; row-gap: 0; text-align: center; }
+.smart-coach-toggle-text small { -webkit-line-clamp: 4; line-clamp: 4; }
+button.workout-template-row .workout-template-names { -webkit-line-clamp: 4; line-clamp: 4; }
+.achievement-name { -webkit-line-clamp: 3; line-clamp: 3; }
+.metric-grid:not(.three) { grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr)); }
+.metric-grid span { -webkit-line-clamp: 3; line-clamp: 3; }
+
+/* Root screen titles never break inside a word at large text. */
+.screen-copy h2 { font-size: min(2rem, 9vw); line-height: 1.2; }
+
+/* Exercise rows: the actions drop below the name instead of squeezing it into a column a few letters wide. */
+.exercise-card-head { flex-wrap: wrap; row-gap: 4px; }
+.exercise-card-head .exercise-card-title { flex: 1 1 7rem; min-width: min(7rem, 100%); }
+.exercise-card-head .exercise-row-actions { margin-left: auto; }
+.exercise-row .exercise-name { -webkit-line-clamp: 6; line-clamp: 6; }
+
+/* The plan summary wraps by words. */
+.smart-coach-toggle-text small { overflow-wrap: break-word; }
+
+/* Plan editor rows wrap their trailing controls under the text at large sizes. */
+.smart-coach-header { flex-wrap: wrap; row-gap: 0; }
+.smart-coach-toggle { flex: 1 1 11rem; }
+.draft-exercise-head { flex-wrap: wrap; row-gap: 4px; }
+.draft-exercise-head .draft-exercise-title { flex: 1 1 8rem; min-width: min(8rem, 100%); }
+.draft-exercise-head > .plan-menu-wrap { margin-left: auto; }
+.exercise-builder-heading > div:first-child { flex: 1 1 min(100%, 8rem); }
+
+/* Hub switches: three tabs per row while each can hold its label, one tab per row otherwise (never squeezed labels). */
+.progress-hub { container-type: inline-size; }
+@container (max-width: 14rem) {
+  .progress-hub-switch { grid-auto-flow: row; grid-auto-columns: auto; }
+  .progress-hub-switch button { flex-direction: row; gap: 7px; font-size: 0.875rem; line-height: 1.25rem; }
+  .progress-hub-switch button span { width: auto; white-space: normal; overflow-wrap: break-word; }
+}
+.profile-hub-switch button strong { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: break-word; }
+
+.weekly-summary-metrics { grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr)); }
+.achievement-gallery { grid-template-columns: repeat(auto-fit, minmax(min(100%, 5.5rem), 1fr)); }
+button.workout-template-row .workout-template-names { -webkit-line-clamp: 6; line-clamp: 6; }

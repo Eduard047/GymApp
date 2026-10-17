@@ -6,7 +6,7 @@ const [styles, app, appBundle, stylesBundle] = await Promise.all([
   readFile("pwa/styles.css", "utf8"),
   readFile("pwa/app.js", "utf8"),
   readFile("pwa/app.v145.js", "utf8"),
-  readFile("pwa/styles.v115.css", "utf8")
+  readFile("pwa/styles.v116.css", "utf8")
 ]);
 
 function rules(selector) {
