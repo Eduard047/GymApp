@@ -2418,7 +2418,7 @@ public struct WorkoutsView: View {
                             .foregroundStyle(GymTheme.onPrimary)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(GymTheme.brandFill, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                            .background(GymTheme.brandFill, in: Capsule())
                     }
                 }
                 .font(.subheadline.bold())
