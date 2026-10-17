@@ -1486,20 +1486,18 @@ struct WorkoutDetailView: View {
         ))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // At accessibility sizes the system inline title is cut off next to the two actions:
-            // it wraps to two lines and may shrink a little instead.
-            if dynamicTypeSize.isAccessibilitySize {
-                ToolbarItem(placement: .principal) {
-                    Text(gymText(
-                        "Workout details", "Деталі тренування", "Детали тренировки",
-                        languageCode: gymCurrentLanguageCode()
-                    ))
-                    .font(.headline)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
-                    .multilineTextAlignment(.center)
-                    .accessibilityAddTraits(.isHeader)
-                }
+            // The system inline title is cut off next to the two actions ("Детали трен…" with the word "Изменить"
+            // even at the default size): it wraps to two lines and may shrink a little instead.
+            ToolbarItem(placement: .principal) {
+                Text(gymText(
+                    "Workout details", "Деталі тренування", "Детали тренировки",
+                    languageCode: gymCurrentLanguageCode()
+                ))
+                .font(.headline)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if isEditing {

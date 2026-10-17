@@ -151,11 +151,13 @@ struct AccountSettingsView: View {
                         Text(auth.session?.displayName ?? gymLocalized("GymApp athlete"))
                             .font(.title3.bold())
                             .foregroundStyle(GymTheme.textPrimary)
+                        // Wraps to a second line instead of cutting "… на этом iPho…"; only an email may still scale down.
                         Text(accountSubtitleText)
                             .font(.subheadline)
                             .foregroundStyle(GymTheme.textSecondary)
-                            .lineLimit(1)
+                            .lineLimit(2)
                             .minimumScaleFactor(0.9)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Spacer(minLength: 4)
