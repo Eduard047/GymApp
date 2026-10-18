@@ -155,7 +155,7 @@ struct AccountSettingsView: View {
                         Text(accountSubtitleText)
                             .font(.subheadline)
                             .foregroundStyle(GymTheme.textSecondary)
-                            .lineLimit(2)
+                            .gymLineLimit(2)
                             .minimumScaleFactor(0.9)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -266,6 +266,7 @@ struct AccountSettingsView: View {
                         )
                         .font(.body.weight(.semibold))
                         .foregroundStyle(GymTheme.textPrimary)
+                        .minimumScaleFactor(0.6)
                         Text(
                             gymText(
                                 "Make one before switching phones",
@@ -276,7 +277,7 @@ struct AccountSettingsView: View {
                         )
                         .font(.subheadline)
                         .foregroundStyle(GymTheme.textSecondary)
-                        .lineLimit(1)
+                        .gymLineLimit(1)
                     }
                     Spacer(minLength: 6)
                     Image(systemName: "chevron.right")
@@ -471,8 +472,8 @@ struct AccountSettingsView: View {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(GymTheme.textPrimary)
                     .multilineTextAlignment(.leading)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                    .gymLineLimit(1)
+                    .minimumScaleFactor(0.6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Spacer(minLength: 6)
                 Image(systemName: "arrow.up.right")
@@ -762,7 +763,8 @@ private struct CopyableIDRow: View {
     @State private var copied = false
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        // At large text the button drops under the identifier so neither label breaks inside a word.
+        GymAdaptiveStack(stacksFromLargeText: true, rowAlignment: .firstTextBaseline, spacing: 10, columnSpacing: 6) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(gymLocalized(label))
                     .font(.caption2.weight(.semibold))
@@ -778,7 +780,7 @@ private struct CopyableIDRow: View {
             .accessibilityLabel(gymLocalized(label))
             .accessibilityValue(value)
 
-            Spacer(minLength: 8)
+            GymAdaptiveSpacer(minLength: 8, stacksFromLargeText: true)
 
             Button(action: copy) {
                 Text(
@@ -788,6 +790,7 @@ private struct CopyableIDRow: View {
                 )
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(GymTheme.primary)
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(Capsule().fill(GymTheme.primary.opacity(0.12)))

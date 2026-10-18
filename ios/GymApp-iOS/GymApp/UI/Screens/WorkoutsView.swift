@@ -1479,12 +1479,14 @@ public struct WorkoutsView: View {
                             Text(historyPeriodTitle(weeklySummary: weekly))
                                 .font(.subheadline.bold())
                                 .foregroundStyle(GymTheme.textPrimary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.72)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+                                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.72)
+                                .multilineTextAlignment(.center)
                             Text(historyPeriodSubtitle)
                                 .font(.caption)
                                 .foregroundStyle(GymTheme.textSecondary)
-                                .lineLimit(1)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+                                .multilineTextAlignment(.center)
                         }
                         .frame(maxWidth: .infinity, minHeight: 44)
                     }
@@ -1790,11 +1792,11 @@ public struct WorkoutsView: View {
                     Text(gymShortDate(workout.date, calendar: calendar, languageCode: languageCode))
                     .font(.subheadline.bold())
                     .foregroundStyle(GymTheme.textPrimary)
-                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                     Text(supporting)
                         .font(.caption)
                         .foregroundStyle(GymTheme.textSecondary)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                 }
                 GymAdaptiveSpacer(minLength: 4)
                 HStack(spacing: 10) {
@@ -1875,8 +1877,9 @@ public struct WorkoutsView: View {
                         Text(weeklyRangeTitle(summary))
                             .font(.subheadline.bold())
                             .foregroundStyle(GymTheme.textPrimary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.74)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+                            .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.74)
+                            .multilineTextAlignment(.center)
                         Text(weekOffset == 0
                             ? gymText(
                                 "This week", "Цього тижня", "На этой неделе",
@@ -1890,7 +1893,8 @@ public struct WorkoutsView: View {
                             ))
                             .font(.caption)
                             .foregroundStyle(GymTheme.textSecondary)
-                            .lineLimit(1)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+                            .multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity, minHeight: 44)
                 }

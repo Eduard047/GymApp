@@ -193,7 +193,7 @@ private struct GymAdaptiveLineLimitModifier: ViewModifier {
     let accessibilityLimit: Int?
 
     func body(content: Content) -> some View {
-        content.lineLimit(dynamicTypeSize.isAccessibilitySize ? accessibilityLimit : limit)
+        content.lineLimit(dynamicTypeSize.isLargeText ? accessibilityLimit : limit)
     }
 }
 

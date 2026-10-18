@@ -1512,8 +1512,8 @@ struct WorkoutDetailView: View {
                         .disabled(pendingDeletion != nil)
                 } else if let workout = store.workout(id: workoutID) {
                     Button(action: beginEditing) {
-                        // A pencil at accessibility sizes: the word would crowd the title out of the bar.
-                        if dynamicTypeSize.isAccessibilitySize {
+                        // A pencil from the largest sizes: the word would crowd the title out of the bar.
+                        if dynamicTypeSize.isLargeText {
                             Image(systemName: "pencil")
                                 .frame(minWidth: 44, minHeight: 44)
                         } else {

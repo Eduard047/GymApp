@@ -968,6 +968,33 @@ struct WorkoutMuscleLoadCard: View {
         data.muscles.first { $0.id == selectedMuscleID }
     }
 
+    private var muscleMapSetsTile: some View {
+        GymMetricTile(
+            label: "Sets",
+            value: data.totalSets.formatted(.number.locale(gymAppLocale())),
+            emphasized: true,
+            singleLineLabel: true
+        )
+    }
+
+    private var muscleMapLoadTile: some View {
+        GymMetricTile(
+            label: "Load",
+            value: Int(data.totalLoad.rounded()).formatted(.number.locale(gymAppLocale())),
+            emphasized: true,
+            singleLineLabel: true
+        )
+    }
+
+    private var muscleMapMappedTile: some View {
+        GymMetricTile(
+            label: "Mapped",
+            value: "\(data.mappedExerciseCount)/\(data.totalExerciseCount)",
+            emphasized: true,
+            singleLineLabel: true
+        )
+    }
+
     var body: some View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 14) {
@@ -986,30 +1013,21 @@ struct WorkoutMuscleLoadCard: View {
                     options: WorkoutMusclePeriod.allCases.map { ($0, $0.title) }
                 )
 
-                HStack(spacing: 8) {
-                    GymMetricTile(
-                        label: "Sets",
-                        value: data.totalSets.formatted(.number.locale(gymAppLocale())),
-                        emphasized: true,
-                        singleLineLabel: true
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    GymMetricTile(
-                        label: "Load",
-                        value: Int(data.totalLoad.rounded()).formatted(.number.locale(gymAppLocale())),
-                        emphasized: true,
-                        singleLineLabel: true
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    GymMetricTile(
-                        label: "Mapped",
-                        value: "\(data.mappedExerciseCount)/\(data.totalExerciseCount)",
-                        emphasized: true,
-                        singleLineLabel: true
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Three tiles in a row while their labels fit; otherwise one per row, so
+                // "Sets", "Load" and "Mapped" are never cut off at large text sizes.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        muscleMapSetsTile.frame(maxWidth: .infinity, maxHeight: .infinity)
+                        muscleMapLoadTile.frame(maxWidth: .infinity, maxHeight: .infinity)
+                        muscleMapMappedTile.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    VStack(spacing: 8) {
+                        muscleMapSetsTile
+                        muscleMapLoadTile
+                        muscleMapMappedTile
+                    }
                 }
-                .fixedSize(horizontal: false, vertical: true)
 
                 Text("Select a muscle to see the exercises behind its load.")
                     .font(.caption)
