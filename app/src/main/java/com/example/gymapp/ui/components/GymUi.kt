@@ -29,6 +29,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.example.gymapp.ui.screens.MetricTilesLayout
 import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.SwitchColors
@@ -438,8 +439,8 @@ fun MetricTile(
             .heightIn(min = 78.dp)
             .clip(shape)
             .background(tileContainerColor, shape)
-            .border(BorderStroke(1.dp, borderColor), shape)
-            .padding(12.dp),
+            .border(BorderStroke(MetricTilesLayout.TileBorderDp.dp, borderColor), shape)
+            .padding(MetricTilesLayout.TilePaddingDp.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {
         // Multi-word labels wrap at word boundaries; a single word shrinks to fit instead of breaking.

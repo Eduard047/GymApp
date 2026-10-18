@@ -471,7 +471,7 @@ struct AccountSettingsView: View {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(GymTheme.textPrimary)
                     .multilineTextAlignment(.leading)
-                    .lineLimit(2)
+                    .gymLineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Spacer(minLength: 6)
                 Image(systemName: "arrow.up.right")
