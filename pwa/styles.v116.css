@@ -9030,7 +9030,7 @@ button.workout-template-row .workout-template-names { -webkit-line-clamp: 4; lin
 .achievement-gallery { grid-template-columns: repeat(auto-fit, minmax(min(100%, 5.5rem), 1fr)); }
 button.workout-template-row .workout-template-names { -webkit-line-clamp: 6; line-clamp: 6; }
 
-/* Badge names break only at word boundaries and shrink a little on narrow phones (never "Возвращени/е"). */
+/* Badge names break at word boundaries where possible and shrink a little on narrow phones. */
 .achievement-name { overflow-wrap: break-word; hyphens: none; }
 @media (max-width: 380px) {
   .achievement-tile { padding-inline: 4px; }
@@ -9038,7 +9038,7 @@ button.workout-template-row .workout-template-names { -webkit-line-clamp: 6; lin
 }
 
 /* Two-column metric values wrap by words instead of being cut off ("2 в этом м"). */
-.metric-grid:not(.three) strong { white-space: normal; overflow-wrap: break-word; line-height: 1.5rem; }
+.metric-grid:not(.three) strong { white-space: normal; overflow-wrap: break-word; }
 
 /* Single-column grids never grow past the screen because of one long word (the profile list, search panel, rank hero, solo identity, goals list). */
 .profile-hub-panel,
@@ -9057,10 +9057,10 @@ button.workout-template-row .workout-template-names { -webkit-line-clamp: 6; lin
 .mapping-overview-summary { flex-wrap: wrap; row-gap: 4px; }
 .mapping-overview-title { min-width: 0; overflow-wrap: break-word; }
 
-/* Rank names never break inside a word at large text: the title scales with the screen width instead. */
-.solo-identity-row h2 { font-size: min(1.375rem, 8vw); line-height: 1.25; overflow-wrap: normal; }
-.rank-hero.hero-panel .rank-hero-title { font-size: min(1.75rem, 5.6vw); line-height: 1.2; }
-.rank-name { font-size: min(1.0625rem, 6.2vw); }
+/* Rank names keep growing with the text size (rem floor) but are capped by the screen width, so a long rank does not break inside a word. */
+.solo-identity-row h2 { font-size: min(1.375rem, max(1.0625rem, 8vw)); line-height: 1.25; overflow-wrap: normal; }
+.rank-hero.hero-panel .rank-hero-title { font-size: min(1.75rem, max(0.9375rem, 7vw)); line-height: 1.2; }
+.rank-name { font-size: min(1.0625rem, max(0.875rem, 6.2vw)); }
 .rank-hero-title > span { overflow-wrap: normal; }
 
 /* The language row drops its current value under the label instead of squeezing the label ("Langua/ge"). */
@@ -9068,16 +9068,16 @@ button.workout-template-row .workout-template-names { -webkit-line-clamp: 6; lin
 .settings-language .settings-row-text { flex: 1 1 auto; min-width: min-content; }
 .settings-language .settings-row-trailing { margin-left: auto; }
 
-/* Row titles scale with the screen instead of breaking inside long words ("Налаштування"). */
-.settings-row-text strong { font-size: min(1rem, 6vw); }
-/* Three-tile metric rows keep three columns while each tile can hold its label, otherwise they reflow (never "Workou/Week"). */
-.metric-grid.three { grid-template-columns: repeat(auto-fit, minmax(min(100%, 5.5rem), 1fr)); }
+/* Row titles keep growing with the text size (rem floor), capped by the screen width so long words stay whole ("Налаштування"). */
+.settings-row-text strong { font-size: min(1rem, max(0.9375rem, 6vw)); }
+/* Three-tile metric rows: three columns while each tile is at least 5.5rem wide, otherwise one per row (never two plus one). */
+.metric-grid.three { grid-template-columns: repeat(auto-fit, minmax(clamp(5.5rem, calc((16.5rem + 16px - 100%) * 1000), 100%), 1fr)); }
 
 /* Bar rows: the label column grows to the longest word at large text instead of running under the bar; the detail wraps beneath. */
 @media (max-width: 560px) {
   .bar-row { grid-template-columns: minmax(min-content, 5.75rem) minmax(0, 1fr); }
   .bar-row > span:first-child { overflow-wrap: normal; }
 }
-/* Period switch (all time / month / week): three columns while each label fits, otherwise they reflow (never "Всё вре"). */
-.period-tabs { grid-template-columns: repeat(auto-fit, minmax(min(100%, 5.5rem), 1fr)); }
+/* Period switch (all time / month / week): three columns while each is at least 5.5rem wide, otherwise one per row (never two plus one). */
+.period-tabs { grid-template-columns: repeat(auto-fit, minmax(clamp(5.5rem, calc((16.5rem + 16px - 100%) * 1000), 100%), 1fr)); }
 .period-tabs button { white-space: normal; overflow-wrap: break-word; }

@@ -51,7 +51,7 @@ fun WorkoutComparisonCard(
     val wholeNumber: (Double) -> String = { value ->
         String.format(Locale.getDefault(), "%.0f", value)
     }
-    // Grouped whole number plus unit; no-break space keeps "+850 kg" on one line. The delta sits on its own line under "Previous …".
+    // Grouped whole number plus unit; no-break space keeps "+850 kg" on one line.
     val kilogramFormat = androidx.compose.ui.res.stringResource(R.string.today_history_volume_kg, "%s")
         .replace(' ', '\u00A0')
     val volume: (Double) -> String = { value ->

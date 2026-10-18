@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.ui.screens.MetricTilesLayout
 import com.example.gymapp.ui.theme.GymCapsuleShape
 import com.example.gymapp.ui.theme.HeatStepColors
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
@@ -184,7 +185,8 @@ private fun HeatmapMetricTiles(heatmap: MuscleHeatmapUiModel) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val sideBySide = remember(setsLabel, loadLabel, mappedLabel, maxWidth, density, labelStyle) {
             val gapDp = 8f
-            val tileTextDp = (maxWidth.value - 2 * gapDp) / 3 - 2 * 12f - 2 * 1f
+            val tileTextDp = (maxWidth.value - 2 * gapDp) / 3 -
+                2 * MetricTilesLayout.TilePaddingDp - 2 * MetricTilesLayout.TileBorderDp
             listOf(setsLabel, loadLabel, mappedLabel).all { label ->
                 label.split(' ', '\u00A0').filter { it.isNotEmpty() }.all { word ->
                     val widthDp = with(density) {

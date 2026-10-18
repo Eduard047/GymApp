@@ -266,7 +266,6 @@ struct AccountSettingsView: View {
                         )
                         .font(.body.weight(.semibold))
                         .foregroundStyle(GymTheme.textPrimary)
-                        .minimumScaleFactor(0.6)
                         Text(
                             gymText(
                                 "Make one before switching phones",
@@ -472,8 +471,7 @@ struct AccountSettingsView: View {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(GymTheme.textPrimary)
                     .multilineTextAlignment(.leading)
-                    .gymLineLimit(1)
-                    .minimumScaleFactor(0.6)
+                    .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Spacer(minLength: 6)
                 Image(systemName: "arrow.up.right")

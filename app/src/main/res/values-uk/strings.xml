@@ -1225,7 +1225,7 @@
         <item quantity="other">%1$d спільної вправи</item>
     </plurals>
     <string name="workout_comparison_supporting">%1$s · %2$s</string>
-    <string name="workout_comparison_previous_delta">Раніше %1$s\n%2$s</string>
+    <string name="workout_comparison_previous_delta">Раніше %1$s\u00A0· %2$s</string>
     <string name="workout_comparison_no_change">без змін</string>
 
     <string name="dialog_edit_set_title">Редагувати підхід</string>

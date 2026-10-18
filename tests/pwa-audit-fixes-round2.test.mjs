@@ -218,14 +218,14 @@ test("badge names break at word boundaries and number names keep their digits to
 
 test("large text: single-column grids are bounded to the screen, rank names scale instead of breaking, the language row wraps its value", () => {
   assert.ok(/\.profile-hub-panel,[\s\S]*?\.account-identity \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(stylesSource), "grids use minmax(0, 1fr)");
-  assert.ok(stylesSource.includes(".solo-identity-row h2 { font-size: min(1.375rem, 8vw);"), "solo rank title scales with the width");
-  assert.ok(stylesSource.includes(".rank-hero.hero-panel .rank-hero-title { font-size: min(1.75rem, 5.6vw);"), "rank hero title scales with the width");
+  assert.ok(stylesSource.includes(".solo-identity-row h2 { font-size: min(1.375rem, max(1.0625rem, 8vw));"), "solo rank title scales with the width");
+  assert.ok(stylesSource.includes(".rank-hero.hero-panel .rank-hero-title { font-size: min(1.75rem, max(0.9375rem, 7vw));"), "rank hero title scales with the width");
   assert.ok(stylesSource.includes(".settings-language .settings-row { flex-wrap: wrap;"), "language value drops under the label");
 });
 
 test("large text: row titles scale, three-tile and period rows reflow, bar rows keep their label column readable", () => {
-  assert.ok(stylesSource.includes(".settings-row-text strong { font-size: min(1rem, 6vw); }"));
-  assert.ok(stylesSource.includes(".metric-grid.three { grid-template-columns: repeat(auto-fit, minmax(min(100%, 5.5rem), 1fr)); }"));
-  assert.ok(stylesSource.includes(".period-tabs { grid-template-columns: repeat(auto-fit, minmax(min(100%, 5.5rem), 1fr)); }"));
+  assert.ok(stylesSource.includes(".settings-row-text strong { font-size: min(1rem, max(0.9375rem, 6vw)); }"));
+  assert.ok(stylesSource.includes(".metric-grid.three { grid-template-columns: repeat(auto-fit, minmax(clamp(5.5rem, calc((16.5rem + 16px - 100%) * 1000), 100%), 1fr)); }"));
+  assert.ok(stylesSource.includes(".period-tabs { grid-template-columns: repeat(auto-fit, minmax(clamp(5.5rem, calc((16.5rem + 16px - 100%) * 1000), 100%), 1fr)); }"));
   assert.ok(stylesSource.includes(".bar-row { grid-template-columns: minmax(min-content, 5.75rem) minmax(0, 1fr); }"));
 });

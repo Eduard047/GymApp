@@ -959,6 +959,7 @@ struct HeatStepSwatch: View {
 }
 
 struct WorkoutMuscleLoadCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Binding var period: WorkoutMusclePeriod
     @Binding var selectedMuscleID: String?
 
@@ -1013,20 +1014,21 @@ struct WorkoutMuscleLoadCard: View {
                     options: WorkoutMusclePeriod.allCases.map { ($0, $0.title) }
                 )
 
-                // Three tiles in a row while their labels fit; otherwise one per row, so
-                // "Sets", "Load" and "Mapped" are never cut off at large text sizes.
-                ViewThatFits(in: .horizontal) {
+                // Three tiles in a row at normal sizes (labels scale down a little); one per row
+                // from xxxLarge, so "Sets", "Load" and "Mapped" are never cut off.
+                if dynamicTypeSize.isLargeText {
+                    VStack(spacing: 8) {
+                        muscleMapSetsTile
+                        muscleMapLoadTile
+                        muscleMapMappedTile
+                    }
+                } else {
                     HStack(spacing: 8) {
                         muscleMapSetsTile.frame(maxWidth: .infinity, maxHeight: .infinity)
                         muscleMapLoadTile.frame(maxWidth: .infinity, maxHeight: .infinity)
                         muscleMapMappedTile.frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                     .fixedSize(horizontal: false, vertical: true)
-                    VStack(spacing: 8) {
-                        muscleMapSetsTile
-                        muscleMapLoadTile
-                        muscleMapMappedTile
-                    }
                 }
 
                 Text("Select a muscle to see the exercises behind its load.")
