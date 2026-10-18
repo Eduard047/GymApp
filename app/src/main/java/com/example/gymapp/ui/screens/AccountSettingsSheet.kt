@@ -7,6 +7,8 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -291,6 +293,7 @@ internal fun accountSubtitle(state: ExerciseListUiState, compact: Boolean = fals
     else -> stringResource(R.string.account_local_subtitle)
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AccountIdentifierRow(label: String, value: String) {
     val context = LocalContext.current
@@ -303,12 +306,14 @@ private fun AccountIdentifierRow(label: String, value: String) {
     }
     val copyLabel = stringResource(if (copied) R.string.account_id_copied else R.string.account_id_copy)
     val copyHint = stringResource(R.string.account_id_copy_hint)
-    Row(
+    // The copy button drops under the identifier when both do not fit on one line (large fonts),
+    // so the identifier is never cut off.
+    FlowRow(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.padding(end = 8.dp).align(Alignment.CenterVertically)) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelMedium,
@@ -330,7 +335,7 @@ private fun AccountIdentifierRow(label: String, value: String) {
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.primary
             ),
-            modifier = Modifier.semantics {
+            modifier = Modifier.align(Alignment.CenterVertically).semantics {
                 contentDescription = "$copyLabel. $copyHint"
                 if (copied) liveRegion = LiveRegionMode.Polite
             }

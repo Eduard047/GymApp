@@ -1191,7 +1191,7 @@
         <item quantity="other">%1$d matching exercises</item>
     </plurals>
     <string name="workout_comparison_supporting">%1$s · %2$s</string>
-    <string name="workout_comparison_previous_delta">Previous %1$s\u00A0·\u00A0%2$s</string>
+    <string name="workout_comparison_previous_delta">Previous %1$s\n%2$s</string>
     <string name="workout_comparison_no_change">no change</string>
 
     <string name="dialog_edit_set_title">Edit Set</string>

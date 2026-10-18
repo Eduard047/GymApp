@@ -9,15 +9,15 @@ import androidx.activity.compose.BackHandler
 import java.text.NumberFormat
 import com.example.gymapp.ui.viewmodel.SetInputState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -1466,6 +1466,7 @@ private fun ExerciseDraftCard(
  * button (the editor is always open; the weight value is tappable for keyboard entry), and a row of
  * compact tonal quick-fill pills (Last, Prev., Copy) aligned under the capsules.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun WorkoutSetDraftRow(
     position: Int,
@@ -1516,10 +1517,10 @@ private fun WorkoutSetDraftRow(
                 repsError = repsError
             )
         }
-        Row(
+        // The quick chips wrap onto a second line at large fonts; none is clipped at the edge.
+        FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
                 .padding(start = SetNumberBadgeSize + 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -1585,15 +1586,17 @@ private fun SetQuickChip(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SmartRecommendationPanel(
     recommendation: WorkoutRecommendation,
     onApplyWorkoutRecommendation: () -> Unit
 ) {
-    Row(
+    // At large fonts the action drops under the status instead of cutting the status to "Удер…".
+    FlowRow(
         modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         Text(
             text = stringResource(
@@ -1602,16 +1605,14 @@ private fun SmartRecommendationPanel(
                 recommendation.targetRir.first,
                 recommendation.targetRir.last
             ),
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.align(Alignment.CenterVertically).padding(end = 8.dp),
             style = MaterialTheme.typography.labelLarge,
             // Informational for every kind (Deload and Comeback are advice, not errors).
-            color = MaterialTheme.colorScheme.primary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            color = MaterialTheme.colorScheme.primary
         )
         TextButton(
             onClick = onApplyWorkoutRecommendation,
-            modifier = Modifier.height(40.dp),
+            modifier = Modifier.height(40.dp).align(Alignment.CenterVertically),
             contentPadding = PaddingValues(horizontal = 8.dp)
         ) {
             Text(stringResource(R.string.action_apply_smart_plan))

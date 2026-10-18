@@ -1403,7 +1403,7 @@ private fun TrainingHistoryRow(
                 text = DateTimeUtils.formatShortDate(session.session.date, locale),
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
@@ -1425,7 +1425,7 @@ private fun TrainingHistoryRow(
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
         }

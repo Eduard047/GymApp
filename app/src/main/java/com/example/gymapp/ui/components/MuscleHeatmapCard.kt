@@ -11,7 +11,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -41,6 +43,8 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -101,33 +105,7 @@ fun MuscleHeatmapCard(
                 onPeriodSelected = onPeriodSelected
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MetricTile(
-                    label = stringResource(R.string.muscle_heatmap_sets),
-                    value = heatmap.totalSets.toString(),
-                    modifier = Modifier.weight(1f),
-                    emphasized = true
-                )
-                MetricTile(
-                    label = stringResource(R.string.muscle_heatmap_load),
-                    value = groupedLoadText(heatmap.totalLoad),
-                    modifier = Modifier.weight(1f),
-                    emphasized = true
-                )
-                MetricTile(
-                    label = stringResource(R.string.muscle_heatmap_mapped),
-                    value = stringResource(
-                        R.string.muscle_heatmap_mapped_value,
-                        heatmap.mappedExerciseCount,
-                        heatmap.totalExerciseCount
-                    ),
-                    modifier = Modifier.weight(1f),
-                    emphasized = true
-                )
-            }
+            HeatmapMetricTiles(heatmap = heatmap)
 
             MuscleBodyMap(
                 muscles = heatmap.muscles,
@@ -184,6 +162,57 @@ fun MuscleHeatmapCard(
     }
 }
 
+/**
+ * Three tiles in one row while every label word fits its tile at the current font size; otherwise
+ * they stack one per row, so a label such as "Сопоставлено" is never shrunk or cut off.
+ */
+@Composable
+private fun HeatmapMetricTiles(heatmap: MuscleHeatmapUiModel) {
+    val setsLabel = stringResource(R.string.muscle_heatmap_sets)
+    val loadLabel = stringResource(R.string.muscle_heatmap_load)
+    val mappedLabel = stringResource(R.string.muscle_heatmap_mapped)
+    val setsValue = heatmap.totalSets.toString()
+    val loadValue = groupedLoadText(heatmap.totalLoad)
+    val mappedValue = stringResource(
+        R.string.muscle_heatmap_mapped_value,
+        heatmap.mappedExerciseCount,
+        heatmap.totalExerciseCount
+    )
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val labelStyle = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val sideBySide = remember(setsLabel, loadLabel, mappedLabel, maxWidth, density, labelStyle) {
+            val gapDp = 8f
+            val tileTextDp = (maxWidth.value - 2 * gapDp) / 3 - 2 * 12f - 2 * 1f
+            listOf(setsLabel, loadLabel, mappedLabel).all { label ->
+                label.split(' ', '\u00A0').filter { it.isNotEmpty() }.all { word ->
+                    val widthDp = with(density) {
+                        measurer.measure(word, labelStyle, maxLines = 1, softWrap = false).size.width.toDp().value
+                    }
+                    widthDp <= tileTextDp
+                }
+            }
+        }
+        if (sideBySide) {
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                MetricTile(label = setsLabel, value = setsValue, modifier = Modifier.weight(1f), emphasized = true)
+                MetricTile(label = loadLabel, value = loadValue, modifier = Modifier.weight(1f), emphasized = true)
+                MetricTile(label = mappedLabel, value = mappedValue, modifier = Modifier.weight(1f), emphasized = true)
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                MetricTile(label = setsLabel, value = setsValue, modifier = Modifier.fillMaxWidth(), emphasized = true)
+                MetricTile(label = loadLabel, value = loadValue, modifier = Modifier.fillMaxWidth(), emphasized = true)
+                MetricTile(label = mappedLabel, value = mappedValue, modifier = Modifier.fillMaxWidth(), emphasized = true)
+            }
+        }
+    }
+}
+
 @Composable
 private fun MusclePeriodSelector(
     heatmap: MuscleHeatmapUiModel,
@@ -192,6 +221,7 @@ private fun MusclePeriodSelector(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .height(IntrinsicSize.Min)
             .selectableGroup(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -199,6 +229,7 @@ private fun MusclePeriodSelector(
             Surface(
                 modifier = Modifier
                     .weight(1f)
+                    .fillMaxHeight()
                     .selectable(
                         selected = option.isSelected,
                         role = Role.RadioButton,
@@ -225,7 +256,7 @@ private fun MusclePeriodSelector(
                         MaterialTheme.colorScheme.onSurface
                     },
                     textAlign = TextAlign.Center,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }

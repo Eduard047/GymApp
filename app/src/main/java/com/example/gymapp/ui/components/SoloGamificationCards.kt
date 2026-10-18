@@ -223,6 +223,16 @@ private fun SoloHeroIdentity(progress: SoloProgressUiModel, locale: Locale) {
                 val xp = width(compactXp, xpStyle)
                 pill + gap + title + gap + xp <= available
             }
+            // When even the pill and the title do not fit side by side, the title takes its own
+            // line, so a long rank such as "Мотивированный" never breaks inside a word.
+            val titleBesidePill = remember(levelText, progress.title, maxWidth, density, pillStyle, titleStyle) {
+                val available = with(density) { maxWidth.roundToPx() }
+                val gap = with(density) { 8.dp.roundToPx() }
+                val pillPadding = with(density) { 22.dp.roundToPx() }
+                fun width(text: String, style: TextStyle) =
+                    measurer.measure(text, style, maxLines = 1, softWrap = false).size.width
+                width(levelText, pillStyle) + pillPadding + gap + width(progress.title, titleStyle) <= available
+            }
             if (fitsOnOneLine) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -246,16 +256,25 @@ private fun SoloHeroIdentity(progress: SoloProgressUiModel, locale: Locale) {
                 }
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+                    if (titleBesidePill) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            SoloLevelPill(text = levelText, style = pillStyle)
+                            Text(
+                                text = progress.title,
+                                style = titleStyle,
+                                color = HeroTone.title,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    } else {
                         SoloLevelPill(text = levelText, style = pillStyle)
                         Text(
                             text = progress.title,
                             style = titleStyle,
-                            color = HeroTone.title,
-                            modifier = Modifier.weight(1f)
+                            color = HeroTone.title
                         )
                     }
                     Text(
