@@ -8978,3 +8978,106 @@ button.workout-template-row:focus-visible {
 
   .root-route-shell .screen-exercises .exercise-list { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Large text: labels wrap by words instead of being cut with an ellipsis, and two-line clamps leave room for a third word. */
+.training-history-current strong,
+.training-history-current span,
+.training-history-row strong,
+.training-history-row small,
+.month-nav-month {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+.month-nav-current { flex-wrap: wrap; row-gap: 0; text-align: center; }
+.smart-coach-toggle-text small { -webkit-line-clamp: 4; line-clamp: 4; }
+button.workout-template-row .workout-template-names { -webkit-line-clamp: 4; line-clamp: 4; }
+.achievement-name { -webkit-line-clamp: 3; line-clamp: 3; }
+.metric-grid:not(.three) { grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr)); }
+.metric-grid span { -webkit-line-clamp: 3; line-clamp: 3; }
+
+/* Root screen titles never break inside a word at large text. */
+.screen-copy h2 { font-size: min(2rem, 9vw); line-height: 1.2; }
+
+/* Exercise rows: the actions drop below the name instead of squeezing it into a column a few letters wide. */
+.exercise-card-head { flex-wrap: wrap; row-gap: 4px; }
+.exercise-card-head .exercise-card-title { flex: 1 1 7rem; min-width: min(7rem, 100%); }
+.exercise-card-head .exercise-row-actions { margin-left: auto; }
+.exercise-row .exercise-name { -webkit-line-clamp: 6; line-clamp: 6; }
+
+/* The plan summary wraps by words. */
+.smart-coach-toggle-text small { overflow-wrap: break-word; }
+
+/* Plan editor rows wrap their trailing controls under the text at large sizes. */
+.smart-coach-header { flex-wrap: wrap; row-gap: 0; }
+.smart-coach-toggle { flex: 1 1 11rem; }
+.draft-exercise-head { flex-wrap: wrap; row-gap: 4px; }
+.draft-exercise-head .draft-exercise-title { flex: 1 1 8rem; min-width: min(8rem, 100%); }
+.draft-exercise-head > .plan-menu-wrap { margin-left: auto; }
+.exercise-builder-heading > div:first-child { flex: 1 1 min(100%, 8rem); }
+
+/* Hub switches: three tabs per row while each can hold its label, one tab per row otherwise (never squeezed labels). */
+.progress-hub { container-type: inline-size; }
+@container (max-width: 14rem) {
+  .progress-hub-switch { grid-auto-flow: row; grid-auto-columns: auto; }
+  .progress-hub-switch button { flex-direction: row; gap: 7px; font-size: 0.875rem; line-height: 1.25rem; }
+  .progress-hub-switch button span { width: auto; white-space: normal; overflow-wrap: break-word; }
+}
+.profile-hub-switch button strong { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: break-word; }
+
+.weekly-summary-metrics { grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr)); }
+.achievement-gallery { grid-template-columns: repeat(auto-fit, minmax(min(100%, 5.5rem), 1fr)); }
+button.workout-template-row .workout-template-names { -webkit-line-clamp: 6; line-clamp: 6; }
+
+/* Badge names break at word boundaries where possible and shrink a little on narrow phones. */
+.achievement-name { overflow-wrap: break-word; hyphens: none; }
+@media (max-width: 380px) {
+  .achievement-tile { padding-inline: 4px; }
+  .achievement-name { font-size: 0.75rem; }
+}
+
+/* Two-column metric values wrap by words instead of being cut off ("2 в этом м"). */
+.metric-grid:not(.three) strong { white-space: normal; overflow-wrap: break-word; }
+
+/* Single-column grids never grow past the screen because of one long word (the profile list, search panel, rank hero, solo identity, goals list). */
+.profile-hub-panel,
+.exercise-search-panel,
+.settings-panel,
+.rank-hero,
+.rank-ladder,
+.solo-identity,
+.mission-list,
+.account-settings-sheet,
+.rank-copy,
+.settings-row-text,
+.mission-row,
+.account-identity { grid-template-columns: minmax(0, 1fr); }
+/* The mapping summary drops its counter under the title instead of pushing it off the screen. */
+.mapping-overview-summary { flex-wrap: wrap; row-gap: 4px; }
+.mapping-overview-title { min-width: 0; overflow-wrap: break-word; }
+
+/* Rank names keep growing with the text size (rem floor) but are capped by the screen width, so a long rank does not break inside a word. */
+.solo-identity-row h2 { font-size: min(1.375rem, max(1.0625rem, 8vw)); line-height: 1.25; overflow-wrap: normal; }
+.rank-hero.hero-panel .rank-hero-title { font-size: min(1.75rem, max(0.9375rem, 7vw)); line-height: 1.2; }
+.rank-name { font-size: min(1.0625rem, max(0.875rem, 6.2vw)); }
+.rank-hero-title > span { overflow-wrap: normal; }
+
+/* The language row drops its current value under the label instead of squeezing the label ("Langua/ge"). */
+.settings-language .settings-row { flex-wrap: wrap; row-gap: 2px; }
+.settings-language .settings-row-text { flex: 1 1 auto; min-width: min-content; }
+.settings-language .settings-row-trailing { margin-left: auto; }
+
+/* Row titles keep growing with the text size (rem floor), capped by the screen width so long words stay whole ("Налаштування"). */
+.settings-row-text strong { font-size: min(1rem, max(0.9375rem, 6vw)); }
+/* Three-tile metric rows: three columns while each tile is at least 5.5rem wide, otherwise one per row (never two plus one). */
+.metric-grid.three { grid-template-columns: repeat(auto-fit, minmax(clamp(5.5rem, calc((16.5rem + 16px - 100%) * 1000), 100%), 1fr)); }
+
+/* Bar rows: the label column grows to the longest word at large text instead of running under the bar; the detail wraps beneath. */
+@media (max-width: 560px) {
+  .bar-row { grid-template-columns: minmax(min-content, 5.75rem) minmax(0, 1fr); }
+  .bar-row > span:first-child { overflow-wrap: normal; }
+}
+/* Period switch (all time / month / week): three columns while each is at least 5.5rem wide, otherwise one per row (never two plus one). */
+.period-tabs { grid-template-columns: repeat(auto-fit, minmax(clamp(5.5rem, calc((16.5rem + 16px - 100%) * 1000), 100%), 1fr)); }
+.period-tabs button { white-space: normal; overflow-wrap: break-word; }
