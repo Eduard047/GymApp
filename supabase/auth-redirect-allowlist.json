@@ -1,7 +1,6 @@
 {
   "siteUrl": "https://gymapptracker.com/",
   "redirectUrls": [
-    "https://eduard047.github.io/GymApp/confirmed.html",
     "https://gymapptracker.com/confirmed.html?platform=web",
     "https://gymapptracker.com/confirmed.html?platform=android&variant=qa&state=*&purpose=signup",
     "https://gymapptracker.com/confirmed.html?platform=android&variant=qa&state=*&purpose=recovery",

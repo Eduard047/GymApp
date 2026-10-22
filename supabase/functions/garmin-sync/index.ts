@@ -12,7 +12,8 @@ import {
 } from "../_shared/preauth-budget.ts";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "https://gymapptracker.com",
+  "Vary": "Origin",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -290,23 +291,13 @@ function capabilityClient(
 async function capabilityRpc(
   supabaseUrl: string,
   databaseSecretKey: string,
-  anonKey: string,
   functionName: string,
   args: Record<string, unknown>,
 ) {
-  const primary = await capabilityClient(supabaseUrl, databaseSecretKey).rpc(
+  return await capabilityClient(supabaseUrl, databaseSecretKey).rpc(
     functionName,
     args,
   );
-  if (!primary.error || primary.error.code !== "42501") return primary;
-
-  // Deployment compatibility only: before the ACL migration, the established
-  // wrapper is anon-only. This fallback is reachable only after an HMAC-valid
-  // v3 envelope and disappears when that migration revokes anon execution.
-  const transitionalClient = createClient(supabaseUrl, anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  return transitionalClient.rpc(functionName, args);
 }
 
 async function resolveGarminCapability(
@@ -776,7 +767,6 @@ Deno.serve(async (request) => {
     const { data: candidate, error: fetchError } = await capabilityRpc(
       supabaseUrl,
       databaseSecretKey,
-      anonKey,
       "garmin_fetch_pending_plan",
       {
         p_device_token: capability.nonce,
@@ -838,7 +828,6 @@ Deno.serve(async (request) => {
       const { data: quarantine, error: quarantineError } = await capabilityRpc(
         supabaseUrl,
         databaseSecretKey,
-        anonKey,
         "garmin_quarantine_pending_plan",
         {
           p_device_token: capability.nonce,
@@ -933,7 +922,6 @@ Deno.serve(async (request) => {
     const { data: acknowledged, error: ackError } = await capabilityRpc(
       supabaseUrl,
       databaseSecretKey,
-      anonKey,
       "garmin_ack_plan",
       {
         p_device_token: capability.nonce,
