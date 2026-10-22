@@ -36,4 +36,8 @@ test("the generationless fallback stays outbound-only", () => {
   const workoutPart = functionBody(manager, "private suspend fun receiveWorkoutPart(");
 
   assert.doesNotMatch(workoutPart, /LEGACY_GARMIN_FALLBACK_GENERATION/);
+  assert.match(
+    workoutPart,
+    /metadata\["pairingGeneration"\] as\? String \?: return@withLock null/,
+  );
 });
