@@ -1134,16 +1134,11 @@ class GarminSyncManager(
                 Log.i(TAG, "Rejected Garmin workout from an untrusted device")
                 return@withLock null
             }
+            // Inbound workouts always carry the pairing generation. A message without
+            // one is rejected, matching the iPhone app; the generationless fallback
+            // only remains for outbound messages to released watches.
             val rawGeneration = command["pairingGeneration"]
-            val supportsGeneration = pairingGenerationSupported(account, sourceDeviceBinding)
             val inboundGeneration = when (rawGeneration) {
-                null -> {
-                    if (supportsGeneration) return@withLock null
-                    InboundPairingGeneration(
-                        value = LEGACY_GARMIN_FALLBACK_GENERATION,
-                        completesPendingReset = false
-                    )
-                }
                 is String -> inboundPairingGeneration(
                     account = account,
                     deviceBinding = sourceDeviceBinding,
@@ -1166,10 +1161,7 @@ class GarminSyncManager(
                 Log.i(TAG, "Rejected unbound Garmin workout")
                 return@withLock null
             }
-            if (
-                rawGeneration is String &&
-                !recordPairingGenerationCapability(account, sourceDeviceBinding)
-            ) {
+            if (!recordPairingGenerationCapability(account, sourceDeviceBinding)) {
                 return@withLock null
             }
 
