@@ -417,6 +417,9 @@ test("client auth, public metadata, and compatibility docs use the intended doma
   assert.match(nativeFallback, /history\.replaceState/);
   assert.equal(cname, "gymapptracker.com\n");
   assert.ok(operations.includes("https://eduard047.github.io/GymApp/confirmed.html"));
+  assert.ok(
+    !redirectContract.redirectUrls.some(url => url.startsWith("https://eduard047.github.io/"))
+  );
   assert.equal(redirectContract.siteUrl, "https://gymapptracker.com/");
   for (const purpose of ["signup", "recovery"]) {
     assert.ok(redirectContract.redirectUrls.includes(

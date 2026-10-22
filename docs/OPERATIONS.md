@@ -57,11 +57,13 @@ setting. Recheck and update that setting before release, then validate the final
 handoff on a Play-signed Android build and a signed physical iPhone.
 
 The legacy browser callback at
-`https://eduard047.github.io/GymApp/confirmed.html` remains an intentional
-web compatibility entry. Production `platform=android` and `platform=ios`
-bridges fail closed with an update-required message and never translate a code
-to a custom scheme. The test-only Android QA bridge remains isolated to the
-`.dev` package and scheme.
+`https://eduard047.github.io/GymApp/confirmed.html` is retired from the
+repository allowlist and must also be removed from the hosted Dashboard
+allowlist. Confirmation emails that were sent with that redirect before its
+removal fall back to the site URL. Production `platform=android` and
+`platform=ios` bridges fail closed with an update-required message and never
+translate a code to a custom scheme. The test-only Android QA bridge remains
+isolated to the `.dev` package and scheme.
 
 ## Supabase
 
