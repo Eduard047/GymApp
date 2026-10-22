@@ -30,18 +30,21 @@ test("garmin-sync only answers cross-origin requests from the first-party site",
 });
 
 test("watch wrapper RPCs stay revoked from anon and public", () => {
+  const flat = migration.replace(/\s+/g, " ");
   for (const signature of [
     "garmin_fetch_pending_plan(text)",
     "garmin_ack_plan(text, uuid, bigint)",
     "garmin_quarantine_pending_plan(text, uuid, bigint, text)",
   ]) {
-    const revoke = new RegExp(
-      `revoke all on function public\\.${signature.replace(/[()]/g, "\\$&")}\\s+from public, anon, authenticated`,
+    assert.ok(
+      flat.includes(
+        `revoke all on function public.${signature} from public, anon, authenticated, service_role;`,
+      ),
+      `${signature} must be revoked from anon`,
     );
-    const grant = new RegExp(
-      `grant execute on function public\\.${signature.replace(/[()]/g, "\\$&")}\\s+to service_role`,
+    assert.ok(
+      flat.includes(`grant execute on function public.${signature} to service_role;`),
+      `${signature} must be granted to service_role only`,
     );
-    assert.match(migration, revoke, `${signature} must be revoked from anon`);
-    assert.match(migration, grant, `${signature} must be granted to service_role only`);
   }
 });
