@@ -14,7 +14,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
@@ -26,6 +25,8 @@ import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.asString
 import java.util.Locale
+import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.formattedPluralStringResource
 
 @Composable
 internal fun ExerciseDeleteConfirmationDialog(
@@ -38,33 +39,33 @@ internal fun ExerciseDeleteConfirmationDialog(
     val exerciseName = localizedExerciseName(snapshot.exerciseName)
     PersistedDeleteConfirmationDialog(
         title = stringResource(R.string.dialog_delete_exercise_title),
-        message = stringResource(R.string.dialog_delete_exercise_message, exerciseName),
+        message = formattedStringResource(R.string.dialog_delete_exercise_message, exerciseName),
         impact = if (snapshot.workoutCount == 0) {
             stringResource(R.string.dialog_delete_exercise_impact_unused)
         } else {
-            val workouts = pluralStringResource(
+            val workouts = formattedPluralStringResource(
                 R.plurals.dialog_delete_exercise_impact_workouts,
                 snapshot.workoutCount,
                 snapshot.workoutCount
             )
-            val sets = pluralStringResource(
+            val sets = formattedPluralStringResource(
                 R.plurals.dialog_delete_exercise_impact_sets,
                 snapshot.setCount,
                 snapshot.setCount
             )
             if (snapshot.emptiedWorkoutCount > 0) {
-                stringResource(
+                formattedStringResource(
                     R.string.dialog_delete_exercise_impact_with_emptied,
                     workouts,
                     sets,
-                    pluralStringResource(
+                    formattedPluralStringResource(
                         R.plurals.dialog_delete_exercise_emptied_workouts,
                         snapshot.emptiedWorkoutCount,
                         snapshot.emptiedWorkoutCount
                     )
                 )
             } else {
-                stringResource(R.string.dialog_delete_exercise_impact, workouts, sets)
+                formattedStringResource(R.string.dialog_delete_exercise_impact, workouts, sets)
             }
         },
         isDeleting = isDeleting,
@@ -94,7 +95,7 @@ internal fun SetDeleteConfirmationDialog(
     )
     PersistedDeleteConfirmationDialog(
         title = stringResource(R.string.dialog_delete_set_title),
-        message = stringResource(
+        message = formattedStringResource(
             R.string.dialog_delete_set_message,
             snapshot.displayOrdinal,
             exerciseName,

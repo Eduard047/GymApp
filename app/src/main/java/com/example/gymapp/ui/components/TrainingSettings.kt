@@ -33,7 +33,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
@@ -47,6 +46,7 @@ import com.example.gymapp.util.CalorieMode
 import com.example.gymapp.util.TrainingGoal
 import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.util.TrainingSplit
+import com.example.gymapp.util.formattedPluralStringResource
 
 internal val TrainingSettingsWorkoutsPerWeek = 2..6
 
@@ -242,7 +242,7 @@ private fun TrainingSettingsSectionTitle(title: String) {
 fun TrainingProfile.trainingSettingsSummary(): String = listOf(
     goal.trainingSettingsLabel(),
     calorieMode.trainingSettingsLabel(),
-    pluralStringResource(
+    formattedPluralStringResource(
         R.plurals.training_settings_workouts_a_week,
         workoutsPerWeek,
         workoutsPerWeek

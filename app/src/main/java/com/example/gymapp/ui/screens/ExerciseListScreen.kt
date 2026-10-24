@@ -136,6 +136,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.safeGetString
 
 private const val BACKUP_PREVIEW_CHARS = 4_000
 private const val MAX_PDF_PAGES = 24
@@ -938,23 +940,23 @@ internal fun localizedExerciseSearchMatchReason(
     reason: ExerciseSearchMatchReason
 ): String {
     return when (reason.kind) {
-        ExerciseSearchMatchReasonKind.Alias -> stringResource(
+        ExerciseSearchMatchReasonKind.Alias -> formattedStringResource(
             R.string.exercise_search_match_alias,
             reason.value
         )
-        ExerciseSearchMatchReasonKind.Approximate -> stringResource(
+        ExerciseSearchMatchReasonKind.Approximate -> formattedStringResource(
             R.string.exercise_search_match_approximate,
             reason.value
         )
-        ExerciseSearchMatchReasonKind.Muscle -> stringResource(
+        ExerciseSearchMatchReasonKind.Muscle -> formattedStringResource(
             R.string.exercise_search_match_muscle,
             reason.value
         )
-        ExerciseSearchMatchReasonKind.Equipment -> stringResource(
+        ExerciseSearchMatchReasonKind.Equipment -> formattedStringResource(
             R.string.exercise_search_match_equipment,
             reason.value
         )
-        ExerciseSearchMatchReasonKind.MuscleAndEquipment -> stringResource(
+        ExerciseSearchMatchReasonKind.MuscleAndEquipment -> formattedStringResource(
             R.string.exercise_search_match_muscle_and_equipment,
             reason.value
         )
@@ -1238,7 +1240,7 @@ fun ExerciseListScreen(
                                         } else {
                                             Icons.Default.FavoriteBorder
                                         },
-                                        contentDescription = stringResource(
+                                        contentDescription = formattedStringResource(
                                             if (exercise.isFavorite) {
                                                 R.string.exercise_favorite_remove
                                             } else {
@@ -1260,7 +1262,7 @@ fun ExerciseListScreen(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.MoreVert,
-                                            contentDescription = stringResource(R.string.cd_more_actions_named, displayExerciseName)
+                                            contentDescription = formattedStringResource(R.string.cd_more_actions_named, displayExerciseName)
                                         )
                                     }
                             DropdownMenu(
@@ -1310,7 +1312,7 @@ fun ExerciseListScreen(
                                     leadingIcon = {
                                         Icon(
                                             Icons.Default.Delete,
-                                            contentDescription = stringResource(
+                                            contentDescription = formattedStringResource(
                                                 R.string.cd_delete_exercise_named,
                                                 displayExerciseName
                                             ),
@@ -1674,7 +1676,7 @@ internal fun ExerciseSearchAndFilters(
                 ) {
                     Icon(
                         imageVector = Icons.Default.FilterList,
-                        contentDescription = stringResource(R.string.exercise_filters_active_label, activeFilterCount)
+                        contentDescription = formattedStringResource(R.string.exercise_filters_active_label, activeFilterCount)
                     )
                 }
                 if (isFilterCustomized) {
@@ -2577,8 +2579,8 @@ private fun backupReportLines(context: Context, json: String): List<String> {
     } else {
         context.getString(R.string.backup_report_private_title)
     }
-    lines += context.getString(R.string.backup_report_exported, exportedAt)
-    lines += context.getString(
+    lines += context.safeGetString(R.string.backup_report_exported, exportedAt)
+    lines += context.safeGetString(
         R.string.backup_report_schema,
         root.optInt("schemaVersion", 1)
     )
@@ -2587,16 +2589,16 @@ private fun backupReportLines(context: Context, json: String): List<String> {
     }
     lines += ""
     lines += "## ${context.getString(R.string.backup_report_summary_heading)}"
-    lines += context.getString(
+    lines += context.safeGetString(
         R.string.backup_report_exercises_count,
         summary?.optInt("exerciseCount") ?: (exercises?.length() ?: 0)
     )
-    lines += context.getString(
+    lines += context.safeGetString(
         R.string.backup_report_workouts_count,
         summary?.optInt("sessionCount") ?: (sessions?.length() ?: 0)
     )
     summary?.let {
-        lines += context.getString(R.string.backup_report_sets_count, it.optInt("setCount"))
+        lines += context.safeGetString(R.string.backup_report_sets_count, it.optInt("setCount"))
     }
 
     if (diagnosticsOnly) {
@@ -2621,7 +2623,7 @@ private fun backupReportLines(context: Context, json: String): List<String> {
             }
         }
         if (exercises.length() > exerciseLimit) {
-            lines += context.getString(
+            lines += context.safeGetString(
                 R.string.backup_report_more_exercises,
                 exercises.length() - exerciseLimit
             )
@@ -2662,7 +2664,7 @@ private fun backupReportLines(context: Context, json: String): List<String> {
                             .trimEnd('0')
                             .trimEnd('.')
                         add(
-                            context.getString(
+                            context.safeGetString(
                                 R.string.backup_report_set_value,
                                 weight,
                                 set.optInt("reps", 0)
@@ -2671,7 +2673,7 @@ private fun backupReportLines(context: Context, json: String): List<String> {
                     }
                 }
                 val moreSets = if (setCount > setLimit) {
-                    ", … ${context.getString(
+                    ", … ${context.safeGetString(
                         R.string.backup_report_more_sets,
                         setCount - setLimit
                     )}"
@@ -2682,7 +2684,7 @@ private fun backupReportLines(context: Context, json: String): List<String> {
                     setParts.joinToString(", ") + moreSets
             }
             if (sessionExerciseCount > sessionExerciseLimit) {
-                lines += "  … ${context.getString(
+                lines += "  … ${context.safeGetString(
                     R.string.backup_report_more_exercises,
                     sessionExerciseCount - sessionExerciseLimit
                 )}"
@@ -2690,7 +2692,7 @@ private fun backupReportLines(context: Context, json: String): List<String> {
             lines += ""
         }
         if (sessions.length() > sessionLimit) {
-            lines += context.getString(
+            lines += context.safeGetString(
                 R.string.backup_report_more_workouts,
                 sessions.length() - sessionLimit
             )
@@ -2827,7 +2829,7 @@ private fun ExerciseHistoryBottomSheetContent(
                     )
                     HistoryStat(
                         label = stringResource(R.string.exercise_history_max_weight),
-                        value = stringResource(
+                        value = formattedStringResource(
                             R.string.today_history_volume_kg,
                             weightFormat.format(maxWeight)
                         ),
@@ -2835,7 +2837,7 @@ private fun ExerciseHistoryBottomSheetContent(
                     )
                     HistoryStat(
                         label = stringResource(R.string.exercise_history_volume),
-                        value = stringResource(
+                        value = formattedStringResource(
                             R.string.today_history_volume_kg,
                             volumeFormat.format(totalVolume)
                         ),
@@ -2960,14 +2962,14 @@ private fun ExerciseHistorySessionCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = stringResource(R.string.session_item_title, timeText),
+                    text = formattedStringResource(R.string.session_item_title, timeText),
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = stringResource(R.string.progress_weight_value, formatProgressWeight(maxWeight, locale)),
+                    text = formattedStringResource(R.string.progress_weight_value, formatProgressWeight(maxWeight, locale)),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -2978,12 +2980,12 @@ private fun ExerciseHistorySessionCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.exercise_history_sets_inline, sessionGroup.sets.size),
+                    text = formattedStringResource(R.string.exercise_history_sets_inline, sessionGroup.sets.size),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.weight(1f)
                 )
                 Text(
-                    text = stringResource(R.string.exercise_history_volume_inline, NumberFormat.getIntegerInstance(locale).format(totalVolume)),
+                    text = formattedStringResource(R.string.exercise_history_volume_inline, NumberFormat.getIntegerInstance(locale).format(totalVolume)),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
@@ -3020,7 +3022,7 @@ private fun ExerciseHistorySessionCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = stringResource(R.string.label_set, index + 1),
+                        text = formattedStringResource(R.string.label_set, index + 1),
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium
                     )

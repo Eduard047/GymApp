@@ -30,6 +30,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import com.example.gymapp.util.safeGetString
 
 class RestTimerService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -145,7 +146,7 @@ class RestTimerService : Service() {
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentTitle(getString(R.string.timer_notification_running_title))
             .setContentText(
-                getString(
+                safeGetString(
                     R.string.timer_notification_running_text,
                     formatSeconds(remainingSeconds)
                 )

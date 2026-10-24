@@ -71,7 +71,6 @@ import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.text.TextStyle
@@ -94,6 +93,8 @@ import com.example.gymapp.ui.viewmodel.ActivityHeatmapDayUiModel
 import com.example.gymapp.ui.viewmodel.ActivityHeatmapUiModel
 import com.example.gymapp.ui.viewmodel.MissionProgressUiModel
 import com.example.gymapp.ui.viewmodel.SoloProgressUiModel
+import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.formattedPluralStringResource
 
 @Composable
 fun SoloProgressHero(
@@ -102,7 +103,7 @@ fun SoloProgressHero(
     onOpenRanks: () -> Unit = {}
 ) {
     val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
-    val xpToNext = stringResource(
+    val xpToNext = formattedStringResource(
         R.string.solo_xp_to_next_level,
         progress.currentLevelXp,
         progress.xpForNextLevel
@@ -137,7 +138,7 @@ fun SoloProgressHero(
             ) {
                 MetricTile(
                     label = stringResource(R.string.solo_month_xp_label),
-                    value = stringResource(R.string.solo_xp_amount, formatXp(progress.monthXp, locale)),
+                    value = formattedStringResource(R.string.solo_xp_amount, formatXp(progress.monthXp, locale)),
                     modifier = Modifier.weight(1f),
                     emphasized = true,
                     onHero = true,
@@ -191,9 +192,9 @@ fun SoloProgressHero(
  */
 @Composable
 private fun SoloHeroIdentity(progress: SoloProgressUiModel, locale: Locale) {
-    val levelText = stringResource(R.string.solo_level_badge, progress.level)
-    val compactXp = stringResource(R.string.solo_xp_amount, formatXp(progress.totalXp, locale))
-    val earnedXp = stringResource(R.string.solo_total_xp_earned_line, formatXp(progress.totalXp, locale))
+    val levelText = formattedStringResource(R.string.solo_level_badge, progress.level)
+    val compactXp = formattedStringResource(R.string.solo_xp_amount, formatXp(progress.totalXp, locale))
+    val earnedXp = formattedStringResource(R.string.solo_total_xp_earned_line, formatXp(progress.totalXp, locale))
     val totalXpLabel = stringResource(R.string.solo_total_xp)
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
@@ -343,7 +344,7 @@ fun LifetimeProgressCard(
                 )
                 MetricTile(
                     label = stringResource(R.string.focus_lens_week_streak),
-                    value = stringResource(
+                    value = formattedStringResource(
                         R.string.focus_lens_week_streak_value,
                         metrics.weeklyStreakWeeks
                     ),
@@ -352,7 +353,7 @@ fun LifetimeProgressCard(
                 )
                 MetricTile(
                     label = stringResource(R.string.focus_lens_volume),
-                    value = stringResource(
+                    value = formattedStringResource(
                         R.string.today_history_volume_kg,
                         formatTodayHeroVolume(metrics.totalVolume, locale)
                     ),
@@ -416,7 +417,7 @@ fun ActivityHeatmapCard(
                     )
                 }
                 InfoPill(
-                    text = pluralStringResource(
+                    text = formattedPluralStringResource(
                         R.plurals.activity_heatmap_active_days,
                         heatmap.activeDays,
                         heatmap.activeDays
@@ -693,7 +694,7 @@ private fun AchievementBadgeTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val description = stringResource(
+    val description = formattedStringResource(
         R.string.achievement_tile_a11y,
         achievement.title,
         stringResource(
@@ -924,7 +925,7 @@ private fun AchievementDetailsContent(
                     tint = accent
                 )
                 Text(
-                    text = stringResource(
+                    text = formattedStringResource(
                         R.string.achievement_status_unlocked_on,
                         DateTimeUtils.formatEpochDayShort(unlockedDay, locale)
                     ),
@@ -980,7 +981,7 @@ private fun HeatmapDayCell(
     val ringColor = HeatStepColors.ring()
     val emptyOutline = HeatStepColors.emptyOutline()
     val accessibilityDescription = if (day.isCurrentMonth) {
-        stringResource(
+        formattedStringResource(
             R.string.activity_heatmap_day_a11y,
             day.dayLabel,
             day.sessionCount,

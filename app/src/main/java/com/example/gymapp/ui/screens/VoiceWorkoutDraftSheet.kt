@@ -87,6 +87,7 @@ import com.example.gymapp.data.repository.voiceWorkoutExerciseInputs
 import com.example.gymapp.ui.util.currentAppLanguageTag
 import java.util.UUID
 import kotlinx.coroutines.delay
+import com.example.gymapp.util.safeGetString
 
 enum class VoiceTranscriptionError {
     Unavailable,
@@ -338,7 +339,7 @@ internal fun voiceErrorMessage(context: Context, error: VoiceTranscriptionError,
         VoiceTranscriptionError.Unavailable -> context.getString(R.string.voice_workout_error_unavailable)
         VoiceTranscriptionError.UnsupportedLanguage -> context.getString(R.string.voice_workout_error_unsupported)
         VoiceTranscriptionError.LanguageDownloading ->
-            context.getString(R.string.voice_workout_error_downloading, voiceLanguageDisplayName(languageTag))
+            context.safeGetString(R.string.voice_workout_error_downloading, voiceLanguageDisplayName(languageTag))
         VoiceTranscriptionError.PermissionDenied -> context.getString(R.string.voice_workout_error_permission)
         VoiceTranscriptionError.AudioFailure -> context.getString(R.string.voice_workout_error_audio)
         VoiceTranscriptionError.RecognitionFailure -> context.getString(R.string.voice_workout_error_recognition)

@@ -53,6 +53,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.example.gymapp.util.formattedStringResource
 
 private data class ExerciseMediaFrames(
     val custom: Bitmap?,
@@ -119,7 +120,7 @@ fun ExerciseMediaPreview(
         modifier = modifier
             .size(width = width, height = height)
             .clickable(
-                onClickLabel = stringResource(
+                onClickLabel = formattedStringResource(
                     R.string.exercise_media_open_preview_named,
                     localizedExerciseName(exerciseName)
                 )

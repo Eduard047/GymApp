@@ -77,7 +77,6 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
@@ -123,6 +122,8 @@ import com.example.gymapp.ui.theme.GymCapsuleShape
 import java.text.DecimalFormatSymbols
 import java.text.NumberFormat
 import kotlin.math.roundToLong
+import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.formattedPluralStringResource
 
 /*
  * Stateless building blocks of an exercise card, shared by the active-workout screen and the saved
@@ -376,7 +377,7 @@ internal fun WorkoutRemoveExerciseDialog(
                 Text(text = exerciseName, style = MaterialTheme.typography.titleSmall)
                 Text(
                     text = if (recordedCount > 0) {
-                        pluralStringResource(
+                        formattedPluralStringResource(
                             R.plurals.active_workout_remove_exercise_recorded_sets,
                             recordedCount,
                             recordedCount
@@ -427,7 +428,7 @@ internal fun WorkoutDeleteRecordedSetDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(text = exerciseName, style = MaterialTheme.typography.titleSmall)
                 Text(
-                    text = stringResource(
+                    text = formattedStringResource(
                         R.string.active_workout_delete_recorded_set_target,
                         setNumber,
                         summary
@@ -524,7 +525,7 @@ internal fun WorkoutFooterButton(
 @Composable
 internal fun rememberSetSummary(weightInput: String, repsInput: String): String {
     val format = rememberDecimalFormat()
-    return stringResource(
+    return formattedStringResource(
         R.string.active_workout_set_summary,
         displayWeightInput(weightInput.ifBlank { "0" }, format),
         repsInput.ifBlank { "0" }
@@ -725,23 +726,23 @@ internal fun SetEditorCapsules(
     val minusDelta = format.format(plan.minus.delta)
     val plusDelta = format.format(plan.plus.delta)
     val reps = repsInput.trim().toIntOrNull()
-    val repsDescription = stringResource(R.string.active_workout_reps_field_cd, number)
+    val repsDescription = formattedStringResource(R.string.active_workout_reps_field_cd, number)
     val weightCapsule: @Composable (Modifier) -> Unit = { capsuleModifier ->
         SetValueCapsule(
             modifier = capsuleModifier,
             isError = weightError,
             minusEnabled = enabled && plan.minus.canMove,
             onMinus = { onWeightChanged(VoiceWorkoutDraftParser.formatWeight(plan.minus.target)) },
-            minusDescription = stringResource(R.string.active_workout_decrease_weight, minusDelta),
+            minusDescription = formattedStringResource(R.string.active_workout_decrease_weight, minusDelta),
             plusEnabled = enabled && plan.plus.canMove,
             onPlus = { onWeightChanged(VoiceWorkoutDraftParser.formatWeight(plan.plus.target)) },
-            plusDescription = stringResource(R.string.active_workout_increase_weight, plusDelta)
+            plusDescription = formattedStringResource(R.string.active_workout_increase_weight, plusDelta)
         ) {
             SetWeightField(
                 value = weightInput,
                 onValueChange = onWeightChanged,
                 enabled = enabled,
-                description = stringResource(R.string.active_workout_weight_field_cd, number),
+                description = formattedStringResource(R.string.active_workout_weight_field_cd, number),
                 // Long values (100 kg and up with a decimal) shrink a little rather than clip the unit.
                 fontSize = if (weightInput.length > 4) 16.sp else SetEditorValueFontSize
             )
@@ -1124,7 +1125,7 @@ internal fun SetValueLine(
             value = weightInput,
             onValueChange = onWeightChanged,
             enabled = enabled,
-            description = stringResource(R.string.active_workout_weight_field_cd, number),
+            description = formattedStringResource(R.string.active_workout_weight_field_cd, number),
             fontSize = 30.sp
         )
         Text(
@@ -1268,9 +1269,9 @@ internal fun SetStepCapsules(
             plusEnabled = enabled && plan.plus.canMove,
             onPlus = { stepWeightTo(plan.plus) },
             label = stringResource(R.string.active_workout_step_weight_label),
-            value = stringResource(R.string.active_workout_step_weight_value, weightValue),
-            decreaseActionLabel = stringResource(R.string.active_workout_decrease_weight, minusDelta),
-            increaseActionLabel = stringResource(R.string.active_workout_increase_weight, plusDelta)
+            value = formattedStringResource(R.string.active_workout_step_weight_value, weightValue),
+            decreaseActionLabel = formattedStringResource(R.string.active_workout_decrease_weight, minusDelta),
+            increaseActionLabel = formattedStringResource(R.string.active_workout_increase_weight, plusDelta)
         )
     }
     val repsCapsule: @Composable (Modifier) -> Unit = { modifier ->

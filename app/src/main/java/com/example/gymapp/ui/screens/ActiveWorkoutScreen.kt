@@ -120,7 +120,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -209,6 +208,9 @@ import java.text.NumberFormat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.material3.LocalContentColor
+import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.formattedPluralStringResource
+import com.example.gymapp.util.safeGetString
 
 internal const val ACTIVE_WORKOUT_ELAPSED_METRIC_TAG = "active_workout_elapsed_metric"
 internal const val ACTIVE_WORKOUT_COMPLETED_METRIC_TAG = "active_workout_completed_metric"
@@ -395,14 +397,14 @@ fun ActiveWorkoutScreen(
         pendingRecordSetId = setId
         val weightFormat = NumberFormat.getNumberInstance(bannerLocale)
             .apply { maximumFractionDigits = 3 }
-        val summary = bannerContext.getString(
+        val summary = bannerContext.safeGetString(
             R.string.active_workout_set_summary,
             displayWeightInput(weightText, weightFormat),
             repsText
         )
-        val message = bannerContext.getString(R.string.active_workout_recorded_banner, summary)
+        val message = bannerContext.safeGetString(R.string.active_workout_recorded_banner, summary)
         val announcement = recordedSetAnnouncement(message, restSeconds) { text, clock ->
-            bannerContext.getString(R.string.active_workout_recorded_announcement, text, clock)
+            bannerContext.safeGetString(R.string.active_workout_recorded_announcement, text, clock)
         }
         recordedConfirmation = RecordedConfirmation(message, announcement, setId)
     }
@@ -778,7 +780,7 @@ fun ActiveWorkoutScreen(
             } else {
                 item {
                     Text(
-                        text = stringResource(
+                        text = formattedStringResource(
                             when (uiState.liveConnectionMode) {
                                 LiveConnectionMode.Realtime -> R.string.live_workout_active_realtime
                                 LiveConnectionMode.Polling -> R.string.live_workout_active_polling
@@ -813,19 +815,19 @@ fun ActiveWorkoutScreen(
                 }
                 if (!adaptation.hasPreview && adaptation.choices.isEmpty() && adaptation.reason == "equipmentUnavailable") Text(stringResource(R.string.training_no_alternative))
                 if (adaptation.hasPreview) {
-                    if (adaptation.beforePending != adaptation.afterPending) Text(stringResource(R.string.training_remaining_sets, adaptation.beforePending, adaptation.afterPending))
+                    if (adaptation.beforePending != adaptation.afterPending) Text(formattedStringResource(R.string.training_remaining_sets, adaptation.beforePending, adaptation.afterPending))
                     if (adaptation.reason == "timeCut") Text(stringResource(R.string.training_time_estimate))
                     adaptation.previewLines.forEach { line ->
                         val name = localizedExerciseName(line.name)
                         val before = if (line.previousName.isNotEmpty() && line.previousName != line.name) localizedExerciseName(line.previousName) + " → " else ""
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("$before$name", style = MaterialTheme.typography.titleSmall)
-                            if (line.before != line.after) Text(stringResource(R.string.training_remaining_sets, line.before, line.after))
+                            if (line.before != line.after) Text(formattedStringResource(R.string.training_remaining_sets, line.before, line.after))
                             val number = java.text.NumberFormat.getNumberInstance()
                             line.values.forEach { value ->
-                                val old = if (value.previousWeight != null) stringResource(R.string.set_weight_reps_value,
+                                val old = if (value.previousWeight != null) formattedStringResource(R.string.set_weight_reps_value,
                                     number.format(value.previousWeight), value.previousReps.toString()) + " → " else ""
-                                Text(old + stringResource(R.string.set_weight_reps_value, number.format(value.weight), value.reps.toString()),
+                                Text(old + formattedStringResource(R.string.set_weight_reps_value, number.format(value.weight), value.reps.toString()),
                                     style = MaterialTheme.typography.bodyMedium)
                             }
                         }
@@ -844,7 +846,7 @@ fun ActiveWorkoutScreen(
             title = { Text(text = stringResource(R.string.active_workout_finish_confirm_title)) },
             text = {
                 Text(
-                    text = stringResource(
+                    text = formattedStringResource(
                         R.string.active_workout_finish_confirm_message,
                         uiState.completedSetCount,
                         uiState.totalSetCount
@@ -1016,16 +1018,16 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
         .firstOrNull { exercise -> exercise.sets.any { set -> !set.isCompleted } }
         ?.let { exercise -> localizedExerciseName(exercise.exerciseName) }
     val elapsed = formatActiveWorkoutTime(uiState.workoutElapsedSeconds, locale)
-    val setsDone = pluralStringResource(
+    val setsDone = formattedPluralStringResource(
         R.plurals.active_workout_hero_sets_done,
         total,
         completed,
         total
     )
     val summary = if (currentExerciseName != null) {
-        stringResource(R.string.active_workout_hero_summary_now, elapsed, setsDone, currentExerciseName)
+        formattedStringResource(R.string.active_workout_hero_summary_now, elapsed, setsDone, currentExerciseName)
     } else {
-        stringResource(R.string.active_workout_hero_summary, elapsed, setsDone)
+        formattedStringResource(R.string.active_workout_hero_summary, elapsed, setsDone)
     }
     val targetFraction = (completed.toFloat() / total.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
     val reduceMotion = rememberReduceMotion()
@@ -1083,7 +1085,7 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
                 )
                 if (currentExerciseName != null) {
                     Text(
-                        text = stringResource(R.string.active_workout_now, currentExerciseName),
+                        text = formattedStringResource(R.string.active_workout_now, currentExerciseName),
                         style = MaterialTheme.typography.labelMedium,
                         color = softColor,
                         // Wraps at spaces at large font sizes; the name is never cut mid-word.
@@ -1160,7 +1162,7 @@ private fun LivePeerWorkoutHero(
             val progressDescription = if (uiState.livePeerFinished) {
                 stringResource(R.string.live_workout_peer_finished)
             } else {
-                stringResource(
+                formattedStringResource(
                     R.string.live_workout_peer_progress,
                     uiState.livePeerCompletedSetCount,
                     uiState.livePeerTotalSetCount
@@ -1197,20 +1199,20 @@ private fun LivePeerExerciseCard(exercise: LivePeerExerciseSummary) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = stringResource(R.string.label_set, set.orderIndex + 1),
+                        text = formattedStringResource(R.string.label_set, set.orderIndex + 1),
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
                         text = if (set.isCompleted) {
-                            stringResource(
+                            formattedStringResource(
                                 R.string.live_workout_peer_set_completed,
                                 numberFormat.format(set.completedWeight ?: 0.0),
                                 set.completedReps ?: 0
                             )
                         } else {
-                            stringResource(
+                            formattedStringResource(
                                 R.string.live_workout_peer_set_pending,
                                 numberFormat.format(set.plannedWeight),
                                 set.plannedReps
@@ -1387,7 +1389,7 @@ private fun ActiveWorkoutExerciseCard(
                         .indexOfFirst { set -> !set.isCompleted }
                         .takeIf { it >= 0 } ?: (totalCount - 1)
                     Text(
-                        text = stringResource(
+                        text = formattedStringResource(
                             R.string.active_workout_exercise_set_subtitle,
                             index + 1,
                             totalCount
@@ -1430,7 +1432,7 @@ private fun ActiveWorkoutExerciseCard(
                         text = if (fullyCompleted) {
                             stringResource(R.string.active_workout_exercise_done)
                         } else {
-                            pluralStringResource(
+                            formattedPluralStringResource(
                                 R.plurals.active_workout_exercise_up_next_sets,
                                 totalCount,
                                 totalCount
@@ -1608,7 +1610,7 @@ private fun ActiveWorkoutFinishExerciseDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                pluralStringResource(
+                formattedPluralStringResource(
                     R.plurals.active_workout_finish_sets_left,
                     unrecordedCount,
                     unrecordedCount
@@ -1781,11 +1783,11 @@ private fun UpcomingSetRow(
     var isExpanded by rememberSaveable(set.id) { mutableStateOf(false) }
     val number = set.orderIndex + 1
     val summary = rememberSetSummary(set.weightInput, set.repsInput)
-    val deleteDescription = stringResource(R.string.cd_delete_set_named, number, exerciseName)
+    val deleteDescription = formattedStringResource(R.string.cd_delete_set_named, number, exerciseName)
     EditableSetRow(
         number = number,
         summary = summary,
-        rowDescription = stringResource(R.string.active_workout_set_upcoming_cd, number, summary),
+        rowDescription = formattedStringResource(R.string.active_workout_set_upcoming_cd, number, summary),
         editHint = stringResource(R.string.active_workout_set_upcoming_hint),
         deleteLabel = stringResource(R.string.active_workout_delete_set),
         deleteActionLabel = deleteDescription,
@@ -1797,7 +1799,7 @@ private fun UpcomingSetRow(
             UpcomingLogButton(
                 enabled = canLog,
                 isRecording = isRecording,
-                description = stringResource(R.string.active_workout_log_set_cd, number),
+                description = formattedStringResource(R.string.active_workout_log_set_cd, number),
                 onClick = onRecord
             )
         }
@@ -1892,7 +1894,7 @@ private fun CompletedSetRow(
     val summary = rememberSetSummary(set.weightInput, set.repsInput)
     val undoLabel = stringResource(R.string.active_workout_undo_action)
     val deleteLabel = stringResource(R.string.active_workout_delete_set)
-    val description = stringResource(
+    val description = formattedStringResource(
         if (set.isPersonalRecord) {
             R.string.active_workout_set_recorded_record_cd
         } else {
@@ -2163,7 +2165,7 @@ private fun CurrentSetCard(
     var deleteMenuOpen by remember { mutableStateOf(false) }
     val deleteHaptics = rememberGymHaptics()
     val deleteLabel = stringResource(R.string.active_workout_delete_set)
-    val deleteDescription = stringResource(
+    val deleteDescription = formattedStringResource(
         R.string.cd_delete_set_named,
         set.orderIndex + 1,
         exerciseName
@@ -2223,22 +2225,22 @@ private fun CurrentSetCard(
             if (caption != null && repeatWeight != null && repeatReps != null) {
 
                 val captionText = if (caption.showsWeight) {
-                    stringResource(
+                    formattedStringResource(
                         R.string.active_workout_previous_caption,
                         format.format(caption.weight),
                         caption.reps
                     )
                 } else {
-                    stringResource(R.string.active_workout_previous_caption_bodyweight, caption.reps)
+                    formattedStringResource(R.string.active_workout_previous_caption_bodyweight, caption.reps)
                 }
                 val captionDescription = if (caption.showsWeight) {
-                    stringResource(
+                    formattedStringResource(
                         R.string.active_workout_previous_cd,
                         format.format(caption.weight),
                         caption.reps
                     )
                 } else {
-                    pluralStringResource(
+                    formattedPluralStringResource(
                         R.plurals.active_workout_previous_bodyweight_cd,
                         caption.reps,
                         caption.reps
@@ -2272,7 +2274,7 @@ private fun CurrentSetCard(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = stringResource(R.string.label_set, set.orderIndex + 1),
+                text = formattedStringResource(R.string.label_set, set.orderIndex + 1),
                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.primary
             )
@@ -2369,7 +2371,7 @@ private fun SetLogButton(
     val label = stringResource(R.string.action_log_set)
     val rest = restClockLabel(restDurationSeconds)
     val description = if (rest != null) {
-        stringResource(R.string.action_log_set_and_rest, rest)
+        formattedStringResource(R.string.action_log_set_and_rest, rest)
     } else {
         label
     }
@@ -2438,7 +2440,7 @@ private fun PlateCalculatorButton(weight: Double?) {
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = stringResource(R.string.plate_calculator_total, numberFormat.format(weight)),
+                        text = formattedStringResource(R.string.plate_calculator_total, numberFormat.format(weight)),
                         style = MaterialTheme.typography.titleSmall
                     )
                     plateSummaryLines(PlateCalculator.load(weight)) { value -> numberFormat.format(value) }
@@ -2453,19 +2455,19 @@ private fun PlateCalculatorButton(weight: Double?) {
 private fun plateSummaryLines(load: PlateLoad, format: (Double) -> String): List<String> {
     val bar = format(PlateCalculator.BAR_WEIGHT)
     return when (load.status) {
-        PlateLoad.Status.BelowBar -> listOf(stringResource(R.string.plate_calculator_below_bar, bar))
-        PlateLoad.Status.BarOnly -> listOf(stringResource(R.string.plate_calculator_bar_only, bar))
+        PlateLoad.Status.BelowBar -> listOf(formattedStringResource(R.string.plate_calculator_below_bar, bar))
+        PlateLoad.Status.BarOnly -> listOf(formattedStringResource(R.string.plate_calculator_bar_only, bar))
         PlateLoad.Status.Loaded -> buildList {
             if (load.platesPerSide.isNotEmpty()) {
                 add(
-                    stringResource(
+                    formattedStringResource(
                         R.string.plate_calculator_per_side,
                         load.platesPerSide.joinToString(separator = " + ", transform = format)
                     )
                 )
             }
             if (load.remainderPerSide > 0.0) {
-                add(stringResource(R.string.plate_calculator_remainder, format(load.remainderPerSide)))
+                add(formattedStringResource(R.string.plate_calculator_remainder, format(load.remainderPerSide)))
             }
         }
     }
@@ -2479,17 +2481,17 @@ private fun friendGhostLine(ghost: FriendGhost): String {
         NumberFormat.getNumberInstance(locale).apply { maximumFractionDigits = 2 }
     }
     val result = if (ghost.weightKg > 0.0) {
-        stringResource(R.string.friend_ghost_weight_reps, numberFormat.format(ghost.weightKg), ghost.reps)
+        formattedStringResource(R.string.friend_ghost_weight_reps, numberFormat.format(ghost.weightKg), ghost.reps)
     } else {
-        pluralStringResource(R.plurals.friend_ghost_reps, ghost.reps, ghost.reps)
+        formattedPluralStringResource(R.plurals.friend_ghost_reps, ghost.reps, ghost.reps)
     }
     val days = FriendGhosts.daysAgo(ghost.workoutDay, java.time.LocalDate.now())
     val day = when (days) {
         0 -> stringResource(R.string.friend_ghost_today)
         1 -> stringResource(R.string.friend_ghost_yesterday)
-        else -> pluralStringResource(R.plurals.friend_ghost_days_ago, days, days)
+        else -> formattedPluralStringResource(R.plurals.friend_ghost_days_ago, days, days)
     }
-    return stringResource(R.string.friend_ghost_line, ghost.friendName, result, day)
+    return formattedStringResource(R.string.friend_ghost_line, ghost.friendName, result, day)
 }
 
 private fun formatRestTime(totalSeconds: Int): String = String.format(
@@ -2593,7 +2595,7 @@ private fun rememberSetVoiceCommand(
             }
             is VoiceWorkoutCommand.Unknown -> {
                 // Shows what was heard and records nothing.
-                onFeedback(context.getString(R.string.voice_command_unknown, command.transcript), null, null)
+                onFeedback(context.safeGetString(R.string.voice_command_unknown, command.transcript), null, null)
             }
         }
     }

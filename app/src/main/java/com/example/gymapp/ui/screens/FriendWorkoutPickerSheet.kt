@@ -33,6 +33,7 @@ import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.util.DateTimeUtils
+import com.example.gymapp.util.formattedStringResource
 
 internal const val MAX_FRIEND_WORKOUT_PICKER_SESSIONS = 100
 
@@ -79,7 +80,7 @@ internal fun FriendWorkoutPickerSheet(
             }
             item {
                 ScreenHeader(
-                    title = stringResource(R.string.friend_workout_picker_title, friendName),
+                    title = formattedStringResource(R.string.friend_workout_picker_title, friendName),
                     supporting = stringResource(R.string.friend_workout_picker_supporting)
                 )
             }
@@ -118,13 +119,13 @@ internal fun FriendWorkoutPickerSheet(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 InfoPill(
-                                    text = stringResource(R.string.stats_sets, session.setCount)
+                                    text = formattedStringResource(R.string.stats_sets, session.setCount)
                                 )
                             }
                             Text(
                                 text = session.session.note
                                     ?.takeIf(String::isNotBlank)
-                                    ?.let { stringResource(R.string.details_note, it) }
+                                    ?.let { formattedStringResource(R.string.details_note, it) }
                                     ?: stringResource(R.string.details_no_note),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -132,7 +133,7 @@ internal fun FriendWorkoutPickerSheet(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = stringResource(
+                                text = formattedStringResource(
                                     R.string.stats_exercises,
                                     session.exerciseCount
                                 ),

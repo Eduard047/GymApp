@@ -46,7 +46,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -86,6 +85,9 @@ import com.example.gymapp.util.DateTimeUtils
 import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
+import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.formattedPluralStringResource
+import com.example.gymapp.util.safeGetString
 
 @Composable
 internal fun FinishedLiveWorkoutDialog(
@@ -118,8 +120,8 @@ internal fun FinishedLiveWorkoutDialog(
                                 exercise.sets.forEachIndexed { index, planned ->
                                     val actual = completed[planned.setId]
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text(stringResource(R.string.label_set, index + 1))
-                                        Text(if (actual != null) stringResource(
+                                        Text(formattedStringResource(R.string.label_set, index + 1))
+                                        Text(if (actual != null) formattedStringResource(
                                             R.string.live_workout_peer_set_completed,
                                             actual.weight.toString(), actual.reps
                                         ) else stringResource(R.string.live_workout_set_not_recorded))
@@ -453,7 +455,7 @@ internal fun FriendsScreen(
             title = { Text(stringResource(R.string.workout_invite_accept_title)) },
             text = {
                 Text(
-                    stringResource(
+                    formattedStringResource(
                         R.string.workout_invite_accept_description,
                         invite.displayName
                     )
@@ -487,7 +489,7 @@ internal fun FriendsScreen(
             title = { Text(stringResource(R.string.friend_block_confirm_title)) },
             text = {
                 Text(
-                    stringResource(
+                    formattedStringResource(
                         R.string.friend_block_confirm_supporting,
                         request.displayName
                     )
@@ -667,11 +669,11 @@ private fun LazyListScope.liveWorkoutLobby(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    stringResource(R.string.live_workout_invited_by, invitation.owner.displayName),
+                    formattedStringResource(R.string.live_workout_invited_by, invitation.owner.displayName),
                     style = MaterialTheme.typography.titleMedium
                 )
                 Text(
-                    stringResource(
+                    formattedStringResource(
                         R.string.live_workout_plan_summary,
                         invitation.summary.exerciseCount,
                         invitation.summary.setCount
@@ -714,7 +716,7 @@ private fun LazyListScope.liveWorkoutLobby(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    stringResource(R.string.live_workout_with_friend, room.peer.displayName),
+                    formattedStringResource(R.string.live_workout_with_friend, room.peer.displayName),
                     style = MaterialTheme.typography.titleMedium
                 )
                 Text(
@@ -779,7 +781,7 @@ private fun RefreshSocialCard(isLoading: Boolean, pendingInvites: Int, onRefresh
                 )
                 Text(
                     text = if (pendingInvites > 0) {
-                        stringResource(R.string.workout_invites_pending_count, pendingInvites)
+                        formattedStringResource(R.string.workout_invites_pending_count, pendingInvites)
                     } else {
                         stringResource(R.string.friends_synced_supporting)
                     },
@@ -822,7 +824,7 @@ private fun TrainingCircleCard(
                         style = MaterialTheme.typography.titleLarge
                     )
                     Text(
-                        text = stringResource(R.string.friends_confirmed_count, dashboard.friends.size),
+                        text = formattedStringResource(R.string.friends_confirmed_count, dashboard.friends.size),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -839,7 +841,7 @@ private fun TrainingCircleCard(
             Text(dashboard.self.displayName, style = MaterialTheme.typography.titleMedium)
             Text(
                 text = if (dashboard.self.statsAvailable) {
-                    stringResource(
+                    formattedStringResource(
                         R.string.friend_stats_summary,
                         dashboard.self.xp ?: 0,
                         dashboard.self.level ?: 1,
@@ -888,7 +890,7 @@ private fun TrainingCircleCard(
                                 )
                                 Text(
                                     text = if (friend.statsAvailable) {
-                                        stringResource(
+                                        formattedStringResource(
                                             R.string.friend_stats_summary,
                                             friend.xp ?: 0,
                                             friend.level ?: 1,
@@ -1096,7 +1098,7 @@ private fun FriendRankingCard(place: Int, friend: SocialFriend, onOpen: () -> Un
                     )
                     Text(
                         text = if (friend.statsAvailable) {
-                            stringResource(
+                            formattedStringResource(
                                 R.string.friend_stats_summary,
                                 friend.xp ?: 0,
                                 friend.level ?: 1,
@@ -1270,10 +1272,10 @@ private fun IncomingWorkoutInviteCard(
         ) {
             Text(invite.displayName, style = MaterialTheme.typography.titleMedium)
             Text(
-                stringResource(
+                formattedStringResource(
                     R.string.workout_invite_summary,
-                    pluralStringResource(R.plurals.saved_workout_exercise_count, invite.summary.exerciseCount, invite.summary.exerciseCount),
-                    pluralStringResource(R.plurals.saved_workout_set_count, invite.summary.setCount, invite.summary.setCount)
+                    formattedPluralStringResource(R.plurals.saved_workout_exercise_count, invite.summary.exerciseCount, invite.summary.exerciseCount),
+                    formattedPluralStringResource(R.plurals.saved_workout_set_count, invite.summary.setCount, invite.summary.setCount)
                 ),
                 style = MaterialTheme.typography.bodyMedium
             )
@@ -1325,10 +1327,10 @@ private fun OutgoingWorkoutInviteCard(
         ) {
             Text(invite.displayName, style = MaterialTheme.typography.titleMedium)
             Text(
-                stringResource(
+                formattedStringResource(
                     R.string.workout_invite_summary,
-                    pluralStringResource(R.plurals.saved_workout_exercise_count, invite.summary.exerciseCount, invite.summary.exerciseCount),
-                    pluralStringResource(R.plurals.saved_workout_set_count, invite.summary.setCount, invite.summary.setCount)
+                    formattedPluralStringResource(R.plurals.saved_workout_exercise_count, invite.summary.exerciseCount, invite.summary.exerciseCount),
+                    formattedPluralStringResource(R.plurals.saved_workout_set_count, invite.summary.setCount, invite.summary.setCount)
                 ),
                 style = MaterialTheme.typography.bodyMedium
             )
@@ -1436,7 +1438,7 @@ private fun shareFriendCode(context: Context, value: String) {
     val sendIntent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
         putExtra(Intent.EXTRA_SUBJECT, context.getString(R.string.friend_code_share_subject))
-        putExtra(Intent.EXTRA_TEXT, context.getString(R.string.friend_code_share_message, value))
+        putExtra(Intent.EXTRA_TEXT, context.safeGetString(R.string.friend_code_share_message, value))
     }
     context.startActivity(
         Intent.createChooser(sendIntent, context.getString(R.string.friend_code_share))

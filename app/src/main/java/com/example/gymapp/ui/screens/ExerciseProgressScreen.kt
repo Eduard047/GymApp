@@ -35,7 +35,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -66,6 +65,8 @@ import com.example.gymapp.ui.viewmodel.ExerciseProgressUiState
 import com.example.gymapp.util.DateTimeUtils
 import java.text.NumberFormat
 import java.util.Locale
+import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.formattedPluralStringResource
 
 private data class ProgressSessionHistoryGroup(
     val sessionId: Long,
@@ -96,9 +97,9 @@ fun ExerciseProgressScreen(
     } else {
         null
     }
-    val spotlightSubtitle = stringResource(
+    val spotlightSubtitle = formattedStringResource(
         R.string.progress_spotlight_subtitle,
-        pluralStringResource(
+        formattedPluralStringResource(
             R.plurals.progress_sessions_count,
             uiState.progressPoints.size,
             uiState.progressPoints.size
@@ -258,7 +259,7 @@ private fun ProgressMuscleBreakdownCard(
     }
     val groupsPill: @Composable () -> Unit = {
         InfoPill(
-            text = pluralStringResource(
+            text = formattedPluralStringResource(
                 R.plurals.progress_muscle_groups_count,
                 sortedMuscles.size,
                 sortedMuscles.size
@@ -389,7 +390,7 @@ private fun ExerciseSelectorCard(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        text = pluralStringResource(
+                                        text = formattedPluralStringResource(
                                             R.plurals.progress_logged_sessions_count,
                                             sessionCount,
                                             sessionCount
@@ -447,19 +448,19 @@ private fun ProgressSummaryCard(
         ProgressMetricUi(
             label = stringResource(R.string.progress_stat_best_weight),
             value = uiState.bestWeight?.let {
-                stringResource(R.string.progress_weight_value, formatProgressWeight(it))
+                formattedStringResource(R.string.progress_weight_value, formatProgressWeight(it))
             } ?: "—",
             emphasized = true
         ),
         ProgressMetricUi(
             label = stringResource(R.string.progress_stat_avg_weight),
             value = uiState.averageWeight?.let {
-                stringResource(R.string.progress_weight_value, formatProgressWeight(it))
+                formattedStringResource(R.string.progress_weight_value, formatProgressWeight(it))
             } ?: "—"
         ),
         ProgressMetricUi(
             label = stringResource(R.string.progress_stat_total_volume),
-            value = stringResource(
+            value = formattedStringResource(
                 R.string.today_history_volume_kg,
                 NumberFormat.getIntegerInstance(Locale.getDefault()).format(totalVolume)
             )
@@ -524,12 +525,12 @@ private fun ProgressSessionHistoryCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                InfoPill(text = stringResource(R.string.stats_sets, sessionGroup.sets.size))
+                InfoPill(text = formattedStringResource(R.string.stats_sets, sessionGroup.sets.size))
             }
 
             Text(
-                text = "${stringResource(R.string.progress_reps_value, totalReps)} • " +
-                    stringResource(
+                text = "${formattedStringResource(R.string.progress_reps_value, totalReps)} • " +
+                    formattedStringResource(
                         R.string.stats_volume,
                         java.text.NumberFormat.getIntegerInstance(Locale.getDefault()).format(totalVolume)
                     ),
@@ -567,7 +568,7 @@ private fun ProgressSessionHistoryCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = stringResource(R.string.label_set, setIndex + 1),
+                        text = formattedStringResource(R.string.label_set, setIndex + 1),
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium
                     )

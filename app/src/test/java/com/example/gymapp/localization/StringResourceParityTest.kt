@@ -41,6 +41,49 @@ class StringResourceParityTest {
     }
 
     @Test
+    fun englishUkrainianAndRussianExposeTheSamePluralKeys() {
+        val english = loadPlurals("values")
+        val ukrainian = loadPlurals("values-uk")
+        val russian = loadPlurals("values-ru")
+
+        assertEquals("Ukrainian plural keys differ from English", english.keys, ukrainian.keys)
+        assertEquals("Russian plural keys differ from English", english.keys, russian.keys)
+    }
+
+    @Test
+    fun localizedPluralItemsPreserveAndroidFormatPlaceholders() {
+        val locales = mapOf(
+            "English" to loadPlurals("values"),
+            "Ukrainian" to loadPlurals("values-uk"),
+            "Russian" to loadPlurals("values-ru")
+        )
+        val english = locales.getValue("English")
+
+        english.forEach { (key, englishItems) ->
+            val expected = placeholderSignatures(
+                requireNotNull(englishItems["other"]) { "English plural '$key' has no 'other' item" }
+            )
+            locales.forEach { (language, plurals) ->
+                val items = requireNotNull(plurals[key]) { "$language plural '$key' is missing" }
+                require("other" in items) { "$language plural '$key' has no 'other' item" }
+                items.forEach { (quantity, text) ->
+                    assertEquals(
+                        "$language plural '$key' item '$quantity' placeholders differ from English 'other'",
+                        expected,
+                        placeholderSignatures(text)
+                    )
+                }
+                val distinct = items.mapValues { placeholderSignatures(it.value) }.values.toSet()
+                assertEquals(
+                    "$language plural '$key' items disagree on placeholders: $distinct",
+                    1,
+                    distinct.size
+                )
+            }
+        }
+    }
+
+    @Test
     fun firstPlanActionsMatchTheSharedEnglishUkrainianAndRussianCopy() {
         val english = loadStrings("values")
         val ukrainian = loadStrings("values-uk")
@@ -181,17 +224,7 @@ class StringResourceParityTest {
 
     private fun loadStrings(valuesDirectory: String): Map<String, String> {
         val path = appFile("src/main/res/$valuesDirectory/strings.xml")
-        val factory = DocumentBuilderFactory.newInstance().apply {
-            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-            setFeature("http://xml.org/sax/features/external-general-entities", false)
-            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-            setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
-            isXIncludeAware = false
-            isExpandEntityReferences = false
-        }
-        val document = Files.newInputStream(path).use { input ->
-            factory.newDocumentBuilder().parse(input)
-        }
+        val document = parseXml(path)
         val nodes = document.getElementsByTagName("string")
         return buildMap {
             for (index in 0 until nodes.length) {
@@ -204,11 +237,55 @@ class StringResourceParityTest {
         }
     }
 
+    private fun loadPlurals(valuesDirectory: String): Map<String, Map<String, String>> {
+        val path = appFile("src/main/res/$valuesDirectory/strings.xml")
+        val document = parseXml(path)
+        val nodes = document.getElementsByTagName("plurals")
+        return buildMap {
+            for (index in 0 until nodes.length) {
+                val node = nodes.item(index)
+                val name = node.attributes.getNamedItem("name").nodeValue
+                val children = node.childNodes
+                val items = buildMap {
+                    for (childIndex in 0 until children.length) {
+                        val child = children.item(childIndex)
+                        if (child.nodeName != "item") continue
+                        val quantity = child.attributes.getNamedItem("quantity").nodeValue
+                        check(put(quantity, child.textContent) == null) {
+                            "Duplicate quantity '$quantity' in plural '$name' in $path"
+                        }
+                    }
+                }
+                check(put(name, items) == null) {
+                    "Duplicate plural '$name' in $path"
+                }
+            }
+        }
+    }
+
+    private fun parseXml(path: Path) = DocumentBuilderFactory.newInstance().apply {
+        setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+        setFeature("http://xml.org/sax/features/external-general-entities", false)
+        setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+        setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+        isXIncludeAware = false
+        isExpandEntityReferences = false
+    }.let { factory ->
+        Files.newInputStream(path).use { input ->
+            factory.newDocumentBuilder().parse(input)
+        }
+    }
+
     private fun formatPlaceholders(value: String): List<String> = FORMAT_PLACEHOLDER
         .findAll(value)
         .map { it.value }
         .sorted()
         .toList()
+
+    private fun placeholderSignatures(value: String): Set<String> = FORMAT_PLACEHOLDER_PARTS
+        .findAll(value)
+        .map { "%${it.groupValues[1]}\$${it.groupValues[2]}" }
+        .toSet()
 
     private fun appFile(relativePath: String): Path {
         val workingDirectory = Paths.get("").toAbsolutePath().normalize()
@@ -228,6 +305,9 @@ class StringResourceParityTest {
     private companion object {
         val FORMAT_PLACEHOLDER = Regex(
             "%\\d+\\$[-#+ 0,(<]*\\d*(?:\\.\\d+)?[a-zA-Z%]|%%"
+        )
+        val FORMAT_PLACEHOLDER_PARTS = Regex(
+            "%(\\d+)\\$[-#+ 0,(<]*\\d*(?:\\.\\d+)?([a-zA-Z])"
         )
     }
 }

@@ -81,7 +81,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -127,6 +126,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.Locale
+import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.formattedPluralStringResource
 
 private val GARMIN_ZONE_COLORS = listOf(
     Color(0xFF718096),
@@ -620,21 +621,21 @@ private fun WorkoutHeaderCard(
     } else {
         buildList {
             add(
-                pluralStringResource(
+                formattedPluralStringResource(
                     R.plurals.saved_workout_exercise_count,
                     exerciseCount,
                     exerciseCount
                 )
             )
             add(
-                pluralStringResource(
+                formattedPluralStringResource(
                     R.plurals.saved_workout_set_count,
                     setCount,
                     setCount
                 )
             )
             add(
-                stringResource(
+                formattedStringResource(
                     R.string.today_history_volume_kg,
                     NumberFormat.getIntegerInstance(Locale.getDefault()).format(volume)
                 )
@@ -675,7 +676,7 @@ private fun WorkoutHeaderCard(
                     IconButton(onClick = onDelete) {
                         Icon(
                             imageVector = Icons.Default.Delete,
-                            contentDescription = stringResource(
+                            contentDescription = formattedStringResource(
                                 R.string.cd_delete_workout_on,
                                 date
                             )
@@ -690,7 +691,7 @@ private fun WorkoutHeaderCard(
             )
             noteText?.let {
                 Text(
-                    text = stringResource(R.string.details_note, it),
+                    text = formattedStringResource(R.string.details_note, it),
                     style = MaterialTheme.typography.bodyMedium,
                     color = HeroTone.supporting,
                     maxLines = 3,
@@ -757,7 +758,7 @@ private fun GarminWorkoutHeaderCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = stringResource(
+                        text = formattedStringResource(
                             if (hasVerifiedGarminOrigin) {
                                 R.string.garmin_workout_synced_from
                             } else {
@@ -783,7 +784,7 @@ private fun GarminWorkoutHeaderCard(
                     IconButton(onClick = onDelete) {
                         Icon(
                             imageVector = Icons.Default.Delete,
-                            contentDescription = stringResource(
+                            contentDescription = formattedStringResource(
                                 R.string.cd_delete_workout_on,
                                 date
                             )
@@ -811,7 +812,7 @@ private fun GarminWorkoutHeaderCard(
                 } else {
                     MetricTile(
                         label = stringResource(R.string.garmin_metric_logged),
-                        value = pluralStringResource(
+                        value = formattedPluralStringResource(
                             R.plurals.saved_workout_set_count,
                             setCount,
                             setCount
@@ -825,7 +826,7 @@ private fun GarminWorkoutHeaderCard(
                 text = if (isActivityOnly) {
                     stringResource(R.string.garmin_free_workout_summary)
                 } else {
-                    pluralStringResource(
+                    formattedPluralStringResource(
                         R.plurals.saved_workout_exercise_count,
                         exerciseCount,
                         exerciseCount
@@ -847,7 +848,7 @@ private fun GarminWorkoutHeaderCard(
                         ?.takeIf { planned -> planned > completed }
                         ?.let { plannedSetCount ->
                             Text(
-                                text = stringResource(
+                                text = formattedStringResource(
                                     R.string.garmin_partial_sets_status,
                                     completed,
                                     plannedSetCount
@@ -1000,12 +1001,12 @@ private fun GarminWorkoutMetricsCard(metrics: GarminWorkoutMetrics) {
                     metrics.averageHeartRate?.let { averageHeartRate ->
                         GarminMetricCell(
                             label = stringResource(R.string.garmin_metric_avg_hr),
-                            value = stringResource(
+                            value = formattedStringResource(
                                 R.string.garmin_metric_bpm_value,
                                 averageHeartRate
                             ),
                             helper = metrics.durationSeconds?.let(::formatGarminDuration)
-                                ?.let { stringResource(R.string.garmin_metric_duration_value, it) }
+                                ?.let { formattedStringResource(R.string.garmin_metric_duration_value, it) }
                                 ?: stringResource(R.string.garmin_metric_heart_rate),
                             modifier = Modifier.weight(1f)
                         )
@@ -1013,7 +1014,7 @@ private fun GarminWorkoutMetricsCard(metrics: GarminWorkoutMetrics) {
                     metrics.maximumHeartRate?.let { maximumHeartRate ->
                         GarminMetricCell(
                             label = stringResource(R.string.garmin_metric_max_hr),
-                            value = stringResource(
+                            value = formattedStringResource(
                                 R.string.garmin_metric_bpm_value,
                                 maximumHeartRate
                             ),
@@ -1099,11 +1100,11 @@ private fun GarminWatchInsightsCard(metrics: GarminWorkoutMetrics) {
                     recognition?.let { summary ->
                         GarminMetricCell(
                             label = stringResource(R.string.garmin_detection_confidence),
-                            value = stringResource(
+                            value = formattedStringResource(
                                 R.string.garmin_detection_confidence_value,
                                 summary.averageConfidence
                             ),
-                            helper = stringResource(
+                            helper = formattedStringResource(
                                 R.string.garmin_sets_with_evidence,
                                 summary.measuredSetCount
                             ),
@@ -1113,11 +1114,11 @@ private fun GarminWatchInsightsCard(metrics: GarminWorkoutMetrics) {
                     recovery?.let { summary ->
                         GarminMetricCell(
                             label = stringResource(R.string.garmin_recovery_hr_drop),
-                            value = stringResource(
+                            value = formattedStringResource(
                                 R.string.garmin_recovery_hr_drop_value,
                                 summary.medianHeartRateDrop
                             ),
-                            helper = stringResource(
+                            helper = formattedStringResource(
                                 R.string.garmin_recovery_median_sets,
                                 summary.measuredSetCount
                             ),
@@ -1130,7 +1131,7 @@ private fun GarminWatchInsightsCard(metrics: GarminWorkoutMetrics) {
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { lowConfidenceSets ->
                     Text(
-                        text = stringResource(
+                        text = formattedStringResource(
                             R.string.garmin_review_low_confidence_sets,
                             lowConfidenceSets.joinToString { "S$it" }
                         ),
@@ -1171,7 +1172,7 @@ private fun GarminSetHeartRateOverview(points: List<GarminSetHeartRateChartPoint
     val endColor = MaterialTheme.colorScheme.secondary
     val rangeColor = MaterialTheme.colorScheme.outline
     val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
-    val accessibilityDescription = stringResource(
+    val accessibilityDescription = formattedStringResource(
         R.string.garmin_set_hr_overview_accessibility,
         points.size,
         minimumReading,
@@ -1190,7 +1191,7 @@ private fun GarminSetHeartRateOverview(points: List<GarminSetHeartRateChartPoint
                 modifier = Modifier.weight(1f)
             )
             Text(
-                text = stringResource(
+                text = formattedStringResource(
                     R.string.garmin_set_hr_overview_range,
                     minimumReading,
                     maximumReading
@@ -1369,7 +1370,7 @@ private fun GarminWorkoutRhythmVisual(
     val scaleSeconds = maxOf(metrics.durationSeconds ?: finalEnd, finalEnd).coerceAtLeast(1L)
     val activeColor = accentMarkColor()
     val trackColor = MaterialTheme.colorScheme.surfaceVariant
-    val timelineDescription = stringResource(
+    val timelineDescription = formattedStringResource(
         R.string.garmin_timeline_accessibility,
         intervals.size,
         formatGarminDuration(rhythm.activeSetSeconds),
@@ -1409,7 +1410,7 @@ private fun GarminWorkoutRhythmVisual(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = stringResource(
+                text = formattedStringResource(
                     R.string.garmin_active_set_time,
                     formatGarminDuration(rhythm.activeSetSeconds)
                 ),
@@ -1417,7 +1418,7 @@ private fun GarminWorkoutRhythmVisual(
                 color = MaterialTheme.colorScheme.primary
             )
             Text(
-                text = stringResource(
+                text = formattedStringResource(
                     R.string.garmin_between_set_time,
                     formatGarminDuration(rhythm.betweenSetSeconds)
                 ),
@@ -1441,7 +1442,7 @@ private fun GarminZoneDistribution(zoneSeconds: List<Long>) {
             val label = if (zone == 0) {
                 stringResource(R.string.garmin_zone_no_reading)
             } else {
-                stringResource(R.string.garmin_zone_label, zone)
+                formattedStringResource(R.string.garmin_zone_label, zone)
             }
             "$label ${formatGarminDuration(seconds)}"
         }
@@ -1488,13 +1489,13 @@ private fun GarminZoneDistribution(zoneSeconds: List<Long>) {
                     text = if (zone == 0) {
                         stringResource(R.string.garmin_zone_no_reading)
                     } else {
-                        stringResource(R.string.garmin_zone_label, zone)
+                        formattedStringResource(R.string.garmin_zone_label, zone)
                     },
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall
                 )
                 Text(
-                    text = stringResource(
+                    text = formattedStringResource(
                         R.string.garmin_zone_time_value,
                         formatGarminDuration(seconds),
                         percent
@@ -1540,7 +1541,7 @@ private fun GarminSetIntervalsCard(metrics: GarminWorkoutMetrics) {
                 }
             if (metrics.omittedSetIntervalCount > 0) {
                 Text(
-                    text = stringResource(
+                    text = formattedStringResource(
                         R.string.garmin_set_intervals_omitted,
                         metrics.omittedSetIntervalCount
                     ),
@@ -1576,14 +1577,14 @@ private fun GarminSetEvidenceRow(evidence: GarminSetEvidenceMetrics) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = stringResource(R.string.garmin_watch_set_label, evidence.setNumber),
+                text = formattedStringResource(R.string.garmin_watch_set_label, evidence.setNumber),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
             evidence.activeSeconds?.let { activeSeconds ->
                 Text(
-                    text = stringResource(
+                    text = formattedStringResource(
                         R.string.garmin_set_interval_active,
                         formatGarminDuration(activeSeconds)
                     ),
@@ -1627,13 +1628,13 @@ private fun GarminSetIntervalRow(interval: GarminSetIntervalMetrics) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = stringResource(R.string.garmin_watch_set_label, interval.setNumber),
+                text = formattedStringResource(R.string.garmin_watch_set_label, interval.setNumber),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = stringResource(
+                text = formattedStringResource(
                     R.string.garmin_set_interval_active,
                     formatGarminDuration(interval.activeSeconds)
                 ),
@@ -1651,12 +1652,12 @@ private fun GarminSetIntervalRow(interval: GarminSetIntervalMetrics) {
         )
         Text(
             text = interval.garminCalories?.let { garminCalories ->
-                stringResource(
+                formattedStringResource(
                     R.string.garmin_set_interval_calories,
                     formatGarminIntervalCalories(interval.gymCalories),
                     garminCalories.toString()
                 )
-            } ?: stringResource(
+            } ?: formattedStringResource(
                 R.string.garmin_set_interval_gym_calories,
                 formatGarminIntervalCalories(interval.gymCalories)
             ),
@@ -1690,7 +1691,7 @@ private fun GarminSetEvidenceBody(
         ) {
             detectionConfidence?.let { confidence ->
                 InfoPill(
-                    text = stringResource(R.string.garmin_set_confidence_value, confidence),
+                    text = formattedStringResource(R.string.garmin_set_confidence_value, confidence),
                     modifier = Modifier.weight(1f),
                     accent = when {
                         confidence >= 70 -> MaterialTheme.colorScheme.primary
@@ -1701,7 +1702,7 @@ private fun GarminSetEvidenceBody(
             }
             recoveryHeartRateDrop?.let { drop ->
                 InfoPill(
-                    text = stringResource(R.string.garmin_set_recovery_value, drop),
+                    text = formattedStringResource(R.string.garmin_set_recovery_value, drop),
                     modifier = Modifier.weight(1f),
                     accent = MaterialTheme.colorScheme.secondary
                 )
@@ -1710,7 +1711,7 @@ private fun GarminSetEvidenceBody(
     }
     restBeforeSeconds?.let { seconds ->
         Text(
-            text = stringResource(
+            text = formattedStringResource(
                 R.string.garmin_set_rest_before,
                 formatGarminDuration(seconds)
             ),
@@ -1811,7 +1812,7 @@ private fun GarminSetZoneBar(interval: GarminSetIntervalMetrics) {
                 val label = if (zone == 0) {
                     stringResource(R.string.garmin_zone_no_reading)
                 } else {
-                    stringResource(R.string.garmin_zone_label, zone)
+                    formattedStringResource(R.string.garmin_zone_label, zone)
                 }
                 "$label ${formatGarminDuration(seconds.toLong())}"
             }
@@ -1923,12 +1924,12 @@ private fun GarminHeartRateVisual(metrics: GarminWorkoutMetrics) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = average?.let { stringResource(R.string.garmin_metric_avg_short, it) } ?: "—",
+                text = average?.let { formattedStringResource(R.string.garmin_metric_avg_short, it) } ?: "—",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = maximum?.let { stringResource(R.string.garmin_metric_max_short, it) } ?: "—",
+                text = maximum?.let { formattedStringResource(R.string.garmin_metric_max_short, it) } ?: "—",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -2017,9 +2018,9 @@ private fun SavedWorkoutExerciseCard(
     val sets = exerciseDetails.sets.sortedBy { it.orderIndex }
     val setCount = sets.size
     val repCount = sets.sumOf { it.reps }
-    val setCountLabel = pluralStringResource(R.plurals.saved_workout_set_count, setCount, setCount)
-    val repsLabel = pluralStringResource(R.plurals.saved_workout_rep_count, repCount, repCount)
-    val volumeLabel = stringResource(
+    val setCountLabel = formattedPluralStringResource(R.plurals.saved_workout_set_count, setCount, setCount)
+    val repsLabel = formattedPluralStringResource(R.plurals.saved_workout_rep_count, repCount, repCount)
+    val volumeLabel = formattedStringResource(
         R.string.stats_volume,
         NumberFormat.getIntegerInstance(Locale.getDefault()).format(sets.sumOf { it.weight * it.reps })
     )
@@ -2123,14 +2124,14 @@ private fun SavedWorkoutExerciseCard(
                         EditableSetRow(
                             number = number,
                             summary = summary,
-                            rowDescription = stringResource(
+                            rowDescription = formattedStringResource(
                                 R.string.active_workout_set_upcoming_cd,
                                 number,
                                 summary
                             ),
                             editHint = stringResource(R.string.active_workout_set_upcoming_hint),
                             deleteLabel = deleteSetLabel,
-                            deleteActionLabel = stringResource(
+                            deleteActionLabel = formattedStringResource(
                                 R.string.cd_delete_set_named,
                                 number,
                                 displayExerciseName
@@ -2152,7 +2153,7 @@ private fun SavedWorkoutExerciseCard(
                                 initialWeight = weightText,
                                 initialReps = repsText,
                                 setKey = setEntry,
-                                deleteDescription = stringResource(
+                                deleteDescription = formattedStringResource(
                                     R.string.cd_delete_set_named,
                                     number,
                                     displayExerciseName
@@ -2167,7 +2168,7 @@ private fun SavedWorkoutExerciseCard(
                     } else {
                         RecordedSetRow(
                             summary = summary,
-                            description = stringResource(
+                            description = formattedStringResource(
                                 if (isRecord) {
                                     R.string.active_workout_set_recorded_record_cd
                                 } else {

@@ -105,6 +105,7 @@ import com.example.gymapp.ui.viewmodel.LiveWorkoutUiState
 import com.example.gymapp.sync.CloudSyncUiStatus
 import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.getString
+import com.example.gymapp.util.formattedStringResource
 
 private enum class ProfileSection {
     Training,
@@ -417,7 +418,7 @@ internal fun ProfileScreen(
                 Text(stringResource(R.string.local_profile_delete_confirm_title))
             },
             text = {
-                Text(stringResource(R.string.local_profile_delete_warning, localProfileName))
+                Text(formattedStringResource(R.string.local_profile_delete_warning, localProfileName))
             },
             confirmButton = {
                 TextButton(
@@ -562,7 +563,7 @@ private fun ProfileIdentityHeader(
                 )
                 Text(
                     text = if (isCloudAccount) {
-                        stringResource(R.string.profile_cloud_friend_count, friendCount)
+                        formattedStringResource(R.string.profile_cloud_friend_count, friendCount)
                     } else {
                         stringResource(R.string.profile_local_storage_status)
                     },
@@ -571,7 +572,7 @@ private fun ProfileIdentityHeader(
                 )
             }
             if (pendingCount > 0) {
-                val attentionLabel = stringResource(R.string.profile_attention_count, pendingCount)
+                val attentionLabel = formattedStringResource(R.string.profile_attention_count, pendingCount)
                 Badge(modifier = Modifier.clearAndSetSemantics { contentDescription = attentionLabel }) {
                     Text(pendingCount.coerceAtMost(99).toString())
                 }

@@ -69,6 +69,7 @@ import com.example.gymapp.ui.viewmodel.ExerciseListUiState
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.delay
+import com.example.gymapp.util.formattedStringResource
 
 internal const val PROFILE_SUPPORT_URL = "https://gymapptracker.com/support.html"
 internal const val PROFILE_PRIVACY_URL = "https://gymapptracker.com/privacy-policy.html"
@@ -490,7 +491,7 @@ private fun CloudSyncStatusCard(
                 eyebrow = stringResource(R.string.cloud_sync_status_eyebrow),
                 title = statusText,
                 supporting = status.lastSuccessAt?.let { timestamp ->
-                    stringResource(
+                    formattedStringResource(
                         R.string.cloud_sync_status_last_success,
                         DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
                             .format(Date(timestamp))

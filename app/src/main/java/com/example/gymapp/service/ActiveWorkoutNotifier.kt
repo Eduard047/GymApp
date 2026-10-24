@@ -29,6 +29,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import com.example.gymapp.util.safeGetString
 
 /** The workout's sets in plan order, as the notification needs them. */
 internal fun ActiveWorkoutDetails.notificationExercises(): List<WorkoutNotificationExercise> =
@@ -112,7 +113,7 @@ internal object ActiveWorkoutNotifier {
         val title = content.exerciseName
             ?.let { BuiltInExerciseCatalog.displayName(it, locale.language) }
             ?: context.getString(R.string.active_workout_notification_title)
-        val progress = context.getString(
+        val progress = context.safeGetString(
             R.string.active_workout_notification_progress,
             content.completedSets,
             content.totalSets
@@ -120,7 +121,7 @@ internal object ActiveWorkoutNotifier {
         val restEndsAt = content.restEndsAt
         val text = when {
             restEndsAt != null -> context.getString(R.string.active_workout_notification_resting)
-            content.nextWeight != null && content.nextReps != null -> context.getString(
+            content.nextWeight != null && content.nextReps != null -> context.safeGetString(
                 R.string.active_workout_notification_next,
                 numberFormat.format(content.nextWeight),
                 content.nextReps
@@ -128,7 +129,7 @@ internal object ActiveWorkoutNotifier {
             else -> context.getString(R.string.active_workout_notification_all_done)
         }
         val subText = if (content.setNumber > 0) {
-            context.getString(R.string.active_workout_notification_set, content.setNumber, content.setCount) +
+            context.safeGetString(R.string.active_workout_notification_set, content.setNumber, content.setCount) +
                 " · " + progress
         } else {
             progress

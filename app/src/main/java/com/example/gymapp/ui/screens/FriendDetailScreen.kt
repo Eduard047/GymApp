@@ -30,7 +30,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -60,6 +59,8 @@ import java.text.NumberFormat
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Locale
+import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.formattedPluralStringResource
 
 @Composable
 internal fun FriendDetailScreen(
@@ -345,7 +346,7 @@ internal fun FriendDetailScreen(
             },
             text = {
                 Text(
-                    stringResource(
+                    formattedStringResource(
                         if (action == FriendSafetyAction.Remove) {
                             R.string.friend_remove_confirm_supporting
                         } else {
@@ -389,7 +390,7 @@ private fun SharingCard(details: SocialFriendDetails) {
         ) {
             Text(stringResource(R.string.friend_sharing_title), style = MaterialTheme.typography.titleMedium)
             Text(
-                stringResource(
+                formattedStringResource(
                     R.string.friend_sharing_summary,
                     sharingLabel(details.sharing.progress),
                     sharingLabel(details.sharing.recentWorkouts),
@@ -453,10 +454,10 @@ private fun FriendActivityRow(
         ) {
             Text(localizedFriendActivityDay(day), style = MaterialTheme.typography.titleMedium)
             Text(
-                stringResource(
+                formattedStringResource(
                     R.string.workout_invite_summary,
-                    pluralStringResource(R.plurals.saved_workout_exercise_count, exerciseCount, exerciseCount),
-                    pluralStringResource(R.plurals.saved_workout_set_count, setCount, setCount)
+                    formattedPluralStringResource(R.plurals.saved_workout_exercise_count, exerciseCount, exerciseCount),
+                    formattedPluralStringResource(R.plurals.saved_workout_set_count, setCount, setCount)
                 ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -502,10 +503,10 @@ private fun FriendWorkoutCard(
                 style = MaterialTheme.typography.titleMedium
             )
             Text(
-                stringResource(
+                formattedStringResource(
                     R.string.workout_invite_summary,
-                    pluralStringResource(R.plurals.saved_workout_exercise_count, workout.exerciseCount, workout.exerciseCount),
-                    pluralStringResource(R.plurals.saved_workout_set_count, workout.setCount, workout.setCount)
+                    formattedPluralStringResource(R.plurals.saved_workout_exercise_count, workout.exerciseCount, workout.exerciseCount),
+                    formattedPluralStringResource(R.plurals.saved_workout_set_count, workout.setCount, workout.setCount)
                 ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -540,10 +541,10 @@ private fun FriendWorkoutSummaryCard(workout: SocialRecentWorkout) {
                 style = MaterialTheme.typography.titleMedium
             )
             Text(
-                stringResource(
+                formattedStringResource(
                     R.string.workout_invite_summary,
-                    pluralStringResource(R.plurals.saved_workout_exercise_count, workout.exerciseCount, workout.exerciseCount),
-                    pluralStringResource(R.plurals.saved_workout_set_count, workout.setCount, workout.setCount)
+                    formattedPluralStringResource(R.plurals.saved_workout_exercise_count, workout.exerciseCount, workout.exerciseCount),
+                    formattedPluralStringResource(R.plurals.saved_workout_set_count, workout.setCount, workout.setCount)
                 ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -584,7 +585,7 @@ private fun FriendWorkoutDetail(
         item {
             ScreenHeader(
                 title = localizedFriendActivityDay(workout.workoutDay),
-                supporting = stringResource(R.string.friend_workout_read_only, friendName)
+                supporting = formattedStringResource(R.string.friend_workout_read_only, friendName)
             )
         }
         item {
@@ -648,13 +649,13 @@ private fun FriendWorkoutDetail(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Text(
-                                stringResource(R.string.friend_workout_set_number, index + 1),
+                                formattedStringResource(R.string.friend_workout_set_number, index + 1),
                                 modifier = Modifier.weight(1f),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                stringResource(
+                                formattedStringResource(
                                     R.string.friend_workout_set_value,
                                     numberFormat.format(set.weightKg),
                                     set.reps
@@ -675,9 +676,9 @@ private fun compactFriendWorkoutDuration(totalSeconds: Long): String {
     val hours = minutes / 60L
     val remainingMinutes = minutes % 60L
     return when {
-        hours == 0L -> stringResource(R.string.duration_minutes_compact, minutes)
-        remainingMinutes == 0L -> stringResource(R.string.duration_hours_compact, hours)
-        else -> stringResource(R.string.duration_hours_minutes_compact, hours, remainingMinutes)
+        hours == 0L -> formattedStringResource(R.string.duration_minutes_compact, minutes)
+        remainingMinutes == 0L -> formattedStringResource(R.string.duration_hours_compact, hours)
+        else -> formattedStringResource(R.string.duration_hours_minutes_compact, hours, remainingMinutes)
     }
 }
 
@@ -708,11 +709,11 @@ private fun ExerciseRecordCard(record: SocialExerciseRecord) {
             friendRecordMetrics(record).forEach { metric ->
                 Text(
                     text = when (metric) {
-                        is FriendRecordMetric.BestWeight -> stringResource(
+                        is FriendRecordMetric.BestWeight -> formattedStringResource(
                             R.string.friend_record_best_weight,
                             numberFormat.format(metric.kilograms)
                         )
-                        is FriendRecordMetric.BestRepetitions -> stringResource(
+                        is FriendRecordMetric.BestRepetitions -> formattedStringResource(
                             R.string.friend_record_best_repetitions,
                             metric.repetitions
                         )
@@ -722,7 +723,7 @@ private fun ExerciseRecordCard(record: SocialExerciseRecord) {
                 )
             }
             Text(
-                stringResource(
+                formattedStringResource(
                     R.string.friend_record_meta,
                     record.workoutCount,
                     localizedFriendActivityDay(record.lastWorkoutDay)

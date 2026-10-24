@@ -42,6 +42,7 @@ import com.example.gymapp.auth.rankedSocialFriends
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.HeroTone
 import com.example.gymapp.ui.components.heroSecondaryOutlinedColors
+import com.example.gymapp.util.formattedStringResource
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -190,11 +191,11 @@ private fun WorkoutShareFriendRow(
     onSendCopy: () -> Unit,
     onInviteLive: () -> Unit
 ) {
-    val sendCopyDescription = stringResource(
+    val sendCopyDescription = formattedStringResource(
         R.string.workout_share_copy_friend_action,
         friend.displayName
     )
-    val inviteLiveDescription = stringResource(
+    val inviteLiveDescription = formattedStringResource(
         R.string.workout_share_live_friend_action,
         friend.displayName
     )

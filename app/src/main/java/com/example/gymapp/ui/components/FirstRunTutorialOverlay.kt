@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.ui.theme.GymSpacing
 import kotlinx.coroutines.android.awaitFrame
+import com.example.gymapp.util.formattedStringResource
 
 internal const val FIRST_RUN_TUTORIAL_VERSION = 1
 
@@ -167,7 +168,7 @@ internal fun FirstRunTutorialOverlay(
     val target = registry[step.target]
     val title = stringResource(step.titleRes)
     val body = stringResource(step.bodyRes)
-    val stepCount = stringResource(
+    val stepCount = formattedStringResource(
         R.string.tutorial_step_count,
         safeIndex + 1,
         FIRST_RUN_TUTORIAL_STEPS.size

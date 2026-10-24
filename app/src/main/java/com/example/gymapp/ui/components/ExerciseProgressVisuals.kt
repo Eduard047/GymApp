@@ -19,7 +19,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,6 +27,8 @@ import com.example.gymapp.ui.theme.accentMarkColor
 import com.example.gymapp.ui.viewmodel.ExerciseProgressSpotlightUiModel
 import com.example.gymapp.ui.viewmodel.ExerciseTrendChartPointUiModel
 import com.example.gymapp.ui.viewmodel.ExerciseTrendChartUiModel
+import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.formattedPluralStringResource
 
 @Composable
 fun ExerciseSpotlightCard(
@@ -62,7 +63,7 @@ fun ExerciseSpotlightCard(
                     label = spotlight.latestVolumeCaption,
                     value = spotlight.latestVolumeLabel
                         .takeIf { label -> label.any(Char::isDigit) }
-                        ?.let { label -> stringResource(R.string.today_history_volume_kg, label) }
+                        ?.let { label -> formattedStringResource(R.string.today_history_volume_kg, label) }
                         ?: spotlight.latestVolumeLabel,
                     modifier = Modifier.weight(1f),
                     onHero = true
@@ -124,9 +125,9 @@ fun ExerciseTrendChartsCard(
                 style = MaterialTheme.typography.titleMedium
             )
             Text(
-                text = stringResource(
+                text = formattedStringResource(
                     R.string.progress_visual_trends_subtitle,
-                    pluralStringResource(
+                    formattedPluralStringResource(
                         R.plurals.progress_sessions_count,
                         chart.points.size,
                         chart.points.size
@@ -169,7 +170,7 @@ fun ExerciseTrendChartsCard(
                         label = stringResource(R.string.progress_average_volume),
                         value = chart.averageVolumeLabel
                             .takeIf { label -> label.any(Char::isDigit) }
-                            ?.let { label -> stringResource(R.string.today_history_volume_kg, label) }
+                            ?.let { label -> formattedStringResource(R.string.today_history_volume_kg, label) }
                             ?: chart.averageVolumeLabel,
                         modifier = Modifier.weight(1f)
                     )

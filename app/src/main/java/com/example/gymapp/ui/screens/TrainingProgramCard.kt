@@ -17,6 +17,7 @@ import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.util.TrainingProgramStore
+import com.example.gymapp.util.formattedStringResource
 
 @Composable
 internal fun TrainingProgramCard(owner: String, sessions: List<WorkoutSessionSummary>, profile: TrainingProfile, onPrepare: () -> Unit) {
@@ -78,12 +79,12 @@ internal fun TrainingProgramCard(owner: String, sessions: List<WorkoutSessionSum
                         val linked = program.slots.count { it.sessionId != null }
                         val next = store.next(program)
                         Text(stringResource(goal), style = MaterialTheme.typography.bodyLarge)
-                        Text(stringResource(R.string.training_program_count, linked, program.slots.size))
+                        Text(formattedStringResource(R.string.training_program_count, linked, program.slots.size))
                         LinearProgressIndicator(progress = { linked.toFloat() / program.slots.size }, modifier = Modifier.fillMaxWidth())
                         Text(when (program.status) {
                             "paused" -> stringResource(R.string.training_program_paused)
                             "completed" -> stringResource(R.string.training_program_finished)
-                            else -> next?.let { stringResource(R.string.training_program_next, DateTimeUtils.formatDate(it.date)) }
+                            else -> next?.let { formattedStringResource(R.string.training_program_next, DateTimeUtils.formatDate(it.date)) }
                                 ?: stringResource(R.string.training_program_all_linked)
                         })
                         when (program.status) {
@@ -141,7 +142,7 @@ internal fun TrainingProgramCard(owner: String, sessions: List<WorkoutSessionSum
             AppPanel(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = { expanded = !expanded }, Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                        Text(stringResource(R.string.training_program_week, week + 1, slots.count { it.sessionId != null }, slots.size))
+                        Text(formattedStringResource(R.string.training_program_week, week + 1, slots.count { it.sessionId != null }, slots.size))
                     }
                     if (expanded) slots.forEach { slot ->
                         Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {

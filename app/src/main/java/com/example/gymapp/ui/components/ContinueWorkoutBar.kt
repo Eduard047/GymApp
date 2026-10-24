@@ -29,6 +29,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.util.formattedStringResource
 
 /**
  * The app-wide resume bar shows while a workout is active but minimised: never on the Today tab
@@ -91,7 +92,7 @@ fun ContinueWorkoutBar(
                         color = HeroTone.actionLabel
                     )
                     Text(
-                        text = stringResource(
+                        text = formattedStringResource(
                             R.string.continue_workout_bar_progress,
                             completedSets,
                             totalSets

@@ -85,7 +85,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -151,6 +150,8 @@ import java.text.NumberFormat
 import java.time.format.TextStyle
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.formattedPluralStringResource
 
 @Composable
 fun WorkoutListScreen(
@@ -412,7 +413,7 @@ private fun WorkoutSectionSwitcher(
             ),
             GymSegmentItem(
                 value = true,
-                label = stringResource(R.string.workout_switch_list_title, sessionCount)
+                label = formattedStringResource(R.string.workout_switch_list_title, sessionCount)
             )
         ),
         selected = workoutsSelected,
@@ -519,7 +520,7 @@ private fun WorkoutSectionHeader(
                 )
             }
             InfoPill(
-                text = pluralStringResource(R.plurals.progress_sessions_count, sessionCount, sessionCount)
+                text = formattedPluralStringResource(R.plurals.progress_sessions_count, sessionCount, sessionCount)
             )
         }
     }
@@ -620,7 +621,7 @@ private fun FocusLens(
 
         if (activeWorkoutFocus != null) {
             Text(
-                text = stringResource(
+                text = formattedStringResource(
                     R.string.today_focus_set_progress,
                     activeWorkoutFocus.currentSetNumber,
                     activeWorkoutFocus.completedSets,
@@ -642,7 +643,7 @@ private fun FocusLens(
         ) {
             Text(
                 text = if (todayPlan.rhythm.decision == WeeklyTrainingDecision.Rest) {
-                    stringResource(
+                    formattedStringResource(
                         R.string.today_recovery_reason_target,
                         todayPlan.rhythm.completedTrainingDays,
                         todayPlan.rhythm.targetTrainingDays
@@ -656,7 +657,7 @@ private fun FocusLens(
             todayPlan.rhythm.nextRecommendedDayMillis?.let { nextDay ->
                 val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
                 Text(
-                    text = stringResource(
+                    text = formattedStringResource(
                         R.string.today_next_recommended_day,
                         DateTimeUtils.formatLongDate(nextDay, locale)
                     ),
@@ -677,15 +678,15 @@ private fun FocusLens(
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     FocusLensMetric(
-                        label = stringResource(R.string.today_plan_duration, shownMinutes),
-                        value = stringResource(
+                        label = formattedStringResource(R.string.today_plan_duration, shownMinutes),
+                        value = formattedStringResource(
                             R.string.today_plan_size,
-                            pluralStringResource(
+                            formattedPluralStringResource(
                                 R.plurals.saved_workout_exercise_count,
                                 shownExerciseCount,
                                 shownExerciseCount
                             ),
-                            pluralStringResource(
+                            formattedPluralStringResource(
                                 R.plurals.saved_workout_set_count,
                                 shownSetCount,
                                 shownSetCount
@@ -993,7 +994,7 @@ private fun TrainingHistoryPanel(
                 val isWeek = period == TrainingHistoryPeriod.Week
                 val weeklyGoalMet = isWeek &&
                     weeklySummary.completedTrainingDays >= weeklySummary.targetTrainingDays
-                val weeklyGoalSpoken = stringResource(
+                val weeklyGoalSpoken = formattedStringResource(
                     R.string.today_weekly_goal_spoken,
                     weeklySummary.completedTrainingDays,
                     weeklySummary.targetTrainingDays
@@ -1006,13 +1007,13 @@ private fun TrainingHistoryPanel(
                     },
                     leadingIcon = if (weeklyGoalMet) Icons.Default.CheckCircle else GymIcons.Weightlifter,
                     text = if (isWeek) {
-                        stringResource(
+                        formattedStringResource(
                             R.string.today_weekly_goal,
                             weeklySummary.completedTrainingDays,
                             weeklySummary.targetTrainingDays
                         )
                     } else {
-                        pluralStringResource(
+                        formattedPluralStringResource(
                             R.plurals.training_history_active_days,
                             monthlySummary.completedTrainingDays,
                             monthlySummary.completedTrainingDays
@@ -1144,7 +1145,7 @@ private fun TrainingHistoryPanel(
                     modifier = Modifier.weight(1f)
                 )
                 WeeklyTrainingMetric(
-                    value = stringResource(
+                    value = formattedStringResource(
                         R.string.weekly_training_minutes_value,
                         estimatedMinutes
                     ),
@@ -1152,7 +1153,7 @@ private fun TrainingHistoryPanel(
                     modifier = Modifier.weight(1f)
                 )
                 WeeklyTrainingMetric(
-                    value = stringResource(R.string.today_history_volume_kg, volume),
+                    value = formattedStringResource(R.string.today_history_volume_kg, volume),
                     label = stringResource(R.string.weekly_training_volume_label),
                     modifier = Modifier.weight(1f)
                 )
@@ -1411,12 +1412,12 @@ private fun TrainingHistoryRow(
                     stringResource(R.string.garmin_free_workout_title)
                 } else {
                     listOf(
-                        pluralStringResource(
+                        formattedPluralStringResource(
                             R.plurals.saved_workout_exercise_count,
                             session.exerciseCount,
                             session.exerciseCount
                         ),
-                        pluralStringResource(
+                        formattedPluralStringResource(
                             R.plurals.saved_workout_set_count,
                             session.setCount,
                             session.setCount
@@ -1432,7 +1433,7 @@ private fun TrainingHistoryRow(
         val trailingText = if (isActivityOnly) {
             formatWorkoutDuration(checkNotNull(session.session.durationSeconds))
         } else {
-            stringResource(
+            formattedStringResource(
                 R.string.today_history_volume_kg,
                 formatTodayHeroVolume(session.totalVolume, locale)
             )
@@ -1440,7 +1441,7 @@ private fun TrainingHistoryRow(
         val trailingSpoken = if (isActivityOnly) {
             trailingText
         } else {
-            stringResource(
+            formattedStringResource(
                 R.string.today_history_volume_kg,
                 formatTodayHeroVolumeSpoken(session.totalVolume, locale)
             )
@@ -1517,21 +1518,21 @@ private fun TodayHeroMetricsRow(
             modifier = Modifier.weight(1f)
         )
         TodayHeroMetric(
-            value = stringResource(
+            value = formattedStringResource(
                 R.string.focus_lens_week_streak_value,
                 metrics.weeklyStreakWeeks
             ),
             label = stringResource(R.string.focus_lens_week_streak),
-            accessibilityValue = stringResource(
+            accessibilityValue = formattedStringResource(
                 R.string.focus_lens_week_streak_value,
                 metrics.weeklyStreakWeeks
             ),
             modifier = Modifier.weight(1f)
         )
         TodayHeroMetric(
-            value = stringResource(R.string.today_history_volume_kg, volume),
+            value = formattedStringResource(R.string.today_history_volume_kg, volume),
             label = stringResource(R.string.focus_lens_total_volume),
-            accessibilityValue = stringResource(R.string.today_history_volume_kg, volumeAccessibilityValue),
+            accessibilityValue = formattedStringResource(R.string.today_history_volume_kg, volumeAccessibilityValue),
             modifier = Modifier.weight(1f)
         )
     }
@@ -2067,7 +2068,7 @@ private fun DashboardCard(
                 )
                 MetricTile(
                     label = stringResource(R.string.kpi_streak),
-                    value = stringResource(
+                    value = formattedStringResource(
                         R.string.kpi_streak_weekly_value,
                         stats.weeklyStreakWeeks
                     ),
@@ -2082,13 +2083,13 @@ private fun DashboardCard(
             ) {
                 MetricTile(
                     label = stringResource(R.string.kpi_total_volume),
-                    value = stringResource(R.string.kpi_volume_value, stats.totalVolume),
+                    value = formattedStringResource(R.string.kpi_volume_value, stats.totalVolume),
                     modifier = Modifier.weight(1f),
                     onHero = true
                 )
                 MetricTile(
                     label = stringResource(R.string.kpi_avg_intensity),
-                    value = stringResource(R.string.kpi_avg_intensity_value, stats.averageIntensity),
+                    value = formattedStringResource(R.string.kpi_avg_intensity_value, stats.averageIntensity),
                     modifier = Modifier.weight(1f),
                     onHero = true
                 )

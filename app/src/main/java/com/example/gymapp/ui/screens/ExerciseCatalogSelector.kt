@@ -38,7 +38,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Velocity
@@ -48,6 +47,7 @@ import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.util.currentAppLanguageTag
+import com.example.gymapp.util.formattedPluralStringResource
 
 /** Which flow the catalog sheet serves: adding an exercise to a workout, or choosing one to view. */
 internal enum class ExerciseSelectorMode { Add, Choose }
@@ -277,7 +277,7 @@ internal fun ExerciseCatalogSelector(
                                     } else if (isChooseMode) {
                                         val sessionCount = exerciseWorkoutCounts[exercise.id] ?: 0
                                         Text(
-                                            text = pluralStringResource(
+                                            text = formattedPluralStringResource(
                                                 R.plurals.progress_sessions_count,
                                                 sessionCount,
                                                 sessionCount

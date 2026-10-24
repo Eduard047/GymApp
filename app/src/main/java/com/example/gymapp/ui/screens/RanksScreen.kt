@@ -48,6 +48,7 @@ import com.example.gymapp.ui.viewmodel.WorkoutListUiState
 import com.example.gymapp.util.asString
 import com.example.gymapp.util.formatXp
 import java.util.Locale
+import com.example.gymapp.util.formattedStringResource
 
 @Composable
 fun RanksScreen(
@@ -128,8 +129,8 @@ fun RanksScreen(
                     }
 
                     Text(
-                        text = "${stringResource(R.string.post_workout_level, uiState.soloProgress.level)} · " +
-                            stringResource(R.string.ranks_xp_value, formatXp(totalXp, locale)),
+                        text = "${formattedStringResource(R.string.post_workout_level, uiState.soloProgress.level)} · " +
+                            formattedStringResource(R.string.ranks_xp_value, formatXp(totalXp, locale)),
                         style = MaterialTheme.typography.bodyMedium,
                         color = HeroTone.supporting
                     )
@@ -146,7 +147,7 @@ fun RanksScreen(
                         )
 
                         Text(
-                            text = stringResource(
+                            text = formattedStringResource(
                                 R.string.ranks_xp_to_next,
                                 formatXp(nextRank.xpRemaining, locale),
                                 nextRank.title
@@ -270,7 +271,7 @@ private fun RankLadderRow(
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                text = stringResource(
+                text = formattedStringResource(
                     R.string.rank_level_from_xp,
                     tier.levelRequirement,
                     formatXp(tier.requiredXp, locale)
@@ -288,7 +289,7 @@ private fun RankLadderRow(
                         .height(6.dp)
                 )
                 Text(
-                    text = stringResource(R.string.rank_xp_to_go, formatXp(tier.xpRemaining, locale)),
+                    text = formattedStringResource(R.string.rank_xp_to_go, formatXp(tier.xpRemaining, locale)),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary

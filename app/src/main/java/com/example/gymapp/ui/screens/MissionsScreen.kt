@@ -71,6 +71,7 @@ import com.example.gymapp.ui.viewmodel.WorkoutListUiState
 import com.example.gymapp.util.asString
 import com.example.gymapp.util.formatXp
 import java.util.Locale
+import com.example.gymapp.util.formattedStringResource
 
 @Composable
 fun MissionsScreen(
@@ -112,7 +113,7 @@ fun MissionsScreen(
         MissionPeriod.Monthly -> uiState.monthlyMissions
     }
     val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
-    val levelSummary = stringResource(
+    val levelSummary = formattedStringResource(
         R.string.missions_level_summary,
         uiState.soloProgress.level,
         uiState.soloProgress.title,
@@ -370,7 +371,7 @@ private fun MissionCard(
 private fun MissionTrailing(mission: MissionProgressUiModel, stacked: Boolean) {
     val content: @Composable () -> Unit = {
         Text(
-            text = stringResource(
+            text = formattedStringResource(
                 R.string.missions_progress_value,
                 mission.progress,
                 mission.goal

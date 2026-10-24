@@ -26,6 +26,8 @@ import com.example.gymapp.garmin.WorkoutComparison
 import com.example.gymapp.util.DateTimeUtils
 import java.util.Locale
 import kotlin.math.abs
+import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.formattedPluralStringResource
 
 private data class ComparisonMetric(
     val label: String,
@@ -52,7 +54,7 @@ fun WorkoutComparisonCard(
         String.format(Locale.getDefault(), "%.0f", value)
     }
     // Grouped whole number plus unit; no-break space keeps "+850 kg" on one line.
-    val kilogramFormat = androidx.compose.ui.res.stringResource(R.string.today_history_volume_kg, "%s")
+    val kilogramFormat = formattedStringResource(R.string.today_history_volume_kg, "%s")
         .replace(' ', '\u00A0')
     val volume: (Double) -> String = { value ->
         String.format(kilogramFormat, java.text.NumberFormat.getIntegerInstance(Locale.getDefault()).format(value))
@@ -129,9 +131,9 @@ fun WorkoutComparisonCard(
             SectionTitle(
                 eyebrow = "",
                 title = androidx.compose.ui.res.stringResource(R.string.workout_comparison_title),
-                supporting = androidx.compose.ui.res.stringResource(
+                supporting = formattedStringResource(
                     R.string.workout_comparison_supporting,
-                    androidx.compose.ui.res.pluralStringResource(
+                    formattedPluralStringResource(
                         R.plurals.workout_comparison_matching_exercises,
                         comparison.matchedExerciseCount,
                         comparison.matchedExerciseCount
@@ -182,7 +184,7 @@ private fun comparisonMetric(
     return ComparisonMetric(
         label = label,
         currentValue = current,
-        previousAndDelta = androidx.compose.ui.res.stringResource(
+        previousAndDelta = formattedStringResource(
             R.string.workout_comparison_previous_delta,
             previous,
             delta

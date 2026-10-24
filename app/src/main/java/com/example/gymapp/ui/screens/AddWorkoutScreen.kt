@@ -86,7 +86,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -149,6 +148,8 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Locale
 import androidx.compose.material3.LocalContentColor
+import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.formattedPluralStringResource
 
 /** Lazy items (coach panel, exercises header) that precede the exercise cards in the plan editor. */
 private const val PLAN_EDITOR_LEADING_ITEM_COUNT = 2
@@ -561,7 +562,7 @@ fun AddWorkoutScreen(
                             if (liveInviteTargetName.isNullOrBlank()) {
                                 stringResource(R.string.workout_share_live_friend_title)
                             } else {
-                                stringResource(
+                                formattedStringResource(
                                     R.string.workout_share_live_friend_action,
                                     liveInviteTargetName
                                 )
@@ -1097,7 +1098,7 @@ private fun SmartCoachPanel(
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = stringResource(
+                                text = formattedStringResource(
                                     R.string.smart_coach_focus_rir,
                                     plan.focus.smartCoachLabel(),
                                     plan.rirSummary
@@ -1107,7 +1108,7 @@ private fun SmartCoachPanel(
                         }
                         if (plan.requestedEffort != plan.appliedEffort) {
                             Text(
-                                text = stringResource(
+                                text = formattedStringResource(
                                     R.string.smart_coach_effort_override,
                                     plan.requestedEffort.smartCoachLabel(),
                                     plan.appliedEffort.smartCoachLabel()
@@ -1244,14 +1245,14 @@ private fun WorkoutTemplatePickerContent(
                             )
                         }
                         Text(
-                            text = stringResource(
+                            text = formattedStringResource(
                                 R.string.template_picker_summary,
-                                pluralStringResource(
+                                formattedPluralStringResource(
                                     R.plurals.saved_workout_exercise_count,
                                     template.exerciseCount,
                                     template.exerciseCount
                                 ),
-                                pluralStringResource(
+                                formattedPluralStringResource(
                                     R.plurals.saved_workout_set_count,
                                     template.setCount,
                                     template.setCount
@@ -1317,7 +1318,7 @@ private fun ExerciseDraftCard(
 ) {
     val selectedExercise = exercises.firstOrNull { it.id == draft.exerciseId }
     val exerciseName = selectedExercise?.let { localizedExerciseName(it.name) }
-        ?: stringResource(R.string.exercise_block_title, index + 1)
+        ?: formattedStringResource(R.string.exercise_block_title, index + 1)
     val locale = Locale.forLanguageTag(currentAppLanguageTag())
     val addSetDescription = stringResource(R.string.action_add_planned_set)
 
@@ -1348,7 +1349,7 @@ private fun ExerciseDraftCard(
                     onRemove = onRemoveExerciseDraft,
                     modifier = Modifier.testTag("workout_plan_exercise_menu"),
                     removeLabel = stringResource(R.string.action_delete),
-                    buttonDescription = stringResource(R.string.cd_exercise_actions, exerciseName),
+                    buttonDescription = formattedStringResource(R.string.cd_exercise_actions, exerciseName),
                     onMoveUp = { onMoveExerciseDraft(-1) },
                     onMoveDown = { onMoveExerciseDraft(1) },
                     canMoveUp = canMoveUp,
@@ -1378,7 +1379,7 @@ private fun ExerciseDraftCard(
                     }.format(lastWeight)
                 }
                 Text(
-                    text = stringResource(R.string.editor_last_logged, formattedLastWeight),
+                    text = formattedStringResource(R.string.editor_last_logged, formattedLastWeight),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -1511,7 +1512,7 @@ private fun WorkoutSetDraftRow(
                 enabled = true,
                 onWeightChanged = onWeightChanged,
                 onRepsChanged = onRepsChanged,
-                deleteDescription = stringResource(R.string.cd_delete_set_named, number, exerciseName),
+                deleteDescription = formattedStringResource(R.string.cd_delete_set_named, number, exerciseName),
                 onDelete = onDelete,
                 weightError = weightError,
                 repsError = repsError
@@ -1599,7 +1600,7 @@ private fun SmartRecommendationPanel(
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         Text(
-            text = stringResource(
+            text = formattedStringResource(
                 R.string.smart_coach_status_compact,
                 recommendation.kind.smartCoachLabel(),
                 recommendation.targetRir.first,
@@ -1652,7 +1653,7 @@ private fun SmartWorkoutAlternativePickerContent(
             )
             currentExerciseName?.let { name ->
                 Text(
-                    text = stringResource(
+                    text = formattedStringResource(
                         R.string.smart_alternatives_for,
                         localizedExerciseName(name)
                     ),
@@ -1726,7 +1727,7 @@ private fun SmartWorkoutAlternativeCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = stringResource(
+                        text = formattedStringResource(
                             R.string.smart_alternative_prescription,
                             alternative.recommendation.sets.size,
                             alternative.recommendation.sets.firstOrNull()?.reps ?: 0,

@@ -3,7 +3,6 @@ package com.example.gymapp.util
 import android.content.Context
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.res.stringResource
 
 /** Keeps user-facing state language-neutral until it is rendered. */
 data class LocalizedText(
@@ -20,12 +19,12 @@ data class LocalizedText(
 }
 
 @Composable
-fun LocalizedText.asString(): String = stringResource(
+fun LocalizedText.asString(): String = formattedStringResource(
     resourceId,
     *formatArguments.toTypedArray()
 )
 
-fun Context.getString(text: LocalizedText): String = getString(
+fun Context.getString(text: LocalizedText): String = safeGetString(
     text.resourceId,
     *text.formatArguments.toTypedArray()
 )

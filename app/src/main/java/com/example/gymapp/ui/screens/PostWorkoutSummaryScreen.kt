@@ -75,6 +75,7 @@ import com.example.gymapp.ui.viewmodel.PostWorkoutSummaryUiState
 import com.example.gymapp.util.DateTimeUtils
 import java.text.NumberFormat
 import java.util.Locale
+import com.example.gymapp.util.formattedStringResource
 
 @Composable
 fun PostWorkoutSummaryScreen(
@@ -483,7 +484,7 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                     modifier = statModifier
                 )
                 HeroStat(
-                    value = stringResource(
+                    value = formattedStringResource(
                         R.string.today_history_volume_kg,
                         NumberFormat.getIntegerInstance(locale).format(uiState.volume)
                     ),
@@ -516,7 +517,7 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
 
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    text = stringResource(R.string.post_workout_xp_gain, uiState.xpGained),
+                    text = formattedStringResource(R.string.post_workout_xp_gain, uiState.xpGained),
                     style = MaterialTheme.typography.headlineLarge.tabularDigits(),
                     fontSize = 34.sp,
                     fontFamily = FontFamily.SansSerif,
@@ -533,7 +534,7 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = stringResource(
+                    text = formattedStringResource(
                         R.string.post_workout_level_rank,
                         uiState.currentLevel,
                         uiState.levelTitle
@@ -551,7 +552,7 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                     trackColor = HeroTone.track
                 )
                 Text(
-                    text = stringResource(
+                    text = formattedStringResource(
                         R.string.post_workout_xp_to_level,
                         uiState.xpToNextLevel,
                         uiState.currentLevel + 1
@@ -563,7 +564,7 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
 
             if (uiState.leveledUp) {
                 InfoPill(
-                    text = stringResource(
+                    text = formattedStringResource(
                         R.string.post_workout_level_up,
                         uiState.previousLevel,
                         uiState.currentLevel
@@ -623,13 +624,13 @@ private fun PersonalRecordsCard(
             records.forEach { record ->
                 val detail = listOfNotNull(
                     record.weight?.let {
-                        stringResource(
+                        formattedStringResource(
                             R.string.post_workout_record_weight,
                             formatPostWorkoutRecordValue(it, locale)
                         )
                     },
                     record.estimatedOneRepMax?.let {
-                        stringResource(
+                        formattedStringResource(
                             R.string.post_workout_record_one_rep_max,
                             formatPostWorkoutRecordValue(it, locale)
                         )
@@ -695,7 +696,7 @@ private fun NewBadgesCard(badges: List<NewBadgeUiState>) {
                             rarity = badge.rarity,
                             unlocked = true,
                             progressFraction = 1f,
-                            description = stringResource(
+                            description = formattedStringResource(
                                 R.string.post_workout_badge_a11y,
                                 badge.name,
                                 achievementRarityLabel(badge.rarity)

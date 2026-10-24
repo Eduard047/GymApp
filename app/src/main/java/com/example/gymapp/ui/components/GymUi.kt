@@ -92,6 +92,7 @@ import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.theme.GymDataTypography
 import com.example.gymapp.ui.theme.GymPanelShape
 import com.example.gymapp.ui.theme.GymSpacing
+import com.example.gymapp.util.formattedStringResource
 
 private val DefaultAdaptiveContentWidth = 760.dp
 
@@ -850,7 +851,7 @@ private fun SpotterSetRail(
     val completedCount = completed.count { it }
     val semanticStates = spotterSetSemanticStates(completed)
     val exactStateDescriptions = semanticStates.map { state ->
-        stringResource(
+        formattedStringResource(
             if (state.isCompleted) {
                 com.example.gymapp.R.string.live_workout_set_completed_accessibility
             } else {
@@ -859,7 +860,7 @@ private fun SpotterSetRail(
             state.ordinal
         )
     }
-    val progressDescription = stringResource(
+    val progressDescription = formattedStringResource(
         com.example.gymapp.R.string.live_workout_set_progress_accessibility,
         completedCount,
         completed.size

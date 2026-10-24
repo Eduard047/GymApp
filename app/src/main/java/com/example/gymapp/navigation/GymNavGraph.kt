@@ -68,7 +68,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.onClick
@@ -246,6 +245,8 @@ import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
+import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.formattedPluralStringResource
 
 private class ActivityOnlyWorkoutRpcUnavailableException : IllegalStateException(
     "Activity-only workout RPC is unavailable."
@@ -2609,7 +2610,7 @@ internal fun GymAppRoot(
                                                                     contentDescription = if (
                                                                         tabWorkoutInviteCount > 0
                                                                     ) {
-                                                                        stringResource(
+                                                                        formattedStringResource(
                                                                             R.string.workout_invites_pending_count,
                                                                             tabWorkoutInviteCount
                                                                         )
@@ -4959,7 +4960,7 @@ private fun SharedWorkoutPreviewDialog(
     val visibleNames = exerciseNames.take(6).joinToString(separator = " • ")
     val hiddenCount = (exerciseNames.size - 6).coerceAtLeast(0)
     val extra = if (hiddenCount > 0) {
-        "\n" + stringResource(R.string.shared_workout_more_exercises, hiddenCount)
+        "\n" + formattedStringResource(R.string.shared_workout_more_exercises, hiddenCount)
     } else {
         ""
     }
@@ -4968,10 +4969,10 @@ private fun SharedWorkoutPreviewDialog(
         title = { Text(text = stringResource(R.string.shared_workout_preview_title)) },
         text = {
             Text(
-                text = stringResource(
+                text = formattedStringResource(
                     R.string.shared_workout_preview_summary,
-                    pluralStringResource(R.plurals.saved_workout_exercise_count, exerciseCount, exerciseCount),
-                    pluralStringResource(R.plurals.saved_workout_set_count, setCount, setCount)
+                    formattedPluralStringResource(R.plurals.saved_workout_exercise_count, exerciseCount, exerciseCount),
+                    formattedPluralStringResource(R.plurals.saved_workout_set_count, setCount, setCount)
                 ) + "\n\n" + visibleNames + extra
             )
         },

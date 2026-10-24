@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.util.formattedStringResource
 
 /**
  * Compact inline month control shared with iOS (`GymMonthNavigator`): no card, 48dp chevrons at the row ends and
@@ -39,7 +40,7 @@ fun GymMonthNavigator(
     onNext: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val centerDescription = stringResource(
+    val centerDescription = formattedStringResource(
         if (isCurrentMonth) R.string.cd_month_current else R.string.cd_month_return,
         monthLabel
     )

@@ -16,7 +16,6 @@ import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -31,6 +30,8 @@ import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.WeeklyReview
 import com.example.gymapp.data.repository.WeeklyReviewInsight
 import com.example.gymapp.ui.util.localizedExerciseName
+import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.formattedPluralStringResource
 
 @Composable
 fun WeeklyReviewCard(
@@ -84,7 +85,7 @@ fun WeeklyReviewCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    pluralStringResource(R.plurals.training_weekly_progress, target, review.trainingDays, target),
+                    formattedPluralStringResource(R.plurals.training_weekly_progress, target, review.trainingDays, target),
                     style = MaterialTheme.typography.titleMedium
                 )
             }
@@ -105,7 +106,7 @@ fun WeeklyReviewCard(
                 OutlinedButton(onClick = { evidence = insight }, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Text(localizedExerciseName(insight.current.exerciseName))
-                        Text(stringResource(R.string.training_rep_comparison, insight.current.weight, insight.previous.reps, insight.current.reps))
+                        Text(formattedStringResource(R.string.training_rep_comparison, insight.current.weight, insight.previous.reps, insight.current.reps))
                     }
                 }
             }
