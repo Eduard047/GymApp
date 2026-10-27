@@ -107,7 +107,7 @@ function candidateZoneOwnershipTransferPreservesCommittedTotals(logger as Test.L
 }
 
 (:test, :compactWorkoutMode96)
-function manualSetCapturePreservesHeartRateAndNonnegativeInterval(logger as Test.Logger) as Lang.Boolean {
+function manualSetCapturePreservesHeartRateWithoutInterval(logger as Test.Logger) as Lang.Boolean {
     GymSession.resetWorkoutMetrics();
     GymSession.elapsedSeconds = 420;
     GymSession.hr = 137;
@@ -121,11 +121,9 @@ function manualSetCapturePreservesHeartRateAndNonnegativeInterval(logger as Test
         GymSession.setStatistic(statistics, 2) == 420 &&
         GymSession.setStatistic(statistics, 3) == 137 &&
         GymSession.setStatistic(statistics, 4) == 137 &&
-        interval instanceof Lang.Array && interval.size() == 10 &&
-        interval[0] >= 0 && interval[1] >= interval[0] && interval[2] >= 0 &&
-        interval[3] == 0;
+        interval == null;
     logger.debug("manual capture HR=" + GymSession.setStatistic(statistics, 4).toString() +
-        " interval=" + interval[0].toString() + ".." + interval[1].toString());
+        " interval omitted=" + (interval == null).toString());
     GymSession.resetWorkoutMetrics();
     return valid;
 }

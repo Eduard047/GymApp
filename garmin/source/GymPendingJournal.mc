@@ -752,6 +752,9 @@ class GymPendingJournal {
     // only when the id equals the head's; frame() still rejects an offset past
     // the real count, and a stale or odd value is simply never matched.
     private static function restoreProgress() {
+        // An acked-empty queue is stored as [3, slot, []]; entries[0] would be a
+        // fatal (uncatchable) array bounds error.
+        if (entries.size() == 0) { return; }
         try {
             var value = Storage.getValue("sendProgressV1");
             // A missing or malformed value throws here and is ignored below.

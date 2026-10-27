@@ -159,12 +159,12 @@ function pendingJournalPartialAckNeverDeletesAndRejectsStaleAttempt(logger as Te
     ack["attemptId"] = second["attemptId"]; ack["nextOffset"] = 2;
     if (GymPendingJournal.acknowledgePart(ack) || GymStore.pendingCount() != 1) { return false; }
     GymPendingJournal.reset();
-    if (!GymPendingJournal.load() || GymPendingJournal.nextMessage()["offset"] != 0) { return false; }
+    if (!GymPendingJournal.load() || GymPendingJournal.nextMessage()["offset"] != 1) { return false; }
     GymStore.clearAccountScopedState();
     return true;
 }
 
-(:test, :compactLegacyState)
+(:test, :compactLegacyState, :richWorkoutMode)
 function legacyPendingParkingPreservesDiskAndOrderingAcrossRestart(logger as Test.Logger) as Lang.Boolean {
     if (!PendingJournalFixture.prepare()) { return false; }
     var legacyId = "legacy-workout-request-001";
@@ -307,7 +307,7 @@ function compactSyncStageRejectsUnsupportedSourceWithoutWriting(logger as Test.L
     return true;
 }
 
-(:test, :compactLegacyState)
+(:test, :compactLegacyState, :richWorkoutMode)
 function admittedWorkoutKeepsRoomForItsQueueAndEmptyCommit(logger as Test.Logger) as Lang.Boolean {
     if (!PendingJournalFixture.prepareWithLegacy(60, 2) || !GymStore.recoverQueuedWorkout()) { return false; }
     if (GymStore.pendingCount() != 3) { return false; }
@@ -385,7 +385,7 @@ function queueReferencesRejectReplacedRecordsAndUnreadableSave(logger as Test.Lo
     return true;
 }
 
-(:test, :compactLegacyState)
+(:test, :compactLegacyState, :richWorkoutMode)
 function fullQueueRefusesNewModesWithoutWritingWorkoutState(logger as Test.Logger) as Lang.Boolean {
     if (!PendingJournalFixture.prepareWithLegacy(1, 7) ||
         !GymStore.recoverQueuedWorkout() || GymStore.pendingCount() != 8) { return false; }

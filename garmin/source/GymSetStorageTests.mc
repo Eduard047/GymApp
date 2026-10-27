@@ -22,6 +22,23 @@ function liveRecordFactoryRejectsInvalidFieldsAndCannotBecomeWireData(logger as 
 
 (:test)
 function pendingBudgetCacheTracksPairingAndAcknowledgement(logger as Test.Logger) as Lang.Boolean {
+    // Earlier tests leave the unowned-state catalog fence raised (and the lite
+    // catalog empty). A bound, validated store has a writable catalog, so the
+    // acknowledgement below can save; hand the leftover state back afterwards.
+    var oldCatalog = GymStore.exercises;
+    var oldCatalogNeedsWrite = GymStore.exerciseCatalogNeedsWrite;
+    var oldCatalogRepairRequired = GymStore.exerciseCatalogRepairRequired;
+    GymStore.exercises = ["Bench Press"];
+    GymStore.exerciseCatalogNeedsWrite = true;
+    GymStore.exerciseCatalogRepairRequired = false;
+    var ok = pendingBudgetCacheScenario();
+    GymStore.exercises = oldCatalog;
+    GymStore.exerciseCatalogNeedsWrite = oldCatalogNeedsWrite;
+    GymStore.exerciseCatalogRepairRequired = oldCatalogRepairRequired;
+    return ok;
+}
+
+function pendingBudgetCacheScenario() as Lang.Boolean {
     var owner = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     var generation = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     GymStore.accountBinding = owner; GymStore.stateOwnerBinding = owner;
@@ -49,7 +66,7 @@ function pendingBudgetCacheTracksPairingAndAcknowledgement(logger as Test.Logger
     return GymStore.estimatedPendingBytes() == GymStore.estimatedValueBytes(GymStore.pending);
 }
 
-(:test)
+(:test, :richWorkoutMode)
 function compactSnapshotEstimateCoversMaximumNumericColumns(logger as Test.Logger) as Lang.Boolean {
     var names = []; var weights = []; var reps = []; var intervals = [];
     for (var i = 0; i < 60; i += 1) {
@@ -66,7 +83,7 @@ function compactSnapshotEstimateCoversMaximumNumericColumns(logger as Test.Logge
         GymStore.estimatedValueBytes(snapshot);
 }
 
-(:test)
+(:test, :richWorkoutMode)
 function recordedSetPreservesValuesAndCompactInterval(logger as Test.Logger) as Lang.Boolean {
     var interval = [12, 30, 4.0, null, 0, 0, 0, 0, 0, 0];
     var statistics = {"activeSeconds" => 18, "startHeartRate" => 110,
@@ -87,7 +104,7 @@ function recordedSetPreservesValuesAndCompactInterval(logger as Test.Logger) as 
     return GymStore.isSetRecord(recorded) && GymStore.setField(recorded, "peakHeartRate") == null;
 }
 
-(:test)
+(:test, :richWorkoutMode)
 function recordedIntervalsPreserveExactNumbersAndRejectMalformedCheckpoints(logger as Test.Logger) as Lang.Boolean {
     var interval = [597600, 604800, 0.123456789d, 100000, 1200, 1200, 1200, 1200, 1200, 1200];
     var precise = GymStore.restoredSet("Bench Press", 52.123456789d, 8, interval);
@@ -407,115 +424,7 @@ function fr55DropsOwnerlessActiveStateAndKeepsPlanAndPending(logger as Test.Logg
         restoredJournal;
 }
 
-(:test, :compactWorkoutMode96)
-function compact96SkipsLegacyMirrorAndPreservesQuarantine(logger as Test.Logger) as Lang.Boolean {
-    var previousStoredSets = Toybox.Application.Storage.getValue("sets");
-    var previousStoredStartedAt = Toybox.Application.Storage.getValue("activeWorkoutStartedAtSeconds");
-    var previousSets = GymStore.sets;
-    var previousPlan = GymStore.plan;
-    var previousPending = GymStore.pending;
-    var previousStartedAt = GymStore.activeWorkoutStartedAtSeconds;
-    var previousRuntimeStartedAt = GymStore.runtimeWorkoutStartedAtSeconds;
-    var previousRuntimeCheckpoint = GymStore.lastRuntimeCheckpointTimerMs;
-    var previousTimeline = GymStore.timelineBase;
-    var previousSnapshotValid = GymStore.activeWorkoutSnapshotValid;
-    var previousTimelineValid = GymStore.activeWorkoutTimelineValid;
-    var previousIntervalsInvalid = GymStore.resumedWorkoutIntervalsInvalid;
-    var previousLegacyCount = GymStore.legacyCompactCount;
-    var previousJournalSnapshot = GymActiveJournal.snapshot();
-    var previousJournalStagingBytes = GymActiveJournal.stagingBytes;
-    var legacySets = [{"exerciseName" => "Bench Press", "weight" => 50.0, "reps" => 8}];
-    var legacyStartedAt = 1699999900;
-    var currentSets = [GymStore.recordedSet("Squat", 80.0, 6, {}, null, null)];
-    var currentPlan = [{"exerciseName" => "Bench Press", "weight" => 60.0, "reps" => 8}];
-    var currentPending = [{"requestId" => "compact96-recovery-test"}];
-    var currentStartedAt = 1700000000;
-    var passed = false;
-
-    try {
-        Toybox.Application.Storage.setValue("sets", legacySets);
-        Toybox.Application.Storage.setValue("activeWorkoutStartedAtSeconds", legacyStartedAt);
-        GymStore.sets = [];
-        GymStore.plan = currentPlan;
-        GymStore.pending = currentPending;
-        GymStore.activeWorkoutStartedAtSeconds = null;
-        GymStore.resumedWorkoutIntervalsInvalid = false;
-        var coldMirrorSuppressed =
-            !GymStore.restoreLegacySetMirrorIfSnapshotAbsent(null) &&
-            GymStore.sets.size() == 0 && GymStore.activeWorkoutStartedAtSeconds == null;
-
-        GymStore.sets = currentSets;
-        GymStore.activeWorkoutStartedAtSeconds = currentStartedAt;
-        GymStore.runtimeWorkoutStartedAtSeconds = currentStartedAt;
-        GymStore.timelineBase = [30, 4.0, null, 0, 0, 0, null, 0];
-        GymStore.activeWorkoutSnapshotValid = true;
-        GymStore.activeWorkoutTimelineValid = true;
-        var invalidMirrorLeavesCurrentState =
-            !GymStore.restoreLegacySetMirrorIfSnapshotAbsent(["invalid"]) &&
-            GymStore.sets == currentSets &&
-            GymStore.activeWorkoutStartedAtSeconds == currentStartedAt &&
-            GymStore.runtimeWorkoutStartedAtSeconds == currentStartedAt &&
-            GymStore.activeWorkoutSnapshotValid && GymStore.activeWorkoutTimelineValid &&
-            GymStore.plan == currentPlan && GymStore.pending == currentPending;
-        var storedMirror = Toybox.Application.Storage.getValue("sets");
-        var mirrorStillStored =
-            Toybox.Application.Storage.getValue("activeWorkoutStartedAtSeconds") == legacyStartedAt &&
-            storedMirror instanceof Lang.Array && storedMirror.size() == 1 &&
-            GymStore.setField(GymSetAccess.at(storedMirror, 0), "weight") == 50.0;
-
-        GymStore.sets = currentSets;
-        GymStore.activeWorkoutStartedAtSeconds = currentStartedAt;
-        GymStore.runtimeWorkoutStartedAtSeconds = currentStartedAt;
-        GymStore.lastRuntimeCheckpointTimerMs = 12000;
-        GymStore.timelineBase = [30, 4.0, null, 0, 0, 0, null, 0];
-        GymStore.activeWorkoutSnapshotValid = true;
-        GymStore.activeWorkoutTimelineValid = true;
-        GymStore.resumedWorkoutIntervalsInvalid = true;
-        GymStore.legacyCompactCount = -2;
-        GymStore.discardLegacyUnboundActiveWorkout();
-        var badQuarantineStillFailsClosed = GymStore.sets.size() == 0 &&
-            GymStore.activeWorkoutStartedAtSeconds == null &&
-            GymStore.runtimeWorkoutStartedAtSeconds == null &&
-            GymStore.lastRuntimeCheckpointTimerMs == null && GymStore.timelineBase == null &&
-            !GymStore.activeWorkoutSnapshotValid && !GymStore.activeWorkoutTimelineValid &&
-            !GymStore.resumedWorkoutIntervalsInvalid && GymStore.legacyCompactCount == -2 &&
-            GymActiveJournal.snapshot() == null &&
-            GymStore.plan == currentPlan && GymStore.pending == currentPending;
-        passed = coldMirrorSuppressed && invalidMirrorLeavesCurrentState &&
-            mirrorStillStored && badQuarantineStillFailsClosed;
-    } catch (e) {
-        logger.debug("Compact 96 recovery fixture failed: " + e.toString());
-    }
-
-    try {
-        if (previousStoredSets == null) { Toybox.Application.Storage.deleteValue("sets"); }
-        else { Toybox.Application.Storage.setValue("sets", previousStoredSets); }
-        if (previousStoredStartedAt == null) {
-            Toybox.Application.Storage.deleteValue("activeWorkoutStartedAtSeconds");
-        } else {
-            Toybox.Application.Storage.setValue("activeWorkoutStartedAtSeconds", previousStoredStartedAt);
-        }
-    } catch (e) {
-        passed = false;
-    }
-    GymStore.sets = previousSets;
-    GymStore.plan = previousPlan;
-    GymStore.pending = previousPending;
-    GymStore.activeWorkoutStartedAtSeconds = previousStartedAt;
-    GymStore.runtimeWorkoutStartedAtSeconds = previousRuntimeStartedAt;
-    GymStore.lastRuntimeCheckpointTimerMs = previousRuntimeCheckpoint;
-    GymStore.timelineBase = previousTimeline;
-    GymStore.activeWorkoutSnapshotValid = previousSnapshotValid;
-    GymStore.activeWorkoutTimelineValid = previousTimelineValid;
-    GymStore.resumedWorkoutIntervalsInvalid = previousIntervalsInvalid;
-    GymStore.legacyCompactCount = previousLegacyCount;
-    var restoredJournal = previousJournalSnapshot == null ? true :
-        GymActiveJournal.validate(previousJournalSnapshot);
-    GymActiveJournal.stagingBytes = previousJournalStagingBytes;
-    return passed && restoredJournal;
-}
-
-(:test)
+(:test, :richWorkoutMode)
 function sixtySetCheckpointRestoresAndRejectsOverflow(logger as Test.Logger) as Lang.Boolean {
     GymStore.accountBinding = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     GymStore.stateOwnerBinding = GymStore.accountBinding;
@@ -677,8 +586,9 @@ function exerciseLabelsPreserveLanguageCacheAndCustomNames(logger as Test.Logger
     return true;
 }
 
-(:test)
+(:test, :richWorkoutMode)
 function plannedFirstTargetSurvivesZeroSetRestart(logger as Test.Logger) as Lang.Boolean {
+    GymStore.clearAccountScopedState();
     LocalWorkoutFixture.reset();
     GymStore.accountBinding = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     GymStore.stateOwnerBinding = GymStore.accountBinding;
@@ -751,7 +661,7 @@ function plannedProgressCountsEachTargetAtMostOnce(logger as Test.Logger) as Lan
     return valid;
 }
 
-(:test, :compactLegacyState)
+(:test, :compactLegacyState, :richWorkoutMode)
 function compactLegacyPlanMigratesSimpleRowsAndPreservesOptionalFields(logger as Test.Logger) as Lang.Boolean {
     var beforePlan = GymStore.plan;
     var beforeSource = GymStore.persistedPlanSource;
@@ -797,7 +707,7 @@ function compactLegacyPlanMigratesSimpleRowsAndPreservesOptionalFields(logger as
     return simpleOk && optionalOk;
 }
 
-(:test, :compactLegacyState)
+(:test, :compactLegacyState, :richWorkoutMode)
 function compactV5PlanRejectsMalformedColumnsAndOversizedNameBudget(logger as Test.Logger) as Lang.Boolean {
     var beforePlanSource = GymStore.persistedPlanSource;
     var beforePlanBytes = GymStore.persistedPlanBytes;

@@ -1,7 +1,7 @@
 using Toybox.Lang;
 using Toybox.Test;
 
-(:test)
+(:test, :richWorkoutMode)
 function phoneCatalogRefreshPreservesPlanAndIncludesRequiredNames(logger as Test.Logger) as Lang.Boolean {
     var previousPlan = GymStore.plan;
     var previousExercises = GymStore.exercises;
@@ -12,8 +12,8 @@ function phoneCatalogRefreshPreservesPlanAndIncludesRequiredNames(logger as Test
         "planNames" => [], "planWeights" => [], "planReps" => [],
         "exercises" => ["Squat", "Squat"]});
     var valid = GymStore.plan == plan && GymStore.plan.size() == 1 &&
-        GymStore.setField(GymStore.plan[0], "weight") == 52.5 &&
-        GymStore.setField(GymStore.plan[0], "reps") == 9 &&
+        GymStore.setField(GymPlanAccess.at(GymStore.plan, 0), "weight") == 52.5 &&
+        GymStore.setField(GymPlanAccess.at(GymStore.plan, 0), "reps") == 9 &&
         GymStore.exercises.size() == 2 &&
         GymStore.containsName(GymStore.exercises, "Bench Press") &&
         GymStore.containsName(GymStore.exercises, "Squat");
@@ -21,15 +21,15 @@ function phoneCatalogRefreshPreservesPlanAndIncludesRequiredNames(logger as Test
         "planNames" => ["Deadlift"], "planWeights" => [75.0], "planReps" => [6],
         "exercises" => ["Squat"]});
     valid = valid && GymStore.plan.size() == 1 &&
-        GymStore.setField(GymStore.plan[0], "exerciseName").equals("Deadlift") &&
-        GymStore.setField(GymStore.plan[0], "weight") == 75.0 &&
-        GymStore.setField(GymStore.plan[0], "reps") == 6;
+        GymStore.setField(GymPlanAccess.at(GymStore.plan, 0), "exerciseName").equals("Deadlift") &&
+        GymStore.setField(GymPlanAccess.at(GymStore.plan, 0), "weight") == 75.0 &&
+        GymStore.setField(GymPlanAccess.at(GymStore.plan, 0), "reps") == 6;
     GymStore.plan = previousPlan;
     GymStore.exercises = previousExercises;
     return valid;
 }
 
-(:test, :compactLegacyState)
+(:test, :compactLegacyState, :richWorkoutMode)
 function freshPhonePlanUsesV5ColumnsAndOneLazyRowCache(logger as Test.Logger) as Lang.Boolean {
     var beforePlan = GymStore.plan;
     var beforePlanSource = GymStore.persistedPlanSource;
@@ -93,7 +93,7 @@ function freshPhonePlanUsesV5ColumnsAndOneLazyRowCache(logger as Test.Logger) as
     return valid;
 }
 
-(:test, :compactLegacyState)
+(:test, :compactLegacyState, :richWorkoutMode)
 function newPhonePlanCapKeepsLargerLegacyPlansReadable(logger as Test.Logger) as Lang.Boolean {
     var beforePlan = GymStore.plan;
     var beforePlanSource = GymStore.persistedPlanSource;
@@ -195,7 +195,7 @@ function newPhonePlanCapKeepsLargerLegacyPlansReadable(logger as Test.Logger) as
     return valid;
 }
 
-(:test)
+(:test, :richWorkoutMode)
 function mergedPhoneCatalogKeepsPlanNamesInsideByteBudget(logger as Test.Logger) as Lang.Boolean {
     var previousPlan = GymStore.plan;
     var previousExercises = GymStore.exercises;
@@ -267,7 +267,7 @@ function capturedSetUndoRestoresDetectorEvidenceAndOwnsItsInterval(logger as Tes
     return valid;
 }
 
-(:test)
+(:test, :richWorkoutMode)
 function restoredPhonePlanAdvancesExactWeightAndRepsAfterEachSet(logger as Test.Logger) as Lang.Boolean {
     GymStore.clearAccountScopedState();
     GymStore.accountBinding = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

@@ -47,8 +47,8 @@ class GymWorkoutMode {
         return state == MODE_PLANNED;
     }
 
-    // The 96 KiB profile keeps manual set entry in Plan mode while Free remains
-    // duration-only, matching the existing save wire contract.
+    // The 96 KiB lite profile has no manual set entry or Plan mode; every
+    // workout is Free and duration-only.
     (:compactWorkoutMode96, :inline)
     static function allowsDetailedTracking() {
         return false;

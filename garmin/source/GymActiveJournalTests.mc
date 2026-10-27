@@ -225,7 +225,7 @@ function journalDirectorySharesOnlyItsImmutablePrefix(logger as Test.Logger) as 
         GymStore.setField(GymSetAccess.at(replacement, 1), "weight") == 75.0;
 }
 
-(:test, :compactLegacyState)
+(:test, :compactLegacyState, :richWorkoutMode)
 function recordingCapacityCommitsThirtyAndRejectsOverflow(logger as Test.Logger) as Lang.Boolean {
     GymStore.clearAccountScopedState();
     GymStore.accountBinding = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

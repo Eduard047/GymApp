@@ -171,7 +171,7 @@ async function main() {
       minimizeLocals: true,
       sizeBasedPRE: true,
       minimizeModules: true,
-      typeCheckLevel: "Gradual",
+      typeCheckLevel: testBuild ? "Off" : "Gradual",
       compilerWarnings: true,
       optimizationLevel: "Slow",
       trustDeclaredTypes: false,

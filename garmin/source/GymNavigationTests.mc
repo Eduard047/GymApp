@@ -28,6 +28,27 @@ class NavigationTestView extends WorkoutView {
     function setDetectorPromptEnabled(value) { }
 }
 
+// The rich layout cycles the Plan menu (page 1), the settings menu (page 5) and
+// steps between the other pages with the hardware arrows. The lite layout has
+// none of that: movePage() only cycles the Ready, Pause and Discard menus, so
+// the same keys leave every other page and selection untouched.
+(:richWorkoutMode)
+function profileNavigationRows(view) as Lang.Array {
+    var last = view.settingsRows() - 1;
+    return [[1, 0, -1, 1, 3], [1, 3, 1, 1, 0],
+        [5, 0, -1, 5, last], [5, last, 1, 5, 0],
+        [0, 0, 1, 1, 0], [0, 0, -1, 5, 0],
+        [4, 0, 1, 5, 0], [4, 0, -1, 1, 0],
+        [3, 0, 1, 0, 0], [3, 0, -1, 2, 0]];
+}
+
+(:compactWorkoutMode96)
+function profileNavigationRows(view) as Lang.Array {
+    return [[1, 0, -1, 1, 0], [1, 3, 1, 1, 3],
+        [5, 0, -1, 5, 0], [0, 0, 1, 0, 0], [0, 0, -1, 0, 0],
+        [4, 0, 1, 4, 0], [4, 0, -1, 4, 0]];
+}
+
 (:test)
 function pageKeysPreserveCyclicMenusAndModalGuards(logger as Test.Logger) as Lang.Boolean {
     var previousMode = GymWorkoutMode.state;
@@ -40,12 +61,8 @@ function pageKeysPreserveCyclicMenusAndModalGuards(logger as Test.Logger) as Lan
     var input = new WorkoutDelegate(view);
     // page, initial selection, direction, expected page, expected selection
     var rows = [[7, 0, -1, 7, 3], [7, 3, 1, 7, 0],
-        [1, 0, -1, 1, 3], [1, 3, 1, 1, 0],
-        [2, 0, -1, 2, 2], [2, 2, 1, 2, 0],
-        [5, 0, -1, 5, 6], [5, 6, 1, 5, 0],
-        [0, 0, 1, 1, 0], [0, 0, -1, 5, 0],
-        [4, 0, 1, 5, 0], [4, 0, -1, 1, 0],
-        [3, 0, 1, 0, 0], [3, 0, -1, 2, 0]];
+        [2, 0, -1, 2, 2], [2, 2, 1, 2, 0]];
+    rows.addAll(profileNavigationRows(view));
     var ok = true;
     for (var i = 0; i < rows.size(); i += 1) {
         var row = rows[i];
@@ -136,6 +153,21 @@ function hardwareArrowsCannotActivateHiddenSave(logger as Test.Logger) as Lang.B
     return ok;
 }
 
+// Page 5 is the settings page only on the rich layout; lite sends it to the pause menu.
+(:richWorkoutMode)
+function backFromSettingsPage(view, input) as Lang.Boolean {
+    view.page = 5;
+    input.onBack();
+    var ok = view.page == 7;
+    GymSession.recording = true;
+    view.page = 5;
+    input.onBack();
+    return ok && view.page == 0;
+}
+
+(:compactWorkoutMode96)
+function backFromSettingsPage(view, input) as Lang.Boolean { return true; }
+
 (:test)
 function backLeavesDiscardAndSummaryWithoutErasingWorkout(logger as Test.Logger) as Lang.Boolean {
     var oldRecording = GymSession.recording;
@@ -156,13 +188,7 @@ function backLeavesDiscardAndSummaryWithoutErasingWorkout(logger as Test.Logger)
     ok = ok && view.page == 2 && view.pauseSelected == 1 && GymStore.sets == originalSets;
     input.onBack();
     ok = ok && view.page == 0 && view.pauseSelected == 0;
-    view.page = 5;
-    input.onBack();
-    ok = ok && view.page == 7;
-    GymSession.recording = true;
-    view.page = 5;
-    input.onBack();
-    ok = ok && view.page == 0;
+    ok = ok && backFromSettingsPage(view, input);
     view.saveStage = 1;
     view.page = 3;
     input.onBack();
@@ -180,7 +206,7 @@ class ModeChoiceTestView extends WorkoutView {
     function startOrResumeWorkout(usePlan) { return GymWorkoutMode.begin(usePlan); }
 }
 
-(:test)
+(:test, :richWorkoutMode)
 function freeChoiceAndRestartNeverImportDownloadedPlan(logger as Test.Logger) as Lang.Boolean {
     LocalWorkoutFixture.reset();
     GymStore.resetActiveWorkoutSnapshotState();
