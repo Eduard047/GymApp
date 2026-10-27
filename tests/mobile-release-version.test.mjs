@@ -7,7 +7,7 @@ const expected = Object.freeze({
   androidVersionCode: "2000427035",
   iosMarketingVersion: "4.2.0",
   iosBuildNumber: "54",
-  garminVersion: "4.2.0",
+  garminVersion: "4.2.2",
   pwaBundle: "app.v145.js",
   pwaStyleBundle: "styles.v116.css",
   pwaRussianBundle: "russian-text.v94.js",
@@ -146,7 +146,7 @@ test("GymAppLiveActivity extension matches the GymApp app target's version and b
   );
 });
 
-test("Garmin, iOS, Android, and PWA remain aligned for Android 4.2.2, iOS 4.2.0 and Garmin 4.2.0", () => {
+test("Garmin, iOS, Android, and PWA remain aligned for Android 4.2.2, iOS 4.2.0 and Garmin 4.2.2", () => {
   assert.match(
     garminManifest,
     new RegExp(`\\bversion="${expected.garminVersion.replaceAll(".", "\\.")}"`)
