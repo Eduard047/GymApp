@@ -55,7 +55,7 @@ function freshPhonePlanUsesV5ColumnsAndOneLazyRowCache(logger as Test.Logger) as
     var first = GymPlanAccess.at(freshPlan, 0);
     var firstAgain = GymPlanAccess.at(freshPlan, 0);
     var second = GymPlanAccess.at(freshPlan, 1);
-    var valid = GymPlanAccess.isCompact(freshPlan) &&
+    var valid = freshPlan instanceof GymPlanList &&
         GymPlanAccess.valid(freshPlan, GymStore.maxPlanSets, false) &&
         GymPlanAccess.size(freshPlan) == 3 && stored instanceof Lang.Array &&
         stored.size() == 4 && stored[0] == 5 && stored[1] == names &&
@@ -73,7 +73,7 @@ function freshPhonePlanUsesV5ColumnsAndOneLazyRowCache(logger as Test.Logger) as
     var restored = GymStore.plan;
     var restoredRow = GymPlanAccess.at(restored, 2);
     valid = valid && GymPlanAccess.valid(restored, GymStore.maxPlanSets, false) &&
-        GymPlanAccess.isCompact(restored) && GymPlanAccess.nameAt(restored, 2).equals("Deadlift") &&
+        restored instanceof GymPlanList && GymPlanAccess.nameAt(restored, 2).equals("Deadlift") &&
         GymStore.setField(restoredRow, "weight") == 110.0 &&
         GymStore.setField(restoredRow, "reps") == 3 &&
         !GymStore.persistedPlanNeedsV5Write;
