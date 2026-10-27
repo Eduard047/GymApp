@@ -219,3 +219,34 @@ function freeChoiceAndRestartNeverImportDownloadedPlan(logger as Test.Logger) as
     Toybox.Application.Storage.deleteValue("activeWorkoutModeV1");
     return ok;
 }
+
+(:test, :notFr55Memory)
+function clearQueueIsOfferedForAnUnreadableJournalWithNothingCounted(logger as Test.Logger) as Lang.Boolean {
+    GymStore.clearAccountScopedState();
+    var view = new NavigationTestView();
+    var idle = GymStore.pendingCount() == 0 && GymPendingJournal.readable &&
+        !view.clearQueueAvailable();
+    GymPendingJournal.readable = false;
+    var offered = view.clearQueueAvailable() && view.queueCountText().equals("?");
+    GymPendingJournal.readable = true;
+    return idle && offered;
+}
+
+(:test)
+function syncFromReadyRetriesAfterAnEarlierRequestTimedOut(logger as Test.Logger) as Lang.Boolean {
+    var view = new NavigationTestView();
+    var oldAt = Toybox.System.getTimer() - 61000;
+    view.syncRequestInFlight = false;
+    view.syncRequestTimedOut = true;
+    view.lastSyncRequestAt = oldAt;
+    view.syncFromReady();
+    var retried = !view.syncRequestTimedOut && view.lastSyncRequestAt != oldAt;
+    // A timeout that is still fresh keeps the retry held back.
+    var recentAt = Toybox.System.getTimer();
+    view.syncRequestInFlight = false;
+    view.syncRequestTimedOut = true;
+    view.lastSyncRequestAt = recentAt;
+    view.syncFromReady();
+    var held = view.syncRequestTimedOut && view.lastSyncRequestAt == recentAt;
+    return retried && held;
+}

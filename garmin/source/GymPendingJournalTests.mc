@@ -405,3 +405,46 @@ function fullQueueRefusesNewModesWithoutWritingWorkoutState(logger as Test.Logge
     GymStore.clearAccountScopedState();
     return true;
 }
+
+(:test, :notFr55Memory)
+function discardAllClearsAnUnreadableQueueAndItsStrayBanks(logger as Test.Logger) as Lang.Boolean {
+    GymStore.clearAccountScopedState();
+    Storage.deleteValue("activeWorkoutV1");
+    Storage.setValue("pendingJournalV1", "damaged");
+    Storage.setValue("sendProgressV1", [1]);
+    var banks = [0, 4, 9];
+    for (var i = 0; i < banks.size(); i += 1) {
+        Storage.setValue("queueEntry0-" + banks[i].toString(), [1]);
+        Storage.setValue("queueEntry1-" + banks[i].toString(), [1]);
+        Storage.setValue(GymActiveJournal.key(banks[i], 0), [1]);
+        Storage.setValue(GymPendingJournal.nameKey(banks[i], 59), [1]);
+    }
+    if (GymPendingJournal.load() || GymPendingJournal.readable) { return false; }
+    var cleared = GymPendingJournal.discardAll();
+    var ok = cleared && GymPendingJournal.readable && GymPendingJournal.entries.size() == 0 &&
+        Storage.getValue("pendingJournalV1") == null && Storage.getValue("sendProgressV1") == null;
+    for (var j = 0; j < banks.size(); j += 1) {
+        ok = ok && Storage.getValue("queueEntry0-" + banks[j].toString()) == null &&
+            Storage.getValue("queueEntry1-" + banks[j].toString()) == null &&
+            Storage.getValue(GymActiveJournal.key(banks[j], 0)) == null &&
+            Storage.getValue(GymPendingJournal.nameKey(banks[j], 59)) == null;
+    }
+    GymStore.clearAccountScopedState();
+    return ok;
+}
+
+(:test, :notFr55Memory)
+function discardUnsentQueueEscapesAnUnreadableJournal(logger as Test.Logger) as Lang.Boolean {
+    GymStore.clearAccountScopedState();
+    Storage.deleteValue("activeWorkoutV1");
+    Storage.setValue("pendingJournalV1", "damaged");
+    if (GymPendingJournal.load() || GymPendingJournal.readable) { return false; }
+    GymWorkoutMode.clear();
+    // The damaged queue blocks a new workout with its own status, not "full".
+    var blocked = !GymWorkoutMode.begin(false) && GymStore.status == GymStatus.QUEUE_BROKEN;
+    var cleared = GymStore.discardUnsentQueue();
+    var ok = blocked && cleared && GymPendingJournal.readable &&
+        Storage.getValue("pendingJournalV1") == null && GymStore.pendingCount() == 0;
+    GymStore.clearAccountScopedState();
+    return ok;
+}

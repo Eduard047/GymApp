@@ -68,7 +68,9 @@ function statusCodesPreservePhoneAndDiagnosticText(logger as Test.Logger) as Lan
         [17351, "OFFLINE"],
         [17578, "START FAIL"],
         [17895, "RESUMED"],
-        [18119, "CONFIRM"]
+        [18119, "CONFIRM"],
+        [18348, "QUEUE BROKEN"],
+        [18732, "PHONE SILENT"]
     ];
     for (var i = 0; i < rows.size(); i += 1) {
         if (!GymStatus.text(rows[i][0]).equals(rows[i][1])) { return false; }

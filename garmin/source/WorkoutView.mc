@@ -233,11 +233,11 @@ class WorkoutView extends Ui.View {
         if (syncRequestInFlight && lastSyncRequestAt != null &&
             GymStore.timerElapsedMs(lastSyncRequestAt) > 60000l) {
             // Connect IQ offers no safe cancellation for an outstanding
-            // listener. Lock sync until the app is reopened so a missing or
-            // late callback can never create overlapping listeners.
+            // listener. Hold sync for another request until the user retries
+            // so a missing or late callback only ever sets a status.
             syncRequestInFlight = false;
             syncRequestTimedOut = true;
-            GymStore.status = GymStatus.REOPEN;
+            GymStore.status = GymStatus.PHONE_SILENT;
             staticSurfaceChanged = true;
         }
         if (page == 7 || !GymSession.recording) {
@@ -324,8 +324,17 @@ class WorkoutView extends Ui.View {
     }
 
     function requestSyncNow() {
-        if (syncRequestInFlight || syncRequestTimedOut) {
+        if (syncRequestInFlight) {
             return;
+        }
+        if (syncRequestTimedOut) {
+            // A late callback of the timed-out request only sets a status, so
+            // after another quiet minute the user may simply try again.
+            if (lastSyncRequestAt == null ||
+                GymStore.timerElapsedMs(lastSyncRequestAt) < 60000l) {
+                return;
+            }
+            syncRequestTimedOut = false;
         }
         syncRequestInFlight = true;
         lastSyncRequestAt = System.getTimer();
@@ -359,7 +368,7 @@ class WorkoutView extends Ui.View {
             // already at their 96/128 KiB loader ceiling.
             syncRequestInFlight = false;
             syncRequestTimedOut = true;
-            GymStore.status = GymStatus.REOPEN;
+            GymStore.status = GymStatus.PHONE_SILENT;
         }
         if (page == 7 || !GymSession.recording) {
             Ui.requestUpdate();
@@ -418,7 +427,7 @@ class WorkoutView extends Ui.View {
             GymStore.timerElapsedMs(lastSyncRequestAt) > 60000l) {
             syncRequestInFlight = false;
             syncRequestTimedOut = true;
-            GymStore.status = GymStatus.REOPEN;
+            GymStore.status = GymStatus.PHONE_SILENT;
         }
         if (page == 7 || !GymSession.recording) {
             Ui.requestUpdate();
@@ -1318,12 +1327,14 @@ class WorkoutView extends Ui.View {
             return GymStore.tr("DATA KEPT · RETRY", "ДАНІ Є · ПОВТОР", "ДАННЫЕ ЕСТЬ · ПОВТОР");
         } else if (current == GymStatus.QUEUE_FULL) {
             return GymStore.tr("SYNC WITH PHONE", "СИНХР. З ТЕЛ.", "СИНХР. С ТЕЛ.");
+        } else if (current == GymStatus.QUEUE_BROKEN) {
+            return GymStore.tr("QUEUE DAMAGED · CLEAR", "ЧЕРГА ПОШКОДЖ. · ОЧИСТИ", "ОЧЕРЕДЬ ПОВРЕЖД. · ОЧИСТИ");
         } else if (current == GymStatus.STORE_FULL) {
             return GymStore.tr("STORAGE FULL", "ПАМ'ЯТЬ ПОВНА", "ПАМЯТЬ ПОЛНА");
         } else if ((current == GymStatus.SYNC_FULL)) {
             return waiting.toString() + GymStore.tr(" WAITING · FIT SAVED", " ЧЕКАЄ · FIT Є", " ЖДУТ · FIT ЕСТЬ");
-        } else if ((current == GymStatus.REOPEN)) {
-            return GymStore.tr("REOPEN APP", "ПЕРЕЗАПУСК", "ПЕРЕЗАПУСК");
+        } else if ((current == GymStatus.PHONE_SILENT)) {
+            return GymStore.tr("PHONE SILENT · RETRY", "ТЕЛ. МОВЧИТЬ · ПОВТОР", "ТЕЛ. МОЛЧИТ · ПОВТОР");
         } else if ((current == GymStatus.OFFLINE) || (current == GymStatus.NO_PHONE)) {
             return GymStore.tr("OFFLINE", "ОФЛАЙН", "ОФЛАЙН") +
                 (waiting > 0 ? " · " + waiting.toString() : "");
@@ -1350,14 +1361,17 @@ class WorkoutView extends Ui.View {
         if (current == GymStatus.QUEUE_FULL) {
             return GymStore.tr("SYNC WITH PHONE", "СИНХР. З ТЕЛ.", "СИНХР. С ТЕЛ.");
         }
+        if (current == GymStatus.QUEUE_BROKEN) {
+            return GymStore.tr("QUEUE DAMAGED", "ЧЕРГА ПОШКОДЖ.", "ОЧЕРЕДЬ ПОВРЕЖД.");
+        }
         if ((current == GymStatus.STORE_FULL) ||
             (current == GymStatus.SYNC_FULL)) {
             return GymStore.tr("STORAGE FULL", "ПАМ'ЯТЬ ПОВНА", "ПАМЯТЬ ПОЛНА");
         }
         if (current == GymStatus.FIT_FAIL || current == GymStatus.FIT_CHECK || current == GymStatus.SAVE_FAIL || current == GymStatus.START_FAIL || current == GymStatus.REC_FAIL || current == GymStatus.FIT_RETRY) {
             return GymStore.tr("DATA KEPT", "ДАНІ Є", "ДАННЫЕ ЕСТЬ");
-        } else if ((current == GymStatus.REOPEN)) {
-            return GymStore.tr("REOPEN APP", "ПЕРЕЗАПУСК", "ПЕРЕЗАПУСК");
+        } else if ((current == GymStatus.PHONE_SILENT)) {
+            return GymStore.tr("PHONE SILENT", "ТЕЛ. МОВЧИТЬ", "ТЕЛ. МОЛЧИТ");
         }
         if (GymLocalWorkout.snapshot != null) {
             return GymStore.tr("ON WATCH", "НА ГОДИННИКУ", "НА ЧАСАХ");
@@ -1374,15 +1388,21 @@ class WorkoutView extends Ui.View {
     // The whole delete-unsent feature is compiled out of the 128 KiB Forerunner 55.
     (:notFr55Memory)
     function clearQueueAvailable() {
-        return GymStore.pendingCount() > 0 && !hasWorkoutToResume() &&
-            !GymStore.hasPreparedWorkout();
+        return (GymStore.pendingCount() > 0 || !GymPendingJournal.readable) &&
+            !hasWorkoutToResume() && !GymStore.hasPreparedWorkout();
+    }
+
+    // A damaged journal cannot be counted; show "?" until it is cleared.
+    (:notFr55Memory)
+    function queueCountText() {
+        return GymPendingJournal.readable ? GymStore.pendingCount().toString() : "?";
     }
 
     // Delete-unsent copy. 0/1 settings row label/value, 2 title, 3/4 detail
     // lines, 5 safe option, 6 delete option.
     (:notFr55Memory)
     function clearQueueText(part) {
-        var n = GymStore.pendingCount().toString();
+        var n = queueCountText();
         var again = clearStage == 2;
         if (part == 0) {
             return GymStore.tr("QUEUE", "ЧЕРГА", "ОЧЕРЕДЬ");
@@ -1461,7 +1481,7 @@ class WorkoutView extends Ui.View {
     function readyActionText(index, count) {
         if (index == 2) {
             return GymStore.tr("CLEAR QUEUE (", "ОЧИСТИТИ ЧЕРГУ (", "ОЧИСТИТЬ ОЧЕРЕДЬ (") +
-                GymStore.pendingCount().toString() + ")";
+                queueCountText() + ")";
         }
         if (GymLocalWorkout.snapshot != null && index == 1) {
             return GymStore.tr("LATER", "ПІЗНІШЕ", "ПОЗЖЕ");
@@ -2230,6 +2250,9 @@ class WorkoutView extends Ui.View {
         }
         if (current == GymStatus.QUEUE_FULL) {
             return GymStore.tr("SYNC WITH PHONE", "СИНХР. З ТЕЛ.", "СИНХР. С ТЕЛ.");
+        }
+        if (current == GymStatus.QUEUE_BROKEN) {
+            return GymStore.tr("QUEUE DAMAGED · CLEAR", "ЧЕРГА ПОШКОДЖ. · ОЧИСТИ", "ОЧЕРЕДЬ ПОВРЕЖД. · ОЧИСТИ");
         }
         if (current == GymStatus.STORE_FULL) {
             return GymStore.tr("STORAGE FULL", "ПАМ'ЯТЬ ПОВНА", "ПАМЯТЬ ПОЛНА");

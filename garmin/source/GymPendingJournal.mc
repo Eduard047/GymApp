@@ -613,9 +613,14 @@ class GymPendingJournal {
     // an interrupted cleanup are unreferenced and overwritten on bank reuse.
     (:notFr55Memory)
     static function discardAll() {
-        if (!readable) { return false; }
+        // An unreadable index names no banks, so sweep every bank. This is the
+        // only way out of a damaged queue; the active workout's bank is kept.
         var banks = [];
-        for (var i = 0; i < entries.size(); i += 1) { banks.add(bankOf(entries[i])); }
+        if (readable) {
+            for (var i = 0; i < entries.size(); i += 1) { banks.add(bankOf(entries[i])); }
+        } else {
+            for (var a = 0; a < 10; a += 1) { banks.add(a); }
+        }
         try { Storage.deleteValue("pendingJournalV1"); }
         catch (e) { return false; }
         try { Storage.deleteValue("sendProgressV1"); } catch (e) { }

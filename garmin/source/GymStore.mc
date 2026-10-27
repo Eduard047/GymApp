@@ -5033,8 +5033,9 @@ class GymStore {
     // catalog, bindings, settings and FIT files are not touched.
     (:notFr55Memory)
     static function discardUnsentQueue() {
+        // A damaged journal cannot be recovered; clearing it is the way out.
         if (GymSession.recording || hasUnfinishedWorkout() || hasPreparedWorkout() ||
-            !recoverQueuedWorkout()) { return false; }
+            (GymPendingJournal.readable && !recoverQueuedWorkout())) { return false; }
         try { Storage.setValue("pending", []); } catch (e) { return false; }
         pending = []; parkedPending = null; pendingEstimateSource = null;
         if (!GymPendingJournal.discardAll()) { return false; }

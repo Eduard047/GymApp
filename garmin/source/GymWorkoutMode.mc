@@ -106,7 +106,11 @@ class GymWorkoutMode {
         }
         // Reserve a queue slot before any new workout or picker state is written.
         // Resume bypasses begin(), so an existing recording remains recoverable.
-        if (!GymPendingJournal.readable || GymStore.pendingCount() >= startQueueLimit) {
+        if (!GymPendingJournal.readable) {
+            GymStore.status = GymStatus.QUEUE_BROKEN;
+            return false;
+        }
+        if (GymStore.pendingCount() >= startQueueLimit) {
             GymStore.status = GymStatus.QUEUE_FULL;
             return false;
         }
@@ -169,7 +173,11 @@ class GymWorkoutMode {
         }
         // Reserve a queue slot before any new workout state is written.
         // Resume bypasses begin(), so an existing recording remains recoverable.
-        if (!GymPendingJournal.readable || GymStore.pendingCount() > 0) {
+        if (!GymPendingJournal.readable) {
+            GymStore.status = GymStatus.QUEUE_BROKEN;
+            return false;
+        }
+        if (GymStore.pendingCount() > 0) {
             GymStore.status = GymStatus.QUEUE_FULL;
             return false;
         }
