@@ -25,6 +25,9 @@ class WorkoutView extends Ui.View {
     // 1 or 2 while page 6 asks to delete the unsent queue (first/second confirmation).
     (:notFr55Memory)
     var clearStage = 0;
+    // True while page 6 asks to delete only the next unsent workout (Settings row).
+    (:notFr55Memory, :richWorkoutMode)
+    var clearHead = false;
     var settingsSelected = 0;
     (:notFr55Memory, :richWorkoutMode)
     var settingsCount = 7;
@@ -240,6 +243,7 @@ class WorkoutView extends Ui.View {
             GymStore.status = GymStatus.PHONE_SILENT;
             staticSurfaceChanged = true;
         }
+        if (watchPhoneSilence()) { staticSurfaceChanged = true; }
         if (page == 7 || !GymSession.recording) {
             staticRefreshTicks += 1;
             if (staticSurfaceChanged || staticRefreshTicks >= 60) {
@@ -370,6 +374,7 @@ class WorkoutView extends Ui.View {
             syncRequestTimedOut = true;
             GymStore.status = GymStatus.PHONE_SILENT;
         }
+        watchPhoneSilence();
         if (page == 7 || !GymSession.recording) {
             Ui.requestUpdate();
             return;
@@ -429,6 +434,7 @@ class WorkoutView extends Ui.View {
             syncRequestTimedOut = true;
             GymStore.status = GymStatus.PHONE_SILENT;
         }
+        watchPhoneSilence();
         if (page == 7 || !GymSession.recording) {
             Ui.requestUpdate();
             return;
@@ -446,6 +452,30 @@ class WorkoutView extends Ui.View {
             restWasActive = true;
             GymStore.status = GymStatus.REST_RESUMED;
         }
+    }
+
+    // Phone-silence watchdogs. A transmit whose listener never fires within
+    // 60 s releases the send flag and backs off; a status that still says "waiting
+    // for the phone" after an own transmit and 60 s without any inbound message
+    // turns into PHONE_SILENT. Returns true when the status changed.
+    (:notFr55Memory)
+    function watchPhoneSilence() {
+        return releaseStuckSend() || GymComm.expireSilence();
+    }
+
+    (:fr55Memory)
+    function watchPhoneSilence() { return releaseStuckSend(); }
+
+    function releaseStuckSend() {
+        if (!pendingSendInFlight || pendingRetryStartedAt == null ||
+            GymStore.timerElapsedMs(pendingRetryStartedAt) <= 60000l) {
+            return false;
+        }
+        pendingSendInFlight = false;
+        pendingRetryStartedAt = System.getTimer();
+        pendingRetryDelayMs = nextRetryDelay();
+        GymStore.status = GymStatus.PHONE_SILENT;
+        return true;
     }
 
     function onSyncSent(ok) {
@@ -535,13 +565,17 @@ class WorkoutView extends Ui.View {
             return;
         }
         pendingSendInFlight = true;
+        pendingRetryStartedAt = System.getTimer();
         GymComm.send(message, method(:onPendingSent));
     }
 
     function onPendingSent(ok) {
         // Transport completion is not a database acknowledgement. Keep the
         // item queued until the Android app replies with an explicit ack.
-        GymStore.status = ok ? GymStatus.WAITING_ACK : GymStatus.OFFLINE;
+        // A nack that raced this callback keeps its status and slower retry.
+        if (GymComm.nackDelayMs == 0) {
+            GymStore.status = ok ? GymStatus.WAITING_ACK : GymStatus.OFFLINE;
+        }
         pendingSendInFlight = false;
         pendingRetryStartedAt = System.getTimer();
         pendingRetryDelayMs = ok ? 20000 : nextRetryDelay();
@@ -558,6 +592,18 @@ class WorkoutView extends Ui.View {
         return next;
     }
 
+    // Apply a phone nack: wait its delay before the next send and, for a stale
+    // pairing generation, ask the phone for one sync first.
+    function consumeNack() {
+        pendingRetryDelayMs = GymComm.nackDelayMs;
+        pendingRetryStartedAt = System.getTimer();
+        GymComm.nackDelayMs = 0;
+        if (GymComm.nackSyncWanted) {
+            GymComm.nackSyncWanted = false;
+            requestSyncNow();
+        }
+    }
+
     (:notFr55Memory)
     function maybeRetryPending() {
         // Serialization/transmit buffers compete with sensors and set commits
@@ -568,6 +614,8 @@ class WorkoutView extends Ui.View {
             pendingRetryStartedAt = null;
             pendingRetryDelayMs = 5000;
             silentAtCount = 0;
+            GymComm.nackDelayMs = 0;
+            GymComm.nackSyncWanted = false;
             return;
         }
         if (pendingSendInFlight) {
@@ -581,6 +629,7 @@ class WorkoutView extends Ui.View {
             pendingRetryStartedAt = activityAt;
             silentAtCount = 0;
         }
+        if (GymComm.nackDelayMs > 0) { consumeNack(); }
         if (pendingRetryStartedAt == null) {
             pendingRetryStartedAt = System.getTimer();
             return;
@@ -602,11 +651,14 @@ class WorkoutView extends Ui.View {
             pendingSendInFlight = false;
             pendingRetryStartedAt = null;
             pendingRetryDelayMs = 5000;
+            GymComm.nackDelayMs = 0;
+            GymComm.nackSyncWanted = false;
             return;
         }
         if (pendingSendInFlight) {
             return;
         }
+        if (GymComm.nackDelayMs > 0) { consumeNack(); }
         if (pendingRetryStartedAt == null) {
             pendingRetryStartedAt = System.getTimer();
             return;
@@ -1295,6 +1347,42 @@ class WorkoutView extends Ui.View {
         return GymStore.tr("OPEN GYMAPP ON PHONE", "ВІДКРИЙ GYMAPP НА ТЕЛ.", "ОТКРОЙ GYMAPP НА ТЕЛ.");
     }
 
+    // Statuses a phone nack sets. The 128 KiB Forerunner 55 keeps its 4.0.1
+    // Ready lines and shows none of them (the queue stays, retries slow down).
+    (:notFr55Memory)
+    function isNackStatus(current) {
+        return current == GymStatus.REFUSED || current == GymStatus.RATE_LIMITED ||
+            current == GymStatus.RESET_REQUIRED || current == GymStatus.PAIR_OLD;
+    }
+
+    (:fr55Memory, :inline)
+    function isNackStatus(current) { return false; }
+
+    (:fullLegacyState)
+    function nackStatusText(current) {
+        if (current == GymStatus.REFUSED) {
+            return GymStore.tr("REJECTED · DELETE?", "ВІДХИЛ. · ВИДАЛИ?", "ОТКЛОН. · УДАЛИТЬ?");
+        } else if (current == GymStatus.RATE_LIMITED) {
+            return GymStore.tr("LIMIT 24H", "ЛІМІТ 24Г", "ЛИМИТ 24Ч");
+        } else if (current == GymStatus.RESET_REQUIRED) {
+            return GymStore.tr("RESET IN APP", "СКИД У ДОД.", "СБРОС В ПРИЛ.");
+        }
+        return GymStore.tr("PAIRING OLD", "ПАРУВАННЯ СТАРЕ", "СОПРЯЖ. УСТАРЕЛО");
+    }
+
+    // The 128 KiB and lite status lines are capped at 20 characters.
+    (:compactLegacyState, :notFr55Memory)
+    function nackStatusText(current) {
+        if (current == GymStatus.REFUSED) {
+            return GymStore.tr("REJECTED", "ВІДХИЛЕНО", "ОТКЛОНЕНО");
+        } else if (current == GymStatus.RATE_LIMITED) {
+            return GymStore.tr("LIMIT 24H", "ЛІМІТ 24Г", "ЛИМИТ 24Ч");
+        } else if (current == GymStatus.RESET_REQUIRED) {
+            return GymStore.tr("RESET IN APP", "СКИД У ДОД.", "СБРОС В ПРИЛ.");
+        }
+        return GymStore.tr("PAIRING OLD", "ПАРУВАННЯ СТАРЕ", "СОПРЯЖ. УСТАРЕЛО");
+    }
+
     (:fullLegacyState)
     function readyPlanText() {
         if (GymWorkoutMode.isFree() || !GymWorkoutMode.hasValidPlan()) {
@@ -1335,6 +1423,8 @@ class WorkoutView extends Ui.View {
             return waiting.toString() + GymStore.tr(" WAITING · FIT SAVED", " ЧЕКАЄ · FIT Є", " ЖДУТ · FIT ЕСТЬ");
         } else if ((current == GymStatus.PHONE_SILENT)) {
             return GymStore.tr("PHONE SILENT · RETRY", "ТЕЛ. МОВЧИТЬ · ПОВТОР", "ТЕЛ. МОЛЧИТ · ПОВТОР");
+        } else if (isNackStatus(current)) {
+            return nackStatusText(current);
         } else if ((current == GymStatus.OFFLINE) || (current == GymStatus.NO_PHONE)) {
             return GymStore.tr("OFFLINE", "ОФЛАЙН", "ОФЛАЙН") +
                 (waiting > 0 ? " · " + waiting.toString() : "");
@@ -1372,6 +1462,8 @@ class WorkoutView extends Ui.View {
             return GymStore.tr("DATA KEPT", "ДАНІ Є", "ДАННЫЕ ЕСТЬ");
         } else if ((current == GymStatus.PHONE_SILENT)) {
             return GymStore.tr("PHONE SILENT", "ТЕЛ. МОВЧИТЬ", "ТЕЛ. МОЛЧИТ");
+        } else if (isNackStatus(current)) {
+            return nackStatusText(current);
         }
         if (GymLocalWorkout.snapshot != null) {
             return GymStore.tr("ON WATCH", "НА ГОДИННИКУ", "НА ЧАСАХ");
@@ -1397,6 +1489,60 @@ class WorkoutView extends Ui.View {
     function queueCountText() {
         return GymPendingJournal.readable ? GymStore.pendingCount().toString() : "?";
     }
+
+    // Delete only the next unsent workout (the queue head the watch is sending).
+    // The Settings row exists on the rich profiles; the 96 KiB lite watches keep
+    // only "clear all" on their Ready card.
+    (:notFr55Memory, :richWorkoutMode)
+    function deleteNextAvailable() {
+        return clearQueueAvailable() && GymPendingJournal.readable && GymStore.pendingCount() > 0;
+    }
+
+    // Settings row label/value, and the head-only copy of the confirmation
+    // title (2) and detail (4); every other line is the clear-all text.
+    (:notFr55Memory, :richWorkoutMode)
+    function deleteNextText(part) {
+        var again = clearStage == 2;
+        if (part == 0) {
+            return GymStore.tr("DELETE", "ВИДАЛИТИ", "УДАЛИТЬ");
+        } else if (part == 1) {
+            return GymStore.tr("NEXT", "НАСТ.", "СЛЕД.") + " (1/" + queueCountText() + ")";
+        } else if (part == 2) {
+            return again ? GymStore.tr("DELETE NEXT?", "ВИДАЛИТИ НАСТ.?", "УДАЛИТЬ СЛЕД.?") :
+                GymStore.tr("DELETE NEXT UNSENT?", "ВИДАЛИТИ НАСТ. ТРЕН.?", "УДАЛИТЬ СЛЕД. ТРЕН.?");
+        }
+        return again ? "" : GymStore.tr("GARMIN KEEPS ACTIVITY", "GARMIN ЗБЕРЕЖЕ ЗАПИС", "GARMIN СОХРАНИТ ЗАПИСЬ");
+    }
+
+    // Confirmation line n: head-only copy for title and detail, else clear-all.
+    (:notFr55Memory, :richWorkoutMode)
+    function clearConfirmText(part) {
+        return clearHead && (part == 2 || part == 4) ? deleteNextText(part) : clearQueueText(part);
+    }
+
+    (:notFr55Memory, :richWorkoutMode)
+    function clearHeadActive() { return clearHead; }
+
+    (:compactWorkoutMode96)
+    function clearHeadActive() { return false; }
+
+    // After a head delete the next workout goes out promptly and no phone
+    // verdict about the deleted one lingers.
+    (:notFr55Memory, :richWorkoutMode)
+    function discardHeadAndReset() {
+        if (!GymStore.discardPendingHead()) { return false; }
+        pendingSendInFlight = false;
+        pendingRetryDelayMs = 5000;
+        pendingRetryStartedAt = null;
+        silentAtCount = 0;
+        GymComm.nackDelayMs = 0;
+        GymComm.nackSyncWanted = false;
+        GymComm.awaitingPhoneSince = null;
+        return true;
+    }
+
+    (:compactWorkoutMode96)
+    function discardHeadAndReset() { return false; }
 
     // Delete-unsent copy. 0/1 settings row label/value, 2 title, 3/4 detail
     // lines, 5 safe option, 6 delete option.
@@ -1427,7 +1573,7 @@ class WorkoutView extends Ui.View {
     // A selection left on a row that just vanished falls back to the first row.
     (:notFr55Memory, :richWorkoutMode)
     function settingsRows() {
-        var rows = settingsCount + (clearQueueAvailable() ? 1 : 0);
+        var rows = settingsCount + (clearQueueAvailable() ? (deleteNextAvailable() ? 2 : 1) : 0);
         if (settingsSelected >= rows) { settingsSelected = 0; }
         return rows;
     }
@@ -2357,12 +2503,12 @@ class WorkoutView extends Ui.View {
     (:notFr55Memory, :richWorkoutMode)
     function drawClearQueueConfirmation(dc, w, h) {
         dc.setColor(Gfx.COLOR_RED, Gfx.COLOR_TRANSPARENT);
-        drawCentered(dc, 34, Gfx.FONT_XTINY, fitTextWidth(dc, clearQueueText(2), Gfx.FONT_XTINY, w * 8 / 10));
+        drawCentered(dc, 34, Gfx.FONT_XTINY, fitTextWidth(dc, clearConfirmText(2), Gfx.FONT_XTINY, w * 8 / 10));
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        drawCentered(dc, 64, Gfx.FONT_XTINY, fitTextWidth(dc, clearQueueText(3), Gfx.FONT_XTINY, w * 8 / 10));
-        drawCentered(dc, 86, Gfx.FONT_XTINY, fitTextWidth(dc, clearQueueText(4), Gfx.FONT_XTINY, w * 8 / 10));
-        drawDiscardRow(dc, w, h, 0, 144, clearQueueText(5), false);
-        drawDiscardRow(dc, w, h, 1, 192, clearQueueText(6), true);
+        drawCentered(dc, 64, Gfx.FONT_XTINY, fitTextWidth(dc, clearConfirmText(3), Gfx.FONT_XTINY, w * 8 / 10));
+        drawCentered(dc, 86, Gfx.FONT_XTINY, fitTextWidth(dc, clearConfirmText(4), Gfx.FONT_XTINY, w * 8 / 10));
+        drawDiscardRow(dc, w, h, 0, 144, clearConfirmText(5), false);
+        drawDiscardRow(dc, w, h, 1, 192, clearConfirmText(6), true);
     }
 
     (:compactWorkoutMode96)
@@ -2623,10 +2769,10 @@ class WorkoutView extends Ui.View {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         drawCentered(dc, 18, Gfx.FONT_XTINY, GymStore.tr("SETTINGS", "НАЛАШТ", "НАСТРОЙКИ"));
 
-        // The delete-unsent row makes eight rows, so they pack a little tighter.
+        // The delete rows make eight or nine rows, so they pack tighter.
         var rows = settingsRows();
-        var top = rows > settingsCount ? 40 : 43;
-        var step = rows > settingsCount ? 24 : 28;
+        var top = settingsTop(rows);
+        var step = settingsStep(rows);
         drawSettingsRow(dc, w, h, 0, top, GymStore.tr("AUTO SET", "АВТО ПІДХ", "АВТО ПОДХ"), GymStore.onOff(GymStore.autoPromptEnabled));
         drawSettingsRow(dc, w, h, 1, top + step, GymStore.tr("SENSITIVITY", "ЧУТЛИВІСТЬ", "ЧУВСТВИТ."), GymStore.sensitivityLabel());
         drawSettingsRow(dc, w, h, 2, top + step * 2, GymStore.tr("WEIGHT STEP", "КРОК ВАГИ", "ШАГ ВЕСА"), localizedDecimal(GymStore.weightStep));
@@ -2637,6 +2783,19 @@ class WorkoutView extends Ui.View {
         if (rows > settingsCount) {
             drawSettingsRow(dc, w, h, 7, top + step * 7, clearQueueText(0), clearQueueText(1));
         }
+        if (rows > settingsCount + 1) {
+            drawSettingsRow(dc, w, h, 8, top + step * 8, deleteNextText(0), deleteNextText(1));
+        }
+    }
+
+    (:fullLegacyState)
+    function settingsTop(rows) {
+        return rows > settingsCount + 1 ? 36 : (rows > settingsCount ? 40 : 43);
+    }
+
+    (:fullLegacyState)
+    function settingsStep(rows) {
+        return rows > settingsCount + 1 ? 22 : (rows > settingsCount ? 24 : 28);
     }
 
     (:compactLegacyState, :notFr55Memory, :richWorkoutMode)
@@ -2666,9 +2825,12 @@ class WorkoutView extends Ui.View {
         } else if (settingsSelected == 6) {
             label = GymStore.tr("TUTORIAL", "НАВЧАННЯ", "ОБУЧЕНИЕ");
             value = GymStore.tr("OPEN", "ВІДКР", "ОТКР");
-        } else {
+        } else if (settingsSelected == 7) {
             label = clearQueueText(0);
             value = clearQueueText(1);
+        } else {
+            label = deleteNextText(0);
+            value = deleteNextText(1);
         }
         drawSettingsRow(dc, w, h, settingsSelected, 116, label, value);
     }
@@ -3410,8 +3572,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             }
         } else if (view.page == 5) {
             var rows = view.settingsRows();
-            var settingsRow = rows > view.settingsCount ?
-                rowAt(y, 40, 24, rows) : rowAt(y, 43, 28, rows);
+            var settingsRow = rowAt(y, view.settingsTop(rows), view.settingsStep(rows), rows);
             if (settingsRow >= 0) {
                 view.settingsSelected = settingsRow;
                 handleSettings(x < (view.screenWidth / 2) ? -1 : 1);
@@ -3765,7 +3926,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             view.clearStage = 2;
             view.discardSelected = 0;
         } else {
-            GymStore.status = GymStore.discardUnsentQueue() ?
+            GymStore.status = (view.clearHeadActive() ?
+                view.discardHeadAndReset() : GymStore.discardUnsentQueue()) ?
                 GymStatus.READY : GymStatus.SAVE_FAIL;
             view.clearStage = 0;
             view.selected = 0;
@@ -3909,7 +4071,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (view.settingsSelected == 6) {
             view.page = 7;
             view.startTutorial();
-        } else if (view.settingsSelected == 7) {
+        } else if (view.settingsSelected == 7 || view.settingsSelected == 8) {
+            view.clearHead = view.settingsSelected == 8;
             openClearQueue();
         }
     }

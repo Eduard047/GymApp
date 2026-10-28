@@ -71,6 +71,9 @@ module GymStatus {
     const CONFIRM = 18119;
     const QUEUE_BROKEN = 18348;
     const PHONE_SILENT = 18732;
+    const RATE_LIMITED = 19116;
+    const RESET_REQUIRED = 19502;
+    const REFUSED = 19951;
     function text(value) {
         if (!(value instanceof Lang.Number)) { return value; }
         var start = value >> 5;

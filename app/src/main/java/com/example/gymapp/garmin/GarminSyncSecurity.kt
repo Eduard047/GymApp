@@ -425,6 +425,57 @@ internal fun boundGarminPayload(
     }
 }
 
+/**
+ * Explicit negative acknowledgement for an inbound `create_workout`.
+ *
+ * Contract:
+ * - Sent only to the trusted (pinned) watch of the ready account, and only after the
+ *   trusted-device check. Unknown devices and a phone without a ready account stay silent.
+ * - Payload: `type = "nack"`, optional `requestId` (an echo of the command's request ID, only
+ *   when it is a printable-ASCII string of 1..[MAX_GARMIN_REQUEST_ID_LENGTH] bytes), and
+ *   `reason`, one of the fixed [GarminNackReason] strings. Bound like `ack` through
+ *   [boundGarminPayload]. No free text, account data, or workout data.
+ * - A nack never confirms receipt: the workout was NOT stored, so the watch must keep it queued
+ *   and must not treat it as an `ack`.
+ */
+internal object GarminNackReason {
+    const val GENERATION_MISSING = "generation_missing"
+    const val GENERATION_MISMATCH = "generation_mismatch"
+    const val BINDING_MISMATCH = "binding_mismatch"
+    const val INVALID = "invalid"
+    const val REJECTED = "rejected"
+    const val RATE_LIMITED = "rate_limited"
+    const val RESET_REQUIRED = "reset_required"
+
+    val all: Set<String> = setOf(
+        GENERATION_MISSING,
+        GENERATION_MISMATCH,
+        BINDING_MISMATCH,
+        INVALID,
+        REJECTED,
+        RATE_LIMITED,
+        RESET_REQUIRED
+    )
+}
+
+internal const val GARMIN_NACK_TYPE = "nack"
+
+internal fun garminNackRequestIdOrNull(raw: Any?): String? {
+    val value = raw as? String ?: return null
+    if (value.isEmpty() || value.length > MAX_GARMIN_REQUEST_ID_LENGTH) return null
+    return value.takeIf { text -> text.all { it.code in 0x20..0x7E } }
+}
+
+/** Unbound nack body, or null when [reason] is not one of the fixed [GarminNackReason] values. */
+internal fun garminNackPayload(command: Map<Any?, Any?>, reason: String): Map<String, Any>? {
+    if (reason !in GarminNackReason.all) return null
+    val payload = LinkedHashMap<String, Any>(3)
+    payload["type"] = GARMIN_NACK_TYPE
+    garminNackRequestIdOrNull(command["requestId"])?.let { payload["requestId"] = it }
+    payload["reason"] = reason
+    return payload
+}
+
 internal fun boundGarminSyncPayload(
     payload: Map<String, Any>,
     binding: GarminBinding,

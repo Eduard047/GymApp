@@ -389,6 +389,7 @@ class GarminSyncManager(
         Created,
         AlreadyProcessed,
         PairingLimitReached,
+        RateLimited,
         Rejected
     }
 
@@ -1127,12 +1128,21 @@ class GarminSyncManager(
     }
 
     private suspend fun createWorkout(device: IQDevice, command: Map<Any?, Any?>): Boolean {
+        // Set only after the trusted-device check passes. A reject before that point (no
+        // ready account, untrusted device) stays silent; every later reject sends a nack.
+        var nackReason: String? = null
+        var nackBinding: GarminBinding? = null
         val accepted = pairingStateMutex.withLock {
             val account = activeAccountContext() ?: return@withLock null
             val sourceDeviceBinding = deviceBinding(device)
             if (trustedDeviceBinding(account) != sourceDeviceBinding) {
                 Log.i(TAG, "Rejected Garmin workout from an untrusted device")
                 return@withLock null
+            }
+            fun reject(reason: String, generation: String? = null): AcceptedGarminWorkout? {
+                nackReason = reason
+                nackBinding = nackBindingFor(account, sourceDeviceBinding, generation)
+                return null
             }
             // Inbound workouts always carry the pairing generation. A message without
             // one is rejected, matching the iPhone app; the generationless fallback
@@ -1144,8 +1154,8 @@ class GarminSyncManager(
                     deviceBinding = sourceDeviceBinding,
                     claimedGeneration = rawGeneration
                 )
-                    ?: return@withLock null
-                else -> return@withLock null
+                    ?: return@withLock reject(GarminNackReason.GENERATION_MISMATCH)
+                else -> return@withLock reject(GarminNackReason.GENERATION_MISSING)
             }
             val binding = GarminBinding(
                 account = account.binding,
@@ -1159,10 +1169,10 @@ class GarminSyncManager(
                 ) != GarminBindingDecision.Bound
             ) {
                 Log.i(TAG, "Rejected unbound Garmin workout")
-                return@withLock null
+                return@withLock reject(GarminNackReason.BINDING_MISMATCH, binding.pairingGeneration)
             }
             if (!recordPairingGenerationCapability(account, sourceDeviceBinding)) {
-                return@withLock null
+                return@withLock reject(GarminNackReason.REJECTED, binding.pairingGeneration)
             }
 
             val parseResult = parseGarminWorkoutCommandResult(
@@ -1173,7 +1183,7 @@ class GarminSyncManager(
                 // The category is intentionally value-free: no request identifiers,
                 // exercise names, metrics, bindings, or device IDs enter diagnostics.
                 Log.i(TAG, "Rejected Garmin workout: ${parseResult.issue?.name ?: "Unknown"}")
-                return@withLock null
+                return@withLock reject(GarminNackReason.INVALID, binding.pairingGeneration)
             }
 
             if (
@@ -1183,30 +1193,42 @@ class GarminSyncManager(
                     binding = binding
                 )
             ) {
-                return@withLock null
+                return@withLock reject(GarminNackReason.REJECTED, binding.pairingGeneration)
             }
 
             when (persistWorkout(account, binding, workout)) {
-                WorkoutPersistenceResult.Rejected -> null
+                WorkoutPersistenceResult.Rejected ->
+                    reject(GarminNackReason.REJECTED, binding.pairingGeneration)
+                WorkoutPersistenceResult.RateLimited ->
+                    reject(GarminNackReason.RATE_LIMITED, binding.pairingGeneration)
                 WorkoutPersistenceResult.PairingLimitReached -> {
                     val repairedBinding = rolloverPairingGenerationForPendingWorkout(
                         device = device,
                         account = account,
                         exhaustedBinding = binding
-                    ) ?: return@withLock null
+                    ) ?: return@withLock reject(
+                        GarminNackReason.REJECTED,
+                        binding.pairingGeneration
+                    )
                     when (persistWorkout(account, repairedBinding, workout)) {
                         WorkoutPersistenceResult.Created,
                         WorkoutPersistenceResult.AlreadyProcessed ->
                             AcceptedGarminWorkout(account, repairedBinding, workout)
+                        WorkoutPersistenceResult.RateLimited ->
+                            reject(GarminNackReason.RATE_LIMITED, repairedBinding.pairingGeneration)
                         WorkoutPersistenceResult.PairingLimitReached,
-                        WorkoutPersistenceResult.Rejected -> null
+                        WorkoutPersistenceResult.Rejected ->
+                            reject(GarminNackReason.REJECTED, repairedBinding.pairingGeneration)
                     }
                 }
                 WorkoutPersistenceResult.Created,
                 WorkoutPersistenceResult.AlreadyProcessed ->
                     AcceptedGarminWorkout(account, binding, workout)
             }
-        } ?: return false
+        } ?: run {
+            sendWorkoutNack(device, command, nackReason, nackBinding)
+            return false
+        }
 
         sendAndWait(
             device,
@@ -1224,6 +1246,46 @@ class GarminSyncManager(
             pushSyncForContext(device, accepted.account)
         }
         return true
+    }
+
+    /**
+     * Binding for a nack to the already-verified trusted device. Null (so no nack is sent)
+     * when the account is no longer active or no valid pairing generation exists.
+     */
+    private fun nackBindingFor(
+        account: GarminAccountContext,
+        deviceBinding: String,
+        generation: String?
+    ): GarminBinding? {
+        val resolved = generation ?: pairingGenerationForReset(account, deviceBinding)
+        return resolved?.let {
+            GarminBinding(
+                account = account.binding,
+                device = deviceBinding,
+                pairingGeneration = it
+            )
+        }
+    }
+
+    /** See [GarminNackReason] for the contract. Bounded by the same send timeout as `ack`. */
+    private suspend fun sendWorkoutNack(
+        device: IQDevice,
+        command: Map<Any?, Any?>,
+        reason: String?,
+        binding: GarminBinding?
+    ) {
+        if (reason == null || binding == null) return
+        val payload = garminNackPayload(command, reason) ?: return
+        val delivered = sendAndWait(
+            device,
+            boundGarminPayload(
+                payload = payload,
+                binding = binding,
+                includePairingGeneration =
+                    binding.pairingGeneration != LEGACY_GARMIN_FALLBACK_GENERATION
+            )
+        )
+        if (!delivered) Log.i(TAG, "Garmin workout nack was not delivered")
     }
 
     /**
@@ -2131,7 +2193,7 @@ class GarminSyncManager(
             GarminWorkoutApplyResult.RateLimited -> {
                 lastPlanSyncStatus =
                     "Garmin daily safety limit reached; workout remains queued on the watch"
-                WorkoutPersistenceResult.Rejected
+                WorkoutPersistenceResult.RateLimited
             }
             GarminWorkoutApplyResult.PairingLimitReached -> {
                 lastPlanSyncStatus =

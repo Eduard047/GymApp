@@ -44,7 +44,7 @@ test("Clearing unsent workouts needs two confirmations with safe defaults", asyn
   assert.match(copy, /"CANCEL", "ВІДМІНИТИ", "ОТМЕНИТЬ"[\s\S]*"KEEP", "ЗАЛИШИТИ", "ОСТАВИТЬ"/);
 
   // Entry points: Settings row (Instinct profiles; none on fr55) and a Ready row (96 KiB lite).
-  assert.match(view, /settingsSelected == 7\) \{\s*openClearQueue\(\);/);
+  assert.match(view, /settingsSelected == 7 \|\| view\.settingsSelected == 8\) \{\s*view\.clearHead = view\.settingsSelected == 8;\s*openClearQueue\(\);/);
   assert.match(section(view, "function handleReadySelection() {\n        if (view.selected == 2)", "function openReadySettings"), /openClearQueue\(\)/);
   assert.match(view, /function readyActionCount\(\) \{ return clearQueueAvailable\(\) \? 3 : 2; \}/);
   // Page 6 renders the delete confirmation on every profile.
@@ -106,7 +106,8 @@ test("The open-GymApp hint counts silence from the last transmit or ack", async 
   assert.match(ownTransmit, /GymComm\.lastActivityAt = [\s\S]*GymComm\.seenActivityAt = GymComm\.lastActivityAt;/);
   const fr55Complete = section(comm, "(:fr55Memory)\n    function onComplete()", "function onError()");
   assert.doesNotMatch(fr55Complete, /ActivityAt|noteActivity/);
-  assert.equal((app.match(/GymComm\.noteActivity\(\);/g) ?? []).length, 2);
+  // Phone sync, workout_part_ack and ack count as phone activity; a nack does so in GymComm.handleNack.
+  assert.equal((app.match(/GymComm\.noteActivity\(\);/g) ?? []).length, 3);
   assert.doesNotMatch(app, /lastActivityAt/);
   const retry = section(view, "(:notFr55Memory)\n    function maybeRetryPending()", "(:fr55Memory)\n    function maybeRetryPending()");
   assert.match(retry, /activityAt != GymComm\.seenActivityAt[\s\S]*pendingRetryStartedAt = activityAt;[\s\S]*silentAtCount = 0;/);

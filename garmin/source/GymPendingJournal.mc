@@ -654,6 +654,11 @@ class GymPendingJournal {
 
     static function contains(requestId) { return origin(requestId) != null; }
 
+    // Request id of the entry nextMessage() sends; null without a readable queue.
+    static function headRequestId() {
+        return !readable || entries.size() == 0 ? null : requestIdOf(entries[0]);
+    }
+
     static function rotate(previous, next) {
         if (!readable || !GymStore.isValidOptionalAccountBinding(previous) ||
             !GymStore.isValidAccountBinding(next)) { return false; }

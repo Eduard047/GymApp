@@ -29,7 +29,10 @@ test("Android rejects inbound Garmin workouts that carry no pairing generation",
   assert.doesNotMatch(admission, /pairingGenerationSupported\(/);
   assert.doesNotMatch(admission, /\bnull\s*->/);
   assert.match(admission, /when \(rawGeneration\) \{\s*is String -> inboundPairingGeneration\(/);
-  assert.match(admission, /else -> return@withLock null/);
+  assert.match(
+    admission,
+    /else -> return@withLock reject\(GarminNackReason\.GENERATION_MISSING\)/,
+  );
 });
 
 test("the generationless fallback stays outbound-only", () => {

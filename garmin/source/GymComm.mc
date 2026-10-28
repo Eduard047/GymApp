@@ -107,6 +107,9 @@ class GymCommListener extends Comm.ConnectionListener {
     function onComplete() {
         GymComm.lastActivityAt = Toybox.System.getTimer();
         GymComm.seenActivityAt = GymComm.lastActivityAt;
+        // Delivered to the phone: from here on only an inbound message clears
+        // the 60 s silence watchdog.
+        GymComm.awaitingPhoneSince = GymComm.lastActivityAt;
         if (callback != null) {
             var completed = callback;
             callback = null;
@@ -141,13 +144,82 @@ class GymComm {
     (:notFr55Memory)
     static var seenActivityAt = null;
 
+    // Own successful transmit: the phone has not answered yet. Any inbound phone
+    // message (noteActivity) ends the wait; own transmits never do.
+    (:notFr55Memory)
+    static var awaitingPhoneSince = null;
+
+    // Set by a phone nack and consumed by the view's retry timer: the delay in
+    // ms before the head workout is sent again (0 = none pending), and whether
+    // one request_sync should go out first (stale or missing pairing generation).
+    static var nackDelayMs = 0;
+    static var nackSyncWanted = false;
+
     (:notFr55Memory)
     static function noteActivity() {
         lastActivityAt = Toybox.System.getTimer();
+        awaitingPhoneSince = null;
+    }
+
+    // True once, and PHONE_SILENT is set, when the status still says "waiting
+    // for the phone" (sync requested, ack awaited, next workout sending) and 60 s
+    // passed since the last successful transmit without any inbound message.
+    (:notFr55Memory)
+    static function expireSilence() {
+        var current = GymStore.status;
+        if (awaitingPhoneSince == null ||
+            !(current == GymStatus.SYNC_REQ || current == GymStatus.WAITING_ACK ||
+                current == GymStatus.SENDING_NEXT) ||
+            GymStore.timerElapsedMs(awaitingPhoneSince) <= 60000l) {
+            return false;
+        }
+        awaitingPhoneSince = null;
+        GymStore.status = GymStatus.PHONE_SILENT;
+        return true;
     }
 
     (:fr55Memory, :inline)
     static function noteActivity() {}
+
+    // The phone refused the head workout. Never trust the nack's generation (it
+    // is the phone's own), never delete or advance the queue: only a status, a
+    // slower retry, and for a stale/missing pairing generation one request_sync
+    // so the phone's sync (repairPairing) rotates the queued entries.
+    static function handleNack(message) {
+        var reason = message.get("reason");
+        var requestId = message.get("requestId");
+        if (!(reason instanceof Lang.String) || reason.length() > 24 ||
+            (requestId != null && !GymStore.isBoundedText(requestId, GymStore.maxBindingLength)) ||
+            !GymStore.bindingsMatchIgnoringGeneration(message)) {
+            GymStore.status = GymStatus.BAD_ACK;
+            return;
+        }
+        var reasonText = reason.toString();
+        var code = GymStatus.REFUSED;
+        var delayMs = 300000;
+        var syncFirst = false;
+        if (reasonText.equals("generation_missing") || reasonText.equals("generation_mismatch")) {
+            code = GymStatus.PAIR_OLD;
+            delayMs = 60000;
+            syncFirst = true;
+        } else if (reasonText.equals("rate_limited")) {
+            code = GymStatus.RATE_LIMITED;
+        } else if (reasonText.equals("reset_required")) {
+            code = GymStatus.RESET_REQUIRED;
+        } else if (!(reasonText.equals("invalid") || reasonText.equals("rejected") ||
+            reasonText.equals("binding_mismatch"))) {
+            GymStore.status = GymStatus.BAD_ACK;
+            return;
+        }
+        noteActivity();
+        var headId = GymStore.pendingHeadRequestId();
+        if (headId == null || (requestId != null && !requestId.toString().equals(headId.toString()))) {
+            return;
+        }
+        GymStore.status = code;
+        nackDelayMs = delayMs;
+        nackSyncWanted = syncFirst;
+    }
 
     (:richWorkoutMode, :noMem128)
     static var watchVersion = "2026.08.20.1521";

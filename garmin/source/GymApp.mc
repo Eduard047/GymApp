@@ -114,7 +114,10 @@ class GymApp extends App.AppBase {
         var typeText = type.toString();
         if (typeText != null && typeText.equals("sync")) {
             // After a durable finish only acks are useful; a sync is dropped.
-            if (!finishedDurably) { handleSyncMessage(message); }
+            if (!finishedDurably) {
+                GymComm.noteActivity();
+                handleSyncMessage(message);
+            }
         } else if (typeText.equals("workout_part_ack")) {
             GymComm.noteActivity();
             if (GymPendingJournal.acknowledgePart(message)) { sendNextPendingWorkout(); }
@@ -127,6 +130,8 @@ class GymApp extends App.AppBase {
             } else {
                 GymStore.status = GymStatus.BAD_ACK;
             }
+        } else if (typeText.equals("nack")) {
+            GymComm.handleNack(message);
         } else {
             GymStore.status = "MSG " + typeText;
         }
@@ -294,7 +299,9 @@ class GymApp extends App.AppBase {
     }
 
     function onPendingWorkoutSentAfterSync(ok) {
-        GymStore.status = ok ? GymStatus.WAITING_ACK : GymStatus.QUEUED;
+        if (GymComm.nackDelayMs == 0) {
+            GymStore.status = ok ? GymStatus.WAITING_ACK : GymStatus.QUEUED;
+        }
         Ui.requestUpdate();
     }
 }

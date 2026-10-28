@@ -70,11 +70,38 @@ function statusCodesPreservePhoneAndDiagnosticText(logger as Test.Logger) as Lan
         [17895, "RESUMED"],
         [18119, "CONFIRM"],
         [18348, "QUEUE BROKEN"],
-        [18732, "PHONE SILENT"]
+        [18732, "PHONE SILENT"],
+        [19116, "RATE LIMITED"],
+        [19502, "RESET REQUIRED"],
+        [19951, "WORKOUT REFUSED"]
     ];
     for (var i = 0; i < rows.size(); i += 1) {
         if (!GymStatus.text(rows[i][0]).equals(rows[i][1])) { return false; }
     }
     return GymStatus.text("HTTP 503").equals("HTTP 503") &&
         GymStatus.text("PLAN 12").equals("PLAN 12") && GymStatus.text(null) == null;
+}
+
+// A status that still says "waiting for the phone" after an own transmit turns
+// into PHONE_SILENT after 60 s; an inbound phone message ends the wait.
+(:test, :notFr55Memory)
+function silentPhoneAfterTransmitExpiresOnlyWhileWaiting(logger as Test.Logger) as Lang.Boolean {
+    var previous = GymStore.status;
+    GymStore.status = GymStatus.SYNC_REQ;
+    GymComm.awaitingPhoneSince = Toybox.System.getTimer() - 30000;
+    var early = GymComm.expireSilence();
+    GymComm.awaitingPhoneSince = Toybox.System.getTimer() - 61000;
+    var late = GymComm.expireSilence();
+    var ok = !early && late && (GymStore.status == GymStatus.PHONE_SILENT) &&
+        GymComm.awaitingPhoneSince == null;
+    GymStore.status = GymStatus.WAITING_ACK;
+    GymComm.awaitingPhoneSince = Toybox.System.getTimer() - 61000;
+    GymComm.noteActivity();
+    ok = ok && !GymComm.expireSilence() && (GymStore.status == GymStatus.WAITING_ACK);
+    GymStore.status = GymStatus.SAVED;
+    GymComm.awaitingPhoneSince = Toybox.System.getTimer() - 61000;
+    ok = ok && !GymComm.expireSilence() && (GymStore.status == GymStatus.SAVED);
+    GymComm.awaitingPhoneSince = null;
+    GymStore.status = previous;
+    return ok;
 }

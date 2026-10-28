@@ -448,3 +448,108 @@ function discardUnsentQueueEscapesAnUnreadableJournal(logger as Test.Logger) as 
     GymStore.clearAccountScopedState();
     return ok;
 }
+
+// A nack for the queue head must be judged on owner and device only: its
+// generation is the phone's and differs from the watch's by definition.
+(:test, :compactLegacyState)
+function nackIgnoresGenerationAndNeverTouchesTheQueue(logger as Test.Logger) as Lang.Boolean {
+    if (!PendingJournalFixture.prepare() || !GymStore.recoverQueuedWorkout()) { return false; }
+    var head = "pending-journal-request-001";
+    // The watch holds no generation (the queue was built before pairing
+    // rotated), the phone's nack carries its own.
+    var nack = {"type" => "nack", "reason" => "generation_mismatch", "requestId" => head,
+        "bindingVersion" => 2, "accountBinding" => GymStore.accountBinding,
+        "deviceBinding" => GymStore.deviceBinding,
+        "pairingGeneration" => "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"};
+    GymStore.status = GymStatus.READY;
+    GymComm.nackDelayMs = 0;
+    GymComm.nackSyncWanted = false;
+    GymComm.handleNack(nack);
+    var ok = GymStore.bindingsMatchIgnoringGeneration(nack) && !GymStore.bindingsMatch(nack) &&
+        (GymStore.status == GymStatus.PAIR_OLD) && GymComm.nackDelayMs == 60000 &&
+        GymComm.nackSyncWanted && GymStore.pendingCount() == 1 &&
+        GymPendingJournal.contains(head);
+    nack["reason"] = "rate_limited";
+    nack.remove("requestId");
+    GymComm.handleNack(nack);
+    ok = ok && (GymStore.status == GymStatus.RATE_LIMITED) && GymComm.nackDelayMs == 300000 &&
+        !GymComm.nackSyncWanted && GymStore.pendingCount() == 1;
+    nack["reason"] = "reset_required";
+    GymComm.handleNack(nack);
+    ok = ok && (GymStore.status == GymStatus.RESET_REQUIRED);
+    var refusals = ["invalid", "rejected", "binding_mismatch"];
+    for (var i = 0; i < refusals.size(); i += 1) {
+        nack["reason"] = refusals[i];
+        GymStore.status = GymStatus.READY;
+        GymComm.handleNack(nack);
+        ok = ok && (GymStore.status == GymStatus.REFUSED) && GymComm.nackDelayMs == 300000 &&
+            GymStore.pendingCount() == 1 && GymPendingJournal.contains(head);
+    }
+    GymComm.nackDelayMs = 0;
+    GymComm.nackSyncWanted = false;
+    GymStore.clearAccountScopedState();
+    return ok;
+}
+
+(:test, :compactLegacyState)
+function nackForAnotherRequestOrOwnerOrReasonIsIgnoredOrBad(logger as Test.Logger) as Lang.Boolean {
+    if (!PendingJournalFixture.prepare() || !GymStore.recoverQueuedWorkout()) { return false; }
+    var nack = {"type" => "nack", "reason" => "rejected",
+        "requestId" => "some-other-request", "bindingVersion" => 2,
+        "accountBinding" => GymStore.accountBinding, "deviceBinding" => GymStore.deviceBinding};
+    GymStore.status = GymStatus.READY;
+    GymComm.nackDelayMs = 0;
+    GymComm.handleNack(nack);
+    // Foreign request id: no status, no delay, queue intact.
+    var ok = (GymStore.status == GymStatus.READY) && GymComm.nackDelayMs == 0 &&
+        GymStore.pendingCount() == 1;
+    nack["requestId"] = "pending-journal-request-001";
+    nack["deviceBinding"] = "another-device";
+    GymComm.handleNack(nack);
+    ok = ok && (GymStore.status == GymStatus.BAD_ACK) && GymComm.nackDelayMs == 0;
+    nack["deviceBinding"] = GymStore.deviceBinding;
+    nack["reason"] = "surprise";
+    GymStore.status = GymStatus.READY;
+    GymComm.handleNack(nack);
+    ok = ok && (GymStore.status == GymStatus.BAD_ACK) && GymComm.nackDelayMs == 0;
+    nack["reason"] = 7;
+    GymStore.status = GymStatus.READY;
+    GymComm.handleNack(nack);
+    ok = ok && (GymStore.status == GymStatus.BAD_ACK) && GymStore.pendingCount() == 1 &&
+        GymPendingJournal.contains("pending-journal-request-001");
+    GymStore.clearAccountScopedState();
+    return ok;
+}
+
+// Delete-next removes exactly the head (legacy entries first, then the
+// journal) and never counts as a phone acknowledgement.
+(:test, :compactLegacyState, :richWorkoutMode)
+function discardPendingHeadRemovesOnlyTheHead(logger as Test.Logger) as Lang.Boolean {
+    if (!PendingJournalFixture.prepareWithLegacy(2, 2) || !GymStore.recoverQueuedWorkout()) { return false; }
+    var syncedAt = GymStore.lastWorkoutSyncAtSeconds;
+    if (GymStore.pendingCount() != 3 ||
+        !GymStore.pendingHeadRequestId().equals("reserved-legacy-0")) { return false; }
+    if (!GymStore.discardPendingHead() || GymStore.pendingCount() != 2 ||
+        !GymStore.pendingHeadRequestId().equals("reserved-legacy-1") ||
+        Storage.getValue("pending").size() != 1 ||
+        !GymPendingJournal.contains("pending-journal-request-001")) { return false; }
+    if (!GymStore.discardPendingHead() || GymStore.pendingCount() != 1 ||
+        !GymStore.pendingHeadRequestId().equals("pending-journal-request-001") ||
+        Storage.getValue("pending").size() != 0) { return false; }
+    if (!GymStore.discardPendingHead() || GymStore.pendingCount() != 0 ||
+        GymStore.pendingHeadRequestId() != null ||
+        GymPendingJournal.contains("pending-journal-request-001")) { return false; }
+    var empty = !GymStore.discardPendingHead();
+    GymStore.clearAccountScopedState();
+    return empty && GymStore.lastWorkoutSyncAtSeconds == syncedAt;
+}
+
+(:test, :compactLegacyState, :richWorkoutMode)
+function discardPendingHeadIsRefusedWhileRecording(logger as Test.Logger) as Lang.Boolean {
+    if (!PendingJournalFixture.prepareWithLegacy(2, 1) || !GymStore.recoverQueuedWorkout()) { return false; }
+    GymSession.recording = true;
+    var refused = !GymStore.discardPendingHead() && GymStore.pendingCount() == 2;
+    GymSession.recording = false;
+    GymStore.clearAccountScopedState();
+    return refused;
+}

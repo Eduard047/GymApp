@@ -4902,17 +4902,7 @@ class GymStore {
     }
 
     static function bindingsMatch(message) {
-        if (!hasAccountBinding() || !(message instanceof Lang.Dictionary)) {
-            return false;
-        }
-        var messageAccount = message.get("accountBinding");
-        var messageDevice = message.get("deviceBinding");
-        var version = message.get("bindingVersion");
-        if (!(version instanceof Lang.Number) || version != bindingVersion ||
-            !isValidAccountBinding(messageAccount) ||
-            !isBoundedText(messageDevice, maxBindingLength) ||
-            !accountBinding.equals(messageAccount) ||
-            !deviceBinding.equals(messageDevice)) {
+        if (!bindingsMatchIgnoringGeneration(message)) {
             return false;
         }
         var messageGeneration = message.get("pairingGeneration");
@@ -4921,6 +4911,23 @@ class GymStore {
                 pairingGeneration.equals(messageGeneration);
         }
         return messageGeneration == null;
+    }
+
+    // Owner and device identity only. A nack for a missing or mismatching
+    // generation carries the phone's generation, which differs from the
+    // watch's by definition, so it is judged without the generation.
+    static function bindingsMatchIgnoringGeneration(message) {
+        if (!hasAccountBinding() || !(message instanceof Lang.Dictionary)) {
+            return false;
+        }
+        var messageAccount = message.get("accountBinding");
+        var messageDevice = message.get("deviceBinding");
+        var version = message.get("bindingVersion");
+        return version instanceof Lang.Number && version == bindingVersion &&
+            isValidAccountBinding(messageAccount) &&
+            isBoundedText(messageDevice, maxBindingLength) &&
+            accountBinding.equals(messageAccount) &&
+            deviceBinding.equals(messageDevice);
     }
 
     static function syncBindingsMatch(message) {
@@ -4952,6 +4959,19 @@ class GymStore {
                 pairingGeneration.equals(messageGeneration);
         }
         return messageGeneration == null;
+    }
+
+    // Request id of the workout the watch sends next, without loading a parked
+    // legacy queue. Null when nothing is queued.
+    static function pendingHeadRequestId() {
+        if (parkedPending != null) {
+            return parkedPending[0].size() > 0 ? parkedPending[0][0] : null;
+        }
+        if (pending.size() > 0) {
+            var item = pending[0];
+            return item instanceof Lang.Dictionary ? item.get("requestId") : null;
+        }
+        return GymPendingJournal.headRequestId();
     }
 
     static function pendingCount() {
@@ -5097,6 +5117,27 @@ class GymStore {
             Storage.setValue("lastWorkoutSyncV1", [1, accountBinding, lastWorkoutSyncAtSeconds]);
         } catch (e) { }
         return true;
+    }
+
+    // Owner-confirmed "delete next unsent": drops only the queue head, the
+    // workout the watch is trying to send, with the same fences as
+    // discardUnsentQueue. It never touches the last-sync time, which only an
+    // acknowledgement may set, and leaves plan, catalog, bindings, settings and
+    // FIT files alone. The legacy list is rewritten before anything else, and a
+    // journal head is removed by its own committed index write.
+    (:richWorkoutMode)
+    static function discardPendingHead() {
+        if (GymSession.recording || hasUnfinishedWorkout() || hasPreparedWorkout() ||
+            !GymPendingJournal.readable || !recoverQueuedWorkout() ||
+            pendingCount() == 0 || !restorePendingForMutation()) { return false; }
+        if (pending.size() > 0) {
+            var rest = pending.slice(1, null);
+            try { Storage.setValue("pending", rest); } catch (e) { return false; }
+            pendingEstimateSource = null; pending = rest;
+            return true;
+        }
+        var headId = GymPendingJournal.headRequestId();
+        return headId != null && GymPendingJournal.remove(headId);
     }
 
     static function rotatePairingGenerationForPending(previousGeneration, nextGeneration) {
