@@ -2379,6 +2379,25 @@ class GymRepository(
     }
 
     /**
+     * Persists the typed weight/reps of a still-pending set as that set's plan so the edit survives
+     * the screen being closed. It is a draft, not a mutation: the workout revision and the undo
+     * target are left alone, so in-flight record/undo/batch calls holding the current revision stay
+     * valid. Only pending rows are written (a recorded set is never touched). A null value keeps the
+     * stored one. Returns true when a row changed.
+     */
+    suspend fun saveActiveWorkoutSetDraft(
+        setId: String,
+        weight: Double?,
+        reps: Int?
+    ): Boolean = activeWorkoutMutationMutex.withLock {
+        require(isStableActiveWorkoutId(setId)) { "Active set identifier is invalid." }
+        weight?.let { require(WorkoutDataLimits.isValidWeight(it)) { "Set weight is outside the supported range." } }
+        reps?.let { require(WorkoutDataLimits.isValidReps(it)) { "Set repetitions are outside the supported range." } }
+        if (weight == null && reps == null) return@withLock false
+        activeWorkoutDao.saveSetDraftIfPending(setId = setId, weight = weight, reps = reps) == 1
+    }
+
+    /**
      * Atomically records a bounded set batch. Every target is validated before the revision or
      * any set row changes, so stale, malformed, duplicate, or already-completed input cannot leave
      * a partially saved workout. Batch recording intentionally clears single-set undo state.

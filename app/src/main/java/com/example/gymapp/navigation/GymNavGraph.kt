@@ -3528,6 +3528,17 @@ internal fun GymAppRoot(
                             )
                             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
+                            // Typed-but-unrecorded set values are saved when the screen stops
+                            // (minimize, app switch), not only after the typing pause.
+                            val activeWorkoutLifecycleOwner = LocalLifecycleOwner.current
+                            DisposableEffect(activeWorkoutLifecycleOwner, viewModel) {
+                                val observer = LifecycleEventObserver { _, event ->
+                                    if (event == Lifecycle.Event.ON_STOP) viewModel.flushPendingDrafts()
+                                }
+                                activeWorkoutLifecycleOwner.lifecycle.addObserver(observer)
+                                onDispose { activeWorkoutLifecycleOwner.lifecycle.removeObserver(observer) }
+                            }
+
                             LaunchedEffect(
                                 uiState.finishedSessionId,
                                 uiState.wasDiscarded,

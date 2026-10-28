@@ -43,6 +43,8 @@ import com.example.gymapp.util.activeWorkoutRestSecondsRemaining
 import com.example.gymapp.util.parseWeightInputOrNull
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -663,6 +665,16 @@ class ActiveWorkoutViewModel(
     private val batchUndoState = MutableStateFlow<ActiveWorkoutBatchUndo?>(null)
     private var batchUndoExpiryJob: Job? = null
 
+    /**
+     * Saves typed-but-unrecorded weight/reps of pending sets so they survive the screen closing
+     * (the ViewModel dies with the nav entry). Debounced per set; flushed on ON_STOP and onCleared.
+     */
+    private val draftSaver = ActiveWorkoutDraftSaver(
+        scope = viewModelScope,
+        debounceMillis = ACTIVE_WORKOUT_DRAFT_DEBOUNCE_MS,
+        write = ::persistSetDraft
+    )
+
     /** Last persisted values per pending set, to tell untouched inputs from user edits. */
     private var lastPersistedInputs: Map<String, ActiveWorkoutInput> = emptyMap()
 
@@ -954,6 +966,7 @@ class ActiveWorkoutViewModel(
             val existing = current[setId] ?: return@update current
             current + (setId to existing.copy(weight = value))
         }
+        scheduleDraftSave(setId)
     }
 
     fun updateSetReps(setId: String, value: String) {
@@ -962,6 +975,38 @@ class ActiveWorkoutViewModel(
         inputs.update { current ->
             val existing = current[setId] ?: return@update current
             current + (setId to existing.copy(reps = value))
+        }
+        scheduleDraftSave(setId)
+    }
+
+    /** Writes any typed-but-unsaved set drafts now (screen stopped); safe to call repeatedly. */
+    fun flushPendingDrafts() {
+        viewModelScope.launch { draftSaver.flush() }
+    }
+
+    override fun onCleared() {
+        // viewModelScope is already cancelled here, so the final write runs on its own scope and
+        // inside NonCancellable (see ActiveWorkoutDraftSaver.flush).
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { draftSaver.flush() }
+        super.onCleared()
+    }
+
+    private fun scheduleDraftSave(setId: String) {
+        val pending = details.value?.exercises.orEmpty()
+            .any { exercise -> exercise.sets.any { set -> set.id == setId && set.completedAt == null } }
+        if (pending) draftSaver.schedule(setId)
+    }
+
+    private suspend fun persistSetDraft(setId: String) {
+        val input = inputs.value[setId] ?: return
+        val draft = parseActiveWorkoutSetDraft(input.weight, input.reps)
+        if (draft.weight == null && draft.reps == null) return
+        try {
+            repository.saveActiveWorkoutSetDraft(setId, draft.weight, draft.reps)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // Best effort: recordSet still reads the in-memory input, so a failed draft never blocks logging.
         }
     }
 
@@ -2161,6 +2206,64 @@ internal class ActiveWorkoutSetRecordGate {
     }
 }
 
+/** Independently parsed halves of a half-typed set; a null half is not persisted. */
+internal data class ActiveWorkoutSetDraft(val weight: Double?, val reps: Int?)
+
+/**
+ * Same rules as [parseActiveWorkoutSetInput] (blank weight means 0 kg), but each field stands alone so
+ * a valid weight is saved while reps is mid-edit. Reps cannot be blank: a cleared reps field keeps the
+ * stored value instead of inventing one.
+ */
+internal fun parseActiveWorkoutSetDraft(weightInput: String, repsInput: String): ActiveWorkoutSetDraft {
+    val normalizedWeight = weightInput.trim()
+    val weight = if (normalizedWeight.isEmpty()) 0.0 else parseWeightInputOrNull(normalizedWeight)
+    val normalizedReps = repsInput.trim()
+    val reps = normalizedReps.takeIf { it.length <= MAX_ACTIVE_REPS_INPUT_LENGTH }
+        ?.toIntOrNull()
+        ?.takeIf(WorkoutDataLimits::isValidReps)
+    return ActiveWorkoutSetDraft(weight, reps)
+}
+
+/** Per-set debounce plus an immediate flush; every write is shielded from cancellation. */
+internal class ActiveWorkoutDraftSaver(
+    private val scope: CoroutineScope,
+    private val debounceMillis: Long,
+    private val write: suspend (setId: String) -> Unit
+) {
+    private val lock = Any()
+    private val timers = HashMap<String, Job>()
+    private val dirty = LinkedHashSet<String>()
+
+    fun schedule(setId: String) {
+        synchronized(lock) {
+            dirty += setId
+            timers.remove(setId)?.cancel()
+            timers[setId] = scope.launch {
+                val self = currentCoroutineContext()[Job]
+                delay(debounceMillis)
+                withContext(NonCancellable) {
+                    val due = synchronized(lock) {
+                        if (timers[setId] === self) timers.remove(setId)
+                        dirty.remove(setId)
+                    }
+                    if (due) write(setId)
+                }
+            }
+        }
+    }
+
+    suspend fun flush() {
+        withContext(NonCancellable) {
+            val ids = synchronized(lock) {
+                timers.values.forEach(Job::cancel)
+                timers.clear()
+                dirty.toList().also { dirty.clear() }
+            }
+            ids.forEach { setId -> write(setId) }
+        }
+    }
+}
+
 private fun formatActiveWeight(weight: Double): String = if (weight % 1.0 == 0.0) {
     weight.toLong().toString()
 } else {
@@ -2169,3 +2272,4 @@ private fun formatActiveWeight(weight: Double): String = if (weight % 1.0 == 0.0
 
 private const val MAX_ACTIVE_WEIGHT_INPUT_LENGTH = 64
 private const val MAX_ACTIVE_REPS_INPUT_LENGTH = 10
+private const val ACTIVE_WORKOUT_DRAFT_DEBOUNCE_MS = 300L

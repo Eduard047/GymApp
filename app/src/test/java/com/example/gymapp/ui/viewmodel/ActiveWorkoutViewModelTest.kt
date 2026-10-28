@@ -10,7 +10,15 @@ import com.example.gymapp.data.repository.AddActiveWorkoutSetResult
 import com.example.gymapp.data.repository.ApplyActiveWorkoutAdaptationResult
 import com.example.gymapp.data.repository.RecordActiveWorkoutSetResult
 import com.example.gymapp.data.repository.SaveActiveWorkoutExerciseResult
+import java.util.concurrent.CopyOnWriteArrayList
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -413,4 +421,49 @@ class ActiveWorkoutViewModelTest {
             )
         )
     )
+
+    @Test
+    fun draftParsingSavesEachValidHalfAndSkipsPartialText() {
+        assertEquals(ActiveWorkoutSetDraft(82.5, 8), parseActiveWorkoutSetDraft("82,5", "8"))
+        // Cleared weight is 0 kg, exactly like recordSet's parser.
+        assertEquals(ActiveWorkoutSetDraft(0.0, 8), parseActiveWorkoutSetDraft("", "8"))
+        // A half-typed field is skipped while the other valid half is still saved.
+        assertEquals(ActiveWorkoutSetDraft(60.0, null), parseActiveWorkoutSetDraft("60", ""))
+        assertEquals(ActiveWorkoutSetDraft(null, 5), parseActiveWorkoutSetDraft(".", "5"))
+        assertEquals(ActiveWorkoutSetDraft(null, null), parseActiveWorkoutSetDraft("abc", "0"))
+        assertEquals(ActiveWorkoutSetDraft(60.0, null), parseActiveWorkoutSetDraft("60", "10001"))
+    }
+
+    @Test
+    fun draftSaverCollapsesRapidEditsIntoOneWriteAfterThePause() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val written = Channel<String>(Channel.UNLIMITED)
+        val saver = ActiveWorkoutDraftSaver(scope, debounceMillis = 60L) { written.send(it) }
+        try {
+            repeat(5) {
+                saver.schedule("set-a")
+                delay(10L)
+            }
+            assertEquals("set-a", withTimeout(2_000L) { written.receive() })
+            delay(150L)
+            assertTrue(written.tryReceive().isFailure)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun draftSaverFlushWritesEverySetOnceEvenAfterItsScopeIsCancelled() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val written = CopyOnWriteArrayList<String>()
+        val saver = ActiveWorkoutDraftSaver(scope, debounceMillis = 10_000L) { written += it }
+        saver.schedule("set-a")
+        saver.schedule("set-b")
+        // The ViewModel scope is cancelled before onCleared runs; the flush must still write.
+        scope.cancel()
+        saver.flush()
+        assertEquals(listOf("set-a", "set-b"), written.toList())
+        saver.flush()
+        assertEquals(2, written.size)
+    }
 }

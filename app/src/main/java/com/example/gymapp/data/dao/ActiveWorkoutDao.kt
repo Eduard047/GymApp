@@ -99,6 +99,27 @@ interface ActiveWorkoutDao {
         completedAt: Long
     ): Int
 
+    /**
+     * Stores the typed (not yet recorded) values of a pending set as its plan. Deliberately does not
+     * touch `active_workouts.revision` or the undo target: a draft is not a recorded mutation. A null
+     * argument keeps the stored value, and an unchanged draft writes nothing.
+     */
+    @Query(
+        """
+        UPDATE active_workout_sets
+        SET weight = COALESCE(:weight, weight),
+            reps = COALESCE(:reps, reps)
+        WHERE id = :setId
+            AND completedAt IS NULL
+            AND (weight <> COALESCE(:weight, weight) OR reps <> COALESCE(:reps, reps))
+        """
+    )
+    suspend fun saveSetDraftIfPending(
+        setId: String,
+        weight: Double?,
+        reps: Int?
+    ): Int
+
     /** Fills an unplanned (0 kg) pending set with the weight just recorded on its predecessor. */
     @Query(
         """

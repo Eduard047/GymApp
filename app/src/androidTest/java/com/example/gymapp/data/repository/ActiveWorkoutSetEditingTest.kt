@@ -6,6 +6,7 @@ import com.example.gymapp.data.database.GymDatabase
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -339,6 +340,46 @@ class ActiveWorkoutSetEditingTest {
                 listOf(ids[3], ids[1], ids[2], ids[0]),
                 checkNotNull(repository.getActiveWorkoutSnapshot()).exercises.map { it.activeWorkoutExercise.id }
             )
+        }
+    }
+
+    @Test
+    fun pendingSetDraftPersistsWithoutBumpingRevisionAndRecordStillWorks() = runBlocking {
+        withDatabase("active-edit-draft") { repository ->
+            start(repository, listOf(2))
+            val initial = checkNotNull(repository.getActiveWorkoutSnapshot())
+            val sets = initial.exercises[0].sets.sortedBy { it.orderIndex }
+
+            assertTrue(repository.saveActiveWorkoutSetDraft(sets[1].id, weight = 72.5, reps = 6))
+            // Unchanged draft and a null/null draft write nothing.
+            assertFalse(repository.saveActiveWorkoutSetDraft(sets[1].id, weight = 72.5, reps = 6))
+            assertFalse(repository.saveActiveWorkoutSetDraft(sets[1].id, weight = null, reps = null))
+            // A null half keeps the stored value.
+            assertTrue(repository.saveActiveWorkoutSetDraft(sets[1].id, weight = null, reps = 7))
+
+            val after = checkNotNull(repository.getActiveWorkoutSnapshot())
+            val draft = after.exercises[0].sets.first { it.id == sets[1].id }
+            assertEquals(72.5, draft.weight, 0.0)
+            assertEquals(7, draft.reps)
+            assertEquals(initial.activeWorkout.revision, after.activeWorkout.revision)
+            assertEquals(initial.activeWorkout.undoableSetId, after.activeWorkout.undoableSetId)
+
+            // The revision guard is intact: recording with the pre-draft revision still succeeds.
+            assertEquals(
+                RecordActiveWorkoutSetResult.Recorded(revision = initial.activeWorkout.revision + 1L),
+                repository.recordActiveWorkoutSet(
+                    sets[1].id,
+                    initial.activeWorkout.revision,
+                    weight = 72.5,
+                    reps = 7
+                )
+            )
+            // A recorded set is never rewritten by a late draft.
+            assertFalse(repository.saveActiveWorkoutSetDraft(sets[1].id, weight = 10.0, reps = 1))
+            val recorded = checkNotNull(repository.getActiveWorkoutSnapshot())
+                .exercises[0].sets.first { it.id == sets[1].id }
+            assertEquals(72.5, recorded.weight, 0.0)
+            assertEquals(7, recorded.reps)
         }
     }
 
