@@ -583,6 +583,20 @@ private struct GarminPhoneWorkoutReceiptIdentity: Codable {
     let setStatistics: [GarminPhoneSetStatistics?]
 }
 
+/// Fixed, closed set of reasons a rejected `create_workout` is answered with.
+/// The raw values are the wire strings shared with Android (`GarminNackReason`)
+/// and the watch; they never carry free text, account data, or workout data.
+enum GarminPhoneNackReason: String, CaseIterable {
+    case generationMissing = "generation_missing"
+    case generationMismatch = "generation_mismatch"
+    case bindingMismatch = "binding_mismatch"
+    case invalid = "invalid"
+    case rejected = "rejected"
+    case rateLimited = "rate_limited"
+    // Defined for contract parity only; neither phone client emits it today.
+    case resetRequired = "reset_required"
+}
+
 enum GarminPhoneWorkoutParser {
     static let bindingVersion = 2
     static let maximumMessageEntries = 32
@@ -963,6 +977,62 @@ enum GarminPhoneWorkoutParser {
     static func messageType(_ rawMessage: Any) -> String? {
         guard let message = dictionary(rawMessage) else { return nil }
         return string(message["type"], maximumBytes: 20)
+    }
+
+    /// Echoes a request id only when it is a printable-ASCII string of
+    /// 1...`maximumRequestIDBytes` bytes (matches Android `garminNackRequestIdOrNull`).
+    static func nackRequestID(_ raw: Any?) -> String? {
+        guard let value = raw as? String,
+              !value.isEmpty,
+              value.utf8.count <= maximumRequestIDBytes,
+              value.utf8.allSatisfy({ (0x20 ... 0x7E).contains($0) }) else {
+            return nil
+        }
+        return value
+    }
+
+    /// Body of a `nack`: fixed type, the sanitized request id when valid, a fixed
+    /// reason, and the same binding keys as `ack`. Nothing else is ever added.
+    /// iOS bindings always carry a pairing generation, so it is always included;
+    /// Android omits it only for its legacy no-generation fallback.
+    static func nackPayload(
+        for rawMessage: Any,
+        reason: GarminPhoneNackReason,
+        binding: GarminPhoneBinding
+    ) -> [String: Any] {
+        var payload: [String: Any] = [
+            "type": "nack",
+            "reason": reason.rawValue,
+            "bindingVersion": bindingVersion,
+            "accountBinding": binding.account,
+            "deviceBinding": binding.device,
+            "pairingGeneration": binding.pairingGeneration
+        ]
+        if let message = dictionary(rawMessage),
+           let requestID = nackRequestID(message["requestId"]) {
+            payload["requestId"] = requestID
+        }
+        return payload
+    }
+
+    /// Classifies why `parse` returned nil. Only call it after `parse` failed.
+    static func rejectReason(
+        _ rawMessage: Any,
+        expectedBinding: GarminPhoneBinding
+    ) -> GarminPhoneNackReason {
+        guard let message = dictionary(rawMessage) else { return .invalid }
+        guard let rawGeneration = message["pairingGeneration"],
+              !(rawGeneration is NSNull) else {
+            return .generationMissing
+        }
+        guard string(rawGeneration, maximumBytes: 64) == expectedBinding.pairingGeneration else {
+            return .generationMismatch
+        }
+        if string(message["accountBinding"], maximumBytes: 64) != expectedBinding.account ||
+            string(message["deviceBinding"], maximumBytes: 128) != expectedBinding.device {
+            return .bindingMismatch
+        }
+        return .invalid
     }
 
     private static func dictionary(_ value: Any) -> [AnyHashable: Any]? {
@@ -2535,13 +2605,26 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
 
     @discardableResult
     private func receiveWorkout(_ rawMessage: Any, from app: IQApp) -> Bool {
+        // Unknown device or no ready account: stay silent, like Android.
         guard let binding = binding(for: app.device),
-              let store = readyWorkoutStore(),
-              let command = GarminPhoneWorkoutParser.parse(
-                  rawMessage,
-                  expectedBinding: binding
-              ) else {
+              let store = readyWorkoutStore() else {
             publishStatus("A malformed or unbound Garmin workout was rejected.", isError: true)
+            return false
+        }
+        guard let command = GarminPhoneWorkoutParser.parse(
+            rawMessage,
+            expectedBinding: binding
+        ) else {
+            publishStatus("A malformed or unbound Garmin workout was rejected.", isError: true)
+            sendNack(
+                for: rawMessage,
+                reason: GarminPhoneWorkoutParser.rejectReason(
+                    rawMessage,
+                    expectedBinding: binding
+                ),
+                binding: binding,
+                to: app
+            )
             return false
         }
         let receiptKey = receiptLedgerKey(binding: binding)
@@ -2552,12 +2635,16 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         if let existing = ledger.records.first(where: { $0.requestID == command.requestID }) {
             guard existing.digest == command.digest else {
                 publishStatus("A conflicting Garmin workout replay was rejected.", isError: true)
+                sendNack(for: rawMessage, reason: .rejected, binding: binding, to: app)
                 return false
             }
             if existing.state == .pending {
                 guard matchingWorkout(command, in: store) else {
                     ledger.records.removeAll { $0.requestID == command.requestID }
-                    guard saveReceiptLedger(ledger, key: receiptKey) else { return false }
+                    guard saveReceiptLedger(ledger, key: receiptKey) else {
+                        sendNack(for: rawMessage, reason: .rejected, binding: binding, to: app)
+                        return false
+                    }
                     return receiveWorkout(rawMessage, from: app)
                 }
                 updateReceipt(
@@ -2565,7 +2652,10 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                     state: .committed,
                     ledger: &ledger
                 )
-                guard saveReceiptLedger(ledger, key: receiptKey) else { return false }
+                guard saveReceiptLedger(ledger, key: receiptKey) else {
+                    sendNack(for: rawMessage, reason: .rejected, binding: binding, to: app)
+                    return false
+                }
             }
             sendAcknowledgement(for: command.requestID, binding: binding, to: app)
             return true
@@ -2575,6 +2665,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         guard ledger.records.lazy.filter({ $0.createdAt >= oneHourAgo }).count <
                 Self.maximumReceiptsPerHour else {
             publishStatus("Garmin workout import is temporarily rate limited.", isError: true)
+            sendNack(for: rawMessage, reason: .rateLimited, binding: binding, to: app)
             return false
         }
         ledger.records.append(
@@ -2588,6 +2679,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         trimLedger(&ledger)
         guard saveReceiptLedger(ledger, key: receiptKey) else {
             publishStatus("The Garmin import receipt could not be stored.", isError: true)
+            sendNack(for: rawMessage, reason: .rejected, binding: binding, to: app)
             return false
         }
 
@@ -2623,6 +2715,9 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                     "The workout was saved, but Garmin acknowledgement is waiting for receipt recovery.",
                     isError: true
                 )
+                // The watch keeps the workout queued and retries; the pending/committed
+                // receipt makes the retry idempotent.
+                sendNack(for: rawMessage, reason: .rejected, binding: binding, to: app)
                 return false
             }
             sendAcknowledgement(for: command.requestID, binding: binding, to: app)
@@ -2632,8 +2727,29 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             ledger.records.removeAll { $0.requestID == command.requestID }
             _ = saveReceiptLedger(ledger, key: receiptKey)
             publishStatus("The Garmin workout could not be saved.", isError: true)
+            sendNack(for: rawMessage, reason: .rejected, binding: binding, to: app)
             return false
         }
+    }
+
+    /// Tells the watch that a `create_workout` was NOT stored so it can keep the
+    /// workout queued and back off. Sent only after the device binding and a ready
+    /// account store are known (never for unknown devices), carries only fixed
+    /// strings plus the sanitized request id and bindings, and never confirms receipt.
+    private func sendNack(
+        for rawMessage: Any,
+        reason: GarminPhoneNackReason,
+        binding: GarminPhoneBinding,
+        to app: IQApp
+    ) {
+        send(
+            GarminPhoneWorkoutParser.nackPayload(
+                for: rawMessage,
+                reason: reason,
+                binding: binding
+            ),
+            to: app
+        )
     }
 
     private func sendAcknowledgement(
