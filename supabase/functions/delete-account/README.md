@@ -8,11 +8,11 @@ second function copy under a platform directory. The machine-readable
 [deployment contract](deployment-contract.json) pins the reviewed source hash,
 the last observed production version, and the release gate.
 
-Last observed production deployment: version 19 was `ACTIVE` with
-`verify_jwt=true` in project `owrcbsrectdgaotndtxy` on 2026-09-02. Its deployed
-source and shared budget helper byte-for-byte matched repository contract 7 with
+Last observed production deployment: version 20 was `ACTIVE` with
+`verify_jwt=true` in project `owrcbsrectdgaotndtxy` on 2026-10-29. Its deployed
+source and shared budget helper byte-for-byte matched repository contract 8 with
 canonical SHA-256 values
-`61b20eb4d80815f2474a82100fdfa1836e7f25989363809ffbe0dfb96fef1e2f` and
+`e152aad89526e5bfb31012a99454c301b3296ab59a23aa82e7bf69b0bf8170ac` and
 `610b8b563da81cfe4932b7771fc76964f3d486ccff5281b90be8fbb80de73dba`;
 the preparation budget, verified-identity budget, and version-2 committed
 deletion-operation migrations were all read back from production. The
