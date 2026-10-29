@@ -18,6 +18,7 @@ const reviewedForwardMigrations = [
   "20261012190209_live_undo_any_completed_set.sql",
   "20261029151855_debit_rejected_notification_registrations.sql",
   "20261029172002_mark_validators_stable.sql",
+  "20261029202651_fix_plpgsql_lint_unused_variables.sql",
 ];
 
 function migrationVersion(fileName) {
