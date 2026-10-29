@@ -86,18 +86,21 @@ test("repair checks owner, ACL, search path, security mode, and wrapper preserva
 
 test("runtime regression covers allowed, exhausted, isolated, reset, invalid, and denied paths", () => {
   assert.match(fixture, /\('social_gateway', 180\)/);
-  assert.match(fixture, /First request failed/);
-  assert.match(fixture, /Last allowed request failed/);
-  assert.match(fixture, /Exhausted request did not fail closed/);
-  assert.match(fixture, /One identity consumed another identity budget/);
-  assert.match(fixture, /Expired window did not reset/);
-  assert.match(fixture, /exception when invalid_parameter_value then null/);
-  assert.match(fixture, /Retired Garmin legacy route was accepted/);
+  assert.match(fixture, /select plan\(29\)/);
+  assert.match(fixture, /: first request is allowed/);
+  assert.match(fixture, /: last allowed request is allowed/);
+  assert.match(fixture, /: exhausted request fails closed/);
+  assert.match(fixture, /: one identity does not consume another identity budget/);
+  assert.match(fixture, /: expired window resets the count to 1/);
+  assert.match(fixture, /Malformed identity is rejected/);
+  assert.match(fixture, /Unknown route is rejected/);
+  assert.match(fixture, /'22023'/);
+  assert.match(fixture, /Retired Garmin legacy route is rejected/);
   for (const role of ["anon", "authenticated", "service_role"]) {
     assert.ok(fixture.includes(`set local role ${role};`));
   }
-  assert.match(fixture, /Service role bypassed the public wrapper/);
-  assert.match(fixture, /Service role obtained direct budget-table access/);
+  assert.match(fixture, /Service role cannot bypass the public wrapper/);
+  assert.match(fixture, /Service role has no direct budget-table access/);
   assert.match(fixture, /pg_catalog\.gen_random_uuid\(\)/);
   assert.match(fixture, /hashtextextended\(test_source_hash, 0\), 128\) <> 0/);
   assert.match(fixture, /rollback;\s*$/);

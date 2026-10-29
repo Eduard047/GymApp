@@ -61,7 +61,7 @@ test("Clearing unsent workouts is refused during an active or prepared workout",
 
   const discard = section(store, "static function discardUnsentQueue()", "static function removePendingByRequestId(");
   assert.match(discard, /GymSession\.recording \|\| hasUnfinishedWorkout\(\) \|\| hasPreparedWorkout\(\)/);
-  assert.match(discard, /!recoverQueuedWorkout\(\)\) \{ return false; \}/);
+  assert.match(discard, /GymPendingJournal\.readable && !recoverQueuedWorkout\(\)\)\) \{ return false; \}/);
 });
 
 test("Clearing unsent workouts removes only queue storage", async () => {

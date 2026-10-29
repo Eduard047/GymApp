@@ -7,13 +7,13 @@ const migration = await readFile(`supabase/migrations/${repairName}`, "utf8");
 const fixture = await readFile("supabase/tests/live_snapshot_session_lock.sql", "utf8");
 
 test("runtime snapshot fixture checks volatility, locking, and denied access without user writes", () => {
-  assert.match(fixture, /Another locked-session RPC declares read-only volatility/);
-  assert.match(fixture, /Session revocation lock was removed/);
+  assert.match(fixture, /No other locked-session RPC declares read-only volatility/);
+  assert.match(fixture, /Session revocation lock \(FOR KEY SHARE\) is present/);
   for (const role of ["anon", "authenticated", "service_role"]) {
     assert.ok(fixture.includes(`set local role ${role};`));
   }
-  assert.match(fixture, /Missing session was accepted/);
-  assert.match(fixture, /Unknown session was accepted/);
+  assert.match(fixture, /Missing session is rejected/);
+  assert.match(fixture, /Unknown session is rejected/);
   assert.match(fixture, /rollback;\s*$/);
   assert.doesNotMatch(fixture, /\b(?:insert into|update|delete from|create table)\s/i);
 });

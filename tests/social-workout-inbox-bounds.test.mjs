@@ -170,7 +170,7 @@ test("database fixture covers paging, late acceptance, privacy, stale revision, 
   );
 
   assert.match(fixture, /^begin;/);
-  assert.match(fixture, /select plan\(34\)/);
+  assert.match(fixture, /select plan\(36\)/);
   assert.match(fixture, /social_workout_inbox_page\(/);
   assert.match(fixture, /pending invites remain ahead/);
   assert.match(fixture, /stable cursor does not repeat/);
@@ -185,8 +185,10 @@ test("database fixture covers paging, late acceptance, privacy, stale revision, 
   assert.match(fixture, /worst escaped structurally valid summary passes canonical server validation/);
   assert.match(fixture, /byte-budgeted incoming cursor identifies the exact last emitted row/);
   assert.match(fixture, /anonymous clients cannot execute the metadata inbox/);
-  assert.match(fixture, /stale plan revision fails without an existence oracle/);
-  assert.match(fixture, /another account cannot read or distinguish the invite/);
+  assert.match(fixture, /a stale plan revision returns the generic P0002 body without leaking fields/);
+  assert.match(fixture, /a stale plan revision is indistinguishable from a missing invite/);
+  assert.match(fixture, /another account receives the generic P0002 body without leaking fields/);
+  assert.match(fixture, /another account cannot distinguish the invite from a missing one/);
   assert.match(fixture, /detail execution is granted only to authenticated clients/);
   assert.match(fixture, /\nrollback;\s*$/);
 });

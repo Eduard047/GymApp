@@ -173,9 +173,9 @@ test("Monkey C implementation gates sensors, detector, detailed mutations, and F
     "96 KiB lite profiles have no plan, so athlete-entered sets are never allowed");
   const begin = section(mode, "(:richWorkoutMode)\n    static function begin(usePlan)", "(:compactWorkoutMode96)\n    static function begin(usePlan)");
   const compactBegin = section(mode, "(:compactWorkoutMode96)\n    static function begin(usePlan)", "(:richWorkoutMode)\n    static function restore()");
-  assert.match(begin, /!GymPendingJournal\.readable \|\| GymStore\.pendingCount\(\) >= startQueueLimit/,
+  assert.match(begin, /if \(!GymPendingJournal\.readable\) \{\s*GymStore\.status = GymStatus\.QUEUE_BROKEN;\s*return false;\s*\}\s*if \(GymStore\.pendingCount\(\) >= startQueueLimit\) \{\s*GymStore\.status = GymStatus\.QUEUE_FULL;\s*return false;\s*\}/,
     "rich new workouts must reserve a durable pending queue slot");
-  assert.match(compactBegin, /!GymPendingJournal\.readable \|\| GymStore\.pendingCount\(\) > 0/,
+  assert.match(compactBegin, /if \(!GymPendingJournal\.readable\) \{\s*GymStore\.status = GymStatus\.QUEUE_BROKEN;\s*return false;\s*\}\s*if \(GymStore\.pendingCount\(\) > 0\) \{\s*GymStore\.status = GymStatus\.QUEUE_FULL;\s*return false;\s*\}/,
     "lite new workouts keep the strict empty-queue gate");
   assert.match(mode, /\(:richWorkoutMode, :noMem128\)\s*static const startQueueLimit = GymStore\.maxPendingWorkouts;/,
     "only the full profile may start while queued workouts wait, up to queue capacity");
