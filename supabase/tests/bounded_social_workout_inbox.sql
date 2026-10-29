@@ -1,6 +1,6 @@
 begin;
 
-select plan(34);
+select plan(36);
 
 insert into auth.users (
   instance_id,
@@ -255,19 +255,29 @@ select is(
   'Bench press',
   'recipient can fetch exactly one matching-revision plan'
 );
-select throws_ok(
-  $$select public.social_workout_invite_plan(
+-- The public wrappers catch the reviewed domain SQLSTATEs so the outer rate
+-- debit commits, then return the PostgREST error envelope as a jsonb body
+-- (status is carried by the response.status GUC) instead of raising.
+select is(
+  public.social_workout_invite_plan(
     'wi_00000000000000000000000000000001', 2
-  )$$,
-  'P0002',
-  'Social resource unavailable.',
-  'a stale plan revision fails without an existence oracle'
+  ),
+  '{"code":"P0002","hint":null,"details":null,"message":"Social resource unavailable."}'::jsonb,
+  'a stale plan revision returns the generic P0002 body without leaking fields'
 );
-select throws_ok(
-  $$select public.social_workout_inbox_page(null, null, true, 10)$$,
-  '22023',
-  'Workout inbox page is invalid.',
-  'partial cursors are rejected'
+select is(
+  public.social_workout_invite_plan(
+    'wi_00000000000000000000000000000001', 2
+  ),
+  public.social_workout_invite_plan(
+    'wi_00000000000000000000000000000fff', 2
+  ),
+  'a stale plan revision is indistinguishable from a missing invite'
+);
+select is(
+  public.social_workout_inbox_page(null, null, true, 10),
+  '{"code":"22023","hint":null,"details":null,"message":"Workout inbox page is invalid."}'::jsonb,
+  'partial cursors are rejected with the 22023 body'
 );
 
 delete from gymapp_private.social_workout_invites
@@ -335,13 +345,21 @@ select is(
 set local request.jwt.claim.sub = 'f1000000-0000-4000-8000-000000000004';
 set local request.jwt.claims =
   '{"sub":"f1000000-0000-4000-8000-000000000004","role":"authenticated","session_id":"f2000000-0000-4000-8000-000000000004"}';
-select throws_ok(
-  $$select public.social_workout_invite_plan(
+select is(
+  public.social_workout_invite_plan(
     'wi_00000000000000000000000000000001', 1
-  )$$,
-  'P0002',
-  'Social resource unavailable.',
-  'another account cannot read or distinguish the invite'
+  ),
+  '{"code":"P0002","hint":null,"details":null,"message":"Social resource unavailable."}'::jsonb,
+  'another account receives the generic P0002 body without leaking fields'
+);
+select is(
+  public.social_workout_invite_plan(
+    'wi_00000000000000000000000000000001', 1
+  ),
+  public.social_workout_invite_plan(
+    'wi_00000000000000000000000000000fff', 1
+  ),
+  'another account cannot distinguish the invite from a missing one'
 );
 select is(
   pg_catalog.jsonb_array_length(
