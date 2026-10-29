@@ -351,6 +351,12 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") {
     return json({ error: "Method not allowed" }, 405);
   }
+  if (
+    request.headers.get("content-type")?.split(";", 1)[0].trim()
+      .toLowerCase() !== "application/json"
+  ) {
+    return json({ error: "Content-Type must be application/json" }, 415);
+  }
 
   let supabaseUrl: string;
   let anonKey: string;

@@ -385,3 +385,79 @@ test("owner-authenticated v3 creation and recovery still return verifiable signe
     options.global.headers.Authorization === "Bearer test-owner-access-token"
   ));
 });
+
+async function rawRequest(headers, method = "POST", body) {
+  return await handler(
+    new Request("https://project.example/functions/v1/garmin-sync", {
+      method,
+      headers,
+      ...(body === undefined ? {} : { body }),
+    }),
+  );
+}
+
+test("garmin-sync rejects every non-JSON media type before config, budget or database access", async () => {
+  const body = JSON.stringify({ action: "fetchPlan", deviceToken: nonce });
+  for (
+    const contentType of [
+      "text/plain",
+      "text/plain;charset=UTF-8",
+      "application/x-www-form-urlencoded",
+      "application/jsonp",
+      "application/json-patch+json",
+      "multipart/form-data; boundary=x",
+      "",
+    ]
+  ) {
+    const response = await rawRequest(
+      contentType ? { "Content-Type": contentType } : {},
+      "POST",
+      body,
+    );
+    // Without an explicit header fetch() would default a string body to text/plain.
+    assert.equal(response.status, 415, `content-type ${contentType || "(none)"}`);
+    assert.deepEqual(await response.json(), {
+      error: "Content-Type must be application/json",
+    });
+    assert.equal(response.headers.get("content-type"), "application/json");
+    assert.equal(response.headers.get("cache-control"), "no-store");
+  }
+  const missing = await handler(
+    new Request("https://project.example/functions/v1/garmin-sync", {
+      method: "POST",
+    }),
+  );
+  assert.equal(missing.status, 415);
+  assert.deepEqual(clients, []);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(budgetCalls, []);
+});
+
+test("garmin-sync accepts application/json with parameters or different case", async () => {
+  const body = JSON.stringify({ action: "fetchPlan", deviceToken: nonce });
+  for (
+    const contentType of [
+      "application/json",
+      "application/json; charset=utf-8",
+      "Application/JSON ;charset=UTF-8",
+    ]
+  ) {
+    const response = await rawRequest({ "Content-Type": contentType }, "POST", body);
+    assert.equal(response.status, 426, contentType);
+  }
+});
+
+test("garmin-sync keeps the CORS preflight and method checks independent of Content-Type", async () => {
+  const preflight = await rawRequest({
+    Origin: "https://gymapptracker.com",
+    "Access-Control-Request-Method": "POST",
+  }, "OPTIONS");
+  assert.equal(preflight.status, 200);
+  assert.equal(
+    preflight.headers.get("access-control-allow-origin"),
+    "https://gymapptracker.com",
+  );
+  assert.equal((await rawRequest({}, "GET")).status, 405);
+  assert.deepEqual(clients, []);
+  assert.deepEqual(budgetCalls, []);
+});

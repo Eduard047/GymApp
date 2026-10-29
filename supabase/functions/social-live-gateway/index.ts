@@ -476,8 +476,10 @@ function normalizeProjectUrl(raw: string): string | null {
     const url = new URL(raw);
     if (
       url.protocol !== "https:" && url.hostname !== "127.0.0.1" &&
-      url.hostname !== "localhost"
-    ) return null;
+      url.hostname !== "localhost" && url.hostname !== "kong"
+    ) {
+      return null;
+    }
     return url.origin;
   } catch {
     return null;

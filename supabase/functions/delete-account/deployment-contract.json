@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "functionName": "delete-account",
-  "repositoryContractVersion": 7,
+  "repositoryContractVersion": 8,
   "repositorySource": "supabase/functions/delete-account/index.ts",
-  "repositorySourceSha256": "61b20eb4d80815f2474a82100fdfa1836e7f25989363809ffbe0dfb96fef1e2f",
+  "repositorySourceSha256": "e152aad89526e5bfb31012a99454c301b3296ab59a23aa82e7bf69b0bf8170ac",
   "repositorySharedSource": "supabase/functions/_shared/preauth-budget.ts",
   "repositorySharedSourceSha256": "610b8b563da81cfe4932b7771fc76964f3d486ccff5281b90be8fbb80de73dba",
   "requiredMigration": "supabase/migrations/20260823160705_require_one_time_account_deletion_grants.sql",
@@ -22,8 +22,8 @@
     "commitMigrationApplied": true
   },
   "releaseGate": {
-    "deploymentRequired": false,
+    "deploymentRequired": true,
     "minimumProductionFunctionVersion": 19,
-    "reason": "Production function version 19, canonical source hashes, verify_jwt, and all required migrations were read back on 2026-09-02."
+    "reason": "Apply the required migration and deploy the canonical repository source, then read back the production function and configuration before release."
   }
 }
