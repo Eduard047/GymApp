@@ -15,7 +15,7 @@
 -- adds, renames, or re-grants such a function.
 begin;
 
-select plan(12);
+select plan(13);
 
 -- One row per SECURITY DEFINER function with its search_path settings.
 create temp view gymapp_secdef as
@@ -251,6 +251,24 @@ select is_empty(
       and exec_row.grantee in ('anon', 'authenticated', 'PUBLIC')
   $q$,
   'no trigger function is executable by anon, authenticated, or PUBLIC'
+);
+
+-- These validators evaluate STABLE expressions; IMMUTABLE would let the planner
+-- assume more than their bodies guarantee.
+select is_empty(
+  $q$
+    select p.oid::pg_catalog.regprocedure::text
+    from pg_catalog.pg_proc as p
+    where p.oid in (
+        'gymapp_private.validate_user_state_global_budget(jsonb)'::pg_catalog.regprocedure,
+        'gymapp_private.validate_social_workout(jsonb)'::pg_catalog.regprocedure,
+        'gymapp_private.social_name_is_safe(text)'::pg_catalog.regprocedure,
+        'gymapp_private.validate_live_workout_plan(jsonb)'::pg_catalog.regprocedure,
+        'gymapp_private.live_workout_progress_is_valid(jsonb)'::pg_catalog.regprocedure
+      )
+      and p.provolatile <> 's'
+  $q$,
+  'validators that evaluate STABLE expressions are not marked IMMUTABLE'
 );
 
 select * from finish();
