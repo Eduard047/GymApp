@@ -1,8 +1,21 @@
 -- Runtime regression on PostgreSQL; no extensions or customer fixtures needed.
 -- Every generated limiter row is rolled back, including after a failed assert.
 begin;
+
+select plan(29);
+
 set local lock_timeout = '5s';
 set local statement_timeout = '15s';
+
+-- The DO block drives the limiter with synthetic identities and records every
+-- observed result; pgTAP asserts on the recorded values below.
+create temporary table budget_probe (
+  route text not null,
+  step text not null,
+  allowance integer not null,
+  got jsonb,
+  stored_count integer
+);
 
 do $test$
 declare
@@ -35,32 +48,23 @@ begin
     end if;
 
     actual := public.edge_preauth_debit(route_row.route, test_source_hash);
-    if actual is distinct from '{"allowed":true,"retryAfter":0}'::jsonb then
-      raise exception 'First request failed for %.', route_row.route;
-    end if;
+    insert into budget_probe values (route_row.route, 'first', route_row.allowance, actual, null);
 
     update gymapp_private.edge_preauth_windows as budget
     set request_count = route_row.allowance - 1,
         window_started_at = pg_catalog.clock_timestamp() + interval '1 minute'
     where budget.route = route_row.route and budget.source_hash = test_source_hash;
     actual := public.edge_preauth_debit(route_row.route, test_source_hash);
-    if actual is distinct from '{"allowed":true,"retryAfter":0}'::jsonb then
-      raise exception 'Last allowed request failed for %.', route_row.route;
-    end if;
+    insert into budget_probe values (route_row.route, 'last_allowed', route_row.allowance, actual, null);
 
     actual := public.edge_preauth_debit(route_row.route, test_source_hash);
     select budget.request_count into strict stored_count
     from gymapp_private.edge_preauth_windows as budget
     where budget.route = route_row.route and budget.source_hash = test_source_hash;
-    if actual is distinct from '{"allowed":false,"retryAfter":60}'::jsonb
-       or stored_count <> route_row.allowance then
-      raise exception 'Exhausted request did not fail closed for %.', route_row.route;
-    end if;
+    insert into budget_probe values (route_row.route, 'exhausted', route_row.allowance, actual, stored_count);
 
     actual := public.edge_preauth_debit(route_row.route, test_peer_hash);
-    if actual is distinct from '{"allowed":true,"retryAfter":0}'::jsonb then
-      raise exception 'One identity consumed another identity budget.';
-    end if;
+    insert into budget_probe values (route_row.route, 'peer', route_row.allowance, actual, null);
 
     update gymapp_private.edge_preauth_windows as budget
     set window_started_at = pg_catalog.clock_timestamp() - interval '2 minutes'
@@ -69,80 +73,184 @@ begin
     select budget.request_count into strict stored_count
     from gymapp_private.edge_preauth_windows as budget
     where budget.route = route_row.route and budget.source_hash = test_source_hash;
-    if actual is distinct from '{"allowed":true,"retryAfter":0}'::jsonb
-       or stored_count <> 1 then
-      raise exception 'Expired window did not reset for %.', route_row.route;
-    end if;
+    insert into budget_probe values (route_row.route, 'reset', route_row.allowance, actual, stored_count);
   end loop;
 
-  begin
-    perform public.edge_preauth_debit('social_live', 'invalid');
-    raise exception 'Malformed identity was accepted.';
-  exception when invalid_parameter_value then null;
-  end;
-  begin
-    perform public.edge_preauth_debit('invalid_route', test_source_hash);
-    raise exception 'Unknown route was accepted.';
-  exception when invalid_parameter_value then null;
-  end;
-  begin
-    perform public.edge_preauth_debit('garmin_legacy', test_source_hash);
-    raise exception 'Retired Garmin legacy route was accepted.';
-  exception when invalid_parameter_value then null;
-  end;
-
-  perform pg_catalog.set_config('gymapp.test_budget_source', test_peer_hash, true);
+  perform pg_catalog.set_config('gymapp.test_budget_source', test_source_hash, true);
+  perform pg_catalog.set_config('gymapp.test_budget_peer', test_peer_hash, true);
 end
 $test$;
 
+-- Per route: first request, last allowed request, fail-closed exhaustion,
+-- identity isolation, and expired-window reset.
+select is(
+  (select got from budget_probe where route = 'social_live' and step = 'first'),
+  '{"allowed":true,"retryAfter":0}'::jsonb,
+  'social_live: first request is allowed'
+);
+select is(
+  (select got from budget_probe where route = 'social_live' and step = 'last_allowed'),
+  '{"allowed":true,"retryAfter":0}'::jsonb,
+  'social_live: last allowed request is allowed'
+);
+select is(
+  (select got from budget_probe where route = 'social_live' and step = 'exhausted'),
+  '{"allowed":false,"retryAfter":60}'::jsonb,
+  'social_live: exhausted request fails closed'
+);
+select is(
+  (select stored_count from budget_probe where route = 'social_live' and step = 'exhausted'),
+  (select allowance from budget_probe where route = 'social_live' and step = 'exhausted'),
+  'social_live: exhausted request does not increment past the allowance'
+);
+select is(
+  (select got from budget_probe where route = 'social_live' and step = 'peer'),
+  '{"allowed":true,"retryAfter":0}'::jsonb,
+  'social_live: one identity does not consume another identity budget'
+);
+select is(
+  (select got from budget_probe where route = 'social_live' and step = 'reset'),
+  '{"allowed":true,"retryAfter":0}'::jsonb,
+  'social_live: expired window allows the request'
+);
+select is(
+  (select stored_count from budget_probe where route = 'social_live' and step = 'reset'),
+  1,
+  'social_live: expired window resets the count to 1'
+);
+
+select is(
+  (select got from budget_probe where route = 'social_gateway' and step = 'first'),
+  '{"allowed":true,"retryAfter":0}'::jsonb,
+  'social_gateway: first request is allowed'
+);
+select is(
+  (select got from budget_probe where route = 'social_gateway' and step = 'last_allowed'),
+  '{"allowed":true,"retryAfter":0}'::jsonb,
+  'social_gateway: last allowed request is allowed'
+);
+select is(
+  (select got from budget_probe where route = 'social_gateway' and step = 'exhausted'),
+  '{"allowed":false,"retryAfter":60}'::jsonb,
+  'social_gateway: exhausted request fails closed'
+);
+select is(
+  (select stored_count from budget_probe where route = 'social_gateway' and step = 'exhausted'),
+  (select allowance from budget_probe where route = 'social_gateway' and step = 'exhausted'),
+  'social_gateway: exhausted request does not increment past the allowance'
+);
+select is(
+  (select got from budget_probe where route = 'social_gateway' and step = 'peer'),
+  '{"allowed":true,"retryAfter":0}'::jsonb,
+  'social_gateway: one identity does not consume another identity budget'
+);
+select is(
+  (select got from budget_probe where route = 'social_gateway' and step = 'reset'),
+  '{"allowed":true,"retryAfter":0}'::jsonb,
+  'social_gateway: expired window allows the request'
+);
+select is(
+  (select stored_count from budget_probe where route = 'social_gateway' and step = 'reset'),
+  1,
+  'social_gateway: expired window resets the count to 1'
+);
+
+select is(
+  (select got from budget_probe where route = 'delete_account' and step = 'first'),
+  '{"allowed":true,"retryAfter":0}'::jsonb,
+  'delete_account: first request is allowed'
+);
+select is(
+  (select got from budget_probe where route = 'delete_account' and step = 'last_allowed'),
+  '{"allowed":true,"retryAfter":0}'::jsonb,
+  'delete_account: last allowed request is allowed'
+);
+select is(
+  (select got from budget_probe where route = 'delete_account' and step = 'exhausted'),
+  '{"allowed":false,"retryAfter":60}'::jsonb,
+  'delete_account: exhausted request fails closed'
+);
+select is(
+  (select stored_count from budget_probe where route = 'delete_account' and step = 'exhausted'),
+  (select allowance from budget_probe where route = 'delete_account' and step = 'exhausted'),
+  'delete_account: exhausted request does not increment past the allowance'
+);
+select is(
+  (select got from budget_probe where route = 'delete_account' and step = 'peer'),
+  '{"allowed":true,"retryAfter":0}'::jsonb,
+  'delete_account: one identity does not consume another identity budget'
+);
+select is(
+  (select got from budget_probe where route = 'delete_account' and step = 'reset'),
+  '{"allowed":true,"retryAfter":0}'::jsonb,
+  'delete_account: expired window allows the request'
+);
+select is(
+  (select stored_count from budget_probe where route = 'delete_account' and step = 'reset'),
+  1,
+  'delete_account: expired window resets the count to 1'
+);
+
+-- Input validation (SQLSTATE 22023 = invalid_parameter_value).
+select throws_ok(
+  $$select public.edge_preauth_debit('social_live', 'invalid')$$,
+  '22023', null,
+  'Malformed identity is rejected'
+);
+select throws_ok(
+  format(
+    $$select public.edge_preauth_debit('invalid_route', %L)$$,
+    pg_catalog.current_setting('gymapp.test_budget_source')
+  ),
+  '22023', null,
+  'Unknown route is rejected'
+);
+select throws_ok(
+  format(
+    $$select public.edge_preauth_debit('garmin_legacy', %L)$$,
+    pg_catalog.current_setting('gymapp.test_budget_source')
+  ),
+  '22023', null,
+  'Retired Garmin legacy route is rejected'
+);
+
+-- Client roles never reach the wrapper.
 set local role anon;
-do $test$
-begin
-  begin
-    perform public.edge_preauth_debit('social_live', 'invalid');
-    raise exception 'Anonymous caller reached the budget wrapper.';
-  exception when insufficient_privilege then null;
-  end;
-end
-$test$;
+select throws_ok(
+  $$select public.edge_preauth_debit('social_live', 'invalid')$$,
+  '42501', null,
+  'Anonymous caller cannot reach the budget wrapper'
+);
 reset role;
 
 set local role authenticated;
-do $test$
-begin
-  begin
-    perform public.edge_preauth_debit('social_live', 'invalid');
-    raise exception 'Authenticated caller reached the budget wrapper.';
-  exception when insufficient_privilege then null;
-  end;
-end
-$test$;
+select throws_ok(
+  $$select public.edge_preauth_debit('social_live', 'invalid')$$,
+  '42501', null,
+  'Authenticated caller cannot reach the budget wrapper'
+);
 reset role;
 
+-- service_role crosses the private-schema boundary only through the wrapper.
 set local role service_role;
-do $test$
-declare
-  actual jsonb;
-begin
-  actual := public.edge_preauth_debit(
-    'social_live', pg_catalog.current_setting('gymapp.test_budget_source')
-  );
-  if actual is distinct from '{"allowed":true,"retryAfter":0}'::jsonb then
-    raise exception 'Service wrapper could not cross the private-schema boundary.';
-  end if;
-  begin
-    perform gymapp_private.edge_preauth_debit('social_live', 'invalid');
-    raise exception 'Service role bypassed the public wrapper.';
-  exception when insufficient_privilege then null;
-  end;
-  begin
-    perform 1 from gymapp_private.edge_preauth_windows limit 1;
-    raise exception 'Service role obtained direct budget-table access.';
-  exception when insufficient_privilege then null;
-  end;
-end
-$test$;
+select is(
+  public.edge_preauth_debit(
+    'social_live', pg_catalog.current_setting('gymapp.test_budget_peer')
+  ),
+  '{"allowed":true,"retryAfter":0}'::jsonb,
+  'Service wrapper crosses the private-schema boundary'
+);
+select throws_ok(
+  $$select gymapp_private.edge_preauth_debit('social_live', 'invalid')$$,
+  '42501', null,
+  'Service role cannot bypass the public wrapper'
+);
+select throws_ok(
+  $$select 1 from gymapp_private.edge_preauth_windows limit 1$$,
+  '42501', null,
+  'Service role has no direct budget-table access'
+);
 reset role;
 
-select 'verified_edge_budget_coalesce: passed' as result;
+select * from finish();
 rollback;

@@ -2,10 +2,14 @@
 -- Clone the installed function with dependencies bound to temporary fixtures;
 -- never invoke its real session/budget helpers or touch account data.
 begin;
+
+select plan(11);
+
 set local statement_timeout = '15s';
 create temporary table reservation_windows (
   route text, source_hash text, request_count integer
 );
+create temporary table reservation_snapshot (snapshot jsonb);
 create function pg_temp.test_uid() returns uuid language sql as $$
   select nullif(current_setting('test.caller', true), '')::uuid
 $$;
@@ -35,58 +39,88 @@ begin
 end
 $setup$;
 
-do $test$
-declare
-  result jsonb;
-  snapshot jsonb;
-begin
-  perform set_config('test.caller', '00000000-0000-4000-8000-000000000001', true);
-  perform set_config('test.session', '00000000-0000-4000-8000-000000000002', true);
-  perform set_config('test.debit', '{"allowed":true,"retryAfter":0}', true);
-  insert into pg_temp.reservation_windows values
-    ('social_live', 'target-session', 1),
-    ('social_live', 'other-session', 4),
-    ('social_gateway', 'target-session', 7);
+set local test.caller = '00000000-0000-4000-8000-000000000001';
+set local test.session = '00000000-0000-4000-8000-000000000002';
+set local test.debit = '{"allowed":true,"retryAfter":0}';
+insert into pg_temp.reservation_windows values
+  ('social_live', 'target-session', 1),
+  ('social_live', 'other-session', 4),
+  ('social_gateway', 'target-session', 7);
 
-  result := pg_temp.test_reservation();
-  if result is distinct from '{"allowed":true,"retryAfter":0}'::jsonb
-     or exists (select 1 from pg_temp.reservation_windows where route = 'social_live' and source_hash = 'target-session') then
-    raise exception 'Single reservation was not released.';
-  end if;
+-- A single outstanding reservation is released.
+select is(
+  pg_temp.test_reservation(),
+  '{"allowed":true,"retryAfter":0}'::jsonb,
+  'Single reservation returns the allowed budget result'
+);
+select ok(
+  not exists (
+    select 1 from pg_temp.reservation_windows
+    where route = 'social_live' and source_hash = 'target-session'
+  ),
+  'Single reservation was released'
+);
 
-  insert into pg_temp.reservation_windows values ('social_live', 'target-session', 3);
-  perform pg_temp.test_reservation();
-  if (select request_count from pg_temp.reservation_windows where route = 'social_live' and source_hash = 'target-session') is distinct from 2
-     or (select request_count from pg_temp.reservation_windows where route = 'social_live' and source_hash = 'other-session') is distinct from 4
-     or (select request_count from pg_temp.reservation_windows where route = 'social_gateway' and source_hash = 'target-session') is distinct from 7 then
-    raise exception 'Reservation release crossed session/route boundaries or charged incorrectly.';
-  end if;
+-- Releasing from a larger window decrements only the target session and route.
+insert into pg_temp.reservation_windows values ('social_live', 'target-session', 3);
+select lives_ok(
+  $$select pg_temp.test_reservation()$$,
+  'Reservation release succeeds against a larger window'
+);
+select is(
+  (select request_count from pg_temp.reservation_windows
+   where route = 'social_live' and source_hash = 'target-session'),
+  2,
+  'Reservation release charged the target session exactly once'
+);
+select is(
+  (select request_count from pg_temp.reservation_windows
+   where route = 'social_live' and source_hash = 'other-session'),
+  4,
+  'Reservation release did not cross into another session'
+);
+select is(
+  (select request_count from pg_temp.reservation_windows
+   where route = 'social_gateway' and source_hash = 'target-session'),
+  7,
+  'Reservation release did not cross into another route'
+);
 
-  select jsonb_agg(to_jsonb(w) order by route, source_hash) into snapshot from pg_temp.reservation_windows w;
-  perform set_config('test.debit', '{"allowed":false,"retryAfter":60}', true);
-  result := pg_temp.test_reservation();
-  if result is distinct from '{"allowed":false,"retryAfter":60}'::jsonb
-     or snapshot is distinct from (select jsonb_agg(to_jsonb(w) order by route, source_hash) from pg_temp.reservation_windows w) then
-    raise exception 'Denied budget changed a reservation.';
-  end if;
+-- A denied budget leaves every reservation untouched.
+insert into pg_temp.reservation_snapshot
+select jsonb_agg(to_jsonb(w) order by route, source_hash) from pg_temp.reservation_windows w;
+set local test.debit = '{"allowed":false,"retryAfter":60}';
+select is(
+  pg_temp.test_reservation(),
+  '{"allowed":false,"retryAfter":60}'::jsonb,
+  'Denied budget returns the denial result'
+);
+select is(
+  (select jsonb_agg(to_jsonb(w) order by route, source_hash) from pg_temp.reservation_windows w),
+  (select snapshot from pg_temp.reservation_snapshot),
+  'Denied budget did not change a reservation'
+);
 
-  perform set_config('test.debit', '{"allowed":true,"retryAfter":0}', true);
-  perform set_config('test.caller', '', true);
-  begin
-    perform pg_temp.test_reservation();
-    raise exception 'Anonymous caller was accepted.';
-  exception when insufficient_privilege then null;
-  end;
-  perform set_config('test.caller', '00000000-0000-4000-8000-000000000001', true);
-  perform set_config('test.session', 'invalid', true);
-  begin
-    perform pg_temp.test_reservation();
-    raise exception 'Malformed session was accepted.';
-  exception when insufficient_privilege then null;
-  end;
-  if snapshot is distinct from (select jsonb_agg(to_jsonb(w) order by route, source_hash) from pg_temp.reservation_windows w) then
-    raise exception 'Rejected authentication changed a reservation.';
-  end if;
-end
-$test$;
+-- Rejected authentication never reaches the reservations.
+set local test.debit = '{"allowed":true,"retryAfter":0}';
+set local test.caller = '';
+select throws_ok(
+  $$select pg_temp.test_reservation()$$,
+  '42501', null,
+  'Anonymous caller is rejected'
+);
+set local test.caller = '00000000-0000-4000-8000-000000000001';
+set local test.session = 'invalid';
+select throws_ok(
+  $$select pg_temp.test_reservation()$$,
+  '42501', null,
+  'Malformed session is rejected'
+);
+select is(
+  (select jsonb_agg(to_jsonb(w) order by route, source_hash) from pg_temp.reservation_windows w),
+  (select snapshot from pg_temp.reservation_snapshot),
+  'Rejected authentication did not change a reservation'
+);
+
+select * from finish();
 rollback;
