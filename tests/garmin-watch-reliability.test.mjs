@@ -41,130 +41,200 @@ test("Garmin short timers survive the signed System.getTimer rollover", async ()
   assert.match(store, /timerElapsedMs\(lastSetUndoStartedAt\) > undoWindowMs/);
 });
 
+// Mirrors WorkoutView.expireSyncRequest / requestSyncNow / onSyncSent. The model
+// keeps every transport listener (Connect IQ cannot cancel one) so it can answer
+// them in any order while the callback itself carries no request identity.
+const syncModel = () => {
+  const state = {
+    inFlight: false,
+    timedOut: false,
+    stale: 0,
+    lastAt: null,
+    listeners: 0,
+    maximumListeners: 0,
+    sends: 0,
+    status: "READY"
+  };
+  // `immediate` models GymComm answering inside requestSync (phone away or watch
+  // unbound): no transport listener exists and the answer is the request's own.
+  state.request = (now, immediate = false) => {
+    if (state.inFlight) return false;
+    if (state.timedOut) {
+      if (state.stale > 1 || state.lastAt == null || now - state.lastAt < 60_000) return false;
+      state.timedOut = false;
+    }
+    const held = state.stale;
+    state.stale = 0;
+    state.inFlight = true;
+    state.lastAt = now;
+    state.sends += 1;
+    if (immediate) {
+      state.callback(false, true);
+    } else {
+      state.listeners += 1;
+      state.maximumListeners = Math.max(state.maximumListeners, state.listeners);
+    }
+    state.stale += held;
+    return true;
+  };
+  state.expire = now => {
+    if (!state.inFlight || state.lastAt == null || now - state.lastAt <= 60_000) return false;
+    state.inFlight = false;
+    state.timedOut = true;
+    state.stale += 1;
+    state.lastAt = now;
+    state.status = "PHONE SILENT";
+    return true;
+  };
+  state.callback = (ok, immediate = false) => {
+    if (!immediate) state.listeners -= 1;
+    if (state.stale > 0) {
+      state.stale -= 1;
+      return;
+    }
+    state.inFlight = false;
+    state.status = ok ? "SYNC REQ" : "NO PHONE";
+  };
+  return state;
+};
+
 test("Garmin sync watchdog expires a missing Ready request before the idle return", async () => {
   const view = await readFile("garmin/source/WorkoutView.mc", "utf8");
-  const tick = section(view, "function tick()", "function requestSyncNow()");
+  const tick = section(view, "function tick()", "function expireSyncRequest()");
+  const expire = section(view, "function expireSyncRequest()", "function requestSyncNow()");
+  const request = section(view, "function requestSyncNow()", "(:compactLegacyState, :richWorkoutMode)\n    function tick()");
   const sent = section(view, "function onSyncSent(ok)", "(:fullLegacyState)\n    function requestCloudSyncNow()");
-  const timeoutAt = tick.indexOf("if (syncRequestInFlight && lastSyncRequestAt != null");
+  const timeoutAt = tick.indexOf("expireSyncRequest()");
   const idleReturnAt = tick.indexOf("if (page == 7 || !GymSession.recording)");
-
 
   assert.ok(timeoutAt >= 0 && timeoutAt < idleReturnAt,
     "Ready and stopped-workout ticks must still expire a missing callback");
   assert.doesNotMatch(tick, /requestSyncNow\(\)/,
     "recording ticks must not allocate a background transmit listener");
-  assert.match(tick, /timerElapsedMs\(lastSyncRequestAt\) > 60000l[\s\S]*syncRequestTimedOut = true[\s\S]*status = GymStatus\.REOPEN/);
-  assert.match(sent, /if \(syncRequestTimedOut\) \{\s*return;\s*\}[\s\S]*syncRequestInFlight = false/);
-  assert.doesNotMatch(sent, /syncRequestTimedOut = false/);
-  assert.equal((view.match(/current == GymStatus\.REOPEN/g) || []).length, 2,
-    "both full and compact Ready views must explain the reopen recovery");
+  assert.match(view, /var staleSyncCallbacks = 0/);
+  assert.equal((view.match(/\n\s+(?:if \()?expireSyncRequest\(\)/g) || []).length, 3,
+    "the full, compact and 96 KiB tick variants all expire through the one helper");
+  assert.equal((view.match(/syncRequestTimedOut = true/g) || []).length, 1,
+    "only the helper marks a request as timed out");
+  // Timeout: stop the request, count its still-live listener, restart the wait.
+  assert.match(expire, /timerElapsedMs\(lastSyncRequestAt\) <= 60000l[\s\S]*return false/);
+  assert.match(expire,
+    /syncRequestInFlight = false;\s*syncRequestTimedOut = true;\s*staleSyncCallbacks \+= 1;\s*lastSyncRequestAt = System\.getTimer\(\);\s*GymStore\.status = GymStatus\.PHONE_SILENT;\s*return true/);
+  assert.doesNotMatch(expire, /GymStatus\.REOPEN/);
+  // Retry: a further quiet minute after the timeout and at most one stale listener.
+  assert.match(request,
+    /if \(syncRequestInFlight\) \{\s*return;\s*\}[\s\S]*if \(syncRequestTimedOut\) \{[\s\S]*staleSyncCallbacks > 1 \|\| lastSyncRequestAt == null \|\|\s*GymStore\.timerElapsedMs\(lastSyncRequestAt\) < 60000l\) \{\s*return;\s*\}\s*syncRequestTimedOut = false;/);
+  assert.match(request,
+    /var stale = staleSyncCallbacks;\s*staleSyncCallbacks = 0;\s*syncRequestInFlight = true;\s*lastSyncRequestAt = System\.getTimer\(\);\s*GymComm\.requestSync\(method\(:onSyncSent\)\);\s*staleSyncCallbacks \+= stale;/,
+    "an immediate GymComm answer must not be consumed as a late one");
+  // A callback owed by a timed-out request is consumed before it can touch the current one.
+  assert.match(sent, /if \(staleSyncCallbacks > 0\) \{\s*staleSyncCallbacks -= 1;\s*return;\s*\}[\s\S]*syncRequestInFlight = false/);
+  assert.doesNotMatch(sent, /syncRequestTimedOut/);
+  assert.equal((view.match(/GymStatus\.PHONE_SILENT/g) || []).length >= 2, true);
 
-  const freshState = () => ({
-    inFlight: false,
-    timedOut: false,
-    lastAt: null,
-    transportOutstanding: 0,
-    maximumOutstanding: 0,
-    sends: 0,
-    status: "READY"
-  });
-  const request = (state, now) => {
-    if (state.inFlight || state.timedOut) return false;
-    state.inFlight = true;
-    state.lastAt = now;
-    state.transportOutstanding += 1;
-    state.maximumOutstanding = Math.max(state.maximumOutstanding, state.transportOutstanding);
-    state.sends += 1;
-    return true;
-  };
-  const callback = (state, ok) => {
-    if (state.timedOut) return;
-    state.inFlight = false;
-    state.transportOutstanding -= 1;
-    state.status = ok ? "SYNC REQ" : "NO PHONE";
-  };
-  const tickSync = (state, now, { ready, recording }) => {
-    if (state.inFlight && state.lastAt != null && now - state.lastAt > 60_000) {
-      state.inFlight = false;
-      state.timedOut = true;
-      state.status = "REOPEN";
-    }
-    if (ready || !recording) return;
-  };
+  const ready = syncModel();
+  assert.equal(ready.request(0), true, "manual Ready sync starts one listener");
+  assert.equal(ready.expire(60_000), false, "exactly a minute is not yet silent");
+  assert.equal(ready.expire(60_001), true);
+  assert.equal(ready.status, "PHONE SILENT");
+  assert.equal(ready.request(60_002), false, "the retry waits a further quiet minute after the timeout");
+  assert.equal(ready.request(120_000), false, "59.999 s after the timeout is still held");
+  assert.equal(ready.request(120_001), true, "a full quiet minute after the timeout allows the retry");
+  assert.equal(ready.timedOut, false);
+  assert.equal(ready.maximumListeners, 2, "the stale listener and the retry are the only two");
 
-  const ready = freshState();
-  assert.equal(request(ready, 0), true, "manual Ready sync starts one listener");
-  tickSync(ready, 60_001, { ready: true, recording: false });
-  assert.equal(ready.status, "REOPEN");
-  assert.equal(request(ready, 60_002), false, "same process stays locked after timeout");
-  callback(ready, true);
+  // The stale listener answers first: it cannot clear or relabel the retry.
+  ready.status = "PHONE SILENT";
+  ready.callback(true);
   assert.deepEqual(
-    { timedOut: ready.timedOut, status: ready.status, sends: ready.sends, maximumOutstanding: ready.maximumOutstanding },
-    { timedOut: true, status: "REOPEN", sends: 1, maximumOutstanding: 1 },
-    "a late success cannot unlock the old listener or start another one"
+    { inFlight: ready.inFlight, stale: ready.stale, status: ready.status },
+    { inFlight: true, stale: 0, status: "PHONE SILENT" },
+    "a late stale success leaves the new request pending"
+  );
+  assert.equal(ready.request(130_000), false, "no third overlapping listener while the retry is pending");
+  ready.callback(false);
+  assert.deepEqual(
+    { inFlight: ready.inFlight, status: ready.status, sends: ready.sends },
+    { inFlight: false, status: "NO PHONE", sends: 2 }
   );
 
-  const reopened = freshState();
-  assert.equal(request(reopened, 0), true, "a new app process has a clean bounded recovery state");
-  assert.equal(reopened.maximumOutstanding, 1);
+  // The retry answers first: its result is consumed as the stale one, so the
+  // request stays in flight (still no overlap) until the other callback lands.
+  const swapped = syncModel();
+  swapped.request(0);
+  swapped.expire(60_001);
+  assert.equal(swapped.request(120_001), true);
+  swapped.callback(true);
+  assert.deepEqual(
+    { inFlight: swapped.inFlight, stale: swapped.stale, status: swapped.status },
+    { inFlight: true, stale: 0, status: "PHONE SILENT" }
+  );
+  assert.equal(swapped.request(120_002), false);
+  swapped.callback(true);
+  assert.deepEqual(
+    { inFlight: swapped.inFlight, status: swapped.status, maximumListeners: swapped.maximumListeners },
+    { inFlight: false, status: "SYNC REQ", maximumListeners: 2 }
+  );
+
+  // Phone away or watch unbound: GymComm answers inside requestSync, so that
+  // answer completes the retry and the timed-out listener is still owed.
+  const immediate = syncModel();
+  immediate.request(0);
+  immediate.expire(60_001);
+  assert.equal(immediate.request(120_001, true), true);
+  assert.deepEqual(
+    { inFlight: immediate.inFlight, stale: immediate.stale, status: immediate.status },
+    { inFlight: false, stale: 1, status: "NO PHONE" }
+  );
+  immediate.callback(true);
+  assert.deepEqual(
+    { inFlight: immediate.inFlight, stale: immediate.stale, status: immediate.status },
+    { inFlight: false, stale: 0, status: "NO PHONE" },
+    "the owed late answer is dropped without touching the finished retry"
+  );
+
+  const reopened = syncModel();
+  assert.equal(reopened.request(0), true, "a new app process has a clean bounded recovery state");
+  assert.equal(reopened.maximumListeners, 1);
 });
 
 test("Garmin manual sync stays bounded without periodic recording retries", () => {
-  const freshState = () => ({
-    inFlight: false,
-    timedOut: false,
-    lastAt: null,
-    outstanding: 0,
-    maximumOutstanding: 0,
-    sends: 0,
-    status: "READY"
-  });
-  const request = (state, now) => {
-    if (state.inFlight || state.timedOut) return;
-    state.inFlight = true;
-    state.lastAt = now;
-    state.outstanding += 1;
-    state.maximumOutstanding = Math.max(state.maximumOutstanding, state.outstanding);
-    state.sends += 1;
-  };
-  const callback = (state, ok) => {
-    if (state.timedOut) return;
-    state.inFlight = false;
-    state.outstanding -= 1;
-    state.status = ok ? "SYNC REQ" : "NO PHONE";
-  };
-  const recordingTick = (state, now) => {
-    if (state.inFlight && state.lastAt != null && now - state.lastAt > 60_000) {
-      state.inFlight = false;
-      state.timedOut = true;
-      state.status = "REOPEN";
-    }
-  };
-
   for (const ok of [true, false]) {
-    const completed = freshState();
-    request(completed, 0);
-    callback(completed, ok);
-    recordingTick(completed, 20_000);
+    const completed = syncModel();
+    completed.request(0);
+    completed.callback(ok);
+    completed.expire(20_000);
     assert.equal(completed.sends, 1, "complete/error callbacks do not cause an immediate retry");
-    recordingTick(completed, 20_001);
+    completed.expire(20_001);
     assert.equal(completed.sends, 1, "recording never creates a periodic retry");
-    request(completed, 20_002);
+    completed.request(20_002);
     assert.equal(completed.sends, 2, "a new manual request may retry a completed operation");
-    assert.equal(completed.maximumOutstanding, 1);
+    assert.equal(completed.maximumListeners, 1);
   }
 
-  const missing = freshState();
-  request(missing, 0);
-  for (const now of [60_001, 80_002, 160_003]) recordingTick(missing, now);
+  // A phone that never answers: ticks alone never send, and at most two
+  // listeners are ever outstanding however often the user presses sync.
+  const missing = syncModel();
+  missing.request(0);
+  for (const now of [60_001, 80_002, 160_003]) missing.expire(now);
   assert.deepEqual(
-    { sends: missing.sends, timedOut: missing.timedOut, status: missing.status, maximumOutstanding: missing.maximumOutstanding },
-    { sends: 1, timedOut: true, status: "REOPEN", maximumOutstanding: 1 }
+    { sends: missing.sends, timedOut: missing.timedOut, status: missing.status, stale: missing.stale },
+    { sends: 1, timedOut: true, status: "PHONE SILENT", stale: 1 }
   );
-  callback(missing, false);
-  recordingTick(missing, 240_004);
-  assert.equal(missing.sends, 1, "a late error remains quarantined just like a late success");
-  assert.equal(missing.status, "REOPEN");
+  let now = 160_003;
+  for (let press = 0; press < 12; press += 1) {
+    now += 61_000;
+    missing.request(now);
+    missing.expire(now + 60_001);
+    now += 60_001;
+  }
+  assert.equal(missing.sends, 2, "two silent requests lock out a third until a callback frees a slot");
+  assert.equal(missing.stale, 2);
+  assert.equal(missing.maximumListeners, 2);
+  missing.callback(false);
+  assert.equal(missing.status, "PHONE SILENT", "a late error stays quarantined just like a late success");
+  assert.equal(missing.request(now + 61_000), true, "one answered stale listener reopens a single retry");
+  assert.equal(missing.maximumListeners, 2);
 });
 
 test("Garmin cloud sync is explicit on Ready and accepts only the queue head ACK", async () => {

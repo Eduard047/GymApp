@@ -1285,31 +1285,45 @@ test("Garmin set commits avoid repeated full-history heap peaks", async () => {
   assert.match(addSet, /var compatibilitySaved = usedAtomicSnapshot \? true : save\(\)/);
   assert.match(view, /var syncRequestInFlight = false/);
   assert.match(view, /var syncRequestTimedOut = false/);
-  assert.match(view, /timerElapsedMs\(lastSyncRequestAt\) > 60000l[\s\S]*syncRequestTimedOut = true/);
+  assert.match(view, /var staleSyncCallbacks = 0/);
+  assert.match(view, /timerElapsedMs\(lastSyncRequestAt\) <= 60000l[\s\S]*syncRequestTimedOut = true;\s*staleSyncCallbacks \+= 1;\s*lastSyncRequestAt = System\.getTimer\(\)/);
   assert.doesNotMatch(view, /timerElapsedMs\(lastSyncRequestAt\) > 20000l/);
-  assert.match(view, /if \(syncRequestInFlight \|\| syncRequestTimedOut\)[\s\S]*return;/);
+  assert.match(view, /if \(staleSyncCallbacks > 1 \|\| lastSyncRequestAt == null \|\|\s*GymStore\.timerElapsedMs\(lastSyncRequestAt\) < 60000l\) \{\s*return;/);
+  assert.match(view, /function onSyncSent\(ok\) \{[\s\S]*?if \(staleSyncCallbacks > 0\) \{\s*staleSyncCallbacks -= 1;\s*return;/);
   assert.match(comm, /callback = null;[\s\S]*completed\.invoke/);
 
+  // A timed-out request counts its uncancellable listener and restarts the quiet
+  // minute, so repeated presses on a silent phone never exceed two listeners.
   let outstanding = 0;
   let inFlight = false;
   let timedOut = false;
+  let stale = 0;
+  let lastAt = null;
   let maximumOutstanding = 0;
-  const maybeSend = () => {
-    if (!inFlight && !timedOut) {
-      inFlight = true;
-      outstanding += 1;
-      maximumOutstanding = Math.max(maximumOutstanding, outstanding);
+  const maybeSend = now => {
+    if (inFlight) return;
+    if (timedOut) {
+      if (stale > 1 || lastAt == null || now - lastAt < 60_000) return;
+      timedOut = false;
     }
+    inFlight = true;
+    lastAt = now;
+    outstanding += 1;
+    maximumOutstanding = Math.max(maximumOutstanding, outstanding);
   };
   for (let attempt = 0; attempt < 10; attempt += 1) {
-    maybeSend();
+    const now = attempt * 61_000;
+    maybeSend(now);
     if (inFlight) {
       inFlight = false;
       timedOut = true;
+      stale += 1;
+      lastAt = now + 60_001;
     }
   }
-  assert.equal(maximumOutstanding, 1);
-  assert.equal(outstanding, 1);
+  assert.equal(maximumOutstanding, 2);
+  assert.equal(outstanding, 2);
+  assert.equal(stale, 2);
 
   const LIMIT = 32_768;
   const estimate = (value, depth = 0) => {

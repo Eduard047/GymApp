@@ -8,6 +8,9 @@ class NavigationTestView extends WorkoutView {
     function initialize() { WorkoutView.initialize(); }
     function readyActionCount() { return actions; }
     function isUndoOverlayActive() { return undoVisible; }
+    function syncStatusIs(ok) {
+        return GymStore.status == (ok ? GymStatus.SYNC_REQ : GymStatus.NO_PHONE);
+    }
 
     (:richWorkoutMode)
     function detectorPromptEnabled() { return GymSession.autoLogPrompt; }
@@ -275,4 +278,74 @@ function syncFromReadyRetriesAfterAnEarlierRequestTimedOut(logger as Test.Logger
     view.syncFromReady();
     var held = view.syncRequestTimedOut && view.lastSyncRequestAt == recentAt;
     return retried && held;
+}
+
+(:test)
+function syncRetryNeedsAFurtherQuietMinuteAfterTheTimeout(logger as Test.Logger) as Lang.Boolean {
+    var view = new NavigationTestView();
+    view.syncRequestInFlight = true;
+    view.lastSyncRequestAt = Toybox.System.getTimer() - 61000;
+    var expired = view.expireSyncRequest();
+    var stamped = Toybox.System.getTimer() - view.lastSyncRequestAt < 5000;
+    var marked = view.syncRequestTimedOut && !view.syncRequestInFlight &&
+        view.staleSyncCallbacks == 1;
+    // The request itself was over a minute old, but the timeout restarted the wait.
+    var firstAt = view.lastSyncRequestAt;
+    view.requestSyncNow();
+    var held = view.syncRequestTimedOut && view.lastSyncRequestAt == firstAt;
+    view.lastSyncRequestAt = Toybox.System.getTimer() - 61000;
+    var secondAt = view.lastSyncRequestAt;
+    view.requestSyncNow();
+    var retried = !view.syncRequestTimedOut && view.lastSyncRequestAt != secondAt &&
+        view.staleSyncCallbacks == 1;
+    return expired && stamped && marked && held && retried;
+}
+
+(:test)
+function lateCallbackOfATimedOutSyncDoesNotClearTheRetry(logger as Test.Logger) as Lang.Boolean {
+    var view = new NavigationTestView();
+    // State right after a retry: the retry is in flight and one timed-out
+    // listener has not answered yet.
+    view.syncRequestInFlight = true;
+    view.syncRequestTimedOut = false;
+    view.staleSyncCallbacks = 1;
+    view.onSyncSent(false);
+    var stillWaiting = view.syncRequestInFlight && view.staleSyncCallbacks == 0;
+    // The next callback is the retry's own and finishes it.
+    view.onSyncSent(true);
+    var finished = !view.syncRequestInFlight &&
+        view.staleSyncCallbacks == 0 && view.syncStatusIs(true);
+    return stillWaiting && finished;
+}
+
+(:test)
+function syncRetryStopsWhileTwoTimedOutListenersAreOutstanding(logger as Test.Logger) as Lang.Boolean {
+    var view = new NavigationTestView();
+    view.syncRequestInFlight = false;
+    view.syncRequestTimedOut = true;
+    view.staleSyncCallbacks = 2;
+    var oldAt = Toybox.System.getTimer() - 61000;
+    view.lastSyncRequestAt = oldAt;
+    view.requestSyncNow();
+    var held = view.syncRequestTimedOut && view.lastSyncRequestAt == oldAt &&
+        view.staleSyncCallbacks == 2;
+    // One late answer frees a slot, so the quiet-minute retry works again.
+    view.onSyncSent(false);
+    view.requestSyncNow();
+    return held && !view.syncRequestTimedOut && view.lastSyncRequestAt != oldAt &&
+        view.staleSyncCallbacks == 1;
+}
+
+(:test)
+function immediateAnswerToARetryIsNotTakenForALateOne(logger as Test.Logger) as Lang.Boolean {
+    GymStore.clearAccountScopedState();
+    var view = new NavigationTestView();
+    view.syncRequestInFlight = false;
+    view.syncRequestTimedOut = true;
+    view.staleSyncCallbacks = 1;
+    view.lastSyncRequestAt = Toybox.System.getTimer() - 61000;
+    // Unbound watch: GymComm answers inside requestSync with no listener.
+    view.requestSyncNow();
+    return !GymStore.hasAccountBinding() && !view.syncRequestInFlight &&
+        view.staleSyncCallbacks == 1 && view.syncStatusIs(false);
 }

@@ -43,6 +43,8 @@ class WorkoutView extends Ui.View {
     var savePlanReleased = false;
     var syncRequestInFlight = false;
     var syncRequestTimedOut = false;
+    // Timed-out Ready requests whose Connect IQ listener has not answered yet.
+    var staleSyncCallbacks = 0;
     var pendingRetryStartedAt = null;
     var pendingRetryDelayMs = 5000;
     var pendingSendInFlight = false;
@@ -233,16 +235,7 @@ class WorkoutView extends Ui.View {
         getApp().pollMailbox();
         maybeRetryPending();
         var staticSurfaceChanged = false;
-        if (syncRequestInFlight && lastSyncRequestAt != null &&
-            GymStore.timerElapsedMs(lastSyncRequestAt) > 60000l) {
-            // Connect IQ offers no safe cancellation for an outstanding
-            // listener. Hold sync for another request until the user retries
-            // so a missing or late callback only ever sets a status.
-            syncRequestInFlight = false;
-            syncRequestTimedOut = true;
-            GymStore.status = GymStatus.PHONE_SILENT;
-            staticSurfaceChanged = true;
-        }
+        if (expireSyncRequest()) { staticSurfaceChanged = true; }
         if (watchPhoneSilence()) { staticSurfaceChanged = true; }
         if (page == 7 || !GymSession.recording) {
             staticRefreshTicks += 1;
@@ -327,22 +320,47 @@ class WorkoutView extends Ui.View {
         GymStore.status = GymStatus.CONFIRM_SET;
     }
 
+    // Connect IQ offers no safe cancellation for an outstanding listener, so a
+    // request that times out keeps its listener alive and is counted in
+    // staleSyncCallbacks. The timeout also restarts lastSyncRequestAt, which
+    // makes the next retry wait a further quiet minute. Returns whether the
+    // request just expired so the full tick can redraw.
+    function expireSyncRequest() {
+        if (!syncRequestInFlight || lastSyncRequestAt == null ||
+            GymStore.timerElapsedMs(lastSyncRequestAt) <= 60000l) {
+            return false;
+        }
+        syncRequestInFlight = false;
+        syncRequestTimedOut = true;
+        staleSyncCallbacks += 1;
+        lastSyncRequestAt = System.getTimer();
+        GymStore.status = GymStatus.PHONE_SILENT;
+        return true;
+    }
+
     function requestSyncNow() {
         if (syncRequestInFlight) {
             return;
         }
         if (syncRequestTimedOut) {
-            // A late callback of the timed-out request only sets a status, so
-            // after another quiet minute the user may simply try again.
-            if (lastSyncRequestAt == null ||
+            // Retry only after a further quiet minute since the timeout, and
+            // never while two listeners are already outstanding: the new one
+            // makes at most two, one stale and one current.
+            if (staleSyncCallbacks > 1 || lastSyncRequestAt == null ||
                 GymStore.timerElapsedMs(lastSyncRequestAt) < 60000l) {
                 return;
             }
             syncRequestTimedOut = false;
         }
+        // GymComm answers at once, with no listener, when the phone is away or
+        // the watch unbound. Hold the stale count back so that answer is the
+        // new request's own and not a late one.
+        var stale = staleSyncCallbacks;
+        staleSyncCallbacks = 0;
         syncRequestInFlight = true;
         lastSyncRequestAt = System.getTimer();
         GymComm.requestSync(method(:onSyncSent));
+        staleSyncCallbacks += stale;
     }
 
     (:compactLegacyState, :richWorkoutMode)
@@ -366,14 +384,7 @@ class WorkoutView extends Ui.View {
         }
         getApp().pollMailbox();
         maybeRetryPending();
-        if (syncRequestInFlight && lastSyncRequestAt != null &&
-            GymStore.timerElapsedMs(lastSyncRequestAt) > 60000l) {
-            // Keep the released compact control flow lean: these products are
-            // already at their 96/128 KiB loader ceiling.
-            syncRequestInFlight = false;
-            syncRequestTimedOut = true;
-            GymStore.status = GymStatus.PHONE_SILENT;
-        }
+        expireSyncRequest();
         watchPhoneSilence();
         if (page == 7 || !GymSession.recording) {
             Ui.requestUpdate();
@@ -428,12 +439,7 @@ class WorkoutView extends Ui.View {
         }
         getApp().pollMailbox();
         maybeRetryPending();
-        if (syncRequestInFlight && lastSyncRequestAt != null &&
-            GymStore.timerElapsedMs(lastSyncRequestAt) > 60000l) {
-            syncRequestInFlight = false;
-            syncRequestTimedOut = true;
-            GymStore.status = GymStatus.PHONE_SILENT;
-        }
+        expireSyncRequest();
         watchPhoneSilence();
         if (page == 7 || !GymSession.recording) {
             Ui.requestUpdate();
@@ -479,7 +485,12 @@ class WorkoutView extends Ui.View {
     }
 
     function onSyncSent(ok) {
-        if (syncRequestTimedOut) {
+        // Listeners answer in no fixed order. A callback owed by a timed-out
+        // request is consumed first and never touches the current request, so
+        // at worst a late answer is shown for the retry; the retry stays in
+        // flight until its own callback or timeout, never overlapping.
+        if (staleSyncCallbacks > 0) {
+            staleSyncCallbacks -= 1;
             return;
         }
         syncRequestInFlight = false;
