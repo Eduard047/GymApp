@@ -623,3 +623,50 @@ test("all external provider credential names are server environment lookups only
     /console\.(?:log|debug|info|warn|error)/,
   );
 });
+
+test("rejected notification registrations are debited once and keep the legacy JSON body", async () => {
+  const debitSql = await readFile(
+    new URL(
+      "../supabase/migrations/20261029151855_debit_rejected_notification_registrations.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const register = sqlFunction(
+    debitSql,
+    "public.notification_register_installation",
+  );
+  const sessionCheck = register.indexOf("current_auth_session_is_live()");
+  const nestedBlock = register.indexOf("\n  begin\n", sessionCheck);
+  const normalize = register.indexOf("notification_normalize_token(");
+  const foreignLock = register.indexOf("for update;");
+  const handler = register.indexOf("when sqlstate '22023' then");
+  const diagnostics = register.indexOf("get stacked diagnostics", handler);
+  const debit = register.indexOf(
+    "consume_notification_rate_limit(caller_user_id, 'register')",
+  );
+  const response = register.indexOf(
+    "notification_domain_error_response(",
+    debit,
+  );
+  const delegate = register.indexOf(
+    "return gymapp_private.notification_register_installation_session_v2(",
+  );
+
+  assert.ok(sessionCheck >= 0 && nestedBlock > sessionCheck);
+  assert.ok(normalize > nestedBlock && foreignLock > normalize);
+  assert.ok(handler > foreignLock && diagnostics > handler);
+  assert.ok(debit > diagnostics && response > debit && delegate > response);
+  // Exactly one debit in the wrapper (the rejected path); the delegated worker
+  // keeps the single debit for every other call.
+  assert.equal(register.split("consume_notification_rate_limit(").length - 1, 1);
+  assert.match(
+    register,
+    /domain_error_message <> 'Notification registration is invalid\.'[\s\S]*?raise;/,
+  );
+  assert.match(
+    debitSql,
+    /revoke all on function public\.notification_register_installation\([\s\S]*?from public, anon, authenticated, service_role;\s*grant execute on function public\.notification_register_installation\([\s\S]*?to authenticated;/,
+  );
+  assert.match(debitSql, /security definer\s+set search_path = ''/);
+});

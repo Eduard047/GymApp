@@ -16,6 +16,7 @@ const reviewedForwardMigrations = [
   "20260902162456_authorize_push_delivery_send.sql",
   "20260917191202_fix_social_direct_reservation_ambiguity.sql",
   "20261012190209_live_undo_any_completed_set.sql",
+  "20261029151855_debit_rejected_notification_registrations.sql",
 ];
 
 function migrationVersion(fileName) {
