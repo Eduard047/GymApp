@@ -102,6 +102,39 @@ class AuthScreenTest {
     }
 
     @Test
+    fun signUpDisplayNameDraftMatchesSharedRule() {
+        assertEquals("A".repeat(32), sanitizeSignUpDisplayNameDraft("A".repeat(40)))
+        assertEquals("Я".repeat(32), sanitizeSignUpDisplayNameDraft("Я".repeat(33)))
+        // Supplementary letters count as one code point and are never split.
+        val math = "\uD835\uDC00"
+        val clamped = sanitizeSignUpDisplayNameDraft(math.repeat(40))
+        assertEquals(32, clamped.codePointCount(0, clamped.length))
+        assertEquals(math.repeat(32), clamped)
+        assertEquals("Ed.Fit-1_x", sanitizeSignUpDisplayNameDraft("Ed.Fit-1_x"))
+        assertEquals("Ed Fit", sanitizeSignUpDisplayNameDraft("Ed !@#/\\<>Fit"))
+        assertEquals("a b c", sanitizeSignUpDisplayNameDraft("a  \t \n b   c"))
+        assertEquals("", sanitizeSignUpDisplayNameDraft("!@#$%"))
+    }
+
+    @Test
+    fun signUpDisplayNameLengthIsCountedInCodePoints() {
+        fun check(name: String) = validateSignUpInput(
+            email = "a@b.co",
+            emailConfirm = "a@b.co",
+            password = "Password1",
+            passwordConfirm = "Password1",
+            displayName = name
+        )
+        val message = "Display name must be 2-32 characters."
+        assertEquals(message, check("E"))
+        assertNull(check("Ed"))
+        assertNull(check("A".repeat(32)))
+        assertEquals(message, check("A".repeat(33)))
+        assertNull(check("\uD835\uDC00".repeat(32)))
+        assertEquals(message, check("\uD835\uDC00".repeat(33)))
+    }
+
+    @Test
     fun signUpValidationRejectsInvalidInput() {
         assertEquals(
             "Enter your email.",

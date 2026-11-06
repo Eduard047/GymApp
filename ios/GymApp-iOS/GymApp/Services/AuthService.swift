@@ -1624,7 +1624,7 @@ final class AuthService: ObservableObject {
             candidate = trimmed
         }
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " .-_") )
-        guard (2...32).contains(candidate.count),
+        guard (2...32).contains(candidate.unicodeScalars.count),
               candidate.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
             throw AuthServiceError.invalidDisplayName
         }

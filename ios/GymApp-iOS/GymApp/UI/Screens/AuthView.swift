@@ -13,6 +13,48 @@ struct AuthCredentialDrafts: Equatable {
     }
 }
 
+/// Shared sign-up display-name draft rule (mirrored by Android
+/// `sanitizeSignUpDisplayNameDraft`): keep letters, digits, space, dot, dash and
+/// underscore, collapse whitespace runs to one space, and clamp to 32 Unicode scalars.
+enum AuthDisplayNameRule {
+    static let maximumScalars = 32
+
+    static func sanitizedDraft(_ value: String) -> String {
+        var result = String.UnicodeScalarView()
+        var count = 0
+        var previousWasSpace = false
+        for scalar in value.unicodeScalars {
+            if count >= maximumScalars { break }
+            let isSpace = scalar.properties.isWhitespace
+            guard isSpace || isAllowed(scalar) else { continue }
+            if isSpace {
+                if previousWasSpace { continue }
+                result.append(" ")
+                previousWasSpace = true
+            } else {
+                result.append(scalar)
+                previousWasSpace = false
+            }
+            count += 1
+        }
+        return String(result)
+    }
+
+    static func scalarCount(_ value: String) -> Int {
+        value.unicodeScalars.count
+    }
+
+    private static func isAllowed(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.properties.generalCategory {
+        case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter,
+             .modifierLetter, .otherLetter, .decimalNumber:
+            return true
+        default:
+            return scalar == "." || scalar == "-" || scalar == "_"
+        }
+    }
+}
+
 @MainActor
 public struct AuthView: View {
     @ObservedObject private var authService: AuthService
@@ -270,6 +312,10 @@ public struct AuthView: View {
         VStack(alignment: .leading, spacing: 6) {
             fieldLabel("Display name")
             TextField("Athlete", text: $drafts.displayName)
+                .onChange(of: drafts.displayName) { _, newValue in
+                    let clean = AuthDisplayNameRule.sanitizedDraft(newValue)
+                    if clean != newValue { drafts.displayName = clean }
+                }
                 .textContentType(.nickname)
                 .submitLabel(.next)
                 .focused($focusedField, equals: .displayName)
@@ -672,7 +718,7 @@ public struct AuthView: View {
             }
 
             let cleanName = drafts.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard (2...32).contains(cleanName.count) else { return gymLocalized("Display name must be 2–32 characters.") }
+            guard (2...AuthDisplayNameRule.maximumScalars).contains(AuthDisplayNameRule.scalarCount(cleanName)) else { return gymLocalized("Display name must be 2–32 characters.") }
         }
         return nil
     }

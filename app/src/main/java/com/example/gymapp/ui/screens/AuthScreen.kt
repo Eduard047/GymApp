@@ -388,13 +388,7 @@ fun AuthScreen(
                                 value = displayName,
                                 onValueChange = { value ->
                                     localMessage = null
-                                    displayName = value
-                                        .filter {
-                                            it.isLetterOrDigit() || it == ' ' || it == '.' ||
-                                                it == '-' || it == '_'
-                                        }
-                                        .replace(Regex("\\s+"), " ")
-                                        .take(32)
+                                    displayName = sanitizeSignUpDisplayNameDraft(value)
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 label = { Text(stringResource(R.string.auth_display_name)) },
@@ -1323,6 +1317,38 @@ internal fun validateLoginInput(
     }
 }
 
+internal const val SIGN_UP_DISPLAY_NAME_MAX_CODE_POINTS = 32
+
+/**
+ * Shared sign-up display-name draft rule (mirrored by iOS `AuthDisplayNameRule`):
+ * keep letters, digits, space, dot, dash and underscore, collapse whitespace runs
+ * to one space, and clamp to 32 Unicode code points without splitting a pair.
+ */
+internal fun sanitizeSignUpDisplayNameDraft(value: String): String {
+    val result = StringBuilder(minOf(value.length, SIGN_UP_DISPLAY_NAME_MAX_CODE_POINTS))
+    var codePoints = 0
+    var index = 0
+    var previousWasSpace = false
+    while (index < value.length && codePoints < SIGN_UP_DISPLAY_NAME_MAX_CODE_POINTS) {
+        val codePoint = value.codePointAt(index)
+        index += Character.charCount(codePoint)
+        val isSpace = Character.isWhitespace(codePoint) || Character.isSpaceChar(codePoint)
+        val allowed = isSpace || Character.isLetterOrDigit(codePoint) ||
+            codePoint == '.'.code || codePoint == '-'.code || codePoint == '_'.code
+        if (!allowed) continue
+        if (isSpace) {
+            if (previousWasSpace) continue
+            result.append(' ')
+            previousWasSpace = true
+        } else {
+            result.appendCodePoint(codePoint)
+            previousWasSpace = false
+        }
+        codePoints += 1
+    }
+    return result.toString()
+}
+
 internal fun validateSignUpInput(
     email: String,
     emailConfirm: String,
@@ -1337,7 +1363,8 @@ internal fun validateSignUpInput(
         !isValidEmail(cleanEmail) -> "Enter a valid email address."
         cleanEmailConfirm.isBlank() -> "Repeat your email."
         cleanEmail != cleanEmailConfirm -> "Email does not match."
-        displayName.trim().length !in 2..32 -> "Display name must be 2-32 characters."
+        displayName.trim().let { it.codePointCount(0, it.length) } !in 2..SIGN_UP_DISPLAY_NAME_MAX_CODE_POINTS ->
+            "Display name must be 2-32 characters."
         !newPasswordLengthIsValid(password) -> NEW_PASSWORD_POLICY_ERROR
         password != passwordConfirm -> "Passwords do not match."
         else -> null

@@ -2650,6 +2650,23 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(auth.message, GymLoginPasswordPolicy.errorMessage)
     }
 
+    func testSignUpDisplayNameDraftMatchesSharedRule() {
+        XCTAssertEqual(AuthDisplayNameRule.sanitizedDraft(String(repeating: "A", count: 40)),
+                       String(repeating: "A", count: 32))
+        XCTAssertEqual(AuthDisplayNameRule.sanitizedDraft(String(repeating: "Я", count: 33)),
+                       String(repeating: "Я", count: 32))
+        let math = "\u{1D400}"
+        let clamped = AuthDisplayNameRule.sanitizedDraft(String(repeating: math, count: 40))
+        XCTAssertEqual(AuthDisplayNameRule.scalarCount(clamped), 32)
+        XCTAssertEqual(clamped, String(repeating: math, count: 32))
+        XCTAssertEqual(AuthDisplayNameRule.sanitizedDraft("Ed.Fit-1_x"), "Ed.Fit-1_x")
+        XCTAssertEqual(AuthDisplayNameRule.sanitizedDraft("Ed !@#/\\<>Fit"), "Ed Fit")
+        XCTAssertEqual(AuthDisplayNameRule.sanitizedDraft("a  \t \n b   c"), "a b c")
+        XCTAssertEqual(AuthDisplayNameRule.sanitizedDraft("!@#$%"), "")
+        XCTAssertEqual(AuthDisplayNameRule.sanitizedDraft("E"), "E")
+        XCTAssertEqual(AuthDisplayNameRule.scalarCount(AuthDisplayNameRule.sanitizedDraft("E")), 1)
+    }
+
     func testAuthViewClearsOnlySensitiveDraftsAtCredentialLifecycleBoundaries() throws {
         var drafts = AuthCredentialDrafts(
             email: "athlete@example.com",
