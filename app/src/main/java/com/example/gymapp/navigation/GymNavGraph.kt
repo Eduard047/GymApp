@@ -748,7 +748,7 @@ internal fun isTransientNetworkFailure(throwable: Throwable): Boolean {
 }
 
 /**
- * Delay before the next automatic cloud upload retry, or null when none should run. Mirrors iOS:
+ * Delay before the next automatic cloud upload or pull retry, or null when none should run. Mirrors iOS:
  * 5 s, 30 s, then every 120 s, at most [MAX_CLOUD_AUTO_RETRY_ATTEMPTS] attempts, and only for a
  * transient connection failure ([networkFailure] or the plain connection message). Conflicts,
  * account changes, baseline problems and auth errors never retry on their own.
@@ -761,7 +761,7 @@ internal fun cloudAutoRetryDelayMillis(
     if (attempt < 0 || attempt >= MAX_CLOUD_AUTO_RETRY_ATTEMPTS) return null
     val transient = when (message.resourceId) {
         R.string.auth_error_connection -> true
-        R.string.cloud_sync_save_failed -> networkFailure
+        R.string.cloud_sync_save_failed, R.string.cloud_sync_load_failed -> networkFailure
         else -> false
     }
     if (!transient) return null
@@ -890,6 +890,15 @@ internal fun GymAppRoot(
     }
     var cloudAutoRetryDelayMs by key(uiIsolationKey) {
         remember { mutableStateOf<Long?>(null) }
+    }
+    // Which action the pending delayed retry performs: re-run the pull or re-arm autosave.
+    var cloudAutoRetryMode by key(uiIsolationKey) {
+        remember { mutableStateOf<CloudSyncRetryMode?>(null) }
+    }
+    // Set just before an automatic pull retry so the pull keeps the attempt counter (cap stays
+    // effective); manual, session-start and stale-write pulls leave it false and reset the counter.
+    var automaticPullRetryPending by key(uiIsolationKey) {
+        remember { mutableStateOf(false) }
     }
     var cloudSyncStatus by key(uiIsolationKey) {
         val userId = (authState.session as? AccountSession.Cloud)?.userId
@@ -1502,6 +1511,8 @@ internal fun GymAppRoot(
         staleCloudSaveRetries = 0
         cloudAutoRetryAttempts = 0
         cloudAutoRetryDelayMs = null
+        cloudAutoRetryMode = null
+        automaticPullRetryPending = false
     }
 
     /**
@@ -1697,8 +1708,12 @@ internal fun GymAppRoot(
         activityOnlyCloudBaseline = null
         cloudSyncRetryMode = null
         // Manual sync, "Sync now" and session start all land here: drop any pending auto retry.
-        cloudAutoRetryAttempts = 0
+        // An automatic pull retry keeps the attempt counter so the cap still ends the retries.
+        val automaticPullRetry = automaticPullRetryPending
+        automaticPullRetryPending = false
+        if (!automaticPullRetry) cloudAutoRetryAttempts = 0
         cloudAutoRetryDelayMs = null
+        cloudAutoRetryMode = null
         val pullResult = runCatching {
             var pullConfirmedWithoutUpload = false
             val remoteState = authManager.loadRemoteState(session)
@@ -1875,12 +1890,23 @@ internal fun GymAppRoot(
             if (isSameCloudSessionGeneration(session, authManager.authState.value.session)) {
                 updateCloudSyncPhase(session, CloudSyncPhase.Error)
                 cloudSyncRetryMode = CloudSyncRetryMode.Pull
-                authManager.setMessage(
-                    authErrorText(throwable, R.string.cloud_sync_load_failed)
-                )
+                val loadMessage = authErrorText(throwable, R.string.cloud_sync_load_failed)
+                cloudAutoRetryDelayMillis(
+                    message = loadMessage,
+                    attempt = cloudAutoRetryAttempts,
+                    networkFailure = isTransientNetworkFailure(throwable)
+                )?.let { delayMs ->
+                    // Transient network failure during the pull / stale-write reconcile: retry the
+                    // pull on the same bounded schedule instead of waiting for the user.
+                    cloudAutoRetryAttempts += 1
+                    cloudAutoRetryMode = CloudSyncRetryMode.Pull
+                    cloudAutoRetryDelayMs = delayMs
+                }
+                authManager.setMessage(loadMessage)
             }
         }
         pullResult.onSuccess { canonicalRoundTripSafe ->
+            cloudAutoRetryAttempts = 0
             if (shouldSeedCatalogAfterCloudPull(canonicalRoundTripSafe) &&
                 isSameCloudSessionGeneration(session, authManager.authState.value.session)
             ) {
@@ -2018,6 +2044,7 @@ internal fun GymAppRoot(
                                 networkFailure = isTransientNetworkFailure(throwable)
                             )?.let { delayMs ->
                                 cloudAutoRetryAttempts += 1
+                                cloudAutoRetryMode = CloudSyncRetryMode.ResumeAutosave
                                 cloudAutoRetryDelayMs = delayMs
                             }
                         }
@@ -2035,7 +2062,7 @@ internal fun GymAppRoot(
             }
     }
 
-    // Re-arms autosave after a transient network failure; cancelled by a session change (key) or
+    // Re-arms autosave or re-runs the pull after a transient network failure; cancelled by a session change (key) or
     // by any manual action that clears the pending delay.
     LaunchedEffect(cloudSession?.sessionGeneration, cloudAutoRetryDelayMs) {
         val session = cloudSession ?: return@LaunchedEffect
@@ -2045,8 +2072,11 @@ internal fun GymAppRoot(
         val active = authManager.authState.value.session as? AccountSession.Cloud
         if (active == null || !isSameCloudSessionGeneration(session, active)) return@LaunchedEffect
         // The user (toast action) or a full pull may already have taken over.
-        if (cloudPullGeneration != null ||
-            cloudSyncRetryMode != CloudSyncRetryMode.ResumeAutosave
+        val retryMode = cloudAutoRetryMode
+        cloudAutoRetryMode = null
+        if (retryMode == null ||
+            cloudPullGeneration != null ||
+            cloudSyncRetryMode != retryMode
         ) {
             return@LaunchedEffect
         }
@@ -2054,7 +2084,13 @@ internal fun GymAppRoot(
         if (isRetryableCloudSyncMessage(authManager.authState.value.message)) {
             authManager.setMessage(null, isError = false)
         }
-        cloudPullGeneration = active.sessionGeneration
+        when (retryMode) {
+            CloudSyncRetryMode.Pull -> {
+                automaticPullRetryPending = true
+                cloudSyncRetryVersion += 1
+            }
+            CloudSyncRetryMode.ResumeAutosave -> cloudPullGeneration = active.sessionGeneration
+        }
     }
 
     LaunchedEffect(cloudSession?.sessionGeneration) {
@@ -2512,6 +2548,7 @@ internal fun GymAppRoot(
                             CloudSyncRetryMode.ResumeAutosave -> {
                                 cloudAutoRetryAttempts = 0
                                 cloudAutoRetryDelayMs = null
+                                cloudAutoRetryMode = null
                                 cloudPullGeneration =
                                     (authManager.authState.value.session as? AccountSession.Cloud)
                                         ?.sessionGeneration

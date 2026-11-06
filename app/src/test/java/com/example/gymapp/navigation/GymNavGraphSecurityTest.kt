@@ -191,6 +191,13 @@ class GymNavGraphSecurityTest {
         assertEquals(5_000L, cloudAutoRetryDelayMillis(saveFailed, 0, networkFailure = true))
         assertEquals(null, cloudAutoRetryDelayMillis(saveFailed, 5, networkFailure = true))
 
+        val loadFailed = LocalizedText(R.string.cloud_sync_load_failed)
+        assertEquals(null, cloudAutoRetryDelayMillis(loadFailed, 0))
+        assertEquals(5_000L, cloudAutoRetryDelayMillis(loadFailed, 0, networkFailure = true))
+        assertEquals(30_000L, cloudAutoRetryDelayMillis(loadFailed, 1, networkFailure = true))
+        assertEquals(120_000L, cloudAutoRetryDelayMillis(loadFailed, 4, networkFailure = true))
+        assertEquals(null, cloudAutoRetryDelayMillis(loadFailed, 5, networkFailure = true))
+
         listOf(
             R.string.cloud_sync_conflict,
             R.string.cloud_sync_account_changed,
