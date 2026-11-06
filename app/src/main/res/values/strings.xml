@@ -431,6 +431,17 @@
     <string name="add_workout_active_exercises">Exercises: %1$d</string>
     <string name="add_workout_total_sets">Sets: %1$d</string>
     <string name="add_workout_choose_training_day">Choose a training day</string>
+    <string name="add_workout_preset_push">Push</string>
+    <string name="add_workout_preset_pull">Pull</string>
+    <string name="add_workout_preset_legs">Legs</string>
+    <string name="add_workout_preset_upper">Upper</string>
+    <string name="add_workout_preset_lower">Lower</string>
+    <string name="add_workout_preset_deload">Deload</string>
+    <string name="add_workout_preset_hint">Replaces the current editor with a %1$s template</string>
+    <string name="add_workout_preset_loaded">%1$s template loaded from your exercise catalog.</string>
+    <string name="add_workout_preset_no_exercises">No matching exercises are in your catalog. Add exercises first.</string>
+    <string name="add_workout_deload_needs_previous">A deload template needs a previous workout.</string>
+    <string name="add_workout_deload_applied">Deload uses 90% of the latest weights with one extra repetition.</string>
     <string name="training_settings_title">Training settings</string>
     <string name="training_settings_done">Done</string>
     <string name="training_settings_split">Split</string>

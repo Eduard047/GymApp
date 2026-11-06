@@ -431,6 +431,17 @@
     <string name="add_workout_active_exercises">Вправи: %1$d</string>
     <string name="add_workout_total_sets">Підходи: %1$d</string>
     <string name="add_workout_choose_training_day">Обери тип тренування</string>
+    <string name="add_workout_preset_push">Жим</string>
+    <string name="add_workout_preset_pull">Тяга</string>
+    <string name="add_workout_preset_legs">Ноги</string>
+    <string name="add_workout_preset_upper">Верх</string>
+    <string name="add_workout_preset_lower">Низ</string>
+    <string name="add_workout_preset_deload">Розвантаження</string>
+    <string name="add_workout_preset_hint">Замінює вміст редактора шаблоном «%1$s»</string>
+    <string name="add_workout_preset_loaded">Шаблон «%1$s» завантажено з каталогу вправ.</string>
+    <string name="add_workout_preset_no_exercises">У каталозі немає відповідних вправ. Спочатку додай вправи.</string>
+    <string name="add_workout_deload_needs_previous">Для шаблону розвантаження потрібне попереднє тренування.</string>
+    <string name="add_workout_deload_applied">Розвантаження використовує 90% останньої ваги й додає одне повторення.</string>
     <string name="training_settings_title">Налаштування тренувань</string>
     <string name="training_settings_done">Готово</string>
     <string name="training_settings_split">Спліт</string>

@@ -13,6 +13,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,12 +35,18 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
+import androidx.compose.material.icons.filled.Accessibility
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.NorthEast
+import androidx.compose.material.icons.filled.SouthEast
+import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Mic
@@ -59,6 +67,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.OutlinedIconButton
@@ -91,6 +100,8 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.stateDescription
@@ -129,6 +140,8 @@ import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.theme.GymPanelShape
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.AddWorkoutUiState
+import com.example.gymapp.ui.viewmodel.WorkoutTemplatePreset
+import com.example.gymapp.ui.viewmodel.titleResId
 import com.example.gymapp.ui.viewmodel.ExerciseInputState
 import com.example.gymapp.ui.viewmodel.SetFieldKey
 import com.example.gymapp.ui.viewmodel.SetInputField
@@ -186,6 +199,7 @@ fun AddWorkoutScreen(
     onDuplicateSet: (Long, Int) -> Unit,
     onApplyWorkoutRecommendation: (Long) -> Unit,
     onRepeatLastWorkout: () -> Unit,
+    onApplyWorkoutPreset: (WorkoutTemplatePreset, String) -> Unit = { _, _ -> },
     onOpenTemplatePicker: () -> Unit,
     onCloseTemplatePicker: () -> Unit,
     onCopyWorkoutTemplate: (Long) -> Unit,
@@ -665,6 +679,42 @@ fun AddWorkoutScreen(
                         eyebrow = "",
                         title = stringResource(R.string.add_workout_choose_training_day)
                     )
+                    val deloadLabel = stringResource(R.string.add_workout_preset_deload)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .testTag("workout_plan_presets"),
+                        horizontalArrangement = Arrangement.spacedBy(9.dp)
+                    ) {
+                        WorkoutTemplatePreset.entries.forEach { preset ->
+                            WorkoutPresetPill(
+                                preset = preset,
+                                enabled = !uiState.isTemplateLoading && !uiState.isSaving,
+                                onClick = { onApplyWorkoutPreset(preset, deloadLabel) }
+                            )
+                        }
+                    }
+                    uiState.presetMessage?.let { message ->
+                        val title = message.preset?.let { stringResource(it.titleResId()) }
+                        Text(
+                            text = if (title != null) {
+                                formattedStringResource(message.textResId, title)
+                            } else {
+                                stringResource(message.textResId)
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (message.isError) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .semantics { liveRegion = LiveRegionMode.Polite }
+                                .testTag("workout_plan_preset_message")
+                        )
+                    }
                     OutlinedButton(
                         onClick = onRepeatLastWorkout,
                         enabled = uiState.canRepeatFromLast && !uiState.isTemplateLoading,
@@ -1929,4 +1979,60 @@ private fun ExerciseSelector(
             }
         }
     }
+}
+
+/** Tonal capsule for one training-day preset: icon and title on a faint primary wash, 48dp tall. */
+@Composable
+private fun WorkoutPresetPill(
+    preset: WorkoutTemplatePreset,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val title = stringResource(preset.titleResId())
+    val hint = formattedStringResource(R.string.add_workout_preset_hint, title)
+    val tint = MaterialTheme.colorScheme.primary
+    Surface(
+        shape = CircleShape,
+        color = tint.copy(alpha = if (enabled) 0.10f else 0.05f),
+        modifier = Modifier
+            .heightIn(min = 48.dp)
+            .clip(CircleShape)
+            .clickable(
+                enabled = enabled,
+                onClickLabel = hint,
+                role = Role.Button,
+                onClick = onClick
+            )
+            .testTag("workout_plan_preset_${preset.name.lowercase()}")
+    ) {
+        Row(
+            modifier = Modifier
+                .heightIn(min = 48.dp)
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = preset.icon(),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = tint
+            )
+            Spacer(modifier = Modifier.size(8.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                color = tint,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+private fun WorkoutTemplatePreset.icon() = when (this) {
+    WorkoutTemplatePreset.Push -> Icons.Default.NorthEast
+    WorkoutTemplatePreset.Pull -> Icons.Default.SouthWest
+    WorkoutTemplatePreset.Legs -> Icons.Default.FitnessCenter
+    WorkoutTemplatePreset.Upper -> Icons.Default.Accessibility
+    WorkoutTemplatePreset.Lower -> Icons.AutoMirrored.Filled.DirectionsWalk
+    WorkoutTemplatePreset.Deload -> Icons.Default.SouthEast
 }

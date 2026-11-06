@@ -431,6 +431,17 @@
     <string name="add_workout_active_exercises">Упражнений: %1$d</string>
     <string name="add_workout_total_sets">Подходов: %1$d</string>
     <string name="add_workout_choose_training_day">Выбери тип тренировки</string>
+    <string name="add_workout_preset_push">Жим</string>
+    <string name="add_workout_preset_pull">Тяга</string>
+    <string name="add_workout_preset_legs">Ноги</string>
+    <string name="add_workout_preset_upper">Верх</string>
+    <string name="add_workout_preset_lower">Низ</string>
+    <string name="add_workout_preset_deload">Разгрузка</string>
+    <string name="add_workout_preset_hint">Заменяет содержимое редактора шаблоном «%1$s»</string>
+    <string name="add_workout_preset_loaded">Шаблон «%1$s» загружен из каталога упражнений.</string>
+    <string name="add_workout_preset_no_exercises">В каталоге нет соответствующих упражнений. Сначала прибавь упражнения.</string>
+    <string name="add_workout_deload_needs_previous">Для шаблона разгрузки нужна предыдущая тренировка.</string>
+    <string name="add_workout_deload_applied">Разгрузка использует 90% последнего веса и прибавляет одно повторение.</string>
     <string name="training_settings_title">Настройки тренировок</string>
     <string name="training_settings_done">Готово</string>
     <string name="training_settings_split">Сплит</string>

@@ -1,5 +1,6 @@
 ﻿package com.example.gymapp.ui.viewmodel
 
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
@@ -344,6 +345,7 @@ data class AddWorkoutUiState(
     val generatedSmartPlanNeedsRefresh: Boolean = false,
     val smartAlternativePicker: SmartWorkoutAlternativePickerUiState? = null,
     val canRepeatFromLast: Boolean = false,
+    val presetMessage: WorkoutPresetMessage? = null,
     val workoutTemplates: List<WorkoutTemplatePreviewUiModel> = emptyList(),
     val isTemplatePickerOpen: Boolean = false,
     val isTemplateLoading: Boolean = false,
@@ -566,6 +568,110 @@ internal fun canRepeatFromTemplates(templates: List<WorkoutTemplatePreviewUiMode
 internal fun mergedTemplateNote(currentNote: String, sourceNote: String?): String =
     if (currentNote.isBlank()) sourceNote.orEmpty() else currentNote
 
+private val LOWER_BODY_PRESET_MUSCLES = setOf(
+    "quads", "hamstrings", "glutes", "calves", "adductors", "lowerBack", "abs"
+)
+
+/**
+ * Training-day presets of the plan editor, in the same order and with the same target muscles as the
+ * iPhone `WorkoutTemplatePreset`. [Deload] has no muscles: it rebuilds the latest workout lighter.
+ */
+enum class WorkoutTemplatePreset(
+    val targetMuscles: Set<String>,
+    val maxExercises: Int
+) {
+    Push(setOf("chest", "shoulders", "triceps"), 5),
+    Pull(setOf("lats", "upperBack", "biceps", "forearms"), 5),
+    Legs(LOWER_BODY_PRESET_MUSCLES, 5),
+    Upper(
+        setOf("chest", "shoulders", "triceps", "lats", "upperBack", "biceps", "forearms"),
+        6
+    ),
+    Lower(LOWER_BODY_PRESET_MUSCLES, 5),
+    Deload(emptySet(), 0)
+}
+
+/** Result line shown under the preset chips; mirrors the iPhone toast after applying a preset. */
+data class WorkoutPresetMessage(
+    @param:StringRes @get:StringRes val textResId: Int,
+    val isError: Boolean,
+    /** Set when the message names the loaded preset (its title is the single format argument). */
+    val preset: WorkoutTemplatePreset? = null
+)
+
+@StringRes
+fun WorkoutTemplatePreset.titleResId(): Int = when (this) {
+    WorkoutTemplatePreset.Push -> R.string.add_workout_preset_push
+    WorkoutTemplatePreset.Pull -> R.string.add_workout_preset_pull
+    WorkoutTemplatePreset.Legs -> R.string.add_workout_preset_legs
+    WorkoutTemplatePreset.Upper -> R.string.add_workout_preset_upper
+    WorkoutTemplatePreset.Lower -> R.string.add_workout_preset_lower
+    WorkoutTemplatePreset.Deload -> R.string.add_workout_preset_deload
+}
+
+private const val DELOAD_WEIGHT_FACTOR = 0.9
+private const val MAX_PRESET_REPS = 10_000
+
+/** Swift `Double.rounded()`: halves round away from zero (Kotlin's `round` rounds them to even). */
+private fun roundHalfAwayFromZero(value: Double): Double =
+    if (value < 0.0) -kotlin.math.floor(-value + 0.5) else kotlin.math.floor(value + 0.5)
+
+/** Deload weight: 90% of the logged weight, rounded to the nearest 0.5 kg (iPhone rule). */
+internal fun deloadWeight(weight: Double): Double =
+    roundHalfAwayFromZero((weight * DELOAD_WEIGHT_FACTOR) * 2.0) / 2.0
+
+/** Deload reps: one extra repetition, capped like the iPhone editor. */
+internal fun deloadReps(reps: Int): Int = minOf(MAX_PRESET_REPS, reps + 1)
+
+/** Deload keeps a note that is already there (even whitespace, as on iPhone) and otherwise labels the day. */
+internal fun deloadNote(currentNote: String, deloadLabel: String): String =
+    if (currentNote.isEmpty()) deloadLabel else currentNote
+
+/** Weight of the last set of the exercise's most recent session, or null when it was never logged. */
+internal fun lastLoggedWeight(history: List<ExerciseHistoryEntry>, exerciseId: Long): Double? {
+    val entries = history.filter { it.exerciseId == exerciseId }
+    val latestDate = entries.maxOfOrNull { it.sessionDate } ?: return null
+    return entries.filter { it.sessionDate == latestDate }
+        .maxByOrNull { it.setOrderIndex }
+        ?.weight
+}
+
+/**
+ * Catalog exercises a push/pull/legs/upper/lower preset loads, same rule as iPhone: rank by how many
+ * of the preset's target muscles an exercise trains, then the longest-untrained first, then by name,
+ * and keep the top [WorkoutTemplatePreset.maxExercises]. Exercises that train none are dropped.
+ */
+internal fun selectPresetExercises(
+    preset: WorkoutTemplatePreset,
+    exercises: List<ExerciseEntity>,
+    history: List<ExerciseHistoryEntry>,
+    displayName: (ExerciseEntity) -> String = { it.name },
+    muscleIdsFor: (ExerciseEntity) -> Set<String> = { exercise ->
+        defaultContributionsForExercise(exercise.name).mapTo(hashSetOf()) { it.muscleId }
+    }
+): List<ExerciseEntity> {
+    if (preset.targetMuscles.isEmpty()) return emptyList()
+    val lastSessionByExercise = history.groupBy { it.exerciseId }
+        .mapValues { (_, entries) -> entries.maxOf { it.sessionDate } }
+    return exercises.asSequence()
+        .map { exercise ->
+            Triple(
+                exercise,
+                muscleIdsFor(exercise).intersect(preset.targetMuscles).size,
+                lastSessionByExercise[exercise.id] ?: Long.MIN_VALUE
+            )
+        }
+        .filter { it.second > 0 }
+        .sortedWith(
+            compareByDescending<Triple<ExerciseEntity, Int, Long>> { it.second }
+                .thenBy { it.third }
+                .thenBy(String.CASE_INSENSITIVE_ORDER) { displayName(it.first) }
+        )
+        .take(preset.maxExercises)
+        .map { it.first }
+        .toList()
+}
+
 internal fun hasRetainedWorkoutDraft(state: AddWorkoutUiState): Boolean =
     state.isDirty || state.exerciseDrafts.isNotEmpty() || state.note.isNotBlank()
 
@@ -735,7 +841,8 @@ class AddWorkoutViewModel internal constructor(
         val hasValidationError: Boolean,
         val isDirty: Boolean,
         val activeWorkoutStarted: Boolean,
-        val startValidation: StartValidationFeedback
+        val startValidation: StartValidationFeedback,
+        val presetMessage: WorkoutPresetMessage?
     )
 
     private data class EditorState(
@@ -782,6 +889,7 @@ class AddWorkoutViewModel internal constructor(
     private val exerciseDrafts = MutableStateFlow(emptyList<ExerciseInputState>())
     private val isTemplatePickerOpen = MutableStateFlow(false)
     private val isTemplateLoading = MutableStateFlow(false)
+    private val presetMessage = MutableStateFlow<WorkoutPresetMessage?>(null)
     private val smartWorkoutEffort = MutableStateFlow(SmartWorkoutEffort.Auto)
     private val generatedSmartPlan = MutableStateFlow<SmartWorkoutPlanSummaryUiModel?>(null)
     private val smartAlternativePicker = MutableStateFlow<SmartWorkoutAlternativePickerUiState?>(null)
@@ -1067,8 +1175,9 @@ class AddWorkoutViewModel internal constructor(
         editorState,
         transientState,
         trainingProfileManager.profile,
-        startValidation
-    ) { editor, transient, profile, startFeedback ->
+        startValidation,
+        presetMessage
+    ) { editor, transient, profile, startFeedback, presetResult ->
         LocalState(
             workoutDate = editor.workoutDate,
             note = editor.note,
@@ -1086,7 +1195,8 @@ class AddWorkoutViewModel internal constructor(
             hasValidationError = transient.hasValidationError,
             isDirty = transient.isDirty,
             activeWorkoutStarted = transient.activeWorkoutStarted,
-            startValidation = startFeedback
+            startValidation = startFeedback,
+            presetMessage = presetResult
         )
     }
 
@@ -1118,6 +1228,7 @@ class AddWorkoutViewModel internal constructor(
             ),
             smartAlternativePicker = local.smartAlternativePicker,
             canRepeatFromLast = canRepeatFromTemplates(templates),
+            presetMessage = local.presetMessage,
             workoutTemplates = templates,
             isTemplatePickerOpen = local.isTemplatePickerOpen,
             isTemplateLoading = local.isTemplateLoading,
@@ -1990,6 +2101,112 @@ class AddWorkoutViewModel internal constructor(
         }
     }
 
+    /**
+     * Replaces the exercise list with a training-day preset, as the iPhone editor does (no
+     * confirmation; date and a typed note are kept). Push/Pull/Legs/Upper/Lower are built from the
+     * user's exercise catalog and recommendation engine; Deload rebuilds the latest workout lighter.
+     */
+    fun applyWorkoutPreset(preset: WorkoutTemplatePreset, deloadLabel: String) {
+        if (isTemplateLoading.value || isSaving.value) return
+        viewModelScope.launch {
+            isTemplateLoading.value = true
+            resetWatchPlanSyncResult()
+            generatedSmartPlan.value = null
+            smartAlternativePicker.value = null
+            presetMessage.value = null
+            hasValidationError.value = false
+            try {
+                if (preset == WorkoutTemplatePreset.Deload) {
+                    applyDeloadPreset(deloadLabel)
+                } else {
+                    applyCatalogPreset(preset)
+                }
+            } catch (error: Throwable) {
+                if (error is CancellationException) throw error
+                hasValidationError.value = true
+            } finally {
+                isTemplateLoading.value = false
+            }
+        }
+    }
+
+    private suspend fun applyDeloadPreset(deloadLabel: String) {
+        val latest = repository.getLatestWorkoutTemplate()
+        if (latest == null) {
+            presetMessage.value = WorkoutPresetMessage(
+                R.string.add_workout_deload_needs_previous,
+                isError = true
+            )
+            return
+        }
+        exerciseDrafts.value = latest.workoutExercises.map { exerciseDetails ->
+            val loweredSets = exerciseDetails.sets.map { set ->
+                SetInputState(
+                    weight = formatWeight(deloadWeight(set.weight)),
+                    reps = deloadReps(set.reps).toString()
+                )
+            }
+            ExerciseInputState(
+                draftId = nextDraftId++,
+                exerciseId = exerciseDetails.workoutExercise.exerciseId,
+                sets = loweredSets.ifEmpty { listOf(SetInputState()) }
+            )
+        }
+        note.value = deloadNote(note.value, deloadLabel)
+        markDraftDirty()
+        presetMessage.value = WorkoutPresetMessage(
+            R.string.add_workout_deload_applied,
+            isError = false
+        )
+    }
+
+    private fun applyCatalogPreset(preset: WorkoutTemplatePreset) {
+        val catalog = exerciseCatalogState.value
+        val history = exerciseHistory.value
+        val profile = trainingProfileManager.profile.value
+        val language = java.util.Locale.getDefault().language
+        val picked = selectPresetExercises(
+            preset = preset,
+            exercises = catalog.exercises,
+            history = history,
+            displayName = { BuiltInExerciseCatalog.displayName(it.name, language) }
+        )
+        if (picked.isEmpty()) {
+            presetMessage.value = WorkoutPresetMessage(
+                R.string.add_workout_preset_no_exercises,
+                isError = true
+            )
+            return
+        }
+        exerciseDrafts.value = picked.map { exercise ->
+            val exerciseHistoryEntries = history.filter { it.exerciseId == exercise.id }
+            val recommendation = WorkoutRecommendationEngine.buildForExercise(
+                exerciseId = exercise.id,
+                history = exerciseHistoryEntries,
+                trainingProfile = profile,
+                exerciseName = exercise.name,
+                loadProfile = catalog.loadProfiles[exercise.id]
+            )
+            val fallbackWeight = lastLoggedWeight(exerciseHistoryEntries, exercise.id) ?: 0.0
+            ExerciseInputState(
+                draftId = nextDraftId++,
+                exerciseId = exercise.id,
+                sets = recommendation.sets.map { set ->
+                    SetInputState(
+                        weight = formatWeight(set.weight ?: fallbackWeight),
+                        reps = set.reps.toString()
+                    )
+                }.ifEmpty { listOf(SetInputState()) }
+            )
+        }
+        markDraftDirty()
+        presetMessage.value = WorkoutPresetMessage(
+            R.string.add_workout_preset_loaded,
+            isError = false,
+            preset = preset
+        )
+    }
+
     fun consumeActiveWorkoutStarted() {
         activeWorkoutStarted.value = false
     }
@@ -2043,6 +2260,7 @@ class AddWorkoutViewModel internal constructor(
         clearStartFieldErrors()
         isTemplatePickerOpen.value = false
         isTemplateLoading.value = false
+        presetMessage.value = null
         smartWorkoutEffort.value = SmartWorkoutEffort.Auto
         generatedSmartPlan.value = null
         smartAlternativePicker.value = null

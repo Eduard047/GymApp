@@ -3441,6 +3441,7 @@ internal fun GymAppRoot(
                                 onDuplicateSet = viewModel::duplicateSet,
                                 onApplyWorkoutRecommendation = viewModel::applyWorkoutRecommendation,
                                 onRepeatLastWorkout = viewModel::repeatLastWorkout,
+                                onApplyWorkoutPreset = viewModel::applyWorkoutPreset,
                                 onOpenTemplatePicker = viewModel::openWorkoutTemplatePicker,
                                 onCloseTemplatePicker = viewModel::closeWorkoutTemplatePicker,
                                 onCopyWorkoutTemplate = viewModel::copyWorkoutTemplate,
