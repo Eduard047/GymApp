@@ -675,6 +675,9 @@ class ActiveWorkoutViewModel(
         write = ::persistSetDraft
     )
 
+    /** Independent of viewModelScope so ON_STOP and onCleared flushes survive its cancellation. */
+    private val draftFlushScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     /** Last persisted values per pending set, to tell untouched inputs from user edits. */
     private var lastPersistedInputs: Map<String, ActiveWorkoutInput> = emptyMap()
 
@@ -981,13 +984,15 @@ class ActiveWorkoutViewModel(
 
     /** Writes any typed-but-unsaved set drafts now (screen stopped); safe to call repeatedly. */
     fun flushPendingDrafts() {
-        viewModelScope.launch { draftSaver.flush() }
+        // Not viewModelScope: the process can die right after ON_STOP, so the write must not
+        // depend on a scope tied to this ViewModel's lifetime.
+        draftSaver.flushIn(draftFlushScope)
     }
 
     override fun onCleared() {
         // viewModelScope is already cancelled here, so the final write runs on its own scope and
         // inside NonCancellable (see ActiveWorkoutDraftSaver.flush).
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { draftSaver.flush() }
+        draftSaver.flushIn(draftFlushScope)
         super.onCleared()
     }
 
@@ -2251,6 +2256,9 @@ internal class ActiveWorkoutDraftSaver(
             }
         }
     }
+
+    /** Runs [flush] on [flushScope], which must not be tied to this saver's own scope. */
+    fun flushIn(flushScope: CoroutineScope): Job = flushScope.launch { flush() }
 
     suspend fun flush() {
         withContext(NonCancellable) {

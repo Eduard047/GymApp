@@ -466,4 +466,26 @@ class ActiveWorkoutViewModelTest {
         saver.flush()
         assertEquals(2, written.size)
     }
+
+    @Test
+    fun draftSaverFlushInWritesPendingSetsOnIndependentScopeAfterOwnerScopeIsCancelled() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val flushScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val written = CopyOnWriteArrayList<String>()
+        val saver = ActiveWorkoutDraftSaver(ownerScope, debounceMillis = 10_000L) { written += it }
+        try {
+            saver.schedule("set-a")
+            saver.schedule("set-b")
+            // Mirrors ON_STOP followed by viewModelScope cancellation: the flush is launched, then
+            // the owner scope dies; the write must still complete exactly once per set.
+            val job = saver.flushIn(flushScope)
+            ownerScope.cancel()
+            withTimeout(2_000L) { job.join() }
+            assertEquals(listOf("set-a", "set-b"), written.toList())
+            withTimeout(2_000L) { saver.flushIn(flushScope).join() }
+            assertEquals(2, written.size)
+        } finally {
+            flushScope.cancel()
+        }
+    }
 }
