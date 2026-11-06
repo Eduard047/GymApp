@@ -103,7 +103,7 @@
     <string name="friends_privacy_supporting">These choices are enforced by the server. Removing or blocking a friend revokes access.</string>
     <string name="friends_privacy_summary">Choose what confirmed friends can see.</string>
     <string name="friends_privacy_allow_requests">Allow new friend requests</string>
-    <string name="friends_privacy_share_progress">Share XP, level, and workout count</string>
+    <string name="friends_privacy_share_progress">Share XP, level and workout count</string>
     <string name="friends_privacy_share_workouts">Share five recent workout summaries</string>
     <string name="friends_privacy_share_workout_details">Share exercises, weights, and reps</string>
     <string name="friends_privacy_share_workout_details_supporting">Off by default. Friends can open exact sets only when this is enabled.</string>

@@ -136,7 +136,7 @@ const COPY: Readonly<
   },
   uk: {
     friend_request_received: {
-      title: "Новий запит у друзі",
+      title: "Нова заявка в друзі",
       body: "Відкрий GymApp, щоб відповісти.",
     },
     friend_request_accepted: {

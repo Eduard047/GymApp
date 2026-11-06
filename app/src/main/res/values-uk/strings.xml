@@ -1445,7 +1445,7 @@
     <string name="push_enable_action">Увімкнути сповіщення</string>
     <string name="push_disable_action">Вимкнути сповіщення</string>
     <string name="push_open_settings">Відкрити налаштування сповіщень</string>
-    <string name="push_friend_request_received_title">Новий запит у друзі</string>
+    <string name="push_friend_request_received_title">Нова заявка в друзі</string>
     <string name="push_friend_request_received_body">Відкрий GymApp, щоб відповісти.</string>
     <string name="push_friend_request_accepted_title">Запит у друзі прийнято</string>
     <string name="push_friend_request_accepted_body">Друг тепер доступний у GymApp.</string>

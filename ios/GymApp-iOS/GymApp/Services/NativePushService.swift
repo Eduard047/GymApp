@@ -2774,7 +2774,7 @@ final class NativePushManager: ObservableObject {
         switch eventType {
         case .friendRequestReceived:
             return (
-                gymText("New friend request", "Новий запит у друзі", "Новая заявка в друзья", languageCode: languageCode),
+                gymText("New friend request", "Нова заявка в друзі", "Новая заявка в друзья", languageCode: languageCode),
                 gymText("Open GymApp to respond.", "Відкрий GymApp, щоб відповісти.", "Открой GymApp, чтобы ответить.", languageCode: languageCode)
             )
         case .friendRequestAccepted:
