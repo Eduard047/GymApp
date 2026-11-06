@@ -241,6 +241,9 @@ struct ActiveWorkoutView: View {
     @State private var exerciseReorder = GymReorderCoordinator(spacing: GymTheme.contentSpacing)
     @State private var errorFeedbackTrigger = 0
     @State private var restEndFeedbackTrigger = 0
+    /// Mirrors `RestTimerManager.notificationsDenied` (the manager is not observed here, since it
+    /// publishes every second).
+    @State private var restNotificationsDenied = false
 
     /// - `requesting`: `start()` is awaiting speech/mic authorization; the UI
     ///   stays in its normal (idle) look until this resolves.
@@ -472,6 +475,10 @@ struct ActiveWorkoutView: View {
         .task(id: currentDraft?.timing?.restingUntil) {
             await fireRestEndFeedback()
         }
+        .onReceive(restTimers.$notificationsDenied) { restNotificationsDenied = $0 }
+        .task(id: currentDraft?.timing?.restingUntil != nil) {
+            await restTimers.refreshNotificationAuthorization()
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button(
@@ -700,6 +707,9 @@ struct ActiveWorkoutView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { cancelVoiceCommand() }
+            if phase == .active {
+                Task { await restTimers.refreshNotificationAuthorization() }
+            }
         }
     }
 
@@ -2315,17 +2325,32 @@ struct ActiveWorkoutView: View {
                 // change exactly when the second does.
                 TimelineView(GymRestCountdownSchedule(deadline: deadline)) { context in
                     let remaining = GymRestCountdownSchedule.remainingSeconds(deadline: deadline, at: context.date)
-                    compactCompletedRow(
-                        set: set,
-                        draft: draft,
-                        isPersonalRecord: isPersonalRecord,
-                        remainingRestSeconds: remaining > 0 ? remaining : nil,
-                        restEndHighlighted: GymRestCountdownSchedule.isEndHighlighted(
-                            deadline: deadline,
-                            at: context.date
-                        ),
-                        undo: rowUndo
-                    )
+                    VStack(alignment: .leading, spacing: 4) {
+                        compactCompletedRow(
+                            set: set,
+                            draft: draft,
+                            isPersonalRecord: isPersonalRecord,
+                            remainingRestSeconds: remaining > 0 ? remaining : nil,
+                            restEndHighlighted: GymRestCountdownSchedule.isEndHighlighted(
+                                deadline: deadline,
+                                at: context.date
+                            ),
+                            undo: rowUndo
+                        )
+                        if remaining > 0, restNotificationsDenied {
+                            Text(
+                                gymText(
+                                    "Notifications are off. The rest alert works only while GymApp is open.",
+                                    "Сповіщення вимкнені. Сигнал відпочинку спрацює лише у відкритому GymApp.",
+                                    "Уведомления выключены. Сигнал отдыха сработает только в открытом GymApp.",
+                                    languageCode: gymCurrentLanguageCode()
+                                )
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                 }
             } else {
                 compactCompletedRow(

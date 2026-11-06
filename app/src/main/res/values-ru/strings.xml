@@ -589,6 +589,7 @@
     <string name="active_workout_rest_subtract">Уменьшить отдых на 15 секунд</string>
     <string name="active_workout_rest_add">Увеличить отдых на 15 секунд</string>
     <string name="active_workout_rest_stop">Остановить отдых</string>
+    <string name="active_workout_rest_alerts_off_hint">Уведомления выключены. Сигнал отдыха сработает только в открытом GymApp.</string>
     <string name="action_save_all_pending_sets">Записать оставшиеся подходы</string>
     <string name="active_workout_add_set">Добавить подход</string>
     <string name="active_workout_save_exercise">Сохранить упражнение</string>

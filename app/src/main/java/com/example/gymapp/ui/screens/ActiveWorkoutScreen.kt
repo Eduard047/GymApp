@@ -300,6 +300,7 @@ fun ActiveWorkoutScreen(
     }
     // The rest countdown reaching zero while this screen is up: one rest-end haptic and a short tint on the
     // rest controls. A stop or a shortening by the person ends the rest too, and must stay silent.
+    val appContext = LocalContext.current
     var restEndedByUser by remember { mutableStateOf(false) }
     var restEndHighlight by remember { mutableStateOf(false) }
     var previousRestSeconds by remember { mutableIntStateOf(uiState.restSecondsRemaining) }
@@ -315,8 +316,9 @@ fun ActiveWorkoutScreen(
         val endedNaturally = restEndedNaturally(previous, current, restEndedByUser)
         restEndedByUser = false
         if (endedNaturally) {
-            // No in-app RestEnd haptic: RestTimerService's finished notification already vibrates,
-            // also in the foreground, so a second buzz would stack on it.
+            // No in-app RestEnd haptic while RestTimerService's finished notification can vibrate (also in
+            // the foreground): a second buzz would stack on it. With notifications off, nothing else will.
+            if (restAlertsCurrentlyMuted(appContext)) gymHaptics.perform(GymHapticEvent.RestEnd)
             restEndHighlight = true
             delay(REST_END_HIGHLIGHT_MS)
             restEndHighlight = false
@@ -1916,51 +1918,80 @@ private fun CompletedSetRow(
     // The controls stay up a moment after the countdown hits zero so the rest-end tint is seen.
     val showsRest = isLatestCompleted && (restSecondsRemaining > 0 || restEnded)
     val reduceMotion = rememberReduceMotion()
-    RecordedSetRow(
-        summary = summary,
-        description = description,
-        isPersonalRecord = set.isPersonalRecord,
-        modifier = Modifier.testTag(activeWorkoutCompletedSetTag(set.id)),
-        actions = listOfNotNull(
-            SetRowAction(label = undoLabel, onClick = undoWithHaptic).takeIf { canUndoFromMenu },
-            SetRowAction(label = deleteLabel, destructive = true, onClick = onDelete).takeIf { canDelete }
-        ),
-        inlineAction = if (canUndo && LocalRecordedBannerSetId.current != set.id) {
-            {
-                val buttonDescription = "$undoLabel, $description"
-                TextButton(
-                    onClick = undoWithHaptic,
-                    modifier = Modifier
-                        .heightIn(min = 48.dp)
-                        .semantics { contentDescription = buttonDescription }
+    Column {
+        RecordedSetRow(
+            summary = summary,
+            description = description,
+            isPersonalRecord = set.isPersonalRecord,
+            modifier = Modifier.testTag(activeWorkoutCompletedSetTag(set.id)),
+            actions = listOfNotNull(
+                SetRowAction(label = undoLabel, onClick = undoWithHaptic).takeIf { canUndoFromMenu },
+                SetRowAction(label = deleteLabel, destructive = true, onClick = onDelete).takeIf { canDelete }
+            ),
+            inlineAction = if (canUndo && LocalRecordedBannerSetId.current != set.id) {
+                {
+                    val buttonDescription = "$undoLabel, $description"
+                    TextButton(
+                        onClick = undoWithHaptic,
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .semantics { contentDescription = buttonDescription }
+                    ) {
+                        Text(
+                            text = stringResource(R.string.voice_command_undo),
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                            maxLines = 1
+                        )
+                    }
+                }
+            } else {
+                null
+            },
+            // Always present so the controls can fade/expand in and out; it emits nothing while hidden.
+            trailing = {
+                AnimatedVisibility(
+                    visible = showsRest,
+                    enter = gymExpandHorizontally(reduceMotion),
+                    exit = gymShrinkHorizontally(reduceMotion)
                 ) {
-                    Text(
-                        text = stringResource(R.string.voice_command_undo),
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                        maxLines = 1
+                    CompactRestControls(
+                        remainingSeconds = restSecondsRemaining,
+                        enabled = !operationInProgress && restSecondsRemaining > 0,
+                        highlighted = restEnded,
+                        onAdjustRestTimer = onAdjustRestTimer,
+                        onStopRestTimer = onStopRestTimer
                     )
                 }
             }
-        } else {
-            null
-        },
-        // Always present so the controls can fade/expand in and out; it emits nothing while hidden.
-        trailing = {
-            AnimatedVisibility(
-                visible = showsRest,
-                enter = gymExpandHorizontally(reduceMotion),
-                exit = gymShrinkHorizontally(reduceMotion)
-            ) {
-                CompactRestControls(
-                    remainingSeconds = restSecondsRemaining,
-                    enabled = !operationInProgress && restSecondsRemaining > 0,
-                    highlighted = restEnded,
-                    onAdjustRestTimer = onAdjustRestTimer,
-                    onStopRestTimer = onStopRestTimer
-                )
-            }
+        )
+        if (isLatestCompleted && restSecondsRemaining > 0) RestAlertsOffHint()
+    }
+}
+
+/**
+ * A quiet line under the running rest when system notifications (or the rest-timer channel) are off:
+ * the lock-screen alert will not come. Re-checked on every resume so it goes away once they are enabled.
+ */
+@Composable
+private fun RestAlertsOffHint() {
+    val context = LocalContext.current
+    var muted by remember { mutableStateOf(restAlertsCurrentlyMuted(context)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) muted = restAlertsCurrentlyMuted(context)
         }
-    )
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    if (muted) {
+        Text(
+            text = stringResource(R.string.active_workout_rest_alerts_off_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+        )
+    }
 }
 
 /** Monospaced countdown + "−15" / "+15" / stop pills (~32dp visual, 48dp targets). */

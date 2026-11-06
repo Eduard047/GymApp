@@ -245,7 +245,7 @@ class RestTimerService : Service() {
         private const val EXTRA_DURATION_SECONDS = "extra_duration_seconds"
 
         private const val CHANNEL_RUNNING_ID = "rest_timer_running"
-        private const val CHANNEL_FINISHED_ID = "rest_timer_finished"
+        internal const val CHANNEL_FINISHED_ID = "rest_timer_finished"
         private const val NOTIFICATION_RUNNING_ID = 4001
         private const val NOTIFICATION_FINISHED_ID = 4002
 

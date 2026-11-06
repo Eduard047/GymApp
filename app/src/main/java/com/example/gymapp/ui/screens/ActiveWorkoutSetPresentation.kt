@@ -183,6 +183,17 @@ private const val REST_END_MAX_PREVIOUS_SECONDS = 2
 internal fun restEndedNaturally(previousSeconds: Int, currentSeconds: Int, endedByUser: Boolean): Boolean =
     !endedByUser && currentSeconds == 0 && previousSeconds in 1..REST_END_MAX_PREVIOUS_SECONDS
 
+/**
+ * The rest-end haptic is normally left to RestTimerService's finished notification (it vibrates, also in the
+ * foreground). When system notifications are off, or that channel is blocked, nothing vibrates, so the app does.
+ */
+internal fun shouldFireInAppRestEndHaptic(notificationsEnabled: Boolean, channelBlocked: Boolean): Boolean =
+    !notificationsEnabled || channelBlocked
+
+/** The same condition drives the quiet "lock-screen alerts won't come" hint while a rest runs. */
+internal fun restAlertsMuted(notificationsEnabled: Boolean, channelBlocked: Boolean): Boolean =
+    shouldFireInAppRestEndHaptic(notificationsEnabled, channelBlocked)
+
 /** Status messages that report success rather than a problem (shown in the info tone). */
 internal fun activeWorkoutMessageIsSuccess(messageResourceId: Int): Boolean =
     messageResourceId == com.example.gymapp.R.string.active_workout_exercise_saved ||

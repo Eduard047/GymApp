@@ -219,4 +219,17 @@ class ActiveWorkoutSetPresentationTest {
         assertEquals(false, restEndedNaturally(previousSeconds = 0, currentSeconds = 0, endedByUser = false))
         assertEquals(false, restEndedNaturally(previousSeconds = 40, currentSeconds = 0, endedByUser = false))
     }
+
+    @Test
+    fun inAppRestEndHapticFiresOnlyWhenTheFinishedNotificationCannotAlert() {
+        assertFalse(shouldFireInAppRestEndHaptic(notificationsEnabled = true, channelBlocked = false))
+        assertTrue(shouldFireInAppRestEndHaptic(notificationsEnabled = false, channelBlocked = false))
+        assertTrue(shouldFireInAppRestEndHaptic(notificationsEnabled = true, channelBlocked = true))
+        assertTrue(shouldFireInAppRestEndHaptic(notificationsEnabled = false, channelBlocked = true))
+        assertEquals(
+            shouldFireInAppRestEndHaptic(notificationsEnabled = false, channelBlocked = false),
+            restAlertsMuted(notificationsEnabled = false, channelBlocked = false)
+        )
+        assertFalse(restAlertsMuted(notificationsEnabled = true, channelBlocked = false))
+    }
 }

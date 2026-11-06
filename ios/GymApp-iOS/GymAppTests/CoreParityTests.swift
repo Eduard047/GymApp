@@ -3,11 +3,20 @@ import ConnectIQ
 import SwiftUI
 import CryptoKit
 import Foundation
+import UserNotifications
 import XCTest
 @testable import GymApp
 
 @MainActor
 final class CoreParityTests: XCTestCase {
+    func testRestNotificationsCountAsDeniedOnlyWhenExplicitlyDenied() {
+        XCTAssertTrue(RestTimerManager.notificationsDenied(for: .denied))
+        XCTAssertFalse(RestTimerManager.notificationsDenied(for: .notDetermined))
+        XCTAssertFalse(RestTimerManager.notificationsDenied(for: .authorized))
+        XCTAssertFalse(RestTimerManager.notificationsDenied(for: .provisional))
+        XCTAssertFalse(RestTimerManager.notificationsDenied(for: .ephemeral))
+    }
+
     func testBackupExerciseOrderingMatchesPortableSQLiteNoCaseAcrossScripts() {
         let input = [
             "тяга custom",

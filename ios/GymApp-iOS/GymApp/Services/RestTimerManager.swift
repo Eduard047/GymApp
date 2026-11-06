@@ -259,6 +259,18 @@ final class RestTimerManager: ObservableObject {
         }
     }
 
+    /// Only an explicit denial counts. `.notDetermined` is not a denial: the schedule path asks.
+    nonisolated static func notificationsDenied(for status: UNAuthorizationStatus) -> Bool {
+        status == .denied
+    }
+
+    /// Re-reads the system permission, so a change made in Settings shows up when the app returns.
+    func refreshNotificationAuthorization() async {
+        let status = await notificationCenter.authorizationStatus()
+        let denied = Self.notificationsDenied(for: status)
+        if notificationsDenied != denied { notificationsDenied = denied }
+    }
+
     private func scheduleNotification(
         for state: RestTimerState,
         title: String,
