@@ -706,7 +706,11 @@ struct ActiveWorkoutView: View {
             cancelVoiceCommand()
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active { cancelVoiceCommand() }
+            if phase != .active {
+                cancelVoiceCommand()
+                // The weight field commits only on focus loss; commit before iOS can kill the app.
+                focusedWeightSetID = nil
+            }
             if phase == .active {
                 Task { await restTimers.refreshNotificationAuthorization() }
             }
