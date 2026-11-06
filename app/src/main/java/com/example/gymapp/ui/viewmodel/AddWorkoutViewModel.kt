@@ -9,6 +9,7 @@ import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.WorkoutSessionDetails
+import com.example.gymapp.data.entity.WorkoutSessionSummary
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.StartActiveWorkoutResult
 import com.example.gymapp.data.repository.ExerciseLoadProfile
@@ -548,6 +549,23 @@ internal fun withInitialWeightIfBlank(
 internal fun formatPlannedWeight(weight: Double): String =
     if (weight % 1.0 == 0.0) weight.toInt().toString() else String.format(java.util.Locale.US, "%.1f", weight)
 
+/**
+ * Sessions the previous-workout picker can offer: only those with recorded sets (activity-only
+ * sessions such as Garmin runs have none and cannot seed a draft), capped after filtering.
+ */
+internal fun pickableWorkoutTemplateSessions(
+    sessions: List<WorkoutSessionSummary>
+): List<WorkoutSessionSummary> =
+    sessions.filter { it.setCount > 0 }.take(WORKOUT_TEMPLATE_LIMIT)
+
+/** "Repeat last workout" needs a session with sets, the same rule as `getLatestSessionDetails`. */
+internal fun canRepeatFromTemplates(templates: List<WorkoutTemplatePreviewUiModel>): Boolean =
+    templates.any { it.setCount > 0 }
+
+/** A note the user already typed survives applying a template; a blank one takes the source note. */
+internal fun mergedTemplateNote(currentNote: String, sourceNote: String?): String =
+    if (currentNote.isBlank()) sourceNote.orEmpty() else currentNote
+
 internal fun hasRetainedWorkoutDraft(state: AddWorkoutUiState): Boolean =
     state.isDirty || state.exerciseDrafts.isNotEmpty() || state.note.isNotBlank()
 
@@ -908,8 +926,7 @@ class AddWorkoutViewModel internal constructor(
         repository.observeSessions(),
         templateExerciseNames
     ) { sessions, namesBySession ->
-        sessions
-            .take(WORKOUT_TEMPLATE_LIMIT)
+        pickableWorkoutTemplateSessions(sessions)
             .map { summary ->
                 WorkoutTemplatePreviewUiModel(
                     sessionId = summary.session.id,
@@ -927,7 +944,7 @@ class AddWorkoutViewModel internal constructor(
         templateNamesJob = viewModelScope.launch {
             val loaded = mutableMapOf<Long, List<String>>()
             try {
-                repository.observeSessions().first().take(WORKOUT_TEMPLATE_LIMIT).forEach { summary ->
+                pickableWorkoutTemplateSessions(repository.observeSessions().first()).forEach { summary ->
                     loaded[summary.session.id] = repository.getWorkoutTemplate(summary.session.id)
                         ?.workoutExercises
                         .orEmpty()
@@ -1100,7 +1117,7 @@ class AddWorkoutViewModel internal constructor(
                 generatedPlan = local.generatedSmartPlan
             ),
             smartAlternativePicker = local.smartAlternativePicker,
-            canRepeatFromLast = templates.isNotEmpty(),
+            canRepeatFromLast = canRepeatFromTemplates(templates),
             workoutTemplates = templates,
             isTemplatePickerOpen = local.isTemplatePickerOpen,
             isTemplateLoading = local.isTemplateLoading,
@@ -2041,7 +2058,7 @@ class AddWorkoutViewModel internal constructor(
     private fun applyWorkoutTemplate(template: WorkoutSessionDetails) {
         generatedSmartPlan.value = null
         smartAlternativePicker.value = null
-        note.value = template.session.note.orEmpty()
+        note.value = mergedTemplateNote(note.value, template.session.note)
         val drafts = template.workoutExercises.map { exerciseDetails ->
             val mappedSets = exerciseDetails.sets.map { set ->
                 SetInputState(
