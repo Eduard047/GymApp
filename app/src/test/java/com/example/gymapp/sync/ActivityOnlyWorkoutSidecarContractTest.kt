@@ -637,6 +637,209 @@ class ActivityOnlyWorkoutSidecarContractTest {
             assertTrue(!isRetryableActivityOnlyWorkoutSqlState(null))
         }
 
+    @Test
+    fun `rate limited keeps the journal and returns the baseline without throwing`() = runBlocking {
+        val rig = RejectionRig(listOf(
+            { _ -> ActivityOnlyWorkoutSyncResponse.RateLimited(30) },
+            synced(5)
+        ))
+
+        val deferred = rig.run()
+
+        assertEquals(4L, deferred.revision)
+        assertEquals(rig.baseline.digest, deferred.digest)
+        assertEquals(1, rig.writes.size)
+        val kept = checkNotNull(rig.journal)
+        assertEquals(rig.requestId(1), kept.requestId)
+
+        // A later round replays the exact kept request and completes it.
+        val completed = rig.run()
+
+        assertEquals(2, rig.writes.size)
+        assertEquals(rig.writes[0], rig.writes[1])
+        assertEquals(5L, completed.revision)
+        assertEquals(null, rig.journal)
+    }
+
+    @Test
+    fun `rate limited replay does not start a newer write on top of the kept journal`() =
+        runBlocking {
+            val rig = RejectionRig(listOf(
+                { _ -> ActivityOnlyWorkoutSyncResponse.RateLimited(30) },
+                { _ -> ActivityOnlyWorkoutSyncResponse.RateLimited(30) }
+            ))
+            rig.run()
+            rig.local = ActivityOnlyWorkoutLocalSnapshot(
+                listOf(activity(), activity(startedAt = 1_750_000_100_000L))
+            )
+
+            val again = rig.run()
+
+            assertEquals(4L, again.revision)
+            assertEquals(2, rig.writes.size)
+            assertEquals(rig.writes[0], rig.writes[1])
+            assertEquals(rig.requestId(1), checkNotNull(rig.journal).requestId)
+        }
+
+    @Test
+    fun `invalid payload clears the journal and fails once`() = runBlocking {
+        val rig = RejectionRig(listOf(
+            { _ -> ActivityOnlyWorkoutSyncResponse.InvalidPayload },
+            synced(5)
+        ))
+
+        assertTrue(runCatching { rig.run() }.exceptionOrNull() is IllegalStateException)
+        assertEquals(null, rig.journal)
+
+        val next = rig.run()
+
+        assertEquals(5L, next.revision)
+        assertEquals(2, rig.writes.size)
+        assertNotEquals(rig.writes[0].requestId, rig.writes[1].requestId)
+        assertEquals(null, rig.journal)
+    }
+
+    @Test
+    fun `revision exhausted clears the journal and fails once`() = runBlocking {
+        val rig = RejectionRig(listOf(
+            { _ -> ActivityOnlyWorkoutSyncResponse.RevisionExhausted(4) },
+            synced(5)
+        ))
+
+        assertTrue(runCatching { rig.run() }.exceptionOrNull() is IllegalStateException)
+        assertEquals(null, rig.journal)
+
+        assertEquals(5L, rig.run().revision)
+        assertEquals(null, rig.journal)
+    }
+
+    @Test
+    fun `request conflict clears the journal then merges against a fresh read`() = runBlocking {
+        val remoteItem = activity(startedAt = 1_750_000_100_000L, gymCalories = 0.0)
+        val rig = RejectionRig(
+            listOf(
+                { _ -> ActivityOnlyWorkoutSyncResponse.RequestConflict(5) },
+                synced(6)
+            ),
+            remote = ActivityOnlyWorkoutRemoteSnapshot(5, listOf(remoteItem))
+        )
+
+        val completed = rig.run()
+
+        assertEquals(2, rig.writes.size)
+        assertEquals(5L, rig.writes[1].expectedRevision)
+        assertNotEquals(rig.writes[0].requestId, rig.writes[1].requestId)
+        assertEquals(6L, completed.revision)
+        assertEquals(null, rig.journal)
+    }
+
+    @Test
+    fun `conflict retry that is rate limited keeps the retry journal for a later replay`() =
+        runBlocking {
+            val remoteItem = activity(startedAt = 1_750_000_100_000L, gymCalories = 0.0)
+            val rig = RejectionRig(
+                listOf(
+                    { _ -> ActivityOnlyWorkoutSyncResponse.Conflict(5) },
+                    { _ -> ActivityOnlyWorkoutSyncResponse.RateLimited(30) },
+                    synced(6)
+                ),
+                remote = ActivityOnlyWorkoutRemoteSnapshot(5, listOf(remoteItem))
+            )
+
+            val deferred = rig.run()
+
+            assertEquals(5L, deferred.revision)
+            assertEquals(rig.requestId(2), checkNotNull(rig.journal).requestId)
+
+            val completed = rig.run()
+
+            assertEquals(3, rig.writes.size)
+            assertEquals(rig.writes[1], rig.writes[2])
+            assertEquals(6L, completed.revision)
+            assertEquals(null, rig.journal)
+        }
+
+    @Test
+    fun `conflict retry rejected terminally clears the retry journal and fails once`() =
+        runBlocking {
+            val remoteItem = activity(startedAt = 1_750_000_100_000L, gymCalories = 0.0)
+            val rig = RejectionRig(
+                listOf(
+                    { _ -> ActivityOnlyWorkoutSyncResponse.Conflict(5) },
+                    { _ -> ActivityOnlyWorkoutSyncResponse.InvalidPayload },
+                    synced(6)
+                ),
+                remote = ActivityOnlyWorkoutRemoteSnapshot(5, listOf(remoteItem))
+            )
+
+            assertTrue(runCatching { rig.run() }.exceptionOrNull() is IllegalStateException)
+            assertEquals(null, rig.journal)
+
+            assertEquals(6L, rig.run().revision)
+            assertEquals(null, rig.journal)
+        }
+
+    private fun synced(revision: Long): (List<ActivityOnlyWorkoutItem>) -> ActivityOnlyWorkoutSyncResponse =
+        { items ->
+            ActivityOnlyWorkoutSyncResponse.Synced(
+                revision = revision,
+                syncedCount = items.size,
+                changedCount = items.size,
+                replayed = false
+            )
+        }
+
+    /** Scripted server: one response per write, durable journal and baseline across runs. */
+    private inner class RejectionRig(
+        responses: List<(List<ActivityOnlyWorkoutItem>) -> ActivityOnlyWorkoutSyncResponse>,
+        private val remote: ActivityOnlyWorkoutRemoteSnapshot? = null
+    ) {
+        val baseline = ActivityOnlyWorkoutCloudBaseline(
+            ownerUserId = owner,
+            revision = 4,
+            items = emptyList()
+        )
+        var local = ActivityOnlyWorkoutLocalSnapshot(listOf(activity()))
+        var journal: ActivityOnlyWorkoutSyncJournalRecord? = null
+        val writes = mutableListOf<Write>()
+        private var durableBaseline = baseline
+        private val script = ArrayDeque(responses)
+        private val ids = (1..9).map { "123e4567-e89b-12d3-a456-42661417400$it" }
+        private val pendingIds = ArrayDeque(ids)
+
+        fun requestId(position: Int): String = ids[position - 1]
+
+        suspend fun run(): ActivityOnlyWorkoutCloudBaseline = syncActivityOnlyWorkoutSidecar(
+            ownerUserId = owner,
+            baseline = durableBaseline,
+            readLocal = { local },
+            reconcileLocal = { canonical ->
+                local = ActivityOnlyWorkoutLocalSnapshot(canonical)
+                local
+            },
+            readRemote = { remote ?: error("Remote read was not expected.") },
+            writeRemote = { revision, requestId, items ->
+                writes += Write(revision, requestId, items)
+                script.removeFirst()(items)
+            },
+            readJournal = { journal },
+            persistJournal = { pending ->
+                require(journal == null || journal == pending)
+                journal = pending
+            },
+            clearJournal = { pending ->
+                if (journal == pending) {
+                    journal = null
+                    true
+                } else {
+                    false
+                }
+            },
+            persistBaseline = { durableBaseline = it },
+            requestIdFactory = { pendingIds.removeFirst() }
+        )
+    }
+
     private fun activity(
         startedAt: Long = 1_750_000_000_000L,
         gymCalories: Double = 87.125

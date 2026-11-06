@@ -194,6 +194,7 @@ import com.example.gymapp.auth.loadFriendGhosts
 import com.example.gymapp.sync.PhoneSyncClient
 import com.example.gymapp.sync.ActivityOnlyWorkoutCloudBaseline
 import com.example.gymapp.sync.ActivityOnlyWorkoutReadResult
+import com.example.gymapp.sync.ActivityOnlyWorkoutSyncDeferredException
 import com.example.gymapp.sync.CloudSnapshotApplyDecision
 import com.example.gymapp.sync.CloudSyncConflictSnapshot
 import com.example.gymapp.sync.CloudSyncBaselineStore
@@ -1676,7 +1677,9 @@ internal fun GymAppRoot(
                 forceRemoteRead = true
             )
         } catch (throwable: Throwable) {
-            if (throwable is ActivityOnlyWorkoutRpcUnavailableException) null else throw throwable
+            if (throwable is ActivityOnlyWorkoutRpcUnavailableException ||
+                throwable is ActivityOnlyWorkoutSyncDeferredException
+            ) null else throw throwable
         }
     }
 

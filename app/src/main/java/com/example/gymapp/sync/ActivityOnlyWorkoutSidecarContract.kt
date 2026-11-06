@@ -229,6 +229,11 @@ internal fun parseActivityOnlyWorkoutSyncResponse(
     }
 }
 
+/** The server asked to back off and no confirmed baseline exists to report; retry later. */
+internal class ActivityOnlyWorkoutSyncDeferredException : IllegalStateException(
+    "Activity-only workout synchronization was deferred."
+)
+
 /**
  * Synchronizes exact owner-private full snapshots against a durable canonical baseline. A pending
  * outcome-unknown request is always replayed before any remote read or local reconciliation. Every
@@ -300,6 +305,21 @@ internal suspend fun syncActivityOnlyWorkoutSidecar(
         return confirmed
     }
 
+    // Set when the server asked us to back off: the journal is kept for a later exact replay and
+    // the caller must not start a newer write on top of it.
+    var deferredByRateLimit = false
+
+    // Terminal rejection: drop the journal so the failure surfaces once instead of on every later sync.
+    suspend fun rejectTerminal(
+        record: ActivityOnlyWorkoutSyncJournalRecord,
+        message: String
+    ): Nothing {
+        check(clearJournal(record)) {
+            "Activity-only workout rejected journal could not be cleared."
+        }
+        error(message)
+    }
+
     suspend fun sendOnce(
         record: ActivityOnlyWorkoutSyncJournalRecord,
         items: List<ActivityOnlyWorkoutItem>,
@@ -325,7 +345,8 @@ internal suspend fun syncActivityOnlyWorkoutSidecar(
             )
         }
 
-        is ActivityOnlyWorkoutSyncResponse.Conflict -> {
+        is ActivityOnlyWorkoutSyncResponse.Conflict,
+        is ActivityOnlyWorkoutSyncResponse.RequestConflict -> {
             val exactBase = checkNotNull(currentBaseline) {
                 "Activity-only workout conflict has no exact durable baseline."
             }
@@ -334,8 +355,11 @@ internal suspend fun syncActivityOnlyWorkoutSidecar(
                 "Activity-only workout journal does not match its exact durable baseline."
             }
             val remote = readRemote()
-            require(remote.revision == response.revision) {
-                "Activity-only workout conflict revision changed while reading."
+            // A request conflict carries no reliable CAS revision; the fresh read is the truth.
+            if (response is ActivityOnlyWorkoutSyncResponse.Conflict) {
+                require(remote.revision == response.revision) {
+                    "Activity-only workout conflict revision changed while reading."
+                }
             }
             val resolvedAttempt = threeWayMergeActivityOnlyWorkoutItems(
                 base = exactBase.items,
@@ -388,28 +412,53 @@ internal suspend fun syncActivityOnlyWorkoutSidecar(
                         )
                     }
 
-                    is ActivityOnlyWorkoutSyncResponse.Conflict -> {
-                        check(clearJournal(retryJournal)) {
-                            "Activity-only workout retry journal could not be cleared."
-                        }
-                        error("Activity-only workout conflict retry raced another writer.")
+                    is ActivityOnlyWorkoutSyncResponse.Conflict,
+                    is ActivityOnlyWorkoutSyncResponse.RequestConflict -> rejectTerminal(
+                        retryJournal,
+                        "Activity-only workout conflict retry raced another writer."
+                    )
+
+                    is ActivityOnlyWorkoutSyncResponse.RateLimited -> {
+                        deferredByRateLimit = true
+                        remoteBaseline
                     }
 
-                    else -> error("Activity-only workout conflict retry did not commit.")
+                    is ActivityOnlyWorkoutSyncResponse.InvalidPayload,
+                    is ActivityOnlyWorkoutSyncResponse.RevisionExhausted -> rejectTerminal(
+                        retryJournal,
+                        "Activity-only workout conflict retry was rejected."
+                    )
                 }
             }
         }
 
-        else -> error("Activity-only workout synchronization was rejected.")
+        is ActivityOnlyWorkoutSyncResponse.RateLimited -> {
+            deferredByRateLimit = true
+            currentBaseline ?: throw ActivityOnlyWorkoutSyncDeferredException()
+        }
+
+        is ActivityOnlyWorkoutSyncResponse.InvalidPayload -> rejectTerminal(
+            record,
+            "Activity-only workout payload was rejected."
+        )
+
+        is ActivityOnlyWorkoutSyncResponse.RevisionExhausted -> rejectTerminal(
+            record,
+            "Activity-only workout revision space is exhausted."
+        )
     }
 
     var currentBaseline = baseline
-    readJournal()?.let { pending ->
-        currentBaseline = sendOnce(
-            record = pending,
-            items = journalItems(pending),
+    val pendingJournal = readJournal()
+    if (pendingJournal != null) {
+        val replayed = sendOnce(
+            record = pendingJournal,
+            items = journalItems(pendingJournal),
             currentBaseline = currentBaseline
         )
+        // Backing off: keep the pending journal and report the last confirmed baseline.
+        if (deferredByRateLimit) return replayed
+        currentBaseline = replayed
     }
 
     if (forceRemoteRead || currentBaseline == null) {
