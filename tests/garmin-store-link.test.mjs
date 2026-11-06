@@ -122,7 +122,7 @@ test("PWA exposes official Android and Garmin store links on the login and accou
   assert.equal(app.includes(GYMAPP_PLAY_URL), false, "Keep the package ID as the single Google Play source of truth");
   assert.match(app, /function storeDownloadPanel\(\)/);
   assert.match(app, /\$\{storeDownloadPanel\(\)\}/);
-  assert.match(app, /class="store-download-link" href="\$\{escapeAttr\(GOOGLE_PLAY_APP_URL\)\}" target="_blank" rel="noopener noreferrer"/);
+  assert.match(app, /class="store-badge-link" href="\$\{escapeAttr\(GOOGLE_PLAY_APP_URL\)\}" target="_blank" rel="noopener noreferrer"/);
   assert.match(app, /class="store-download-link" href="\$\{escapeAttr\(garminStoreAppLink\(\)\)\}" target="_blank" rel="noopener noreferrer"/);
   assert.match(app, /settingsRowMarkup\(\{[^\n]*href: GOOGLE_PLAY_APP_URL, trailing: external \}\)/);
   assert.match(app, /settingsRowMarkup\(\{[^\n]*href: garminStoreAppLink\(\), trailing: external \}\)/);

@@ -24,14 +24,14 @@ test("PWA offers the App Store first in the download card and the profile links"
 
   assert.match(
     panel,
-    /class="store-download-link" href="\$\{escapeAttr\(APP_STORE_APP_URL\)\}" target="_blank" rel="noopener noreferrer"/
+    /class="store-badge-link" href="\$\{escapeAttr\(APP_STORE_APP_URL\)\}" target="_blank" rel="noopener noreferrer"><img class="store-badge store-badge-apple" src="\.\/store-badges\/app-store-\$\{badgeLang\}\.svg"/
   );
   assert.equal(
     panel.indexOf("APP_STORE_APP_URL") < panel.indexOf("GOOGLE_PLAY_APP_URL"),
     true,
     "App Store button comes before Google Play"
   );
-  assert.equal(panel.includes("<strong>App Store</strong>"), true);
+  assert.match(panel, /src="\.\/store-badges\/google-play-\$\{badgeLang\}\.png"/);
   assert.match(panel, /iPhone/);
 
   assert.match(app, /settingsRowMarkup\(\{[^\n]*href: APP_STORE_APP_URL, trailing: external \}\)/);
@@ -55,4 +55,14 @@ test("the bundle served by index.html carries the App Store link", async () => {
 test("the web app shows the Safari smart banner for the App Store app", async () => {
   const html = await readFile("pwa/index.html", "utf8");
   assert.match(html, /<meta name="apple-itunes-app" content="app-id=6797458372">/);
+});
+
+test("official store badges ship for every app language", async () => {
+  const { access } = await import("node:fs/promises");
+  for (const lang of ["en", "uk", "ru"]) {
+    await access(`pwa/store-badges/app-store-${lang}.svg`);
+    await access(`pwa/store-badges/google-play-${lang}.png`);
+    const svg = await readFile(`pwa/store-badges/app-store-${lang}.svg`, "utf8");
+    assert.doesNotMatch(svg, /<script|on[a-z]+=|href="http/i);
+  }
 });

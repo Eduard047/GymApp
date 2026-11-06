@@ -144,11 +144,11 @@ test("the disclosure row is at least 44px, rotates its chevron and honours reduc
   assert.doesNotMatch(stylesSource.slice(stylesSource.indexOf(".auth-access {"), stylesSource.indexOf(".auth-divider")), /gradient/i);
 });
 
-test("store buttons and profile links use one neutral smartphone glyph, never a store logo", () => {
+test("store card uses official badges and profile links a neutral smartphone glyph, never a self-drawn store logo", () => {
   assert.match(appSource, /^  smartphone: "M/m);
   assert.doesNotMatch(appSource, /apple-logo|google-play"|appleLogo|googlePlayLogo/);
   const panel = slice("function storeDownloadPanel()", "function themePreferencePanel(");
-  assert.equal((panel.match(/svg\("smartphone", "store-download-icon store-download-icon-line"\)/g) || []).length, 2);
+  assert.equal((panel.match(/class="store-badge store-badge-(apple|google)"/g) || []).length, 2);
   assert.match(panel, /svg\("watch", "store-download-icon"\)/);
   assert.match(appSource, /settingsRowMarkup\(\{ icon: "smartphone", title: tx3\("App Store"/);
   assert.match(appSource, /settingsRowMarkup\(\{ icon: "smartphone", title: tx3\("Google Play"/);

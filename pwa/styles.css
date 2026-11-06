@@ -2479,6 +2479,39 @@ svg.filled-icon.small-icon {
   gap: 12px;
 }
 
+/* Official store badges: equal artwork height (Google's PNG carries 29/250 transparent padding top and bottom). */
+.store-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+}
+
+.store-badge-link {
+  display: inline-flex;
+  border-radius: 10px;
+  line-height: 0;
+}
+
+.store-badge-link:focus-visible {
+  outline: 2px solid var(--sage);
+  outline-offset: 3px;
+}
+
+.store-badge {
+  width: auto;
+  max-width: 100%;
+}
+
+.store-badge-apple {
+  height: 48px;
+}
+
+.store-badge-google {
+  height: 62.5px;
+  margin-block: -7.25px;
+}
+
 .store-download-actions > :last-child:nth-child(odd) {
   grid-column: 1 / -1;
 }

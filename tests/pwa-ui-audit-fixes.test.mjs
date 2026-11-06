@@ -111,7 +111,7 @@ test("the Smart Coach set summary keeps each set whole and drops the pipe separa
 
 test("store badges and eyebrows are sentence case, not typed in capitals", () => {
   assert.doesNotMatch(appSource, /GET IT ON|AVAILABLE ON|YOUR FIRST PLAN|FIRST WORKOUT|СКАЧАТЬ В|ДОСТУПНО В|ТВОЙ ПЕРВЫЙ|ПЕРВАЯ ТРЕНИРОВКА|ТВІЙ ПЕРШИЙ|ПЕРШЕ ТРЕНУВАННЯ|ЗАВАНТАЖИТИ В/);
-  assert.match(appSource, /tx3\("Get it on", "Завантажити в", "Скачать в"\)/);
+  assert.match(appSource, /tx3\("Available on", "Доступно в", "Доступно в"\)/);
   assert.match(appSource, /tx3\("Your first plan", "Твій перший план", "Твой первый план"\)/);
   assert.match(appSource, /tx3\("First workout", "Перше тренування", "Первая тренировка"\)/);
 });

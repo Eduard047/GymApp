@@ -5,8 +5,8 @@ import test from "node:test";
 const [styles, app, appBundle, stylesBundle] = await Promise.all([
   readFile("pwa/styles.css", "utf8"),
   readFile("pwa/app.js", "utf8"),
-  readFile("pwa/app.v147.js", "utf8"),
-  readFile("pwa/styles.v118.css", "utf8")
+  readFile("pwa/app.v148.js", "utf8"),
+  readFile("pwa/styles.v119.css", "utf8")
 ]);
 
 function rules(selector) {
