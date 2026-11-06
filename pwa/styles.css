@@ -2512,6 +2512,12 @@ svg.filled-icon.small-icon {
   margin-block: -7.25px;
 }
 
+/* Garmin's badge artwork spans y 1.5–93.5 of its 95-unit box. */
+.store-badge-garmin {
+  height: 49.5px;
+  margin-block: -0.75px;
+}
+
 .store-download-actions > :last-child:nth-child(odd) {
   grid-column: 1 / -1;
 }

@@ -11593,7 +11593,7 @@ function togglePasswordVisibility(button) {
 }
 
 function storeDownloadPanel() {
-  // Official store badges (Apple and Google artwork, unmodified); the Garmin link keeps our own button.
+  // Official store badges (Apple, Google and Garmin artwork, unmodified).
   const badgeLang = ["uk", "ru"].includes(state.language) ? state.language : "en";
   return `<section class="panel store-download-card" aria-labelledby="store-download-title">
     <div class="store-download-copy">
@@ -11604,9 +11604,7 @@ function storeDownloadPanel() {
     <div class="store-badge-row">
       <a class="store-badge-link" href="${escapeAttr(APP_STORE_APP_URL)}" target="_blank" rel="noopener noreferrer"><img class="store-badge store-badge-apple" src="./store-badges/app-store-${badgeLang}.svg" width="120" height="40" alt="${escapeAttr(tx3("Download on the App Store", "Завантажте в App Store", "Загрузите в App Store"))}" decoding="async"></a>
       <a class="store-badge-link" href="${escapeAttr(GOOGLE_PLAY_APP_URL)}" target="_blank" rel="noopener noreferrer"><img class="store-badge store-badge-google" src="./store-badges/google-play-${badgeLang}.png" width="646" height="250" alt="${escapeAttr(tx3("Get it on Google Play", "Завантажте з Google Play", "Доступно в Google Play"))}" decoding="async"></a>
-    </div>
-    <div class="store-download-actions">
-      <a class="store-download-link" href="${escapeAttr(garminStoreAppLink())}" target="_blank" rel="noopener noreferrer">${svg("watch", "store-download-icon")}<span><small>${tx3("Available on", "Доступно в", "Доступно в")}</small><strong>Garmin Connect IQ</strong></span></a>
+      <a class="store-badge-link" href="${escapeAttr(garminStoreAppLink())}" target="_blank" rel="noopener noreferrer"><img class="store-badge store-badge-garmin" src="./store-badges/connect-iq.svg" width="278" height="95" alt="${escapeAttr(tx3("Available on the Connect IQ Store", "Доступно в Connect IQ Store", "Доступно в Connect IQ Store"))}" decoding="async"></a>
     </div>
   </section>`;
 }

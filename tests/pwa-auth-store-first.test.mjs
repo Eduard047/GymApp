@@ -148,8 +148,8 @@ test("store card uses official badges and profile links a neutral smartphone gly
   assert.match(appSource, /^  smartphone: "M/m);
   assert.doesNotMatch(appSource, /apple-logo|google-play"|appleLogo|googlePlayLogo/);
   const panel = slice("function storeDownloadPanel()", "function themePreferencePanel(");
-  assert.equal((panel.match(/class="store-badge store-badge-(apple|google)"/g) || []).length, 2);
-  assert.match(panel, /svg\("watch", "store-download-icon"\)/);
+  assert.equal((panel.match(/class="store-badge store-badge-(apple|google|garmin)"/g) || []).length, 3);
+  assert.match(panel, /class="store-badge store-badge-garmin" src="\.\/store-badges\/connect-iq\.svg"/);
   assert.match(appSource, /settingsRowMarkup\(\{ icon: "smartphone", title: tx3\("App Store"/);
   assert.match(appSource, /settingsRowMarkup\(\{ icon: "smartphone", title: tx3\("Google Play"/);
   assert.match(stylesSource, /\.store-download-icon\.store-download-icon-line \{\s*fill: none;\s*stroke: currentColor;/);
