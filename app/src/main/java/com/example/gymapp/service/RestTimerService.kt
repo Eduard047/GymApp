@@ -22,6 +22,7 @@ import com.example.gymapp.MainActivity
 import com.example.gymapp.R
 import com.example.gymapp.util.RestTimerState
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -98,6 +99,10 @@ class RestTimerService : Service() {
         countdownJob?.cancel()
         cancelFinishedAlarm(this)
         cancelNotification(NOTIFICATION_FINISHED_ID)
+        // Backstop: if the system kills the process mid-rest the countdown below dies with it, so
+        // an alarm still posts the finished alert. onTimerFinished cancels it on the normal path.
+        finishedAlertPosted.set(false)
+        scheduleFinishedAlarm(this, System.currentTimeMillis() + durationSeconds * 1_000L)
 
         remainingSeconds = durationSeconds
         RestTimerState.update(remainingSeconds)
@@ -107,6 +112,9 @@ class RestTimerService : Service() {
             while (remainingSeconds > 0 && isActive) {
                 delay(1_000)
                 remainingSeconds -= 1
+                // The backstop alarm can fire a moment before this drifting countdown reaches 0.
+                // It already posted the alert, so finish here instead of ticking on.
+                if (finishedAlertPosted.get()) remainingSeconds = 0
                 RestTimerState.update(remainingSeconds)
 
                 if (remainingSeconds > 0) {
@@ -122,10 +130,13 @@ class RestTimerService : Service() {
     }
 
     private fun onTimerFinished() {
+        cancelFinishedAlarm(this)
         RestTimerState.update(0)
         stopForeground(STOP_FOREGROUND_REMOVE)
         cancelNotification(NOTIFICATION_RUNNING_ID)
-        notifySafely(NOTIFICATION_FINISHED_ID, buildFinishedNotification(this))
+        if (!finishedAlertPosted.getAndSet(true)) {
+            notifySafely(NOTIFICATION_FINISHED_ID, buildFinishedNotification(this))
+        }
         stopSelf()
     }
 
@@ -254,9 +265,16 @@ class RestTimerService : Service() {
         private const val REQUEST_DISMISS_ALERT = 4012
         private const val REQUEST_FINISHED_ALARM = 4013
 
+        // Set by whichever of the countdown and the backstop alarm posts the finished alert first,
+        // so the other one skips it and the alert is never shown twice for one rest.
+        private val finishedAlertPosted = AtomicBoolean(false)
+
         fun start(context: Context, seconds: Int) {
             if (seconds <= 0) return
             val appContext = context.applicationContext
+            // Arm the alert before the service starts, so it still fires if the start is refused.
+            finishedAlertPosted.set(false)
+            scheduleFinishedAlarm(appContext, System.currentTimeMillis() + seconds * 1_000L)
             val intent = Intent(appContext, RestTimerService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_DURATION_SECONDS, seconds)
@@ -284,7 +302,9 @@ class RestTimerService : Service() {
             RestTimerState.update(0)
             val notifications = NotificationManagerCompat.from(context)
             notifications.cancel(NOTIFICATION_RUNNING_ID)
-            notifySafely(context, NOTIFICATION_FINISHED_ID, buildFinishedNotification(context))
+            if (!finishedAlertPosted.getAndSet(true)) {
+                notifySafely(context, NOTIFICATION_FINISHED_ID, buildFinishedNotification(context))
+            }
         }
 
         private fun buildFinishedNotification(context: Context): Notification {

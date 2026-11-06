@@ -20,15 +20,19 @@ internal class RestTimerAccountSwitchTracker {
         initialized && accountKey == expectedAccountKey
 }
 
-class RestTimerController(
-    private val appContext: Context
+class RestTimerController internal constructor(
+    private val exerciseTimers: ExerciseRestTimerLedger,
+    private val activeWorkoutTimer: ActiveWorkoutTimerLedger,
+    private val startService: (seconds: Int) -> Unit,
+    private val stopService: () -> Unit
 ) {
-    private val exerciseTimers = ExerciseRestTimerLedger(
-        SharedPreferencesExerciseRestTimerPersistence(appContext)
+    constructor(appContext: Context) : this(
+        ExerciseRestTimerLedger(SharedPreferencesExerciseRestTimerPersistence(appContext)),
+        ActiveWorkoutTimerLedger(SharedPreferencesActiveWorkoutTimerPersistence(appContext)),
+        { seconds -> RestTimerService.start(appContext, seconds) },
+        { RestTimerService.stop(appContext) }
     )
-    private val activeWorkoutTimer = ActiveWorkoutTimerLedger(
-        SharedPreferencesActiveWorkoutTimerPersistence(appContext)
-    )
+
     private val accountSwitchTracker = RestTimerAccountSwitchTracker()
     val remainingSeconds: StateFlow<Int> = RestTimerState.remainingSeconds
     internal val exerciseRestDeadlineMillis = exerciseTimers.deadlines
@@ -40,18 +44,18 @@ class RestTimerController(
             // The foreground countdown is process-global. Clear it synchronously before
             // exposing the next account so stale timer state cannot cross that boundary.
             RestTimerState.update(0)
-            RestTimerService.stop(appContext)
+            stopService()
         }
         exerciseTimers.switchAccount(accountKey)
         activeWorkoutTimer.switchAccount(accountKey)
     }
 
     fun start(seconds: Int) {
-        RestTimerService.start(appContext, seconds)
+        startService(seconds)
     }
 
     fun stop() {
-        RestTimerService.stop(appContext)
+        stopService()
     }
 
     internal fun ensureActiveWorkoutTimer(
@@ -65,10 +69,9 @@ class RestTimerController(
         seconds: Int
     ): Boolean {
         if (!activeWorkoutTimer.startRest(accountKey, sessionStartedAt, seconds)) return false
-        return runCatching {
-            RestTimerService.start(appContext, seconds)
-            true
-        }.getOrDefault(false)
+        // The ledger already holds the deadline, so the rest started even if the service did not.
+        runCatching { startService(seconds) }
+        return true
     }
 
     internal fun stopActiveWorkoutRest(
@@ -77,7 +80,7 @@ class RestTimerController(
     ): Boolean {
         if (!activeWorkoutTimer.resume(accountKey, sessionStartedAt)) return false
         return runCatching {
-            RestTimerService.stop(appContext)
+            stopService()
             true
         }.getOrDefault(false)
     }
@@ -92,11 +95,11 @@ class RestTimerController(
             sessionStartedAt,
             deltaSeconds
         ) ?: return null
-        return runCatching {
-            if (remaining > 0) RestTimerService.start(appContext, remaining)
-            else RestTimerService.stop(appContext)
-            remaining
-        }.getOrNull()
+        // The ledger already holds the new deadline; a service failure must not report a failed save.
+        runCatching {
+            if (remaining > 0) startService(remaining) else stopService()
+        }
+        return remaining
     }
 
     internal fun resumeActiveWorkoutRestIfExpired(
@@ -123,7 +126,7 @@ class RestTimerController(
         }.getOrDefault(false)
         val foregroundCleared = if (accountSwitchTracker.isBoundTo(expectedAccountKey)) {
             RestTimerState.update(0)
-            runCatching { RestTimerService.stop(appContext) }.isSuccess
+            runCatching { stopService() }.isSuccess
         } else {
             true
         }
@@ -143,7 +146,7 @@ class RestTimerController(
         }.getOrDefault(false)
         val foregroundCleared = if (accountSwitchTracker.isBoundTo(expectedAccountKey)) {
             RestTimerState.update(0)
-            runCatching { RestTimerService.stop(appContext) }.isSuccess
+            runCatching { stopService() }.isSuccess
         } else {
             true
         }
