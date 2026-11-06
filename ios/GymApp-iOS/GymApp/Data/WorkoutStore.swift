@@ -2527,7 +2527,7 @@ public final class WorkoutStore: ObservableObject {
                 guard let name,
                       name == name.gymTrimmed,
                       !name.isEmpty,
-                      name.count <= limits.maximumExerciseNameLength,
+                      name.unicodeScalars.count <= limits.maximumExerciseNameLength,
                       name.utf8.count <= limits.maximumExerciseNameBytes else {
                     throw WorkoutStoreError.malformedBackup(
                         "The legacy PWA compatibility catalog is invalid."
@@ -2735,7 +2735,7 @@ public final class WorkoutStore: ObservableObject {
             for (name, rawMuscles) in mappings {
                 guard name == name.gymTrimmed,
                       !name.isEmpty,
-                      name.count <= limits.maximumExerciseNameLength,
+                      name.unicodeScalars.count <= limits.maximumExerciseNameLength,
                       name.utf8.count <= limits.maximumExerciseNameBytes,
                       let muscles = rawMuscles as? [Any],
                       muscles.count <= 32 else {
@@ -2881,7 +2881,7 @@ public final class WorkoutStore: ObservableObject {
                 guard let note = note as? String,
                       note == note.gymTrimmed,
                       !note.isEmpty,
-                      note.count <= limits.maximumNoteLength,
+                      note.unicodeScalars.count <= limits.maximumNoteLength,
                       note.utf8.count <= limits.maximumNoteBytes else {
                     return false
                 }
@@ -2951,7 +2951,7 @@ public final class WorkoutStore: ObservableObject {
         guard Set(exercise.keys).isSubset(of: allowedKeys),
               exercise.keys.contains("name"),
               let name = exercise["name"] as? String,
-              name.count <= limits.maximumExerciseNameLength,
+              name.unicodeScalars.count <= limits.maximumExerciseNameLength,
               name.utf8.count <= limits.maximumExerciseNameBytes else {
             return nil
         }
@@ -3272,7 +3272,7 @@ public final class WorkoutStore: ObservableObject {
             }
             let name = rawName.gymTrimmed
             guard !name.isEmpty else { return nil }
-            guard name.count <= limits.maximumExerciseNameLength else {
+            guard name.unicodeScalars.count <= limits.maximumExerciseNameLength else {
                 throw WorkoutStoreError.importLimitExceeded("exercise name length")
             }
             if let catalogKey,
@@ -3336,7 +3336,7 @@ public final class WorkoutStore: ObservableObject {
             let rawNote = session.note?.gymTrimmed
             if let rawNote,
                (rawNote.utf8.count > limits.maximumNoteBytes ||
-                rawNote.count > limits.maximumNoteLength) {
+                rawNote.unicodeScalars.count > limits.maximumNoteLength) {
                 throw WorkoutStoreError.importLimitExceeded("note length")
             }
             let note = rawNote?.isEmpty == false ? rawNote : nil
@@ -4099,7 +4099,7 @@ public final class WorkoutStore: ObservableObject {
             }
             if let note = session.note {
                 guard note.utf8.count <= limits.maximumNoteBytes,
-                      note.count <= limits.maximumNoteLength else {
+                      note.unicodeScalars.count <= limits.maximumNoteLength else {
                     throw WorkoutStoreError.importLimitExceeded("note length")
                 }
             }
@@ -4532,7 +4532,7 @@ public final class WorkoutStore: ObservableObject {
         limits: BackupImportLimits
     ) throws {
         guard utf8Length(of: name, isAtMost: limits.maximumExerciseNameBytes),
-              name.count <= limits.maximumExerciseNameLength else {
+              name.unicodeScalars.count <= limits.maximumExerciseNameLength else {
             throw WorkoutStoreError.importLimitExceeded("exercise name length")
         }
         if let catalogKey,
@@ -4572,7 +4572,7 @@ public final class WorkoutStore: ObservableObject {
         }
         let cleaned = name.gymTrimmed
         guard !cleaned.isEmpty,
-              cleaned.count <= maximumExerciseNameLength,
+              cleaned.unicodeScalars.count <= maximumExerciseNameLength,
               !cleaned.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
             throw WorkoutStoreError.invalidExerciseName
         }
@@ -4588,7 +4588,7 @@ public final class WorkoutStore: ObservableObject {
             throw WorkoutStoreError.invalidWorkout("The note is too long.")
         }
         let cleaned = note.gymTrimmed
-        guard cleaned.count <= maximumNoteLength else {
+        guard cleaned.unicodeScalars.count <= maximumNoteLength else {
             throw WorkoutStoreError.invalidWorkout("The note is too long.")
         }
         return cleaned.isEmpty ? nil : cleaned

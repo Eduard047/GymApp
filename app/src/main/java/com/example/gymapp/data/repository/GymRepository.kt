@@ -586,16 +586,6 @@ class GymRepository(
             }
         }
 
-    suspend fun updateExercise(exercise: ExerciseEntity) {
-        require(exercise.name.length <= WorkoutDataLimits.MAX_EXERCISE_NAME_LENGTH * 2) {
-            "Exercise name is outside the supported length."
-        }
-        require(WorkoutDataLimits.isValidExerciseName(exercise.name.trim())) {
-            "Exercise name is outside the supported length."
-        }
-        exerciseDao.update(exercise)
-    }
-
     suspend fun renameExercise(exercise: ExerciseEntity, newName: String) {
         require(BuiltInExerciseCatalog.inferKey(exercise.name) == null) {
             "Built-in exercises cannot be renamed."

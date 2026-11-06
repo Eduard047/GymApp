@@ -1283,6 +1283,27 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(relaunchedID, firstID)
     }
 
+    func testExerciseNameLimitCountsUnicodeScalarsLikeAndroid() throws {
+        let storageKey = "exercise-name-scalar-limit"
+        let store = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: try temporaryDirectory(named: storageKey)
+        )
+        // 100 grapheme clusters, 200 Unicode scalars (decomposed "и" + breve).
+        let decomposed = String(repeating: "и\u{0306}", count: 100)
+        XCTAssertEqual(decomposed.count, 100)
+        XCTAssertEqual(decomposed.unicodeScalars.count, 200)
+        XCTAssertThrowsError(try store.addExercise(name: decomposed)) { error in
+            guard case WorkoutStoreError.invalidExerciseName = error else {
+                return XCTFail("Expected invalidExerciseName, got \(error)")
+            }
+        }
+
+        let atLimit = String(repeating: "и\u{0306}", count: 80)
+        XCTAssertEqual(atLimit.unicodeScalars.count, 160)
+        XCTAssertEqual(try store.addExercise(name: atLimit).name, atLimit)
+    }
+
     func testOfflineProfileLimitMatchesMobileContractWithoutPartialMutation() throws {
         let keychain = InMemoryKeychainStore()
         let defaults = temporaryDefaults(named: "offline-profile-limit")
