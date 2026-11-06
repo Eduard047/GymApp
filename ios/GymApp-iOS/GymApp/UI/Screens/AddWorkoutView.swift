@@ -575,7 +575,7 @@ struct AddWorkoutView: View {
         }
         .sheet(isPresented: $showingPreviousPicker) {
             PreviousWorkoutPicker(
-                workouts: store.workouts.sorted { $0.date > $1.date },
+                workouts: WorkoutStore.pickableWorkoutTemplates(from: store.workouts),
                 exerciseName: exerciseName,
                 onSelect: applyPreviousWorkout
             )

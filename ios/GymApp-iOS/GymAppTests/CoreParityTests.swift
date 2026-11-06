@@ -1013,6 +1013,45 @@ final class CoreParityTests: XCTestCase {
         )
     }
 
+    func testPreviousWorkoutPickerSkipsActivityOnlySessionsNewestFirstAndCapsAtSixty() {
+        let exerciseID = UUID()
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        func workout(_ offset: Int, sets: Int, duration: Int? = nil) -> WorkoutSession {
+            WorkoutSession(
+                date: base.addingTimeInterval(TimeInterval(offset) * 86_400),
+                durationSeconds: duration,
+                exercises: sets == 0 ? [] : [
+                    WorkoutExercise(
+                        exerciseID: exerciseID,
+                        sets: (0..<sets).map { _ in WorkoutSet(weight: 50, reps: 5) }
+                    )
+                ]
+            )
+        }
+
+        let activityOnly = workout(500, sets: 0, duration: 1_800)
+        let emptyExercise = WorkoutSession(
+            date: base.addingTimeInterval(501 * 86_400),
+            exercises: [WorkoutExercise(exerciseID: exerciseID, sets: [])]
+        )
+        let lifting = (0..<70).map { workout($0, sets: 3) }
+        let input = ([activityOnly, emptyExercise] + lifting).shuffled()
+
+        let picked = WorkoutStore.pickableWorkoutTemplates(from: input)
+
+        XCTAssertEqual(picked.count, WorkoutStore.workoutTemplatePickerLimit)
+        XCTAssertEqual(WorkoutStore.workoutTemplatePickerLimit, 60)
+        XCTAssertTrue(picked.allSatisfy { $0.setCount > 0 })
+        XCTAssertFalse(picked.contains { $0.id == activityOnly.id || $0.id == emptyExercise.id })
+        XCTAssertEqual(picked.map(\.date), picked.map(\.date).sorted(by: >))
+        XCTAssertEqual(picked.first?.id, lifting[69].id)
+        XCTAssertEqual(picked.last?.id, lifting[10].id)
+        XCTAssertEqual(
+            WorkoutStore.pickableWorkoutTemplates(from: [activityOnly, emptyExercise]).count,
+            0
+        )
+    }
+
     func testHistoricalMonthIgnoresSessionsAfterThePeriodEnd() throws {
         let calendar = utcCalendar()
         let dates = [

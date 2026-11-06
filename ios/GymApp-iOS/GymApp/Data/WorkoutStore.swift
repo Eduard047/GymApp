@@ -286,6 +286,23 @@ public final class WorkoutStore: ObservableObject {
             .max { $0.date < $1.date }
     }
 
+    /// Maximum rows in the "copy previous workout" picker (matches Android `WORKOUT_TEMPLATE_LIMIT`).
+    public static let workoutTemplatePickerLimit = 60
+
+    /// Workouts the "copy previous workout" picker may offer: only sessions with recorded sets
+    /// (activity-only Garmin sessions would wipe the draft), newest first, capped like Android.
+    public static func pickableWorkoutTemplates(
+        from workouts: [WorkoutSession],
+        limit: Int = workoutTemplatePickerLimit
+    ) -> [WorkoutSession] {
+        Array(
+            workouts
+                .filter { $0.setCount > 0 }
+                .sorted { $0.date > $1.date }
+                .prefix(limit)
+        )
+    }
+
     private let directoryURL: URL
     private let fileManager: FileManager
 
