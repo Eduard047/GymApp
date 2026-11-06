@@ -2281,6 +2281,18 @@ svg.filled-icon.small-icon {
 
 .auth-offline-row.embedded { margin-top: 16px; }
 
+/* Sign-in sits behind one 56px row under the store downloads; the chevron is the only motion. */
+.auth-access { display: grid; gap: 16px; min-width: 0; }
+.auth-access-body { display: grid; gap: 16px; min-width: 0; }
+.auth-access-body[hidden] { display: none; }
+.auth-disclosure-card { padding: 0 16px; }
+.auth-disclosure-toggle { min-height: 56px; padding-block: 6px; border-radius: var(--radius-sm); }
+.auth-disclosure-toggle .settings-row-trailing svg { transition: transform 160ms ease; }
+.auth-disclosure-toggle[aria-expanded="true"] .settings-row-trailing svg { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) {
+  .auth-disclosure-toggle .settings-row-trailing svg { transition: none; }
+}
+
 .auth-divider {
   height: 1px;
   margin: 0 0 4px;
@@ -2503,6 +2515,14 @@ svg.filled-icon.small-icon {
   height: 25px;
   color: var(--sage);
   fill: currentColor;
+}
+
+.store-download-icon.store-download-icon-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .store-download-link > span {
