@@ -5,14 +5,14 @@ import test from "node:test";
 const expected = Object.freeze({
   marketingVersion: "4.2.3",
   androidVersionCode: "2000432815",
-  iosMarketingVersion: "4.2.0",
+  iosMarketingVersion: "4.2.1",
   iosBuildNumber: "54",
   garminVersion: "4.2.4",
   pwaBundle: "app.v147.js",
   pwaStyleBundle: "styles.v118.css",
   pwaRussianBundle: "russian-text.v94.js",
   pwaLiveWorkoutBundle: "live-workout.v3.js",
-  pwaCache: "gym-pwa-v198",
+  pwaCache: "gym-pwa-v199",
 });
 
 const [
