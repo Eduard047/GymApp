@@ -12,7 +12,7 @@ const expected = Object.freeze({
   pwaStyleBundle: "styles.v118.css",
   pwaRussianBundle: "russian-text.v94.js",
   pwaLiveWorkoutBundle: "live-workout.v3.js",
-  pwaCache: "gym-pwa-v197",
+  pwaCache: "gym-pwa-v198",
 });
 
 const [

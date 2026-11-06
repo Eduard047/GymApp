@@ -350,12 +350,12 @@ test("static fetches use the shell or content-versioned media cache exactly", as
   });
   const handler = worker.listeners.get("fetch");
 
-  assert.equal(await (await responsePromiseFor(handler, `${scope}app.v147.js`)).text(), "gym-pwa-v197");
+  assert.equal(await (await responsePromiseFor(handler, `${scope}app.v147.js`)).text(), "gym-pwa-v198");
   assert.equal(
     await (await responsePromiseFor(handler, `${scope}exercise-media/bench_press_0.jpg`)).text(),
     "gym-pwa-media-v1-a93d1c50c244"
   );
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v197", "gym-pwa-media-v1-a93d1c50c244"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v198", "gym-pwa-media-v1-a93d1c50c244"]);
 });
 
 test("media cache version is coupled to the exact public content bytes", () => {
@@ -773,7 +773,7 @@ test("offline cached documents retain their exact security policy", async () => 
     const policy = response.headers.get("Content-Security-Policy");
 
     assert.equal(await response.text(), "cached");
-    assert.deepEqual(worker.openedCaches, ["gym-pwa-v197"]);
+    assert.deepEqual(worker.openedCaches, ["gym-pwa-v198"]);
     assert.match(policy, /default-src 'none'/);
     assert.match(policy, /connect-src 'none'/);
     assert.match(policy, /worker-src 'none'/);
@@ -794,7 +794,7 @@ test("install reloads one internally consistent fully served version before prom
   handler({ waitUntil(value) { installPromise = value; } });
   await installPromise;
 
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v197", "gym-pwa-media-v1-a93d1c50c244"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v198", "gym-pwa-media-v1-a93d1c50c244"]);
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/exercise-search-vocabulary.v1.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v147.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/shared-workout.v66.js")));
@@ -825,7 +825,7 @@ test("a shell update reuses the complete content-versioned media cache", async (
   worker.listeners.get("install")({ waitUntil(value) { installPromise = value; } });
   await installPromise;
 
-    assert.deepEqual(worker.openedCaches, ["gym-pwa-v197", "gym-pwa-media-v1-a93d1c50c244"]);
+    assert.deepEqual(worker.openedCaches, ["gym-pwa-v198", "gym-pwa-media-v1-a93d1c50c244"]);
   assert.equal(
     worker.addedAssets.some(asset => /\/exercise-media\/|\/(?:icon|apple-touch-icon|favicon-32)/.test(asset.url)),
     false
@@ -883,7 +883,7 @@ test("activation deletes the entire retirement cache, claims clients, and preser
   );
   assert.equal(worker.claimCount(), 1);
   assert.equal(worker.matchAllCount(), 1);
-  assert.deepEqual(navigated, ["https://example.test/GymApp/?restored=1&gymapp_sw_refresh=v197"]);
+  assert.deepEqual(navigated, ["https://example.test/GymApp/?restored=1&gymapp_sw_refresh=v198"]);
   assert.deepEqual(worker.pushBindingValues.get("current"), binding);
   assert.doesNotMatch(workerSource, /localStorage\.(?:clear|removeItem|setItem)|indexedDB\.deleteDatabase/);
 });
@@ -917,7 +917,7 @@ test("activation schedules at most 32 refresh navigations without waiting for th
   assert.equal(worker.claimCount(), 1);
 });
 
-test("an old controlled client advances to one consistent v197 document and bundle set", async () => {
+test("an old controlled client advances to one consistent v198 document and bundle set", async () => {
   const scope = "https://example.test/GymApp/";
   const oldIndex = '<script src="./russian-text.v78.js"></script><script src="./app.v86.js"></script>';
   const navigated = [];
@@ -950,7 +950,7 @@ test("an old controlled client advances to one consistent v197 document and bund
           (url.pathname === "/GymApp/" || url.pathname === "/GymApp/index.html")) {
         return new Response(oldIndex, { status: 200 });
       }
-      if (cacheName === "gym-pwa-v197" && url.pathname === "/GymApp/app.v147.js") {
+      if (cacheName === "gym-pwa-v198" && url.pathname === "/GymApp/app.v147.js") {
         return new Response("current-app-v106", {
           status: 200,
           headers: { "Content-Type": "text/javascript; charset=utf-8" }
@@ -968,7 +968,7 @@ test("an old controlled client advances to one consistent v197 document and bund
   await activationPromise;
 
   assert.deepEqual(worker.deletedCaches, ["gym-pwa-v86", "gym-pwa-v138", "gym-pwa-v139"]);
-  assert.deepEqual(navigated, [`${scope}?gymapp_sw_refresh=v197`]);
+  assert.deepEqual(navigated, [`${scope}?gymapp_sw_refresh=v198`]);
 
   const fetchHandler = worker.listeners.get("fetch");
   const documentResponse = await responsePromiseFor(fetchHandler, navigated[0], {
@@ -999,7 +999,7 @@ test("the current app removes only the one-time service-worker refresh marker", 
     URL,
     window: {
       location: {
-        href: "https://example.test/GymApp/?utm_source=installed&gymapp_sw_refresh=v197#today"
+        href: "https://example.test/GymApp/?utm_source=installed&gymapp_sw_refresh=v198#today"
       }
     },
     history: {
@@ -1015,7 +1015,7 @@ test("the current app removes only the one-time service-worker refresh marker", 
   ]]);
 
   context.window.location.href =
-    "https://example.test/GymApp/?gymapp_sw_refresh=v197&gymapp_sw_refresh=v142";
+    "https://example.test/GymApp/?gymapp_sw_refresh=v198&gymapp_sw_refresh=v142";
   vm.runInNewContext(`${functionSource}; scrubServiceWorkerRefreshParameter();`, context);
   assert.equal(replacements.length, 1, "ambiguous external markers must not rewrite the URL");
   assert.ok(
@@ -1126,7 +1126,7 @@ test("a sibling github.io project scope never enters GymApp legacy cleanup", asy
   await installPromise;
 
   assert.equal(worker.skipWaitingCount(), 1);
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v197", "gym-pwa-media-v1-a93d1c50c244"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v198", "gym-pwa-media-v1-a93d1c50c244"]);
   assert.equal(worker.claimCount(), 0);
   assert.equal(isIntercepted(worker.listeners.get("fetch"), scope), true);
 });

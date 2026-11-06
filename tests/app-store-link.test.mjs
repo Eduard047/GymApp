@@ -51,3 +51,8 @@ test("the bundle served by index.html carries the App Store link", async () => {
   assert.equal(bundle.includes(`const APP_STORE_APP_URL = "${APP_STORE_URL}";`), true);
   assert.equal(bundle, app, "the shipped bundle is a byte copy of the working file");
 });
+
+test("the web app shows the Safari smart banner for the App Store app", async () => {
+  const html = await readFile("pwa/index.html", "utf8");
+  assert.match(html, /<meta name="apple-itunes-app" content="app-id=6797458372">/);
+});

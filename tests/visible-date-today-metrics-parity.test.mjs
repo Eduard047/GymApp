@@ -270,13 +270,13 @@ test("PWA date and Today helpers implement the shared localized, history-only co
     styleBundle: "styles.v118.css",
     russianBundle: "russian-text.v94.js",
     liveWorkoutBundle: "live-workout.v3.js",
-    serviceWorkerCache: "gym-pwa-v197"
+    serviceWorkerCache: "gym-pwa-v198"
   });
   assert.match(pwaIndex, /src="\.\/app\.v147\.js"/);
   assert.match(pwaIndex, /href="\.\/styles\.v118\.css"/);
   assert.match(pwaIndex, /src="\.\/russian-text\.v94\.js"/);
   assert.match(pwaIndex, /src="\.\/live-workout\.v3\.js"/);
-  assert.match(pwaServiceWorker, /CACHE_VERSION = "v197"/);
+  assert.match(pwaServiceWorker, /CACHE_VERSION = "v198"/);
   assert.match(pwaServiceWorker, /"\.\/app\.v147\.js"/);
   assert.match(pwaServiceWorker, /"\.\/styles\.v118\.css"/);
   assert.match(pwaServiceWorker, /"\.\/russian-text\.v94\.js"/);
