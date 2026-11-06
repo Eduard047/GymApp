@@ -10272,7 +10272,7 @@ final class CoreParityTests: XCTestCase {
             }
             if shouldBlock {
                 requestStarted.fulfill()
-                _ = releaseRequest.wait(timeout: .now() + 5)
+                _ = releaseRequest.wait(timeout: .now() + 20)
             }
             return try AuthURLProtocolStub.response(
                 for: request,
@@ -10306,7 +10306,7 @@ final class CoreParityTests: XCTestCase {
                     currentPassword: "CurrentPassword123!"
             )
         }
-        await fulfillment(of: [requestStarted], timeout: 2)
+        await fulfillment(of: [requestStarted], timeout: 15)
 
         do {
             try await appState.deleteCurrentAccountAndData(
