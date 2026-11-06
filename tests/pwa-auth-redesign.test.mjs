@@ -26,6 +26,7 @@ function authContext(overrides = {}) {
   const context = vm.createContext({
     state: { language: "en" },
     authMode: "login",
+    authPanelExpanded: false,
     authNotice: null,
     authRequestInProgress: false,
     pendingEmailConfirmation: null,
@@ -208,12 +209,12 @@ test("legal links stay single-line 44px targets in one row or a stacked list", (
   assert.doesNotMatch(stylesSource, /\.auth-secondary-|\.auth-theme-card/);
 });
 
-test("store card is always visible between the auth panel and the legal card", () => {
+test("store card is always visible above the sign-in disclosure and the legal card", () => {
   const login = vm.runInContext("loginScreen()", authContext());
   const panel = login.indexOf('class="panel highlighted auth-panel"');
   const store = login.indexOf('<section class="store-card">');
   const legal = login.indexOf('class="panel auth-legal-card"');
-  assert.ok(panel >= 0 && store > panel && legal > store, "auth panel, store card, legal card order");
+  assert.ok(panel >= 0 && store >= 0 && store < panel && legal > panel, "store card, auth panel, legal card order");
   const offline = vm.runInContext("loginScreen()", authContext({ remoteAuthEnabled: () => false }));
   assert.ok(offline.indexOf('<section class="store-card">') < offline.indexOf('class="panel auth-legal-card"'));
 });

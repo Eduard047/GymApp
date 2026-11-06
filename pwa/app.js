@@ -235,6 +235,7 @@ const icons = {
   arrowDown: "M12 5v14M5 12l7 7 7-7",
   grip: "M9 4.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM15 4.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM9 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM15 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM9 16.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM15 16.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z",
   chevronDown: "M6 9l6 6 6-6",
+  smartphone: "M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM10.5 5.5h3M10.5 18.5h3",
   weightlifter: "M1.5 2h2v5.6h-2zM20.5 2h2v5.6h-2zM3.5 3.9h17v1.7h-17zM6 5.6h1.7L10 10H8.3zM18 5.6h-1.7L14 10h1.7zM12 6.6a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2zM9.5 10h5v6h-5zM9.5 16h2.3l-.8 6H8.6zM12.2 16h2.3l.9 6H13z"
 };
 
@@ -1408,6 +1409,8 @@ let exerciseMuscleFilter = "all";
 let exerciseSortMode = "name";
 let exerciseFavoritesOnly = false;
 let authMode = "login";
+// The sign-in form sits behind a disclosure under the store downloads; this survives full re-renders.
+let authPanelExpanded = false;
 let authNotice = null;
 let pendingEmailConfirmation = null;
 let authRequestInProgress = false;
@@ -1456,6 +1459,7 @@ function clearSensitiveAuthDrafts() {
 
 function clearAuthDrafts() {
   authMode = "login";
+  authPanelExpanded = false;
   authNotice = null;
   pendingEmailConfirmation = null;
   authDrafts.login = { email: "", password: "" };
@@ -11541,9 +11545,8 @@ function loginScreen() {
         <div class="auth-header-actions">${authThemeToggleMarkup()}${languageSelectorMarkup()}</div>
       </header>
       ${pendingSharedWorkout ? `<section class="panel highlighted shared-workout-pending"><h2>${tx("Shared workout ready", "Спільне тренування готове")}</h2><p>${tx("Sign in or enter offline mode to review the plan. It will not replace or save anything automatically.", "Увійди або відкрий офлайн-режим, щоб переглянути план. Він нічого не замінить і не збереже автоматично.")}</p>${sharedWorkoutPreviewMarkup(pendingSharedWorkout)}</section>` : ""}
-      ${remotePanel}
-      ${remotePanel ? "" : offlineLinkMarkup(false)}
       ${storeDownloadPanel()}
+      ${remotePanel ? authAccessMarkup(remotePanel) : offlineLinkMarkup(false)}
       <section class="panel auth-legal-card"><p>${tx("Workout data is handled under the Privacy Policy.", "Дані тренувань обробляються відповідно до Політики конфіденційності.")}</p><nav class="auth-links" aria-label="${txAttr("GymApp links", "Посилання GymApp")}"><a class="auth-link" href="${PRIVACY_URL}" target="_blank" rel="noopener noreferrer">${svg("privacy", "small-icon")}<span>${tx3("Privacy Policy", "Політика конфіденційності", "Политика конфиденциальности")}</span></a><a class="auth-link" href="${SUPPORT_URL}" target="_blank" rel="noopener noreferrer">${svg("help", "small-icon")}<span>${tx3("Support", "Підтримка", "Поддержка")}</span></a></nav></section>
       ${modal ? modalMarkup() : ""}
     </main>
@@ -11553,6 +11556,24 @@ function loginScreen() {
 function offlineAccountSheetMarkup() {
   const accounts = accountList().filter(account => !account.remote);
   return `<div class="offline-account-sheet"><h2 id="offline-profile-title">${tx("Offline profile", "Офлайн-профіль")}</h2><p class="muted">${tx("Workouts stay only on this device until you export them; cloud sync and recovery are unavailable.", "Тренування зберігаються лише на цьому пристрої, доки ти їх не експортуєш; хмарна синхронізація й відновлення недоступні.")}</p><label>${tx("Profile name", "Ім’я профілю")}<input id="offline-profile-name" autocomplete="nickname" maxlength="32" placeholder="Local"></label><div class="actions vertical"><button class="button full" data-action="continue-offline" data-modal-initial-focus>${tx("Continue offline", "Продовжити офлайн")}</button><button type="button" class="auth-quiet-link" data-action="close-modal">${tx("Cancel", "Скасувати")}</button></div>${accounts.length ? `<div class="saved-offline-profiles"><h3>${tx("Saved profiles", "Збережені профілі")}</h3>${accounts.map(account => `<button class="button secondary full saved-offline-profile" data-action="resume-offline-account" data-account-id="${escapeAttr(account.id)}"><span>${escapeHtml(account.name)}</span><span aria-hidden="true">›</span></button>`).join("")}</div>` : ""}</div>`;
+}
+
+function authPanelForcedOpen() {
+  const standalone = window.matchMedia?.("(display-mode: standalone)")?.matches === true ||
+    (typeof navigator !== "undefined" && navigator.standalone === true);
+  return Boolean(authNotice?.text) || authMode === "forgot" || Boolean(pendingEmailConfirmation) ||
+    Boolean(pendingSharedWorkout) || standalone;
+}
+
+// Store downloads come first; the sign-in form stays behind one tappable row until it is asked for
+// or something needs the visitor's attention (notice, reset, confirmation, shared plan, installed app).
+function authAccessMarkup(panels) {
+  if (authPanelForcedOpen()) {
+    authPanelExpanded = true;
+    return `<div class="auth-access">${panels}</div>`;
+  }
+  const expanded = authPanelExpanded;
+  return `<div class="auth-access"><section class="panel auth-disclosure-card"><button type="button" id="auth-panel-toggle" class="settings-row auth-disclosure-toggle" data-action="toggle-auth-panel" aria-expanded="${expanded}" aria-controls="auth-panel-body"><span class="settings-row-icon">${svg("person")}</span><span class="settings-row-text"><strong>${tx3("Sign in to the web version", "Увійти у вебверсію", "Войти в веб-версию")}</strong></span><span class="settings-row-trailing" aria-hidden="true">${svg("chevronDown")}</span></button></section><div id="auth-panel-body" class="auth-access-body"${expanded ? "" : " hidden"}>${panels}</div></div>`;
 }
 
 // Password input with an overlaid 44x44 visibility toggle; the field keeps its 56px height.
@@ -11579,8 +11600,8 @@ function storeDownloadPanel() {
       <p class="muted">${tx3("Install the app for iPhone or Android, or add the companion app to your Garmin watch.", "Встанови застосунок для iPhone або Android чи додай супутній застосунок на годинник Garmin.", "Установи приложение для iPhone или Android или добавь сопутствующее приложение на часы Garmin.")}</p>
     </div>
     <div class="store-download-actions">
-      <a class="store-download-link" href="${escapeAttr(APP_STORE_APP_URL)}" target="_blank" rel="noopener noreferrer">${svg("phone", "store-download-icon")}<span><small>${tx3("Download on the", "Завантажити в", "Скачать в")}</small><strong>App Store</strong></span></a>
-      <a class="store-download-link" href="${escapeAttr(GOOGLE_PLAY_APP_URL)}" target="_blank" rel="noopener noreferrer">${svg("fitness", "store-download-icon")}<span><small>${tx3("Get it on", "Завантажити в", "Скачать в")}</small><strong>Google Play</strong></span></a>
+      <a class="store-download-link" href="${escapeAttr(APP_STORE_APP_URL)}" target="_blank" rel="noopener noreferrer">${svg("smartphone", "store-download-icon store-download-icon-line")}<span><small>${tx3("Download on the", "Завантажити в", "Скачать в")}</small><strong>App Store</strong></span></a>
+      <a class="store-download-link" href="${escapeAttr(GOOGLE_PLAY_APP_URL)}" target="_blank" rel="noopener noreferrer">${svg("smartphone", "store-download-icon store-download-icon-line")}<span><small>${tx3("Get it on", "Завантажити в", "Скачать в")}</small><strong>Google Play</strong></span></a>
       <a class="store-download-link" href="${escapeAttr(garminStoreAppLink())}" target="_blank" rel="noopener noreferrer">${svg("watch", "store-download-icon")}<span><small>${tx3("Available on", "Доступно в", "Доступно в")}</small><strong>Garmin Connect IQ</strong></span></a>
     </div>
   </section>`;
@@ -20113,8 +20134,8 @@ function accountSettingsSheetMarkup() {
   const links = settingsPanelMarkup([
     settingsRowMarkup({ icon: "hand", title: tx3("Privacy policy", "Політика конфіденційності", "Политика конфиденциальности"), href: PRIVACY_URL, trailing: external }),
     settingsRowMarkup({ icon: "help", title: tx3("Support", "Підтримка", "Поддержка"), href: SUPPORT_URL, trailing: external }),
-    settingsRowMarkup({ icon: "phone", title: tx3("App Store", "App Store", "App Store"), href: APP_STORE_APP_URL, trailing: external }),
-    settingsRowMarkup({ icon: "phone", title: tx3("Google Play", "Google Play", "Google Play"), href: GOOGLE_PLAY_APP_URL, trailing: external }),
+    settingsRowMarkup({ icon: "smartphone", title: tx3("App Store", "App Store", "App Store"), href: APP_STORE_APP_URL, trailing: external }),
+    settingsRowMarkup({ icon: "smartphone", title: tx3("Google Play", "Google Play", "Google Play"), href: GOOGLE_PLAY_APP_URL, trailing: external }),
     settingsRowMarkup({ icon: "watch", title: tx3("Garmin Connect IQ", "Garmin Connect IQ", "Garmin Connect IQ"), href: garminStoreAppLink(), trailing: external })
   ], "account-links-panel");
   const promise = `<p class="account-privacy-caption">${svg("privacy", "small-icon")}<span>${tx3("GymApp has no advertising, cross-app tracking, or sale of personal data.", "У GymApp немає реклами, міжзастосункового відстеження чи продажу персональних даних.", "У GymApp нет рекламы, межприменительного отслеживания или продажи персональных данных.")}</span></p>`;
@@ -28814,6 +28835,18 @@ async function handleAction(action, el) {
     authMode = ["login", "signup", "forgot"].includes(el.dataset.mode) ? el.dataset.mode : "login";
     authNotice = null;
     return render();
+  }
+  if (action === "toggle-auth-panel") {
+    authPanelExpanded = !authPanelExpanded;
+    render();
+    const expanded = authPanelExpanded;
+    requestAnimationFrame(() => {
+      const target = expanded
+        ? app.querySelector('#auth-panel-body input:not([type="hidden"])')
+        : app.querySelector("#auth-panel-toggle");
+      (target || app.querySelector("#auth-panel-toggle"))?.focus();
+    });
+    return true;
   }
   if (action === "remote-login") return remoteLogin(false);
   if (action === "remote-signup") return remoteLogin(true);
