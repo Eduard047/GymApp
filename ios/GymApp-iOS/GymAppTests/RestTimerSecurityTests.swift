@@ -397,6 +397,68 @@ final class RestTimerSecurityTests: XCTestCase {
         )
     }
 
+    func testColdStartDropsPersistedTimerThatExpiredRelativeToInjectedClock() async throws {
+        let defaults = temporaryDefaults()
+        let fingerprint = RestTimerManager.ownerFingerprint(for: "local_account-a")
+        let clock = RestTimerTestClock()
+        let first = RestTimerManager(
+            notificationCenter: RecordingRestNotificationCenter(),
+            defaults: defaults,
+            currentDateProvider: { clock.date }
+        )
+        first.bindToAccount(ownerFingerprint: fingerprint)
+        await first.start(id: "expired-exercise", seconds: 60, title: "Exercise").value
+        XCTAssertNotNil(first.timers["expired-exercise"])
+        XCTAssertNotNil(defaults.data(forKey: "rest-timers-v1"))
+
+        clock.advance(by: 120)
+        let restored = RestTimerManager(
+            notificationCenter: RecordingRestNotificationCenter(),
+            defaults: defaults,
+            currentDateProvider: { clock.date }
+        )
+        restored.bindToAccount(ownerFingerprint: fingerprint)
+
+        XCTAssertTrue(restored.timers.isEmpty)
+        let persisted = defaults.data(forKey: "rest-timers-v1")
+        XCTAssertFalse(
+            persisted.map { String(decoding: $0, as: UTF8.self).contains("expired-exercise") } ?? false,
+            "An expired timer must not remain in persisted storage after cold-start restore."
+        )
+    }
+
+    func testColdStartRestoresTimerUsingInjectedClockInsteadOfSystemClock() async throws {
+        let defaults = temporaryDefaults()
+        let fingerprint = RestTimerManager.ownerFingerprint(for: "local_account-a")
+        let clock = RestTimerTestClock()
+        // Move the fake clock years past the real date: the persisted deadline then
+        // lies far beyond the 30-minute window when measured against `Date()`, and is
+        // only valid when measured against the injected clock.
+        clock.advance(by: 1_000_000_000)
+        let first = RestTimerManager(
+            notificationCenter: RecordingRestNotificationCenter(),
+            defaults: defaults,
+            currentDateProvider: { clock.date }
+        )
+        first.bindToAccount(ownerFingerprint: fingerprint)
+        await first.start(id: "future-clock-exercise", seconds: 300, title: "Exercise").value
+        let original = try XCTUnwrap(first.timers["future-clock-exercise"])
+        XCTAssertGreaterThan(original.endDate.timeIntervalSinceNow, 30 * 60)
+
+        clock.advance(by: 100)
+        let restored = RestTimerManager(
+            notificationCenter: RecordingRestNotificationCenter(),
+            defaults: defaults,
+            currentDateProvider: { clock.date }
+        )
+        restored.bindToAccount(ownerFingerprint: fingerprint)
+
+        let timer = try XCTUnwrap(restored.timers["future-clock-exercise"])
+        XCTAssertEqual(timer, original)
+        XCTAssertEqual(timer.endDate.timeIntervalSince(clock.date), 200, accuracy: 0.001)
+        XCTAssertEqual(timer.remaining(at: clock.date), 200)
+    }
+
     private func persistOwnedTimer(
         id: String,
         seconds: Int,

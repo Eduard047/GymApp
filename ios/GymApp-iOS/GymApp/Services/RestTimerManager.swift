@@ -130,6 +130,7 @@ final class RestTimerManager: ObservableObject {
         hasBoundAccount = true
         activeOwnerFingerprint = ownerFingerprint
         notificationLifecycleGeneration &+= 1
+        let restoreDate = currentDateProvider()
 
         guard !discardPersistedState,
               let ownerFingerprint,
@@ -141,13 +142,13 @@ final class RestTimerManager: ObservableObject {
               persisted.ownerFingerprint == ownerFingerprint,
               persisted.timers.count <= Self.maxPersistedTimers,
               persisted.timers.allSatisfy({ key, state in
-                  key == state.id && Self.isValidPersistedTimer(state)
+                  key == state.id && Self.isValidPersistedTimer(state, now: restoreDate)
               }) else {
             discardAllState(incrementGeneration: false)
             return
         }
 
-        let activeTimers = persisted.timers.filter { $0.value.endDate > currentDateProvider() }
+        let activeTimers = persisted.timers.filter { $0.value.endDate > restoreDate }
         timers = activeTimers
         if activeTimers.count != persisted.timers.count {
             persist()
@@ -409,8 +410,8 @@ final class RestTimerManager: ObservableObject {
         !id.isEmpty && id.utf8.count <= maxTimerIDBytes
     }
 
-    private static func isValidPersistedTimer(_ state: RestTimerState) -> Bool {
-        let remaining = state.endDate.timeIntervalSinceNow
+    private static func isValidPersistedTimer(_ state: RestTimerState, now: Date) -> Bool {
+        let remaining = state.endDate.timeIntervalSince(now)
         return isValidTimerID(state.id) &&
             (5 ... 30 * 60).contains(state.duration) &&
             remaining.isFinite &&
