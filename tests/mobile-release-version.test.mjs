@@ -5,7 +5,7 @@ import test from "node:test";
 const expected = Object.freeze({
   marketingVersion: "4.2.3",
   androidVersionCode: "2000432815",
-  iosMarketingVersion: "4.2.1",
+  iosMarketingVersion: "4.3.0",
   iosBuildNumber: "54",
   garminVersion: "4.2.4",
   pwaBundle: "app.v149.js",
