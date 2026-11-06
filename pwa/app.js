@@ -55,6 +55,7 @@ const PRIVACY_URL = "https://gymapptracker.com/privacy-policy.html";
 const AUTH_REDIRECT_URL = "https://gymapptracker.com/confirmed.html?platform=web";
 const ANDROID_APP_PACKAGE = "com.setforge.gymapp";
 const GOOGLE_PLAY_APP_URL = `https://play.google.com/store/apps/details?id=${ANDROID_APP_PACKAGE}`;
+const APP_STORE_APP_URL = "https://apps.apple.com/app/id6797458372";
 const GARMIN_STORE_APP_URL = "https://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f";
 const CONNECT_IQ_ANDROID_PACKAGE = "com.garmin.connectiq";
 const CONNECT_IQ_GOOGLE_PLAY_URL = `https://play.google.com/store/apps/details?id=${CONNECT_IQ_ANDROID_PACKAGE}`;
@@ -11575,9 +11576,10 @@ function storeDownloadPanel() {
     <div class="store-download-copy">
       <span class="eyebrow">${tx("Official apps", "Офіційні застосунки")}</span>
       <h2 id="store-download-title">${tx("Get GymApp", "Завантажити GymApp")}</h2>
-      <p class="muted">${tx("Install the Android app or add the companion app to your Garmin watch.", "Встанови застосунок для Android або додай супутній застосунок на годинник Garmin.")}</p>
+      <p class="muted">${tx3("Install the app for iPhone or Android, or add the companion app to your Garmin watch.", "Встанови застосунок для iPhone або Android чи додай супутній застосунок на годинник Garmin.", "Установи приложение для iPhone или Android или добавь сопутствующее приложение на часы Garmin.")}</p>
     </div>
     <div class="store-download-actions">
+      <a class="store-download-link" href="${escapeAttr(APP_STORE_APP_URL)}" target="_blank" rel="noopener noreferrer">${svg("phone", "store-download-icon")}<span><small>${tx3("Download on the", "Завантажити в", "Скачать в")}</small><strong>App Store</strong></span></a>
       <a class="store-download-link" href="${escapeAttr(GOOGLE_PLAY_APP_URL)}" target="_blank" rel="noopener noreferrer">${svg("fitness", "store-download-icon")}<span><small>${tx3("Get it on", "Завантажити в", "Скачать в")}</small><strong>Google Play</strong></span></a>
       <a class="store-download-link" href="${escapeAttr(garminStoreAppLink())}" target="_blank" rel="noopener noreferrer">${svg("watch", "store-download-icon")}<span><small>${tx3("Available on", "Доступно в", "Доступно в")}</small><strong>Garmin Connect IQ</strong></span></a>
     </div>
@@ -20111,6 +20113,7 @@ function accountSettingsSheetMarkup() {
   const links = settingsPanelMarkup([
     settingsRowMarkup({ icon: "hand", title: tx3("Privacy policy", "Політика конфіденційності", "Политика конфиденциальности"), href: PRIVACY_URL, trailing: external }),
     settingsRowMarkup({ icon: "help", title: tx3("Support", "Підтримка", "Поддержка"), href: SUPPORT_URL, trailing: external }),
+    settingsRowMarkup({ icon: "phone", title: tx3("App Store", "App Store", "App Store"), href: APP_STORE_APP_URL, trailing: external }),
     settingsRowMarkup({ icon: "phone", title: tx3("Google Play", "Google Play", "Google Play"), href: GOOGLE_PLAY_APP_URL, trailing: external }),
     settingsRowMarkup({ icon: "watch", title: tx3("Garmin Connect IQ", "Garmin Connect IQ", "Garmin Connect IQ"), href: garminStoreAppLink(), trailing: external })
   ], "account-links-panel");

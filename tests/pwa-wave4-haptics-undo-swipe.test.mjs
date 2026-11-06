@@ -13,8 +13,8 @@ const between = (from, to) => {
 };
 
 test("the shipped bundles are byte copies of the working files", async () => {
-  assert.equal(source, await readFile("pwa/app.v145.js", "utf8"));
-  assert.equal(await readFile("pwa/styles.css", "utf8"), await readFile("pwa/styles.v116.css", "utf8"));
+  assert.equal(source, await readFile("pwa/app.v146.js", "utf8"));
+  assert.equal(await readFile("pwa/styles.css", "utf8"), await readFile("pwa/styles.v117.css", "utf8"));
 });
 
 // Haptics gate.
