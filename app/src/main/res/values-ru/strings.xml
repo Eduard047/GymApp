@@ -1664,7 +1664,7 @@
     <string name="editor_add_set_short">+ Подход</string>
     <string name="editor_chip_last_weight">Посл. вес</string>
     <string name="editor_chip_previous">Пред.</string>
-    <string name="editor_chip_plus_step">+2.5</string>
+    <string name="editor_chip_plus_step">+2,5</string>
     <string name="editor_chip_copy">Копия</string>
     <string name="cd_exercise_actions">Действия для «%1$s»</string>
     <string name="cd_weight_for_set">Вес для подхода %1$d</string>

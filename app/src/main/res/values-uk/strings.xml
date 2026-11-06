@@ -199,7 +199,7 @@
     <string name="action_log_set_and_rest">Записати · відпочинок %1$s</string>
     <string name="action_add_set_last_weight">Швидко + Остання</string>
     <string name="action_copy_last_set">Копіювати попередній</string>
-    <string name="action_copy_last_plus">Копіювати +2.5 кг</string>
+    <string name="action_copy_last_plus">Копіювати +2,5 кг</string>
     <string name="action_save_workout">Зберегти тренування</string>
     <string name="action_save_completed_workout">Зберегти як виконане тренування</string>
     <string name="action_delete">Видалити</string>
@@ -1664,7 +1664,7 @@
     <string name="editor_add_set_short">+ Підхід</string>
     <string name="editor_chip_last_weight">Ост. вага</string>
     <string name="editor_chip_previous">Попер.</string>
-    <string name="editor_chip_plus_step">+2.5</string>
+    <string name="editor_chip_plus_step">+2,5</string>
     <string name="editor_chip_copy">Копія</string>
     <string name="cd_exercise_actions">Дії для «%1$s»</string>
     <string name="cd_weight_for_set">Вага для підходу %1$d</string>
