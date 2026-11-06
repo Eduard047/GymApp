@@ -238,6 +238,70 @@ final class CloudSyncDiagnosticsTests: XCTestCase {
         }
         return (auth, urlSession, defaults, suiteName)
     }
+
+    func testAutomaticSaveRetriesTransientNetworkErrorsInsteadOfToasting() {
+        for code in [URLError.Code.notConnectedToInternet, .timedOut, .networkConnectionLost] {
+            XCTAssertEqual(
+                AppState.cloudSaveFailureAction(
+                    error: URLError(code),
+                    announce: false,
+                    isCurrentGeneration: true
+                ),
+                .retry
+            )
+        }
+        XCTAssertEqual(
+            AppState.cloudSaveFailureAction(
+                error: URLError(.notConnectedToInternet),
+                announce: true,
+                isCurrentGeneration: true
+            ),
+            .show
+        )
+        XCTAssertEqual(
+            AppState.cloudSaveFailureAction(
+                error: CloudSyncError.requestFailed("boom"),
+                announce: false,
+                isCurrentGeneration: true
+            ),
+            .show
+        )
+    }
+
+    func testAbandonedGenerationAndSessionChangeAreSilent() {
+        for error in [
+            URLError(.notConnectedToInternet) as Error,
+            AuthServiceError.sessionChanged,
+            CloudSyncError.requestFailed("boom")
+        ] {
+            for announce in [false, true] {
+                XCTAssertEqual(
+                    AppState.cloudSaveFailureAction(
+                        error: error,
+                        announce: announce,
+                        isCurrentGeneration: false
+                    ),
+                    .ignore
+                )
+            }
+        }
+        XCTAssertEqual(
+            AppState.cloudSaveFailureAction(
+                error: AuthServiceError.sessionChanged,
+                announce: false,
+                isCurrentGeneration: true
+            ),
+            .ignore
+        )
+        XCTAssertEqual(
+            AppState.cloudSaveFailureAction(
+                error: AuthServiceError.sessionChanged,
+                announce: true,
+                isCurrentGeneration: true
+            ),
+            .show
+        )
+    }
 }
 
 private final class CloudSyncDiagnosticsEventCollector: @unchecked Sendable {

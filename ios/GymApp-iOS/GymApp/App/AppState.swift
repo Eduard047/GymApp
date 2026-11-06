@@ -1499,7 +1499,8 @@ final class AppState: ObservableObject {
         userID: String,
         owner: BackupOwner,
         announce: Bool = true,
-        attempt: Int = 0
+        attempt: Int = 0,
+        saveGeneration: UInt64? = nil
     ) async {
         let storageKey = session.storageKey
         do {
@@ -1715,12 +1716,24 @@ final class AppState: ObservableObject {
                 userID: userID,
                 owner: owner,
                 announce: announce,
-                attempt: attempt + 1
+                attempt: attempt + 1,
+                saveGeneration: saveGeneration
             )
         } catch {
             guard auth.session?.storageKey == storageKey else { return }
+            let action = Self.cloudSaveFailureAction(
+                error: error,
+                announce: announce,
+                isCurrentGeneration: saveGeneration == nil
+                    || saveGeneration == cloudSaveGeneration
+            )
+            guard action != .ignore else { return }
             cloudSyncStatus = .failed(gymSafeEnglishErrorMessage(error))
-            show(error: error)
+            if action == .retry {
+                scheduleCloudRetry()
+            } else {
+                show(error: error)
+            }
         }
     }
 
@@ -2780,7 +2793,7 @@ final class AppState: ObservableObject {
         scheduleCloudSave(delay: .zero)
     }
 
-    private static func isTransientCloudError(_ error: Error) -> Bool {
+    static func isTransientCloudError(_ error: Error) -> Bool {
         guard let urlError = error as? URLError else { return false }
         switch urlError.code {
         case .notConnectedToInternet, .timedOut, .networkConnectionLost,
@@ -2789,6 +2802,31 @@ final class AppState: ObservableObject {
         default:
             return false
         }
+    }
+
+    enum CloudSaveFailureAction: Equatable {
+        case retry
+        case show
+        case ignore
+    }
+
+    /// Decides what a failed automatic or manual cloud save does. A save from a replaced
+    /// generation (its account was abandoned mid-request) must not touch the new account's
+    /// status, toast, or retry counter; an automatic save whose session changed is silent;
+    /// an automatic save that hit a transient network error retries instead of toasting.
+    static func cloudSaveFailureAction(
+        error: Error,
+        announce: Bool,
+        isCurrentGeneration: Bool
+    ) -> CloudSaveFailureAction {
+        guard isCurrentGeneration else { return .ignore }
+        if !announce {
+            if let authError = error as? AuthServiceError, case .sessionChanged = authError {
+                return .ignore
+            }
+            if isTransientCloudError(error) { return .retry }
+        }
+        return .show
     }
 
     /// Retries a failed upload after 5 s, 30 s, then every 2 min, at most five times.
@@ -2963,15 +3001,23 @@ final class AppState: ObservableObject {
             } catch is CancellationError {
                 // Cancelling is allowed only during the debounce phase.
             } catch CloudSyncError.staleRemoteState {
+                guard generation == self.cloudSaveGeneration else { return }
                 // Another device wrote first: merge its changes instead of failing.
                 await self.reconcileStaleManualSync(
                     store: store,
                     session: session,
                     userID: cloud.userID,
                     owner: owner,
-                    announce: false
+                    announce: false,
+                    saveGeneration: generation
                 )
             } catch {
+                let action = Self.cloudSaveFailureAction(
+                    error: error,
+                    announce: false,
+                    isCurrentGeneration: generation == self.cloudSaveGeneration
+                )
+                guard action != .ignore else { return }
                 CloudSyncDiagnostics.record(
                     operation: .workoutStateWrite,
                     phase: .reconciliation,
@@ -2979,7 +3025,7 @@ final class AppState: ObservableObject {
                     error: error
                 )
                 self.cloudSyncStatus = .failed(gymSafeEnglishErrorMessage(error))
-                if Self.isTransientCloudError(error) {
+                if action == .retry {
                     self.scheduleCloudRetry()
                 } else {
                     self.show(error: error)
