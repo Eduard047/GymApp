@@ -177,6 +177,48 @@ class GymNavGraphSecurityTest {
     }
 
     @Test
+    fun `automatic cloud upload retry backs off only for transient connection failures`() {
+        val connection = LocalizedText(R.string.auth_error_connection)
+        assertEquals(5_000L, cloudAutoRetryDelayMillis(connection, 0))
+        assertEquals(30_000L, cloudAutoRetryDelayMillis(connection, 1))
+        assertEquals(120_000L, cloudAutoRetryDelayMillis(connection, 2))
+        assertEquals(120_000L, cloudAutoRetryDelayMillis(connection, 4))
+        assertEquals(null, cloudAutoRetryDelayMillis(connection, 5))
+        assertEquals(null, cloudAutoRetryDelayMillis(connection, -1))
+
+        val saveFailed = LocalizedText(R.string.cloud_sync_save_failed)
+        assertEquals(null, cloudAutoRetryDelayMillis(saveFailed, 0))
+        assertEquals(5_000L, cloudAutoRetryDelayMillis(saveFailed, 0, networkFailure = true))
+        assertEquals(null, cloudAutoRetryDelayMillis(saveFailed, 5, networkFailure = true))
+
+        listOf(
+            R.string.cloud_sync_conflict,
+            R.string.cloud_sync_account_changed,
+            R.string.cloud_sync_baseline_failed,
+            R.string.cloud_sync_round_trip_failed,
+            R.string.auth_error_invalid_credentials,
+            R.string.auth_error_session_inactive
+        ).forEach { id ->
+            assertEquals(
+                null,
+                cloudAutoRetryDelayMillis(LocalizedText(id), 0, networkFailure = true)
+            )
+        }
+    }
+
+    @Test
+    fun `transient network failures are recognised through the cause chain`() {
+        assertTrue(isTransientNetworkFailure(java.net.UnknownHostException("host")))
+        assertTrue(isTransientNetworkFailure(java.net.SocketTimeoutException("timeout")))
+        assertTrue(isTransientNetworkFailure(java.net.ConnectException("refused")))
+        assertTrue(
+            isTransientNetworkFailure(IllegalStateException("wrapped", java.net.UnknownHostException()))
+        )
+        assertFalse(isTransientNetworkFailure(IllegalStateException("Cloud state did not round-trip")))
+        assertFalse(isTransientNetworkFailure(javax.net.ssl.SSLHandshakeException("tls")))
+    }
+
+    @Test
     fun `only recoverable cloud synchronization notices expose retry`() {
         assertTrue(isRetryableCloudSyncMessage(LocalizedText(R.string.cloud_sync_load_failed)))
         assertTrue(isRetryableCloudSyncMessage(LocalizedText(R.string.cloud_sync_save_failed)))

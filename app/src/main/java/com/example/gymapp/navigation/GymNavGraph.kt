@@ -243,6 +243,11 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.security.MessageDigest
 import java.util.UUID
 import com.example.gymapp.util.formattedStringResource
@@ -718,6 +723,54 @@ internal fun cloudSyncRetryModeForSaveFailure(message: LocalizedText): CloudSync
         CloudSyncRetryMode.ResumeAutosave
     }
 
+/** Automatic upload retries after a transient network failure before the user is left to retry. */
+private const val MAX_CLOUD_AUTO_RETRY_ATTEMPTS = 5
+
+/** True for offline, timeout, lost-connection and DNS failures (not TLS, HTTP or data errors). */
+internal fun isTransientNetworkFailure(throwable: Throwable): Boolean {
+    var current: Throwable? = throwable
+    var depth = 0
+    while (current != null && depth < 6) {
+        if (
+            current is UnknownHostException ||
+            current is SocketTimeoutException ||
+            current is ConnectException ||
+            current is NoRouteToHostException ||
+            current is SocketException
+        ) {
+            return true
+        }
+        current = current.cause?.takeIf { it !== current }
+        depth += 1
+    }
+    return false
+}
+
+/**
+ * Delay before the next automatic cloud upload retry, or null when none should run. Mirrors iOS:
+ * 5 s, 30 s, then every 120 s, at most [MAX_CLOUD_AUTO_RETRY_ATTEMPTS] attempts, and only for a
+ * transient connection failure ([networkFailure] or the plain connection message). Conflicts,
+ * account changes, baseline problems and auth errors never retry on their own.
+ */
+internal fun cloudAutoRetryDelayMillis(
+    message: LocalizedText,
+    attempt: Int,
+    networkFailure: Boolean = false
+): Long? {
+    if (attempt < 0 || attempt >= MAX_CLOUD_AUTO_RETRY_ATTEMPTS) return null
+    val transient = when (message.resourceId) {
+        R.string.auth_error_connection -> true
+        R.string.cloud_sync_save_failed -> networkFailure
+        else -> false
+    }
+    if (!transient) return null
+    return when (attempt) {
+        0 -> 5_000L
+        1 -> 30_000L
+        else -> 120_000L
+    }
+}
+
 internal fun accountUiIsolationKey(
     session: AccountSession?,
     needsPasswordUpdate: Boolean
@@ -830,6 +883,12 @@ internal fun GymAppRoot(
     val workoutLocalChangeTracker = remember(uiIsolationKey) { WorkoutLocalChangeTracker() }
     var staleCloudSaveRetries by key(uiIsolationKey) {
         remember { mutableStateOf(0) }
+    }
+    var cloudAutoRetryAttempts by key(uiIsolationKey) {
+        remember { mutableStateOf(0) }
+    }
+    var cloudAutoRetryDelayMs by key(uiIsolationKey) {
+        remember { mutableStateOf<Long?>(null) }
     }
     var cloudSyncStatus by key(uiIsolationKey) {
         val userId = (authState.session as? AccountSession.Cloud)?.userId
@@ -1440,6 +1499,8 @@ internal fun GymAppRoot(
         }
         cloudSyncStatus = CloudSyncUiStatus(CloudSyncPhase.Synced, timestamp)
         staleCloudSaveRetries = 0
+        cloudAutoRetryAttempts = 0
+        cloudAutoRetryDelayMs = null
     }
 
     /**
@@ -1632,6 +1693,9 @@ internal fun GymAppRoot(
         cloudPullGeneration = null
         activityOnlyCloudBaseline = null
         cloudSyncRetryMode = null
+        // Manual sync, "Sync now" and session start all land here: drop any pending auto retry.
+        cloudAutoRetryAttempts = 0
+        cloudAutoRetryDelayMs = null
         val pullResult = runCatching {
             var pullConfirmedWithoutUpload = false
             val remoteState = authManager.loadRemoteState(session)
@@ -1941,6 +2005,16 @@ internal fun GymAppRoot(
                             return@onFailure
                         }
                         cloudSyncRetryMode = cloudSyncRetryModeForSaveFailure(message)
+                        if (cloudSyncRetryMode == CloudSyncRetryMode.ResumeAutosave) {
+                            cloudAutoRetryDelayMillis(
+                                message = message,
+                                attempt = cloudAutoRetryAttempts,
+                                networkFailure = isTransientNetworkFailure(throwable)
+                            )?.let { delayMs ->
+                                cloudAutoRetryAttempts += 1
+                                cloudAutoRetryDelayMs = delayMs
+                            }
+                        }
                         updateCloudSyncPhase(
                             session,
                             if (message.resourceId == R.string.cloud_sync_conflict) {
@@ -1953,6 +2027,28 @@ internal fun GymAppRoot(
                     }
                 }
             }
+    }
+
+    // Re-arms autosave after a transient network failure; cancelled by a session change (key) or
+    // by any manual action that clears the pending delay.
+    LaunchedEffect(cloudSession?.sessionGeneration, cloudAutoRetryDelayMs) {
+        val session = cloudSession ?: return@LaunchedEffect
+        val delayMs = cloudAutoRetryDelayMs ?: return@LaunchedEffect
+        delay(delayMs)
+        cloudAutoRetryDelayMs = null
+        val active = authManager.authState.value.session as? AccountSession.Cloud
+        if (active == null || !isSameCloudSessionGeneration(session, active)) return@LaunchedEffect
+        // The user (toast action) or a full pull may already have taken over.
+        if (cloudPullGeneration != null ||
+            cloudSyncRetryMode != CloudSyncRetryMode.ResumeAutosave
+        ) {
+            return@LaunchedEffect
+        }
+        cloudSyncRetryMode = null
+        if (isRetryableCloudSyncMessage(authManager.authState.value.message)) {
+            authManager.setMessage(null, isError = false)
+        }
+        cloudPullGeneration = active.sessionGeneration
     }
 
     LaunchedEffect(cloudSession?.sessionGeneration) {
@@ -2405,6 +2501,8 @@ internal fun GymAppRoot(
                         when (retryMode) {
                             CloudSyncRetryMode.Pull -> cloudSyncRetryVersion += 1
                             CloudSyncRetryMode.ResumeAutosave -> {
+                                cloudAutoRetryAttempts = 0
+                                cloudAutoRetryDelayMs = null
                                 cloudPullGeneration =
                                     (authManager.authState.value.session as? AccountSession.Cloud)
                                         ?.sessionGeneration
