@@ -1013,6 +1013,34 @@ final class CoreParityTests: XCTestCase {
         )
     }
 
+    func testHistoricalMonthIgnoresSessionsAfterThePeriodEnd() throws {
+        let calendar = utcCalendar()
+        let dates = [
+            (22, 6), (23, 6), (24, 6),
+            (29, 6), (30, 6), (1, 7)
+        ]
+        let sessions = try dates.map { day, month in
+            WorkoutSessionSummary(
+                workoutID: UUID(),
+                date: try utcDate(year: 2026, month: month, day: day, calendar: calendar),
+                note: nil,
+                exerciseCount: 1,
+                setCount: 1,
+                totalVolume: 100
+            )
+        }
+
+        XCTAssertEqual(
+            WeeklyStreakCalculator.bestDuringPeriod(
+                sessions: sessions,
+                from: try utcDate(year: 2026, month: 6, day: 1, calendar: calendar),
+                through: try utcDate(year: 2026, month: 6, day: 30, calendar: calendar),
+                calendar: calendar
+            ),
+            1
+        )
+    }
+
     func testIOSAuthUsesHTTPSBridgeWithStrictNestedQueryEncoding() throws {
         let state = "abcdefghijklmnopqrstuvwxyzABCDEF"
         let redirect = AuthCallbackRouting.webRedirectURL(state: state, purpose: .recovery)

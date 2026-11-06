@@ -135,7 +135,10 @@ enum WeeklyStreakCalculator {
         )
         guard !periodWeeks.isEmpty else { return 0 }
 
-        let successfulWeeks = weeklyCounts(sessions: sessions, calendar: calendar)
+        let successfulWeeks = weeklyCounts(
+            sessions: sessions.filter { $0.date <= endDate },
+            calendar: calendar
+        )
             .filter { $0.value >= target }
             .keys
             .sorted()
