@@ -1733,6 +1733,8 @@ internal fun GymAppRoot(
                 } else {
                     sharedCloudExtensions = preparedSharedState.extensions
                     val remoteDigest = preparedSharedState.workoutDigest
+                    // Stamps newer than the local read are edits the baseline does not cover.
+                    val localReadAt = System.currentTimeMillis()
                     val localState = repository.getCloudWorkoutProjectionState()
                     val lastSyncedDigest = cloudSyncBaselineStore.read(session.userId)
                     when (cloudSnapshotApplyDecision(
@@ -1783,7 +1785,7 @@ internal fun GymAppRoot(
                                 session = session,
                                 state = remoteState,
                                 digest = remoteDigest,
-                                forgetChangesThrough = System.currentTimeMillis()
+                                forgetChangesThrough = localReadAt
                             )
                             check(isSameCloudSessionGeneration(
                                 session,
@@ -1804,6 +1806,7 @@ internal fun GymAppRoot(
                                 workoutLocalChangeTracker.lastSeen =
                                     repository.getWorkoutMergeSnapshot().second
                             }
+                            val replacedReadAt = System.currentTimeMillis()
                             val replacedState = repository.getCloudWorkoutProjectionState()
                             check(replacedState.digest == remoteDigest) {
                                 "Cloud state did not round-trip safely. Automatic upload is paused."
@@ -1819,7 +1822,7 @@ internal fun GymAppRoot(
                                 session = session,
                                 state = remoteState,
                                 digest = replacedState.digest,
-                                forgetChangesThrough = System.currentTimeMillis()
+                                forgetChangesThrough = replacedReadAt
                             )
                             check(isSameCloudSessionGeneration(
                                 session,
@@ -2189,6 +2192,7 @@ internal fun GymAppRoot(
                             workoutLocalChangeTracker.lastSeen =
                                 repository.getWorkoutMergeSnapshot().second
                         }
+                        val replacedReadAt = System.currentTimeMillis()
                         val replacedState = repository.getCloudWorkoutProjectionState()
                         check(replacedState.digest == acceptedDigest) {
                             "Cloud state did not round-trip safely. Automatic upload is paused."
@@ -2204,7 +2208,7 @@ internal fun GymAppRoot(
                             session = session,
                             state = acceptedRemote,
                             digest = acceptedDigest,
-                            forgetChangesThrough = System.currentTimeMillis()
+                            forgetChangesThrough = replacedReadAt
                         )
                     } else {
                         val owner = BackupOwner(
@@ -2213,6 +2217,8 @@ internal fun GymAppRoot(
                             email = session.email,
                             remote = true
                         )
+                        // Edits made while the upload is in flight are not in the uploaded state.
+                        val snapshotTakenAt = System.currentTimeMillis()
                         val canonicalLocalBackup = repository.buildCloudBackupJson(owner = owner)
                         val localBackup = attachSharedCloudExtensions(
                             canonicalCore = canonicalLocalBackup,
@@ -2248,7 +2254,7 @@ internal fun GymAppRoot(
                             session = session,
                             state = localBackup,
                             digest = localDigest,
-                            forgetChangesThrough = System.currentTimeMillis()
+                            forgetChangesThrough = snapshotTakenAt
                         )
                     }
                     // Apply additive public-catalog migrations only after the selected version is
