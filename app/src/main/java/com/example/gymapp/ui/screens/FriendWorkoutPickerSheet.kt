@@ -88,7 +88,7 @@ internal fun FriendWorkoutPickerSheet(
             if (availableSessions.isEmpty()) {
                 item {
                     EmptyStatePanel(
-                        title = stringResource(R.string.empty_workouts),
+                        title = stringResource(R.string.friend_workout_picker_empty_title),
                         supporting = stringResource(R.string.friend_workout_picker_empty_supporting)
                     )
                 }

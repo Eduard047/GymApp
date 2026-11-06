@@ -2479,7 +2479,7 @@ private struct FriendWorkoutPickerSheet: View {
                                 Text(
                                     t(
                                         "Save a workout first, then return to this friend.",
-                                        "Спочатку збережи тренування, а потім повернися до цього друга.",
+                                        "Спочатку збережи тренування, потім повернися до цього друга.",
                                         "Сначала сохрани тренировку, затем вернись к этому другу."
                                     )
                                 )

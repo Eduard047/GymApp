@@ -88,6 +88,7 @@
     <string name="friend_choose_workout_action">Обрати збережене тренування</string>
     <string name="friend_workout_picker_title">Обрати тренування для %1$s</string>
     <string name="friend_workout_picker_supporting">Поки нічого не надсилається. Обери збережене тренування, потім перевір варіанти посилання, копії та LIVE.</string>
+    <string name="friend_workout_picker_empty_title">Немає збережених тренувань</string>
     <string name="friend_workout_picker_empty_supporting">Спочатку збережи тренування, потім повернися до цього друга.</string>
     <string name="friend_build_live_action">Створити LIVE-тренування</string>
     <string name="friend_create_live_action">Створити LIVE-тренування</string>

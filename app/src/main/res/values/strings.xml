@@ -88,6 +88,7 @@
     <string name="friend_choose_workout_action">Choose saved workout</string>
     <string name="friend_workout_picker_title">Choose a workout for %1$s</string>
     <string name="friend_workout_picker_supporting">Nothing is sent yet. Select a saved workout, then review link, copy, and LIVE options.</string>
+    <string name="friend_workout_picker_empty_title">No saved workouts</string>
     <string name="friend_workout_picker_empty_supporting">Save a workout first, then return to this friend.</string>
     <string name="friend_build_live_action">Build LIVE workout</string>
     <string name="friend_create_live_action">Create LIVE workout</string>
