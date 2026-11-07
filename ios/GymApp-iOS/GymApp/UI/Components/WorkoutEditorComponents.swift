@@ -1077,6 +1077,41 @@ enum ExerciseSortMode: String, CaseIterable, Identifiable {
     }
 }
 
+/// "Frequent" shortlist of the exercise picker. Mirrors Android `frequentExerciseIds`:
+/// the top exercises by number of distinct workouts they appear in, ties broken by the
+/// most recent session date, then by a stable id order. Exercises never used are excluded.
+enum ExercisePickerFrequent {
+    static let defaultLimit = 12
+
+    static func topIDs(
+        sessionCounts: [UUID: Int],
+        latestSessionDates: [UUID: Date] = [:],
+        limit: Int = defaultLimit
+    ) -> [UUID] {
+        guard limit > 0 else { return [] }
+        return sessionCounts
+            .filter { $0.value > 0 }
+            .sorted { left, right in
+                if left.value != right.value { return left.value > right.value }
+                let leftDate = latestSessionDates[left.key] ?? .distantPast
+                let rightDate = latestSessionDates[right.key] ?? .distantPast
+                if leftDate != rightDate { return leftDate > rightDate }
+                return left.key.uuidString < right.key.uuidString
+            }
+            .prefix(limit)
+            .map(\.key)
+    }
+
+    /// Latest workout date per exercise from the history snapshot.
+    static func latestSessionDates(from history: [ExerciseHistoryEntry]) -> [UUID: Date] {
+        var result: [UUID: Date] = [:]
+        for entry in history where entry.sessionDate > (result[entry.exerciseID] ?? .distantPast) {
+            result[entry.exerciseID] = entry.sessionDate
+        }
+        return result
+    }
+}
+
 enum ExerciseFilterEngine {
     private static let maximumSearchQueryCharacters = 256
     private static let maximumSearchCandidateCharacters = 128
@@ -1870,17 +1905,27 @@ struct ExercisePickerSheet: View {
     @State private var muscleFilter: String?
     @State private var favoritesOnly = false
     @State private var sortMode: ExerciseSortMode = .name
+    @State private var frequentOnly = false
 
     let exercises: [Exercise]
     let selectedExerciseIDs: Set<UUID>
     let exerciseMediaOwnerKey: String
     let muscleMappings: [ExerciseMuscleMapping]
     let sessionCounts: [UUID: Int]
+    var latestSessionDates: [UUID: Date] = [:]
     let onSelect: (Exercise) -> Void
     let onCreate: (String) throws -> Exercise
 
+    private var frequentIDs: [UUID] {
+        ExercisePickerFrequent.topIDs(
+            sessionCounts: sessionCounts,
+            latestSessionDates: latestSessionDates
+        )
+    }
+
+    /// Like Android, the shortlist is applied after search, filters and sort.
     private var filteredExercises: [Exercise] {
-        ExerciseFilterEngine.filtered(
+        let result = ExerciseFilterEngine.filtered(
             exercises: exercises,
             query: search,
             bodyFilter: bodyFilter,
@@ -1890,6 +1935,9 @@ struct ExercisePickerSheet: View {
             muscleMappings: muscleMappings,
             sessionCounts: sessionCounts
         )
+        guard frequentOnly else { return result }
+        let frequent = Set(frequentIDs)
+        return result.filter { frequent.contains($0.id) }
     }
 
     /// One horizontally scrolling chip row that bleeds to the sheet edges (no list inset or
@@ -1928,6 +1976,28 @@ struct ExercisePickerSheet: View {
                 }
 
                 Section("Exercises") {
+                    chipRow {
+                        Button(gymText("All", "Усі", "Все", languageCode: gymCurrentLanguageCode())) {
+                            frequentOnly = false
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(!frequentOnly ? GymTheme.primary : GymTheme.textSecondary)
+                        .accessibilityAddTraits(!frequentOnly ? .isSelected : [])
+
+                        Button {
+                            frequentOnly = true
+                            sortMode = .mostFrequent
+                        } label: {
+                            Label(
+                                gymText("Frequent", "Часті", "Частые", languageCode: gymCurrentLanguageCode()),
+                                systemImage: "star.fill"
+                            )
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(frequentOnly ? GymTheme.primary : GymTheme.textSecondary)
+                        .accessibilityAddTraits(frequentOnly ? .isSelected : [])
+                    }
+
                     chipRow {
                         Button {
                             favoritesOnly.toggle()
@@ -1997,7 +2067,19 @@ struct ExercisePickerSheet: View {
                     }
 
                     if filteredExercises.isEmpty {
-                        GymContentUnavailableView.search(text: search)
+                        if frequentOnly && frequentIDs.isEmpty {
+                            GymInlineState(
+                                gymText(
+                                    "Your frequently used exercises will appear here after you save some workouts.",
+                                    "Часто використовувані вправи з\u{2019}являться тут після збереження тренувань.",
+                                    "Часто используемые упражнения появятся здесь после сохранения тренировок.",
+                                    languageCode: gymCurrentLanguageCode()
+                                ),
+                                systemImage: "star"
+                            )
+                        } else {
+                            GymContentUnavailableView.search(text: search)
+                        }
                     } else {
                         ForEach(filteredExercises) { exercise in
                             HStack(spacing: 12) {

@@ -568,6 +568,9 @@ struct AddWorkoutView: View {
                 exerciseMediaOwnerKey: store.accountStorageKey,
                 muscleMappings: store.muscleMappings,
                 sessionCounts: exerciseSessionCounts,
+                latestSessionDates: ExercisePickerFrequent.latestSessionDates(
+                    from: store.allExerciseHistory()
+                ),
                 onSelect: addExercise,
                 onCreate: { try store.addExercise(name: $0) }
             )

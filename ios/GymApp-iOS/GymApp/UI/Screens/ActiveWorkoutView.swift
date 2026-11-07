@@ -664,6 +664,9 @@ struct ActiveWorkoutView: View {
                 exerciseMediaOwnerKey: workoutStore.accountStorageKey,
                 muscleMappings: workoutStore.muscleMappings,
                 sessionCounts: addExerciseSessionCounts,
+                latestSessionDates: ExercisePickerFrequent.latestSessionDates(
+                    from: workoutStore.allExerciseHistory()
+                ),
                 onSelect: addExercise,
                 onCreate: { name in try workoutStore.addExercise(name: name) }
             )
