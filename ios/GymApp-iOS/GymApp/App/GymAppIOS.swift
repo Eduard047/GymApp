@@ -72,6 +72,7 @@ struct GymAppIOS: App {
                         .environmentObject(bootstrap.nativePush)
                         .environment(appState.toasts)
                         .onOpenURL { url in
+                            if appState.handleActiveWorkoutURL(url) { return }
                             if !appState.handleSharedWorkoutURL(url),
                                !appState.garminPhoneSync.handleOpenURL(url) {
                                 Task { await bootstrap.auth.handleOpenURL(url) }

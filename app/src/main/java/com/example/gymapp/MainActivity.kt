@@ -16,6 +16,7 @@ import com.example.gymapp.data.repository.IncomingSharedWorkoutUrl
 import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.data.repository.SharedWorkoutOfferResult
 import com.example.gymapp.navigation.GymAppRoot
+import com.example.gymapp.service.isOpenActiveWorkoutAction
 import com.example.gymapp.ui.theme.GymAppTheme
 import com.example.gymapp.uiaudit.UiAuditHooks
 import kotlinx.coroutines.launch
@@ -52,7 +53,8 @@ class MainActivity : AppCompatActivity() {
                     restTimerController = app.restTimerController,
                     sharedWorkoutInbox = app.sharedWorkoutInbox,
                     pushManager = app.pushManager,
-                    pushNavigationInbox = app.pushNavigationInbox
+                    pushNavigationInbox = app.pushNavigationInbox,
+                    activeWorkoutOpenInbox = app.activeWorkoutOpenInbox
                 )
             }
         }
@@ -82,6 +84,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleIncomingIntent(intent: Intent?) {
+        if (isOpenActiveWorkoutAction(intent?.action)) {
+            // Notification tap: the root UI opens the active workout if one exists.
+            (application as GymApplication).activeWorkoutOpenInbox.request()
+            return
+        }
         if (intent != null && intent.action?.startsWith(PUSH_TAP_ACTION_PREFIX) == true) {
             val app = application as GymApplication
             app.pushManager.consumeNotificationTap(intent)?.let(app.pushNavigationInbox::offer)

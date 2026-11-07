@@ -279,7 +279,7 @@ class RestTimerService : Service() {
         private const val NOTIFICATION_RUNNING_ID = 4001
         private const val NOTIFICATION_FINISHED_ID = 4002
 
-        private const val REQUEST_OPEN_APP = 4010
+        private const val REQUEST_OPEN_ACTIVE_WORKOUT = 4010
         private const val REQUEST_STOP_TIMER = 4011
         private const val REQUEST_DISMISS_ALERT = 4012
         private const val REQUEST_FINISHED_ALARM = 4013
@@ -375,11 +375,12 @@ class RestTimerService : Service() {
 
         private fun createOpenAppPendingIntent(context: Context): PendingIntent {
             val intent = Intent(context, MainActivity::class.java).apply {
+                action = ACTION_OPEN_ACTIVE_WORKOUT
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
             return PendingIntent.getActivity(
                 context,
-                REQUEST_OPEN_APP,
+                REQUEST_OPEN_ACTIVE_WORKOUT,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )

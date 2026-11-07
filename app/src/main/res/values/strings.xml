@@ -689,6 +689,7 @@
     <string name="message_garmin_pair_one_watch">Connect exactly one Garmin watch to complete secure pairing.</string>
     <string name="message_garmin_send_failed">The plan could not be sent to Garmin. Check Bluetooth and try again.</string>
     <string name="smart_coach_plan_note">Smart Coach plan</string>
+    <string name="workout_detail_undo_action">Undo</string>
     <string name="message_set_deleted">Set deleted</string>
     <string name="message_delete_target_changed">Deletion stopped because the saved data changed. Review it and try again.</string>
     <string name="message_delete_failed">Could not delete the saved data. Nothing was removed by this request.</string>

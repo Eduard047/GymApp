@@ -707,6 +707,7 @@
     <string name="message_garmin_pair_one_watch">Підключи рівно один годинник Garmin, щоб завершити безпечне сполучення.</string>
     <string name="message_garmin_send_failed">Не вдалося надіслати план на Garmin. Перевір Bluetooth і спробуй ще раз.</string>
     <string name="smart_coach_plan_note">План Розумного тренера</string>
+    <string name="workout_detail_undo_action">Скасувати</string>
     <string name="message_set_deleted">Підхід видалено</string>
     <string name="message_delete_target_changed">Видалення зупинено: збережені дані змінилися. Перевір їх і спробуй ще раз.</string>
     <string name="message_delete_failed">Не вдалося видалити збережені дані. Цей запит нічого не видалив.</string>

@@ -13,6 +13,7 @@ import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.LiveCompletedSet
 import com.example.gymapp.data.repository.LivePersonalRecords
+import com.example.gymapp.data.repository.SetDeletionImpact
 import com.example.gymapp.data.repository.SetDeletionSnapshot
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.defaultContributionsForExercise
@@ -43,6 +44,8 @@ data class WorkoutDetailUiState(
     val sessionDetails: WorkoutSessionDetails? = null,
     val hasGarminReceipt: Boolean = false,
     val pendingSetDeletion: SetDeletionSnapshot? = null,
+    /** Set or exercise hidden for 5 s behind the undo bar; storage is untouched until it commits. */
+    val stagedRemoval: WorkoutDetailStagedRemoval? = null,
     val isSetDeletionInProgress: Boolean = false,
     val setDeletionError: LocalizedText? = null,
     val personalRecordFlags: Map<Long, Boolean> = emptyMap(),
@@ -61,8 +64,15 @@ private data class WorkoutDetailSessionContext(
     val hasGarminReceipt: Boolean
 )
 
+/** A removal staged behind the undo bar (iOS pending deletion): hidden on screen, not yet stored. */
+sealed interface WorkoutDetailStagedRemoval {
+    data class Set(val snapshot: SetDeletionSnapshot) : WorkoutDetailStagedRemoval
+    data class Exercise(val workoutExerciseId: Long) : WorkoutDetailStagedRemoval
+}
+
 private data class SetDeletionState(
     val pending: SetDeletionSnapshot?,
+    val staged: WorkoutDetailStagedRemoval?,
     val isInProgress: Boolean,
     val error: LocalizedText?
 )
@@ -172,13 +182,19 @@ class WorkoutDetailViewModel(
     private val pendingSetDeletion = MutableStateFlow<SetDeletionSnapshot?>(null)
     private val isSetDeletionInProgress = MutableStateFlow(false)
     private val setDeletionError = MutableStateFlow<LocalizedText?>(null)
+    private val stagedDeletion = StagedDeletion<WorkoutDetailStagedRemoval>(
+        scope = viewModelScope,
+        onCommit = ::persistStagedRemoval
+    )
     private val setDeletionState = combine(
         pendingSetDeletion,
+        stagedDeletion.pending,
         isSetDeletionInProgress,
         setDeletionError
-    ) { pending, isInProgress, error ->
+    ) { pending, staged, isInProgress, error ->
         SetDeletionState(
             pending = pending,
+            staged = staged,
             isInProgress = isInProgress,
             error = error
         )
@@ -226,9 +242,10 @@ class WorkoutDetailViewModel(
             ?.toSet()
             .orEmpty()
         WorkoutDetailUiState(
-            sessionDetails = details,
+            sessionDetails = details?.withoutStagedRemoval(deletion.staged),
             hasGarminReceipt = sessionContext.hasGarminReceipt,
             pendingSetDeletion = deletion.pending,
+            stagedRemoval = deletion.staged,
             isSetDeletionInProgress = deletion.isInProgress,
             setDeletionError = deletion.error,
             personalRecordFlags = records.flags,
@@ -354,9 +371,16 @@ class WorkoutDetailViewModel(
         setDeletionError.value = null
         viewModelScope.launch {
             try {
+                // A new deletion commits the staged one first, so its snapshot sees the stored state.
+                stagedDeletion.commitNow()
                 val snapshot = repository.getSetDeletionSnapshot(setEntry.id)
                 if (snapshot != null && snapshot.matchesRequestedSet(sessionId, setEntry)) {
-                    pendingSetDeletion.value = snapshot
+                    if (snapshot.impact == SetDeletionImpact.SetOnly) {
+                        // Like iOS: a set that leaves its exercise with other sets is staged at once.
+                        stagedDeletion.stage(WorkoutDetailStagedRemoval.Set(snapshot))
+                    } else {
+                        pendingSetDeletion.value = snapshot
+                    }
                 } else {
                     _events.emit(WorkoutDetailEvent.DeleteTargetChanged)
                 }
@@ -376,19 +400,16 @@ class WorkoutDetailViewModel(
         setDeletionError.value = null
     }
 
+    /** The dialog was confirmed (final set of an exercise): stage it behind the undo bar. */
     fun confirmSetDeletion() {
         val expected = pendingSetDeletion.value ?: return
         if (isSetDeletionInProgress.value || setDeletionError.value != null) return
         isSetDeletionInProgress.value = true
         viewModelScope.launch {
             try {
-                if (repository.deleteSetIfUnchanged(expected)) {
-                    pendingSetDeletion.value = null
-                    setDeletionError.value = null
-                    _events.emit(WorkoutDetailEvent.SetDeleted)
-                } else {
-                    setDeletionError.value = LocalizedText(R.string.message_delete_target_changed)
-                }
+                stagedDeletion.stage(WorkoutDetailStagedRemoval.Set(expected))
+                pendingSetDeletion.value = null
+                setDeletionError.value = null
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
@@ -399,13 +420,50 @@ class WorkoutDetailViewModel(
         }
     }
 
-    /** Removes one exercise block from this saved workout; the last exercise is never removed. */
+    /** Undo bar: brings the staged set or exercise back; nothing was ever written. */
+    fun undoStagedRemoval() {
+        stagedDeletion.undo()
+    }
+
+    private suspend fun persistStagedRemoval(removal: WorkoutDetailStagedRemoval) {
+        try {
+            when (removal) {
+                is WorkoutDetailStagedRemoval.Set -> {
+                    if (!repository.deleteSetIfUnchanged(removal.snapshot)) {
+                        _events.emit(WorkoutDetailEvent.DeleteTargetChanged)
+                    }
+                }
+
+                is WorkoutDetailStagedRemoval.Exercise -> {
+                    if (!repository.removeExerciseFromSession(sessionId, removal.workoutExerciseId)) {
+                        _events.emit(WorkoutDetailEvent.RemoveExerciseFailed)
+                    }
+                }
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            _events.emit(
+                when (removal) {
+                    is WorkoutDetailStagedRemoval.Set -> WorkoutDetailEvent.DeleteFailed
+                    is WorkoutDetailStagedRemoval.Exercise -> WorkoutDetailEvent.RemoveExerciseFailed
+                }
+            )
+        }
+    }
+
+    /**
+     * Removes one exercise block from this saved workout behind the 5 s undo bar; the last visible
+     * exercise is never removed (the whole workout is deleted through [deleteSession]).
+     */
     fun removeExercise(workoutExerciseId: Long) {
         viewModelScope.launch {
             try {
-                val canRemove = (uiState.value.sessionDetails?.workoutExercises?.size ?: 0) > 1
-                if (canRemove && repository.removeExerciseFromSession(sessionId, workoutExerciseId)) {
-                    _events.emit(WorkoutDetailEvent.ExerciseRemoved)
+                val visible = uiState.value.sessionDetails?.workoutExercises.orEmpty()
+                val canRemove = visible.size > 1 &&
+                    visible.any { it.workoutExercise.id == workoutExerciseId }
+                if (canRemove) {
+                    stagedDeletion.stage(WorkoutDetailStagedRemoval.Exercise(workoutExerciseId))
                 } else {
                     _events.emit(WorkoutDetailEvent.RemoveExerciseFailed)
                 }
@@ -436,10 +494,18 @@ class WorkoutDetailViewModel(
     }
 
     fun deleteSession() {
+        // The whole workout goes, so a staged set/exercise inside it is moot: forget it, don't commit.
+        stagedDeletion.undo()
         viewModelScope.launch {
             repository.deleteWorkoutSessionById(sessionId)
             _events.emit(WorkoutDetailEvent.SessionDeleted)
         }
+    }
+
+    /** Leaving the screen commits the staged removal (iOS onDisappear), on a scope that outlives this view model. */
+    override fun onCleared() {
+        stagedDeletion.commitDetached()
+        super.onCleared()
     }
 
     companion object {
@@ -456,6 +522,34 @@ class WorkoutDetailViewModel(
                 )
             }
         }
+    }
+}
+
+/** [WorkoutSessionDetails] as the screen shows it while [staged] is hidden behind the undo bar. */
+internal fun WorkoutSessionDetails.withoutStagedRemoval(
+    staged: WorkoutDetailStagedRemoval?
+): WorkoutSessionDetails = when (staged) {
+    null -> this
+    is WorkoutDetailStagedRemoval.Exercise -> copy(
+        workoutExercises = workoutExercises.filterNot { it.workoutExercise.id == staged.workoutExerciseId }
+    )
+
+    is WorkoutDetailStagedRemoval.Set -> {
+        val snapshot = staged.snapshot
+        copy(
+            workoutExercises = if (snapshot.impact == SetDeletionImpact.SetOnly) {
+                workoutExercises.map { block ->
+                    if (block.workoutExercise.id == snapshot.workoutExerciseId) {
+                        block.copy(sets = block.sets.filterNot { it.id == snapshot.setId })
+                    } else {
+                        block
+                    }
+                }
+            } else {
+                // The final set takes its exercise block with it.
+                workoutExercises.filterNot { it.workoutExercise.id == snapshot.workoutExerciseId }
+            }
+        )
     }
 }
 

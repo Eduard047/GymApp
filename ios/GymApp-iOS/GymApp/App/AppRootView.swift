@@ -978,6 +978,7 @@ private struct MainTabShell: View {
             // sidecar (process-wide), so no wiring is needed from this view.
             appState.liveActivityController.refresh()
             openPendingPushRouteIfNeeded()
+            openRequestedActiveWorkoutIfNeeded()
             if activeWorkoutStore.recoveryMessage != nil {
                 appState.show(
                     message: gymText(
@@ -1050,6 +1051,9 @@ private struct MainTabShell: View {
         }
         .onChange(of: liveWorkoutCoordinator.confirmedDraftConsumption) { _, _ in
             reconcileConfirmedLiveDraftConsumption()
+        }
+        .onChange(of: appState.activeWorkoutOpenRequest) { _, _ in
+            openRequestedActiveWorkoutIfNeeded()
         }
         .onChange(of: nativePush.pendingRoute?.id) { _, _ in
             if nativePush.pendingRoute != nil {
@@ -1424,6 +1428,16 @@ private struct MainTabShell: View {
         tutorialIsManualReplay = interruption.isManualReplay
         tutorialAutomaticPresentationSuppressedForSession =
             interruption.suppressAutomaticPresentationForSession
+    }
+
+    /// Live Activity / Dynamic Island tap: show the active workout if one exists.
+    private func openRequestedActiveWorkoutIfNeeded() {
+        guard appState.activeWorkoutOpenRequest != nil else { return }
+        appState.consumeActiveWorkoutOpenRequest()
+        guard activeWorkoutStore.draft != nil else { return }
+        yieldTutorialToExternalNavigation()
+        showsAddWorkout = false
+        showsActiveWorkout = true
     }
 
     private func openPendingPushRouteIfNeeded() {

@@ -90,6 +90,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.ui.components.GymToastDuration
+import com.example.gymapp.ui.components.GymToastResult
 import com.example.gymapp.ui.components.LocalGymToastController
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.SetEntryEntity
@@ -121,6 +123,7 @@ import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.WorkoutDetailEvent
+import com.example.gymapp.ui.viewmodel.WorkoutDetailStagedRemoval
 import com.example.gymapp.ui.viewmodel.WorkoutDetailUiState
 import com.example.gymapp.util.DateTimeUtils
 import kotlinx.coroutines.flow.Flow
@@ -236,6 +239,7 @@ internal fun WorkoutDetailScreen(
     onDeleteSet: (SetEntryEntity) -> Unit,
     onConfirmDeleteSet: () -> Unit,
     onDismissDeleteSet: () -> Unit,
+    onUndoStagedRemoval: () -> Unit = {},
     onDeleteSession: () -> Unit,
     onSessionDeleted: () -> Unit,
     onUpdateSet: (SetEntryEntity, String, String) -> Unit,
@@ -258,6 +262,26 @@ internal fun WorkoutDetailScreen(
     val isAnyWorkoutEditing = editingWorkoutSessionId != null
     LaunchedEffect(isAnyWorkoutEditing) { currentOnEditModeChanged(isAnyWorkoutEditing) }
     DisposableEffect(Unit) { onDispose { currentOnEditModeChanged(false) } }
+
+    // Undo bar for a set or exercise hidden by the view model (iOS pending deletion). It lives
+    // exactly as long as the staged removal: the view model commits it on timeout / leaving, which
+    // clears it and cancels this effect (dismissing the bar).
+    val stagedRemoval = uiState.stagedRemoval
+    val currentOnUndoStagedRemoval by rememberUpdatedState(onUndoStagedRemoval)
+    LaunchedEffect(stagedRemoval) {
+        val removal = stagedRemoval ?: return@LaunchedEffect
+        val result = toastController.show(
+            message = context.getString(
+                when (removal) {
+                    is WorkoutDetailStagedRemoval.Set -> R.string.message_set_deleted
+                    is WorkoutDetailStagedRemoval.Exercise -> R.string.message_exercise_removed
+                }
+            ),
+            actionLabel = context.getString(R.string.workout_detail_undo_action),
+            duration = GymToastDuration.Indefinite
+        )
+        if (result == GymToastResult.ActionPerformed) currentOnUndoStagedRemoval()
+    }
 
     LaunchedEffect(events, context) {
         events.collect { event ->

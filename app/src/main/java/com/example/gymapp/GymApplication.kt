@@ -68,6 +68,7 @@ class GymApplication : Application() {
     /** App-level toast queue; the Activity posts to it and the root `GymToastHost` draws it. */
     internal val toastController = GymToastController()
     internal val pushNavigationInbox = PushNavigationInbox()
+    internal val activeWorkoutOpenInbox = com.example.gymapp.service.ActiveWorkoutOpenInbox()
     internal val pushManager: AndroidPushManager by lazy {
         AndroidPushManager(this, cloudAuthManager, pushNavigationInbox)
     }

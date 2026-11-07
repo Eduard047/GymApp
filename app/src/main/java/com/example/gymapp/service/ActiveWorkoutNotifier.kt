@@ -64,9 +64,9 @@ internal fun isLiveWorkout(context: Context, session: AccountSession?, details: 
 internal object ActiveWorkoutNotifier {
     private const val CHANNEL_ID = "active_workout"
     private const val NOTIFICATION_ID = 4020
-    private const val REQUEST_OPEN_APP = 4021
     private const val REQUEST_LOG_SET = 4022
     private const val REQUEST_SKIP_REST = 4023
+    private const val REQUEST_OPEN_ACTIVE_WORKOUT = 4024
 
     internal const val ACTION_LOG_SET = "com.setforge.gymapp.action.ACTIVE_WORKOUT_LOG_SET"
     internal const val ACTION_SKIP_REST = "com.setforge.gymapp.action.ACTIVE_WORKOUT_SKIP_REST"
@@ -180,8 +180,9 @@ internal object ActiveWorkoutNotifier {
 
     private fun openAppIntent(context: Context): PendingIntent = PendingIntent.getActivity(
         context,
-        REQUEST_OPEN_APP,
+        REQUEST_OPEN_ACTIVE_WORKOUT,
         Intent(context, MainActivity::class.java).apply {
+            action = ACTION_OPEN_ACTIVE_WORKOUT
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         },
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE

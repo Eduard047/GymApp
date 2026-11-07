@@ -124,6 +124,9 @@ final class AppState: ObservableObject {
     /// `show(message:isError:)` (or `toasts` directly for an action toast).
     let toasts = GymToastCenter()
     @Published private(set) var isPreparingAccount = false
+    /// Set when a Live Activity / Dynamic Island tap asks to open the active
+    /// workout; the tab shell consumes it (also after a cold launch).
+    @Published private(set) var activeWorkoutOpenRequest: UUID?
     @Published private(set) var activeAccountStorageKey: String?
     @Published private(set) var accountPreparationError: String?
     @Published private(set) var isSigningOut = false
@@ -327,6 +330,20 @@ final class AppState: ObservableObject {
 
     var backupOwner: BackupOwner {
         Self.backupOwner(for: auth.session, fallbackStorageKey: workoutStore.accountStorageKey)
+    }
+
+    /// Consumes the Live Activity `active-workout` URL. Ignored (but still consumed)
+    /// when there is no active draft and no account is being prepared.
+    func handleActiveWorkoutURL(_ url: URL) -> Bool {
+        guard ActiveWorkoutDeepLink.isActiveWorkoutURL(url) else { return false }
+        if activeWorkoutStore.draft != nil || isPreparingAccount {
+            activeWorkoutOpenRequest = UUID()
+        }
+        return true
+    }
+
+    func consumeActiveWorkoutOpenRequest() {
+        activeWorkoutOpenRequest = nil
     }
 
     /// Consumes only GymApp's exact shared-workout destinations. Recognized malformed

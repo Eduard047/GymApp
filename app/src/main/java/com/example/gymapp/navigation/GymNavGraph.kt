@@ -806,7 +806,8 @@ internal fun GymAppRoot(
     restTimerController: RestTimerController,
     sharedWorkoutInbox: SharedWorkoutInbox,
     pushManager: AndroidPushManager,
-    pushNavigationInbox: PushNavigationInbox
+    pushNavigationInbox: PushNavigationInbox,
+    activeWorkoutOpenInbox: com.example.gymapp.service.ActiveWorkoutOpenInbox
 ) {
     val authState by authManager.authState.collectAsStateWithLifecycle()
     val uiIsolationKey = accountUiIsolationKey(
@@ -1489,6 +1490,20 @@ internal fun GymAppRoot(
             navController.navigate(AppDestination.AddWorkout.route) {
                 launchSingleTop = true
             }
+        }
+    }
+    val pendingOpenActiveWorkout by activeWorkoutOpenInbox.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingOpenActiveWorkout, activeWorkout != null) {
+        val requestId = pendingOpenActiveWorkout ?: return@LaunchedEffect
+        if (activeWorkout != null) {
+            navController.navigate(AppDestination.ActiveWorkout.route) {
+                launchSingleTop = true
+            }
+            activeWorkoutOpenInbox.consume(requestId)
+        } else {
+            // The workout may still be loading after a cold start; give up if none appears.
+            kotlinx.coroutines.delay(com.example.gymapp.service.OPEN_ACTIVE_WORKOUT_GRACE_MILLIS)
+            activeWorkoutOpenInbox.consume(requestId)
         }
     }
     LaunchedEffect(liveWorkoutState.shouldOpenActiveWorkout, activeWorkout != null) {
@@ -4044,6 +4059,7 @@ internal fun GymAppRoot(
                                 onDeleteSet = viewModel::requestDeleteSet,
                                 onConfirmDeleteSet = viewModel::confirmSetDeletion,
                                 onDismissDeleteSet = viewModel::dismissSetDeletion,
+                                onUndoStagedRemoval = viewModel::undoStagedRemoval,
                                 onDeleteSession = viewModel::deleteSession,
                                 onSessionDeleted = { navController.popBackStack() },
                                 onUpdateSet = viewModel::updateSet,
