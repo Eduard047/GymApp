@@ -195,7 +195,6 @@ fun AddWorkoutScreen(
     onSetRepsChanged: (Long, Int, String) -> Unit,
     onApplyLastWeightToSet: (Long, Int) -> Unit,
     onCopyPreviousSet: (Long, Int) -> Unit,
-    onAddWeightToSet: (Long, Int) -> Unit,
     onDuplicateSet: (Long, Int) -> Unit,
     onApplyWorkoutRecommendation: (Long) -> Unit,
     onRepeatLastWorkout: () -> Unit,

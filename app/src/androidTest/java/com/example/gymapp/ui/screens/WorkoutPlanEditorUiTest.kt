@@ -296,7 +296,6 @@ class WorkoutPlanEditorUiTest {
                     onSetRepsChanged = { _, _, _ -> },
                     onApplyLastWeightToSet = { _, _ -> },
                     onCopyPreviousSet = { _, _ -> },
-                    onAddWeightToSet = { _, _ -> },
                     onDuplicateSet = { _, _ -> },
                     onApplyWorkoutRecommendation = {},
                     onRepeatLastWorkout = {},

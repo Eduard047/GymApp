@@ -1100,7 +1100,7 @@ test("Android exercise card matches the iOS compact set rows and single actions 
     assert.match(androidUkrainian, new RegExp(`name="${key}">${uk.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<`));
     assert.match(androidRussian, new RegExp(`name="${key}">${ru.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<`));
   }
-  assert.match(androidEditorViewModel, /fun copyPreviousSet\([\s\S]*fun addWeightToSet\([\s\S]*fun duplicateSet\(/);
+  assert.match(androidEditorViewModel, /fun copyPreviousSet\([\s\S]*fun duplicateSet\(/);
 });
 
 test("Move up and Move down reorder exercises on every client: plan editor and running workout", async () => {

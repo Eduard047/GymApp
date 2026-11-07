@@ -37,22 +37,6 @@ class WorkoutSetChipActionsTest {
     }
 
     @Test
-    fun plusTwoPointFiveAddsToTheChosenSetOnly() {
-        val result = sets.withWeightAddedAt(0)
-        assertEquals(listOf("62.5", "", "70"), result?.map { it.weight })
-        assertEquals("2.5", sets.withWeightAddedAt(1)?.get(1)?.weight)
-        assertEquals("72.5", sets.withWeightAddedAt(2)?.get(2)?.weight)
-        assertEquals("62", listOf(SetInputState("59,5", "5")).withWeightAddedAt(0)?.first()?.weight)
-    }
-
-    @Test
-    fun plusTwoPointFiveRejectsInvalidWeightsAndOverflow() {
-        assertNull(listOf(SetInputState("abc", "5")).withWeightAddedAt(0))
-        assertNull(listOf(SetInputState("1000000", "5")).withWeightAddedAt(0))
-        assertNull(sets.withWeightAddedAt(3))
-    }
-
-    @Test
     fun duplicateInsertsACopyRightAfterTheSet() {
         val result = sets.withSetDuplicatedAfter(0)
         assertEquals(4, result?.size)
@@ -73,7 +57,7 @@ class WorkoutSetChipActionsTest {
         assertNotSame(duplicated[0], duplicated[1])
 
         // Editing the copy through the pure chip actions must leave the source set untouched.
-        val edited = checkNotNull(duplicated.withWeightAddedAt(1))
+        val edited = checkNotNull(duplicated.withLastWeightAt(1, 62.5))
         assertEquals("60", edited[0].weight)
         assertEquals("62.5", edited[1].weight)
         assertEquals("70", edited[2].weight)

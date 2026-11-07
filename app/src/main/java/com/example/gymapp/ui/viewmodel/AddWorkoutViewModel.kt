@@ -1860,10 +1860,6 @@ class AddWorkoutViewModel internal constructor(
         updateDraftSets(draftId) { it.withPreviousSetCopiedAt(setIndex) }
     }
 
-    fun addWeightToSet(draftId: Long, setIndex: Int, delta: Double = WORKOUT_SET_QUICK_WEIGHT_STEP) {
-        updateDraftSets(draftId) { it.withWeightAddedAt(setIndex, delta) }
-    }
-
     fun duplicateSet(draftId: Long, setIndex: Int) {
         updateDraftSets(draftId, flagValidationWhenUnchanged = true) { it.withSetDuplicatedAfter(setIndex) }
     }

@@ -3560,9 +3560,6 @@ internal fun GymAppRoot(
                                 onSetRepsChanged = viewModel::updateSetReps,
                                 onApplyLastWeightToSet = viewModel::applyLastWeightToSet,
                                 onCopyPreviousSet = viewModel::copyPreviousSet,
-                                onAddWeightToSet = { draftId, setIndex ->
-                                    viewModel.addWeightToSet(draftId, setIndex)
-                                },
                                 onDuplicateSet = viewModel::duplicateSet,
                                 onApplyWorkoutRecommendation = viewModel::applyWorkoutRecommendation,
                                 onRepeatLastWorkout = viewModel::repeatLastWorkout,
