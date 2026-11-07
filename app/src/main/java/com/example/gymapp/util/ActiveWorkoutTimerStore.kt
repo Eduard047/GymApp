@@ -6,7 +6,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-internal const val MAX_ACTIVE_WORKOUT_REST_SECONDS = 300
+/** Same bounds as iPhone: rest runs from 5 s up to 30 min. */
+internal const val MIN_ACTIVE_WORKOUT_REST_SECONDS = 5
+internal const val MAX_ACTIVE_WORKOUT_REST_SECONDS = 30 * 60
 internal const val MAX_ACTIVE_WORKOUT_TIMER_MILLIS = 365L * 24L * 60L * 60L * 1_000L
 private const val ACTIVE_WORKOUT_TIMER_PREFS = "gym_active_workout_timer"
 private const val TIMER_OWNER_KEY = "owner"
@@ -124,7 +126,9 @@ internal class ActiveWorkoutTimerLedger(
     ): Boolean = synchronized(lock) {
         val current = matchingSession(expectedAccountKey, sessionStartedAt)
             ?: return@synchronized false
-        if (seconds !in 1..MAX_ACTIVE_WORKOUT_REST_SECONDS) return@synchronized false
+        if (seconds !in MIN_ACTIVE_WORKOUT_REST_SECONDS..MAX_ACTIVE_WORKOUT_REST_SECONDS) {
+            return@synchronized false
+        }
         val now = nowMillis()
         val durationMillis = seconds.toLong() * 1_000L
         if (!WorkoutDataLimits.isValidTimestamp(now) ||

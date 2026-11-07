@@ -129,6 +129,35 @@ class ActiveWorkoutTimerLedgerTest {
     }
 
     @Test
+    fun restAcceptsFiveSecondsToThirtyMinutesLikeIphone() {
+        var now = 10_000L
+        val ledger = ActiveWorkoutTimerLedger(InMemoryActiveWorkoutTimerPersistence(), nowMillis = { now })
+        ledger.switchAccount(ACCOUNT)
+        ledger.ensureSession(ACCOUNT, SESSION_START)
+        now = 20_000L
+
+        assertFalse(ledger.startRest(ACCOUNT, SESSION_START, seconds = 4))
+        assertFalse(ledger.startRest(ACCOUNT, SESSION_START, seconds = 1_801))
+        assertNull(ledger.snapshot.value?.restEndsAt)
+        assertTrue(ledger.startRest(ACCOUNT, SESSION_START, seconds = 5))
+        assertTrue(ledger.startRest(ACCOUNT, SESSION_START, seconds = 1_800))
+        assertEquals(1_800, activeWorkoutRestSecondsRemaining(ledger.snapshot.value, now))
+    }
+
+    @Test
+    fun adjustingRestCapsAtThirtyMinutes() {
+        var now = 10_000L
+        val ledger = ActiveWorkoutTimerLedger(InMemoryActiveWorkoutTimerPersistence(), nowMillis = { now })
+        ledger.switchAccount(ACCOUNT)
+        ledger.ensureSession(ACCOUNT, SESSION_START)
+        now = 20_000L
+        assertTrue(ledger.startRest(ACCOUNT, SESSION_START, seconds = 1_795))
+
+        assertEquals(1_800, ledger.adjustRest(ACCOUNT, SESSION_START, deltaSeconds = 15))
+        assertEquals(1_800, activeWorkoutRestSecondsRemaining(ledger.snapshot.value, now))
+    }
+
+    @Test
     fun accountSwitchClearsSnapshotAndPersistedSession() {
         val persistence = InMemoryActiveWorkoutTimerPersistence()
         val ledger = ActiveWorkoutTimerLedger(persistence, nowMillis = { 10_000L })
