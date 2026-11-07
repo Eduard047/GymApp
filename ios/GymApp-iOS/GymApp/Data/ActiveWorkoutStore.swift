@@ -102,7 +102,7 @@ final class ActiveWorkoutStore: ObservableObject {
     private static let maximumJSONContainers = 25_000
     nonisolated static let maximumWeight = 1_000_000.0
     nonisolated static let maximumReps = 10_000
-    private static let maximumRestSeconds = 30 * 60
+    private static let maximumRestSeconds = RestTimerLimits.maximumSeconds
     private static let minimumSupportedTimestampMilliseconds: Int64 = -62_135_769_600_000
     private static let maximumSupportedTimestampMilliseconds: Int64 = 64_092_211_200_000
 
@@ -467,7 +467,7 @@ final class ActiveWorkoutStore: ObservableObject {
         remainingSeconds: Int,
         now: Date = Date()
     ) throws -> ActiveWorkoutDraft {
-        guard (1 ... Self.maximumRestSeconds).contains(remainingSeconds) else {
+        guard RestTimerLimits.isValid(remainingSeconds) else {
             throw ActiveWorkoutStoreError.invalidDraft
         }
         // No running rest and nothing for normalization to fold into active time:
@@ -1407,7 +1407,7 @@ final class ActiveWorkoutStore: ObservableObject {
         at now: Date,
         restSeconds: Int
     ) throws {
-        guard (1 ... maximumRestSeconds).contains(restSeconds) else {
+        guard RestTimerLimits.isValid(restSeconds) else {
             throw ActiveWorkoutStoreError.invalidDraft
         }
         var timing = normalizedTiming(in: draft, at: now)

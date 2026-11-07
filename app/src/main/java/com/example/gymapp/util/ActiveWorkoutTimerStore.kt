@@ -9,6 +9,23 @@ import kotlinx.coroutines.flow.asStateFlow
 /** Same bounds as iPhone: rest runs from 5 s up to 30 min. */
 internal const val MIN_ACTIVE_WORKOUT_REST_SECONDS = 5
 internal const val MAX_ACTIVE_WORKOUT_REST_SECONDS = 30 * 60
+
+internal fun isValidActiveWorkoutRestSeconds(seconds: Int): Boolean =
+    seconds in MIN_ACTIVE_WORKOUT_REST_SECONDS..MAX_ACTIVE_WORKOUT_REST_SECONDS
+
+/**
+ * Rest left after a +/- adjust (shared/rest-duration-v1.json restLimits): 0 stops the rest, a
+ * short result is raised to the 5 s minimum, and a long one is capped at 30 min.
+ */
+internal fun activeWorkoutAdjustedRestSeconds(remainingSeconds: Int, deltaSeconds: Int): Int {
+    val next = remainingSeconds.toLong() + deltaSeconds.toLong()
+    if (next <= 0L) return 0
+    return next.coerceIn(
+        MIN_ACTIVE_WORKOUT_REST_SECONDS.toLong(),
+        MAX_ACTIVE_WORKOUT_REST_SECONDS.toLong()
+    ).toInt()
+}
+
 internal const val MAX_ACTIVE_WORKOUT_TIMER_MILLIS = 365L * 24L * 60L * 60L * 1_000L
 private const val ACTIVE_WORKOUT_TIMER_PREFS = "gym_active_workout_timer"
 private const val TIMER_OWNER_KEY = "owner"
@@ -126,7 +143,7 @@ internal class ActiveWorkoutTimerLedger(
     ): Boolean = synchronized(lock) {
         val current = matchingSession(expectedAccountKey, sessionStartedAt)
             ?: return@synchronized false
-        if (seconds !in MIN_ACTIVE_WORKOUT_REST_SECONDS..MAX_ACTIVE_WORKOUT_REST_SECONDS) {
+        if (!isValidActiveWorkoutRestSeconds(seconds)) {
             return@synchronized false
         }
         val now = nowMillis()
@@ -179,8 +196,7 @@ internal class ActiveWorkoutTimerLedger(
             return@synchronized if (persistAndPublish(resumed)) 0 else null
         }
         val currentRemaining = activeWorkoutRestSecondsRemaining(current, now)
-        val nextRemaining = (currentRemaining + deltaSeconds)
-            .coerceAtMost(MAX_ACTIVE_WORKOUT_REST_SECONDS)
+        val nextRemaining = activeWorkoutAdjustedRestSeconds(currentRemaining, deltaSeconds)
         if (nextRemaining <= 0) {
             val resumed = current.copy(activeSegmentStartedAt = now, restEndsAt = null)
             return@synchronized if (persistAndPublish(resumed)) 0 else null

@@ -28,6 +28,37 @@ final class RestDurationGoldenTests: XCTestCase {
         }
     }
 
+    func testSharedRestLimitsMatchAndroid() throws {
+        let limits = try XCTUnwrap(contract()["restLimits"] as? [String: Any])
+        XCTAssertEqual(limits["minSeconds"] as? Int, RestTimerLimits.minimumSeconds)
+        XCTAssertEqual(limits["maxSeconds"] as? Int, RestTimerLimits.maximumSeconds)
+
+        let valid = try XCTUnwrap(limits["validCases"] as? [[String: Any]])
+        XCTAssertGreaterThanOrEqual(valid.count, 6)
+        for item in valid {
+            let id = try XCTUnwrap(item["id"] as? String)
+            XCTAssertEqual(
+                RestTimerLimits.isValid(try XCTUnwrap(item["seconds"] as? Int)),
+                try XCTUnwrap(item["valid"] as? Bool),
+                id
+            )
+        }
+
+        let adjust = try XCTUnwrap(limits["adjustCases"] as? [[String: Any]])
+        XCTAssertGreaterThanOrEqual(adjust.count, 11)
+        for item in adjust {
+            let id = try XCTUnwrap(item["id"] as? String)
+            XCTAssertEqual(
+                RestTimerLimits.adjusted(
+                    remainingSeconds: try XCTUnwrap(item["remainingSeconds"] as? Int),
+                    deltaSeconds: try XCTUnwrap(item["deltaSeconds"] as? Int)
+                ),
+                try XCTUnwrap(item["expectedSeconds"] as? Int),
+                id
+            )
+        }
+    }
+
     private func contract() throws -> [String: Any] {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Recommended rest seconds golden cases run by Android RestDurationGoldenTest and iOS RestDurationGoldenTests. restSeconds is the role-based rest for the exercise resolved from name (Primary 180, Secondary 120, Isolation 75, Core and Warmup 60; unknown or custom exercises count as Isolation 75). catalogKey, when present, is the catalog key of the same exercise: iOS also passes it alongside the name, Android resolves from the name alone.",
+  "description": "Recommended rest seconds golden cases run by Android RestDurationGoldenTest and iOS RestDurationGoldenTests. restSeconds is the role-based rest for the exercise resolved from name (Primary 180, Secondary 120, Isolation 75, Core and Warmup 60; unknown or custom exercises count as Isolation 75). catalogKey, when present, is the catalog key of the same exercise: iOS also passes it alongside the name, Android resolves from the name alone. restLimits is the canonical active-rest bound on both platforms: configured rest is valid from minSeconds to maxSeconds inclusive, and adjust (+/-) from a running rest of remainingSeconds by deltaSeconds gives expectedSeconds (0 stops the rest; a result between 1 and minSeconds-1 is raised to minSeconds; a result above maxSeconds is lowered to maxSeconds).",
   "cases": [
     {
       "id": "primary-squat-english",
@@ -100,5 +100,109 @@
       "name": "",
       "restSeconds": 75
     }
-  ]
+  ],
+  "restLimits": {
+    "minSeconds": 5,
+    "maxSeconds": 1800,
+    "validCases": [
+      {
+        "id": "zero",
+        "seconds": 0,
+        "valid": false
+      },
+      {
+        "id": "below-min",
+        "seconds": 4,
+        "valid": false
+      },
+      {
+        "id": "min",
+        "seconds": 5,
+        "valid": true
+      },
+      {
+        "id": "typical",
+        "seconds": 90,
+        "valid": true
+      },
+      {
+        "id": "max",
+        "seconds": 1800,
+        "valid": true
+      },
+      {
+        "id": "above-max",
+        "seconds": 1801,
+        "valid": false
+      }
+    ],
+    "adjustCases": [
+      {
+        "id": "plus-15",
+        "remainingSeconds": 60,
+        "deltaSeconds": 15,
+        "expectedSeconds": 75
+      },
+      {
+        "id": "minus-15",
+        "remainingSeconds": 60,
+        "deltaSeconds": -15,
+        "expectedSeconds": 45
+      },
+      {
+        "id": "minus-to-exactly-min",
+        "remainingSeconds": 20,
+        "deltaSeconds": -15,
+        "expectedSeconds": 5
+      },
+      {
+        "id": "minus-below-min-floors-at-min",
+        "remainingSeconds": 18,
+        "deltaSeconds": -15,
+        "expectedSeconds": 5
+      },
+      {
+        "id": "minus-to-one-floors-at-min",
+        "remainingSeconds": 16,
+        "deltaSeconds": -15,
+        "expectedSeconds": 5
+      },
+      {
+        "id": "minus-to-zero-stops",
+        "remainingSeconds": 15,
+        "deltaSeconds": -15,
+        "expectedSeconds": 0
+      },
+      {
+        "id": "minus-below-zero-stops",
+        "remainingSeconds": 10,
+        "deltaSeconds": -15,
+        "expectedSeconds": 0
+      },
+      {
+        "id": "plus-from-short-rest",
+        "remainingSeconds": 1,
+        "deltaSeconds": 15,
+        "expectedSeconds": 16
+      },
+      {
+        "id": "plus-to-exactly-max",
+        "remainingSeconds": 1785,
+        "deltaSeconds": 15,
+        "expectedSeconds": 1800
+      },
+      {
+        "id": "plus-above-max-caps",
+        "remainingSeconds": 1795,
+        "deltaSeconds": 15,
+        "expectedSeconds": 1800
+      },
+      {
+        "id": "already-max-stays",
+        "remainingSeconds": 1800,
+        "deltaSeconds": 15,
+        "expectedSeconds": 1800
+      }
+    ]
+  }
 }

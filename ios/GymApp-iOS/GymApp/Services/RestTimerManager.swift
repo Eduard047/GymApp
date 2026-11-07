@@ -51,6 +51,28 @@ final class SystemRestNotificationCenterClient: RestNotificationCenterClient {
     }
 }
 
+/// Canonical rest bounds shared with Android (shared/rest-duration-v1.json restLimits).
+enum RestTimerLimits {
+    nonisolated static let minimumSeconds = 5
+    nonisolated static let maximumSeconds = 30 * 60
+
+    nonisolated static func isValid(_ seconds: Int) -> Bool {
+        (minimumSeconds ... maximumSeconds).contains(seconds)
+    }
+
+    nonisolated static func clamped(_ seconds: Int) -> Int {
+        min(max(seconds, minimumSeconds), maximumSeconds)
+    }
+
+    /// Rest left after a +/- adjust: 0 stops the rest, a short result is raised to the
+    /// minimum, and a long one is capped at the maximum.
+    nonisolated static func adjusted(remainingSeconds: Int, deltaSeconds: Int) -> Int {
+        let (next, overflow) = remainingSeconds.addingReportingOverflow(deltaSeconds)
+        if overflow { return deltaSeconds > 0 ? maximumSeconds : 0 }
+        return next <= 0 ? 0 : clamped(next)
+    }
+}
+
 struct RestTimerState: Identifiable, Codable, Equatable, Sendable {
     let id: String
     let endDate: Date
@@ -181,7 +203,7 @@ final class RestTimerManager: ObservableObject {
         }
 
         let previousState = timers[id]
-        let duration = min(max(Int(ceil(remaining)), 5), 30 * 60)
+        let duration = RestTimerLimits.clamped(Int(ceil(remaining)))
         let state = RestTimerState(id: id, endDate: deadline, duration: duration)
         let expectedLifecycleGeneration = notificationLifecycleGeneration
 
@@ -217,7 +239,7 @@ final class RestTimerManager: ObservableObject {
     func adjust(id: String, by seconds: Int, title: String) -> Task<Void, Never> {
         let currentRemaining = remaining(for: id)
         guard currentRemaining > 0 else { return Task {} }
-        let adjusted = currentRemaining + seconds
+        let adjusted = RestTimerLimits.adjusted(remainingSeconds: currentRemaining, deltaSeconds: seconds)
         if adjusted <= 0 {
             cancel(id: id)
             return Task {}
@@ -233,7 +255,7 @@ final class RestTimerManager: ObservableObject {
               timers[id] != nil || timers.count < Self.maxPersistedTimers else {
             return Task {}
         }
-        let safeSeconds = min(max(seconds, 5), 30 * 60)
+        let safeSeconds = RestTimerLimits.clamped(seconds)
         let state = RestTimerState(
             id: id,
             endDate: currentDateProvider().addingTimeInterval(TimeInterval(safeSeconds)),
@@ -413,7 +435,7 @@ final class RestTimerManager: ObservableObject {
     private static func isValidPersistedTimer(_ state: RestTimerState, now: Date) -> Bool {
         let remaining = state.endDate.timeIntervalSince(now)
         return isValidTimerID(state.id) &&
-            (5 ... 30 * 60).contains(state.duration) &&
+            RestTimerLimits.isValid(state.duration) &&
             remaining.isFinite &&
             remaining <= TimeInterval(30 * 60)
     }

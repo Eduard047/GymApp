@@ -3275,7 +3275,10 @@ struct ActiveWorkoutView: View {
         let currentRemaining = draft.timing?.restingUntil.map {
             gymClampedSeconds($0.timeIntervalSince(now), max: 30 * 60)
         } ?? 0
-        let adjusted = currentRemaining + deltaSeconds
+        let adjusted = RestTimerLimits.adjusted(
+            remainingSeconds: currentRemaining,
+            deltaSeconds: deltaSeconds
+        )
         if adjusted <= 0 {
             stopManualRest()
             return
