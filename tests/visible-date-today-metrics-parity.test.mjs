@@ -44,6 +44,7 @@ const nativeDateSurfaces = Object.fromEntries(await Promise.all([
   "app/src/main/java/com/example/gymapp/ui/screens/ProfileScreen.kt",
   "app/src/main/java/com/example/gymapp/ui/screens/AccountSettingsSheet.kt",
   "app/src/main/java/com/example/gymapp/ui/viewmodel/ExerciseProgressViewModel.kt",
+  "app/src/main/java/com/example/gymapp/util/TimeOfDayFormat.kt",
   "ios/GymApp-iOS/GymApp/UI/Screens/AddWorkoutView.swift",
   "ios/GymApp-iOS/GymApp/UI/Screens/WorkoutDetailView.swift",
   "ios/GymApp-iOS/GymApp/UI/Screens/ProgressView.swift",
@@ -97,16 +98,25 @@ test("native visible date surfaces use weekday formatters and preserve explicit 
   }
   assert.match(
     source("app/src/main/java/com/example/gymapp/ui/screens/ActiveWorkoutScreen.kt"),
-    /if \(is24Hour\) "HH:mm" else "h:mm a"/
+    /TimeOfDayFormat\.formatTime\(timestamp, locale, is24Hour, zoneId\)/
+  );
+  assert.match(
+    source("app/src/main/java/com/example/gymapp/util/TimeOfDayFormat.kt"),
+    /is24Hour -> "HH:mm"[\s\S]*else -> "h:mm a"/
   );
   assert.doesNotMatch(
     source("app/src/main/java/com/example/gymapp/ui/screens/ActiveWorkoutScreen.kt"),
     /DateTimeUtils\.formatDate\(uiState\.startedAt/
   );
   assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/ExerciseListScreen.kt"), /DateTimeUtils\.formatDate\(sessionTimestamp, locale\)/);
+  // D9: every Android time of day goes through TimeOfDayFormat (system 12/24 h, app-locale words).
+  assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/ExerciseListScreen.kt"), /TimeOfDayFormat\.formatTime\(sessionTimestamp, locale, is24Hour\)/);
+  assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/ExerciseListScreen.kt"), /TimeOfDayFormat\.formatDateTime\(/);
+  assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/AccountSettingsSheet.kt"), /TimeOfDayFormat\.formatDateTime\(/);
+  assert.match(source("app/src/main/java/com/example/gymapp/util/TimeOfDayFormat.kt"), /is24Hour\(Context\)|DateFormat\.is24HourFormat\(context\)/);
   assert.match(source("app/src/main/java/com/example/gymapp/ui/viewmodel/ExerciseProgressViewModel.kt"), /DateTimeUtils\.formatChartAxisDate\(point\.sessionDate, locale, zoneId\)/);
   assert.doesNotMatch(source("app/src/main/java/com/example/gymapp/ui/viewmodel/ExerciseProgressViewModel.kt"), /EEEEE/);
-  assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/AccountSettingsSheet.kt"), /DateFormat\.getDateTimeInstance/);
+  assert.doesNotMatch(source("app/src/main/java/com/example/gymapp/ui/screens/AccountSettingsSheet.kt"), /DateFormat\.getDateTimeInstance/);
 
   assert.match(source("ios/GymApp-iOS/GymApp/UI/Screens/ProgressView.swift"), /gymFormattedDate\(/);
   // Exercise history rows are grouped by workout and use the weekday-aware short date + time

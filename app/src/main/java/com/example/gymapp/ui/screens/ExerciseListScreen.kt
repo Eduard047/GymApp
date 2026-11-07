@@ -6,7 +6,6 @@ import android.content.ClipData
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
-import android.text.format.DateFormat as AndroidDateFormat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
@@ -123,17 +122,16 @@ import com.example.gymapp.ui.viewmodel.ExerciseListUiState
 import com.example.gymapp.ui.viewmodel.ExerciseMuscleOptionUiModel
 import com.example.gymapp.ui.viewmodel.isRenameExerciseDirty
 import com.example.gymapp.util.DateTimeUtils
+import com.example.gymapp.util.TimeOfDayFormat
 import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.asString
 import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.text.DateFormat
 import java.text.Normalizer
 import java.text.NumberFormat
 import java.security.MessageDigest
-import java.util.Date
 import java.text.Collator
 import java.util.Locale
 import java.io.File
@@ -2686,12 +2684,12 @@ private fun backupReportLines(context: Context, json: String): List<String> {
     val diagnosticsOnly = root.optBoolean("diagnostics", false) ||
         root.optString("reportType") == "diagnostics"
     val locale = context.resources.configuration.locales[0]
-    val exportedAt = DateFormat.getDateTimeInstance(
-        DateFormat.MEDIUM,
-        DateFormat.SHORT,
-        locale
+    val is24Hour = TimeOfDayFormat.systemUses24Hour(context)
+    val exportedAt = TimeOfDayFormat.formatDateTime(
+        root.optLong("exportedAt", System.currentTimeMillis()),
+        locale,
+        is24Hour
     )
-        .format(Date(root.optLong("exportedAt", System.currentTimeMillis())))
     val exercises = root.optJSONArray("exercises")
     val sessions = root.optJSONArray("sessions")
     val summary = root.optJSONObject("summary") ?: root.optJSONObject("workoutData")
@@ -2797,8 +2795,7 @@ private fun backupReportLines(context: Context, json: String): List<String> {
             val session = sessions.optJSONObject(sessionIndex) ?: continue
             val sessionTimestamp = session.optLong("date", 0L)
             val date = DateTimeUtils.formatDate(sessionTimestamp, locale) + " · " +
-                DateFormat.getTimeInstance(DateFormat.SHORT, locale)
-                    .format(Date(sessionTimestamp))
+                TimeOfDayFormat.formatTime(sessionTimestamp, locale, is24Hour)
             val note = boundedPdfText(session.optString("note")).takeIf { it.isNotBlank() }
             lines += "$date${note?.let { " - $it" }.orEmpty()}"
             val sessionExercises = session.optJSONArray("exercises")
@@ -2909,7 +2906,7 @@ private fun ExerciseHistoryBottomSheetContent(
     val locale = remember(languageTag) { Locale.forLanguageTag(languageTag) }
     val zoneId = ZoneId.systemDefault()
     val monthFormatter = remember(locale) { DateTimeFormatter.ofPattern("LLLL yyyy", locale) }
-    val systemTimeFormatter = remember(context) { AndroidDateFormat.getTimeFormat(context) }
+    val is24Hour = remember(context) { TimeOfDayFormat.systemUses24Hour(context) }
 
     val sessionGroups = remember(history) {
         history
@@ -3054,7 +3051,7 @@ private fun ExerciseHistoryBottomSheetContent(
                     items = daySessions,
                     key = { group -> group.sessionId }
                 ) { sessionGroup ->
-                    val timeText = systemTimeFormatter.format(Date(sessionGroup.sessionDate))
+                    val timeText = TimeOfDayFormat.formatTime(sessionGroup.sessionDate, locale, is24Hour)
                     ExerciseHistorySessionCard(
                         sessionGroup = sessionGroup,
                         timeText = timeText,

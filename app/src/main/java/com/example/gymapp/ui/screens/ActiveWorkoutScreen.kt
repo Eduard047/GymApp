@@ -201,6 +201,7 @@ import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
+import com.example.gymapp.util.TimeOfDayFormat
 import com.example.gymapp.util.asString
 import java.time.Instant
 import java.time.ZoneId
@@ -3006,6 +3007,4 @@ internal fun formatActiveWorkoutStartedAt(
     locale: Locale = Locale.getDefault(),
     zoneId: ZoneId = ZoneId.systemDefault(),
     is24Hour: Boolean = true
-): String = DateTimeFormatter.ofPattern(if (is24Hour) "HH:mm" else "h:mm a", locale)
-    .withZone(zoneId)
-    .format(Instant.ofEpochMilli(timestamp))
+): String = TimeOfDayFormat.formatTime(timestamp, locale, is24Hour, zoneId)

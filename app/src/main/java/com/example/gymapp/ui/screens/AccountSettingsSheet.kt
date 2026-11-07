@@ -66,10 +66,11 @@ import com.example.gymapp.ui.components.SettingsRowDivider
 import com.example.gymapp.ui.components.SettingsRowTrailing
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
-import java.text.DateFormat
-import java.util.Date
 import kotlinx.coroutines.delay
+import com.example.gymapp.ui.util.currentAppLanguageTag
+import com.example.gymapp.util.TimeOfDayFormat
 import com.example.gymapp.util.asString
+import java.util.Locale
 import com.example.gymapp.util.formattedStringResource
 
 internal const val PROFILE_SUPPORT_URL = "https://gymapptracker.com/support.html"
@@ -494,8 +495,11 @@ private fun CloudSyncStatusCard(
                 supporting = status.lastSuccessAt?.let { timestamp ->
                     formattedStringResource(
                         R.string.cloud_sync_status_last_success,
-                        DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-                            .format(Date(timestamp))
+                        TimeOfDayFormat.formatDateTime(
+                            timestamp,
+                            Locale.forLanguageTag(currentAppLanguageTag()),
+                            TimeOfDayFormat.systemUses24Hour(LocalContext.current)
+                        )
                     )
                 } ?: stringResource(R.string.cloud_sync_status_never)
             )
