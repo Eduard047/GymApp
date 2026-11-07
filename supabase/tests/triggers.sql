@@ -722,32 +722,32 @@ insert into gymapp_private.live_workout_rooms (
     'c8000000-0000-4000-8000-000000000002',
     'c8300000-0000-4000-8000-000000000001',
     'waiting', '{"version":1,"exercises":[]}'::jsonb, '{}'::jsonb, 1,
-    '2026-10-29 10:00:00+00', '2026-11-05 10:00:00+00',
-    '2026-10-29 10:00:00+00', '2026-10-29 10:00:00+00'
+    pg_catalog.now(), pg_catalog.now() + interval '7 days',
+    pg_catalog.now(), pg_catalog.now()
   ),
   (
     'lr_c8000000000040008000000000000002',
     'c8000000-0000-4000-8000-000000000003',
     'c8300000-0000-4000-8000-000000000002',
     'waiting', '{"version":1,"exercises":[]}'::jsonb, '{}'::jsonb, 1,
-    '2026-10-29 10:00:00+00', '2026-11-05 10:00:00+00',
-    '2026-10-29 10:00:00+00', '2026-10-29 10:00:00+00'
+    pg_catalog.now(), pg_catalog.now() + interval '7 days',
+    pg_catalog.now(), pg_catalog.now()
   );
 insert into gymapp_private.live_workout_members (
   room_id, user_id, role, state, invited_at, joined_at
 ) values
   ('lr_c8000000000040008000000000000001',
    'c8000000-0000-4000-8000-000000000002', 'owner', 'joined',
-   '2026-10-29 10:00:00+00', '2026-10-29 10:01:00+00'),
+   pg_catalog.now(), pg_catalog.now() + interval '1 minute'),
   ('lr_c8000000000040008000000000000001',
    'c8000000-0000-4000-8000-000000000001', 'participant', 'invited',
-   '2026-10-29 10:00:00+00', null),
+   pg_catalog.now(), null),
   ('lr_c8000000000040008000000000000002',
    'c8000000-0000-4000-8000-000000000003', 'owner', 'joined',
-   '2026-10-29 10:00:00+00', '2026-10-29 10:01:00+00'),
+   pg_catalog.now(), pg_catalog.now() + interval '1 minute'),
   ('lr_c8000000000040008000000000000002',
    'c8000000-0000-4000-8000-000000000002', 'participant', 'invited',
-   '2026-10-29 10:00:00+00', null);
+   pg_catalog.now(), null);
 
 delete from auth.users where id = 'c8000000-0000-4000-8000-000000000001';
 
