@@ -1432,12 +1432,10 @@ public enum RecommendationEngine {
             if loadDirection == .higherIsHarder {
                 return values.last(where: { $0 <= desired && $0 < baseline })
                     ?? values.first(where: { $0 < baseline })
-                    ?? values.first
                     ?? baseline
             }
             return values.first(where: { $0 >= desired && $0 > baseline })
                 ?? values.last(where: { $0 > baseline })
-                ?? values.last
                 ?? baseline
         }
 

@@ -5852,6 +5852,51 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(comeback.sets.compactMap(\.weight), [50, 50, 50])
     }
 
+    func testMachineProfileEasingNeverAddsLoadWhenNoEasierStopExists() throws {
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        let exercise = Exercise(name: "Leg Press Machine")
+
+        func comebackWeights(
+            direction: MachineLoadDirection,
+            allowed: [Double],
+            baseline: Double
+        ) throws -> [Double] {
+            let profile = try MachineLoadProfile(direction: direction, allowedWeightsKg: allowed)
+            let recommendation = RecommendationEngine.buildForExercise(
+                exerciseID: exercise.id,
+                history: coachSession(
+                    exerciseID: exercise.id,
+                    exerciseName: exercise.name,
+                    date: now.addingTimeInterval(-30 * 86_400),
+                    weights: [baseline, baseline, baseline],
+                    reps: [6, 6, 6]
+                ),
+                exerciseName: exercise.name,
+                machineLoadProfile: profile,
+                trainingProfile: TrainingProfile(goal: .balanced, calorieMode: .maintenance),
+                now: now,
+                calendar: utcCalendar()
+            )
+            return recommendation.sets.compactMap(\.weight)
+        }
+
+        // Baseline below the lowest stop: easing must not jump up to 20 kg.
+        XCTAssertEqual(
+            try comebackWeights(direction: .higherIsHarder, allowed: [20, 30, 40], baseline: 10),
+            [10, 10, 10]
+        )
+        // Assisted machine, baseline above the top stop: easing must not drop to the top stop.
+        XCTAssertEqual(
+            try comebackWeights(direction: .lowerIsHarder, allowed: [20, 30, 40], baseline: 60),
+            [60, 60, 60]
+        )
+        // Normal case (Android parity): 35 * 0.86 = 30.1 -> nearest easier stop at or below it.
+        XCTAssertEqual(
+            try comebackWeights(direction: .higherIsHarder, allowed: [20, 30, 40], baseline: 35),
+            [30, 30, 30]
+        )
+    }
+
     func testFallbackProgressionSnapsOffGridHistoryToTwoPointFiveKilograms() {
         let now = Date(timeIntervalSince1970: 1_780_000_000)
         let exercise = Exercise(name: "Lat Pulldown")
