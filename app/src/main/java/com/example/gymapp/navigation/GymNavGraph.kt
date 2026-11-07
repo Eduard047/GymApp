@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -2909,16 +2911,19 @@ internal fun GymAppRoot(
             ) { innerPadding ->
                 val layoutDirection = LocalLayoutDirection.current
                 val tabBarInset = innerPadding.calculateBottomPadding()
+                val appliedPadding = PaddingValues(
+                    start = innerPadding.calculateStartPadding(layoutDirection),
+                    top = innerPadding.calculateTopPadding(),
+                    end = innerPadding.calculateEndPadding(layoutDirection),
+                    bottom = if (scrollsUnderTabBar) 0.dp else tabBarInset
+                )
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .gymGlassSource(glassState)
-                        .padding(
-                            start = innerPadding.calculateStartPadding(layoutDirection),
-                            top = innerPadding.calculateTopPadding(),
-                            end = innerPadding.calculateEndPadding(layoutDirection),
-                            bottom = if (scrollsUnderTabBar) 0.dp else tabBarInset
-                        )
+                        .padding(appliedPadding)
+                        // A screen's imePadding() then adds only the keyboard height above the nav bar.
+                        .consumeWindowInsets(appliedPadding)
                 ) {
                     if (showsContinueWorkoutBar && resumeBarFocus != null) {
                         ContinueWorkoutBar(

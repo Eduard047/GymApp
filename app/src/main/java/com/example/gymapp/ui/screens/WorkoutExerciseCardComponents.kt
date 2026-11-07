@@ -19,6 +19,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -57,6 +61,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -1169,6 +1181,7 @@ internal class DecimalSeparatorTransformation(locale: java.util.Locale) : Visual
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class, FlowPreview::class)
 @Composable
 internal fun SetWeightField(
     value: String,
@@ -1188,6 +1201,25 @@ internal fun SetWeightField(
         textAlign = TextAlign.End
     ).tabularDigits()
     val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+    // Keep the focused field fully above the keyboard: wait until the keyboard's height stops
+    // changing (the list resizes with it), then scroll the field plus some margin into view.
+    val bringIntoView = remember { BringIntoViewRequester() }
+    val imeDensity = LocalDensity.current
+    val imeInsets = WindowInsets.ime
+    var fieldSize by remember { mutableStateOf(IntSize.Zero) }
+    LaunchedEffect(focused) {
+        if (!focused) return@LaunchedEffect
+        snapshotFlow { imeInsets.getBottom(imeDensity) }
+            .distinctUntilChanged()
+            .debounce(250)
+            .collect { imeBottom ->
+                if (imeBottom <= 0) return@collect
+                val margin = with(imeDensity) { 40.dp.toPx() }
+                bringIntoView.bringIntoView(
+                    Rect(0f, -margin, fieldSize.width.toFloat(), fieldSize.height + margin)
+                )
+            }
+    }
     // Typed '.' or ',' both show as the app language's separator; the stored text is untouched.
     val locale = LocalConfiguration.current.locales[0]
     val decimalSeparatorTransformation = remember(locale) { DecimalSeparatorTransformation(locale) }
@@ -1217,6 +1249,8 @@ internal fun SetWeightField(
         interactionSource = interaction,
         modifier = Modifier
             .width(fieldWidth)
+            .onSizeChanged { fieldSize = it }
+            .bringIntoViewRequester(bringIntoView)
             .semantics { contentDescription = description },
         decorationBox = { innerTextField ->
             Box(
