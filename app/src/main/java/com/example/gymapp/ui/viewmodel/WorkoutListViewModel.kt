@@ -1,6 +1,5 @@
 ﻿package com.example.gymapp.ui.viewmodel
 
-import androidx.appcompat.app.AppCompatDelegate
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.SavedStateHandle
@@ -47,6 +46,7 @@ import com.example.gymapp.data.repository.estimatedLoad
 import com.example.gymapp.data.repository.muscleContributionsForExercise
 import com.example.gymapp.data.repository.normalizedExerciseName
 import com.example.gymapp.data.repository.toManualContributionMap
+import com.example.gymapp.util.AppLanguageSignal
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.TrainingGoal
@@ -80,7 +80,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.time.temporal.TemporalAdjusters
 import java.util.Locale
-import com.example.gymapp.util.RussianText
+import com.example.gymapp.util.localizedText
 import com.example.gymapp.data.repository.toSmartWorkoutEffort
 import com.example.gymapp.data.repository.trainingProfileForActivation
 import com.example.gymapp.garmin.MAX_GARMIN_DURATION_SECONDS
@@ -359,7 +359,10 @@ class WorkoutListViewModel(
     private val trainingGuidanceManager: TrainingGuidanceManager,
     private val savedStateHandle: SavedStateHandle,
     private val surface: WorkoutListSurface = WorkoutListSurface.Today,
-    private val zoneProvider: () -> ZoneId = { ZoneId.systemDefault() }
+    private val zoneProvider: () -> ZoneId = { ZoneId.systemDefault() },
+    // The in-app language; localized text in the UI state is rebuilt when it changes (the ViewModel
+    // outlives the Activity recreate that follows a language switch).
+    private val languageTag: StateFlow<String> = AppLanguageSignal.tag
 ) : ViewModel() {
     private val accountBinding = trainingGuidanceManager.activeBinding
     private val profileAccountBinding = trainingProfileManager.activeBinding
@@ -507,8 +510,9 @@ class WorkoutListViewModel(
         combine(
             sourceState,
             muscleSelection,
-            experienceState
-        ) { source, selection, experience ->
+            experienceState,
+            languageTag
+        ) { source, selection, experience, _ ->
         val offset = source.offset
         val selectedWeekOffset = source.weekOffset
         val selectedHistoryPeriod = source.historyPeriod
@@ -1753,8 +1757,7 @@ class WorkoutListViewModel(
     }
 
     private fun muscleLabel(muscleId: String): String {
-        val definition = MUSCLE_DEFINITIONS.firstOrNull { it.id == muscleId }
-        return definition?.let { t(en = it.titleEn, uk = it.titleUk) } ?: muscleId
+        return muscleLabelForLanguage(muscleId, languageTag.value)
     }
 
     private fun missionUiModel(mission: AdaptiveMission): MissionProgressUiModel {
@@ -1909,20 +1912,9 @@ class WorkoutListViewModel(
         return (progress.toFloat() / goal.toFloat()).coerceIn(0f, 1f)
     }
 
-    private fun t(en: String, uk: String): String = when (currentLocale().language.lowercase(Locale.ROOT)) {
-        "uk" -> uk
-        "ru" -> RussianText.translate(en)
-        else -> en
-    }
+    private fun t(en: String, uk: String): String = localizedText(languageTag.value, en, uk)
 
-    private fun currentLocale(): Locale {
-        val appLocales = AppCompatDelegate.getApplicationLocales()
-        return if (appLocales.isEmpty) {
-            Locale.getDefault()
-        } else {
-            appLocales[0] ?: Locale.getDefault()
-        }
-    }
+    private fun currentLocale(): Locale = Locale.forLanguageTag(languageTag.value)
 
     private fun slavicForm(count: Int, one: String, few: String, many: String): String {
         val n = kotlin.math.abs(count)
@@ -1967,6 +1959,12 @@ class WorkoutListViewModel(
             }
         }
     }
+}
+
+/** The muscle's display name in the language of [languageTag]; the raw id for an unknown muscle. */
+internal fun muscleLabelForLanguage(muscleId: String, languageTag: String): String {
+    val definition = MUSCLE_DEFINITIONS.firstOrNull { it.id == muscleId } ?: return muscleId
+    return localizedText(languageTag, definition.titleEn, definition.titleUk)
 }
 
 internal fun buildTodayHeroMetrics(

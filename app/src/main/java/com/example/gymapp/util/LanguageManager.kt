@@ -32,6 +32,7 @@ class LanguageManager(
         if (saved != null) {
             AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(saved.tag))
             _selectedLanguage.value = saved
+            AppLanguageSignal.update(saved.tag)
         } else {
             _selectedLanguage.value = resolveCurrentLanguage()
         }
@@ -41,6 +42,7 @@ class LanguageManager(
         preferences.edit().putString(KEY_LANGUAGE, language.tag).apply()
         AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(language.tag))
         _selectedLanguage.value = language
+        AppLanguageSignal.update(language.tag)
     }
 
     fun currentLanguage(): AppLanguage {

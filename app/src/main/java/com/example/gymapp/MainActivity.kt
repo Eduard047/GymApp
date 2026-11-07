@@ -4,6 +4,7 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import com.example.gymapp.util.AppLanguageSignal
 import android.util.Log
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
@@ -36,6 +37,7 @@ class MainActivity : AppCompatActivity() {
         }.onFailure { throwable ->
             Log.e("MainActivity", "Failed to apply saved language", throwable)
         }
+        AppLanguageSignal.refresh()
 
         handleIncomingIntent(intent)
         UiAuditHooks.handleIntent(this, intent)

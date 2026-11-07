@@ -5,7 +5,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import androidx.appcompat.app.AppCompatDelegate
 import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
@@ -13,8 +12,9 @@ import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.MuscleContribution
 import com.example.gymapp.data.repository.muscleContributionsForExercise
 import com.example.gymapp.data.repository.toManualContributionMap
+import com.example.gymapp.util.AppLanguageSignal
 import com.example.gymapp.util.DateTimeUtils
-import com.example.gymapp.util.RussianText
+import com.example.gymapp.util.localizedText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -179,172 +179,16 @@ internal inline fun resolveProgressExerciseSelection(
     return defaultId()
 }
 
-@OptIn(ExperimentalCoroutinesApi::class)
-class ExerciseProgressViewModel(
-    private val repository: GymRepository,
-    private val zoneProvider: () -> ZoneId = { ZoneId.systemDefault() }
-) : ViewModel() {
-    // Read per use (not cached) so a device timezone change is picked up on the next emission.
-    private val zoneId: ZoneId get() = zoneProvider()
-    private val locale = AppCompatDelegate.getApplicationLocales().let { locales ->
-        if (locales.isEmpty) Locale.getDefault() else locales[0] ?: Locale.getDefault()
-    }
+/** Builds the localized spotlight/trend text for one language; a new instance per emission. */
+internal class ExerciseProgressTextBuilder(
+    private val languageTag: String,
+    private val zoneId: ZoneId
+) {
+    private val locale: Locale = Locale.forLanguageTag(languageTag)
     private val isUkrainian = locale.language.equals("uk", ignoreCase = true)
     private val isRussian = locale.language.equals("ru", ignoreCase = true)
-    private val monthOffset = MutableStateFlow(0)
-    private val selectedExerciseId = MutableStateFlow<Long?>(null)
-    /** Set once the user picks an exercise, so the most-logged default stops following history. */
-    private var userPickedExercise = false
 
-    private val exercises = repository.observeExercises().stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = emptyList()
-    )
-    /** One upstream of the whole-history join for this ViewModel; comparison runs off the main thread. */
-    private val allExerciseHistoryFlow = repository.observeAllExerciseHistory()
-        .distinctUntilChanged()
-        .flowOn(Dispatchers.Default)
-        .shareIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            replay = 1
-        )
-    private val exerciseCatalogFlow = combine(
-        exercises,
-        allExerciseHistoryFlow,
-        repository.observeExerciseMuscleMappings()
-    ) { exerciseList, history, mappings ->
-        val manualMappings = mappings.toManualContributionMap()
-        val exerciseFrequencies = exerciseFrequencyByExercise(history)
-        ExerciseProgressCatalog(
-            exercises = exerciseList,
-            frequentExerciseIds = frequentExerciseIds(exerciseFrequencies),
-            workoutCounts = exerciseFrequencies.mapValues { (_, frequency) ->
-                frequency.workoutCount
-            },
-            muscleIdsByName = exerciseList.associate { exercise ->
-                val contributions = muscleContributionsForExercise(exercise.name, manualMappings)
-                exercise.name to contributions.mapTo(linkedSetOf()) { it.muscleId }
-            },
-            manualMappings = manualMappings
-        )
-    }
-
-    private val historyFlow = combine(selectedExerciseId, monthOffset) { exerciseId, offset ->
-        exerciseId to offset
-    }.flatMapLatest { (exerciseId, offset) ->
-        if (exerciseId == null) {
-            flowOf(emptyList())
-        } else {
-            repository.observeExerciseHistoryForMonth(exerciseId, offset)
-        }
-    }
-
-    private val fullHistoryFlow = selectedExerciseId.flatMapLatest { exerciseId ->
-        if (exerciseId == null) {
-            flowOf(emptyList())
-        } else {
-            repository.observeExerciseHistory(exerciseId)
-        }
-    }
-
-    private val progressState = combine(
-        monthOffset,
-        exerciseCatalogFlow,
-        selectedExerciseId,
-        historyFlow,
-        fullHistoryFlow
-    ) { offset, catalog, selectedId, history, fullHistory ->
-        val exerciseList = catalog.exercises
-        val selectedExerciseName = exerciseList.firstOrNull { it.id == selectedId }?.name
-        val progressPoints = history.toProgressPoints()
-        val allTimePoints = fullHistory.toProgressPoints()
-        val bestWeight = progressPoints.maxOfOrNull { it.maxWeight }
-        val averageWeight = if (progressPoints.isEmpty()) null else {
-            progressPoints.map { it.maxWeight }.average()
-        }
-
-        ExerciseProgressUiState(
-            monthOffset = offset,
-            monthLabel = DateTimeUtils.monthLabel(offset),
-            exercises = exerciseList,
-            frequentExerciseIds = catalog.frequentExerciseIds,
-            exerciseWorkoutCounts = catalog.workoutCounts,
-            exerciseMuscleIds = catalog.muscleIdsByName,
-            selectedMuscleIntensities = progressMuscleIntensities(selectedExerciseName, catalog.manualMappings),
-            selectedExerciseId = selectedId,
-            selectedExerciseName = selectedExerciseName,
-            history = history,
-            progressPoints = progressPoints,
-            bestWeight = bestWeight,
-            averageWeight = averageWeight,
-            spotlight = buildSpotlight(
-                exerciseName = selectedExerciseName,
-                monthPoints = progressPoints,
-                allTimePoints = allTimePoints
-            ),
-            trendChart = buildTrendChart(progressPoints)
-        )
-    }
-
-    val uiState: StateFlow<ExerciseProgressUiState> = progressState
-        .flowOn(Dispatchers.Default)
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = ExerciseProgressUiState()
-        )
-
-    init {
-        viewModelScope.launch {
-            // The history scan for the default pick runs on Default; the pick itself is resolved on the
-            // collector's thread so a concurrent user selection is never overwritten by a stale value.
-            combine(exercises, allExerciseHistoryFlow) { list, history ->
-                list to defaultProgressExerciseId(list, history)
-            }.flowOn(Dispatchers.Default).collect { (list, defaultId) ->
-                selectedExerciseId.value = resolveProgressExerciseSelection(
-                    exercises = list,
-                    currentId = selectedExerciseId.value,
-                    userPicked = userPickedExercise
-                ) { defaultId }
-            }
-        }
-    }
-
-    fun selectExercise(exerciseId: Long) {
-        userPickedExercise = true
-        selectedExerciseId.value = exerciseId
-    }
-
-    fun previousMonth() {
-        monthOffset.update { it - 1 }
-    }
-
-    fun nextMonth() {
-        monthOffset.update(::nextProgressMonthOffset)
-    }
-
-    fun currentMonth() {
-        monthOffset.value = 0
-    }
-
-    private fun List<ExerciseHistoryEntry>.toProgressPoints(): List<ExerciseProgressPoint> {
-        return groupBy { it.sessionId }
-            .values
-            .map { entries ->
-                ExerciseProgressPoint(
-                    sessionId = entries.first().sessionId,
-                    sessionDate = entries.first().sessionDate,
-                    maxWeight = entries.maxOfOrNull { it.weight } ?: 0.0,
-                    totalVolume = entries.sumOf { it.weight * it.reps },
-                    totalReps = entries.sumOf { it.reps }
-                )
-            }
-            .sortedBy { it.sessionDate }
-    }
-
-    private fun buildSpotlight(
+    fun buildSpotlight(
         exerciseName: String?,
         monthPoints: List<ExerciseProgressPoint>,
         allTimePoints: List<ExerciseProgressPoint>
@@ -387,7 +231,7 @@ class ExerciseProgressViewModel(
         )
     }
 
-    private fun buildTrendChart(points: List<ExerciseProgressPoint>): ExerciseTrendChartUiModel {
+    fun buildTrendChart(points: List<ExerciseProgressPoint>): ExerciseTrendChartUiModel {
         if (points.isEmpty()) {
             return ExerciseTrendChartUiModel()
         }
@@ -478,10 +322,173 @@ class ExerciseProgressViewModel(
         unit = if (isUkrainian || isRussian) "кг" else "kg"
     )
 
-    private fun t(en: String, uk: String): String = when (locale.language.lowercase(Locale.ROOT)) {
-        "uk" -> uk
-        "ru" -> RussianText.translate(en)
-        else -> en
+    private fun t(en: String, uk: String): String = localizedText(languageTag, en, uk)
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class ExerciseProgressViewModel(
+    private val repository: GymRepository,
+    private val zoneProvider: () -> ZoneId = { ZoneId.systemDefault() },
+    // The in-app language; labels are rebuilt when it changes (ViewModel outlives the Activity recreate).
+    private val languageTag: StateFlow<String> = AppLanguageSignal.tag
+) : ViewModel() {
+    // Read per use (not cached) so a device timezone change is picked up on the next emission.
+    private val zoneId: ZoneId get() = zoneProvider()
+    private val monthOffset = MutableStateFlow(0)
+    private val selectedExerciseId = MutableStateFlow<Long?>(null)
+    /** Set once the user picks an exercise, so the most-logged default stops following history. */
+    private var userPickedExercise = false
+
+    private val exercises = repository.observeExercises().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = emptyList()
+    )
+    /** One upstream of the whole-history join for this ViewModel; comparison runs off the main thread. */
+    private val allExerciseHistoryFlow = repository.observeAllExerciseHistory()
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
+        .shareIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            replay = 1
+        )
+    private val exerciseCatalogFlow = combine(
+        exercises,
+        allExerciseHistoryFlow,
+        repository.observeExerciseMuscleMappings()
+    ) { exerciseList, history, mappings ->
+        val manualMappings = mappings.toManualContributionMap()
+        val exerciseFrequencies = exerciseFrequencyByExercise(history)
+        ExerciseProgressCatalog(
+            exercises = exerciseList,
+            frequentExerciseIds = frequentExerciseIds(exerciseFrequencies),
+            workoutCounts = exerciseFrequencies.mapValues { (_, frequency) ->
+                frequency.workoutCount
+            },
+            muscleIdsByName = exerciseList.associate { exercise ->
+                val contributions = muscleContributionsForExercise(exercise.name, manualMappings)
+                exercise.name to contributions.mapTo(linkedSetOf()) { it.muscleId }
+            },
+            manualMappings = manualMappings
+        )
+    }
+
+    private val historyFlow = combine(selectedExerciseId, monthOffset) { exerciseId, offset ->
+        exerciseId to offset
+    }.flatMapLatest { (exerciseId, offset) ->
+        if (exerciseId == null) {
+            flowOf(emptyList())
+        } else {
+            repository.observeExerciseHistoryForMonth(exerciseId, offset)
+        }
+    }
+
+    private val fullHistoryFlow = selectedExerciseId.flatMapLatest { exerciseId ->
+        if (exerciseId == null) {
+            flowOf(emptyList())
+        } else {
+            repository.observeExerciseHistory(exerciseId)
+        }
+    }
+
+    // Re-emits when the in-app language changes so spotlight/trend text and number formats follow it.
+    private val localizedHistoryFlow = combine(historyFlow, languageTag) { history, tag -> history to tag }
+
+    private val progressState = combine(
+        monthOffset,
+        exerciseCatalogFlow,
+        selectedExerciseId,
+        localizedHistoryFlow,
+        fullHistoryFlow
+    ) { offset, catalog, selectedId, (history, tag), fullHistory ->
+        val textBuilder = ExerciseProgressTextBuilder(tag, zoneId)
+        val exerciseList = catalog.exercises
+        val selectedExerciseName = exerciseList.firstOrNull { it.id == selectedId }?.name
+        val progressPoints = history.toProgressPoints()
+        val allTimePoints = fullHistory.toProgressPoints()
+        val bestWeight = progressPoints.maxOfOrNull { it.maxWeight }
+        val averageWeight = if (progressPoints.isEmpty()) null else {
+            progressPoints.map { it.maxWeight }.average()
+        }
+
+        ExerciseProgressUiState(
+            monthOffset = offset,
+            monthLabel = DateTimeUtils.monthLabel(offset),
+            exercises = exerciseList,
+            frequentExerciseIds = catalog.frequentExerciseIds,
+            exerciseWorkoutCounts = catalog.workoutCounts,
+            exerciseMuscleIds = catalog.muscleIdsByName,
+            selectedMuscleIntensities = progressMuscleIntensities(selectedExerciseName, catalog.manualMappings),
+            selectedExerciseId = selectedId,
+            selectedExerciseName = selectedExerciseName,
+            history = history,
+            progressPoints = progressPoints,
+            bestWeight = bestWeight,
+            averageWeight = averageWeight,
+            spotlight = textBuilder.buildSpotlight(
+                exerciseName = selectedExerciseName,
+                monthPoints = progressPoints,
+                allTimePoints = allTimePoints
+            ),
+            trendChart = textBuilder.buildTrendChart(progressPoints)
+        )
+    }
+
+    val uiState: StateFlow<ExerciseProgressUiState> = progressState
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = ExerciseProgressUiState()
+        )
+
+    init {
+        viewModelScope.launch {
+            // The history scan for the default pick runs on Default; the pick itself is resolved on the
+            // collector's thread so a concurrent user selection is never overwritten by a stale value.
+            combine(exercises, allExerciseHistoryFlow) { list, history ->
+                list to defaultProgressExerciseId(list, history)
+            }.flowOn(Dispatchers.Default).collect { (list, defaultId) ->
+                selectedExerciseId.value = resolveProgressExerciseSelection(
+                    exercises = list,
+                    currentId = selectedExerciseId.value,
+                    userPicked = userPickedExercise
+                ) { defaultId }
+            }
+        }
+    }
+
+    fun selectExercise(exerciseId: Long) {
+        userPickedExercise = true
+        selectedExerciseId.value = exerciseId
+    }
+
+    fun previousMonth() {
+        monthOffset.update { it - 1 }
+    }
+
+    fun nextMonth() {
+        monthOffset.update(::nextProgressMonthOffset)
+    }
+
+    fun currentMonth() {
+        monthOffset.value = 0
+    }
+
+    private fun List<ExerciseHistoryEntry>.toProgressPoints(): List<ExerciseProgressPoint> {
+        return groupBy { it.sessionId }
+            .values
+            .map { entries ->
+                ExerciseProgressPoint(
+                    sessionId = entries.first().sessionId,
+                    sessionDate = entries.first().sessionDate,
+                    maxWeight = entries.maxOfOrNull { it.weight } ?: 0.0,
+                    totalVolume = entries.sumOf { it.weight * it.reps },
+                    totalReps = entries.sumOf { it.reps }
+                )
+            }
+            .sortedBy { it.sessionDate }
     }
 
     companion object {
