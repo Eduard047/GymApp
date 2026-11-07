@@ -68,10 +68,12 @@ test("Bluetooth and voice permission copy has exact English fallback plus Ukrain
     "NSMicrophoneUsageDescription",
     "NSSpeechRecognitionUsageDescription"
   ];
+  // Permission prompts only; the Home Screen quick action title is checked separately below.
+  const permissionsOnly = (values) => Object.fromEntries(Object.entries(values).filter(([key]) => key.startsWith("NS")));
   const locales = [
-    ["en", infoPlistStrings(englishInfo)],
-    ["uk", infoPlistStrings(ukrainianInfo)],
-    ["ru", infoPlistStrings(russianInfo)]
+    ["en", permissionsOnly(infoPlistStrings(englishInfo))],
+    ["uk", permissionsOnly(infoPlistStrings(ukrainianInfo))],
+    ["ru", permissionsOnly(infoPlistStrings(russianInfo))]
   ];
   for (const [locale, values] of locales) {
     assert.deepEqual(Object.keys(values).sort(), expectedKeys, `${locale} must localize the Bluetooth and voice prompts`);
@@ -91,4 +93,11 @@ test("Bluetooth and voice permission copy has exact English fallback plus Ukrain
   }
   assert.notDeepEqual(locales[1][1], locales[0][1]);
   assert.notDeepEqual(locales[2][1], locales[0][1]);
+});
+
+test("Start workout quick action title is localized in English, Ukrainian and Russian", () => {
+  assert.match(infoPlist, /<key>UIApplicationShortcutItemTitle<\/key>\s*<string>Start workout<\/string>/);
+  assert.equal(infoPlistStrings(englishInfo)["Start workout"], "Start workout");
+  assert.equal(infoPlistStrings(ukrainianInfo)["Start workout"], "Почати тренування");
+  assert.equal(infoPlistStrings(russianInfo)["Start workout"], "Начать тренировку");
 });
