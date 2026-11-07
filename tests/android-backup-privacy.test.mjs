@@ -210,7 +210,8 @@ test("private PDF rendering is off-main, clearly labeled, and resource bounded",
   );
   assert.match(screen, /coerceAtMost\(\s*MAX_PDF_SETS_PER_EXERCISE\s*\)/);
   assert.match(screen, /boundedPdfText\(/);
-  assert.match(screen, /word\.chunked\(maxChars\)/);
+  assert.match(screen, /wrapPdfText\(text, printableWidth\)/);
+  assert.match(screen, /measure\(rest\) > maxWidth/);
   assert.match(screen, /R\.string\.backup_report_diagnostics_title/);
   assert.match(screen, /R\.string\.backup_report_private_title/);
   assert.match(screen, /R\.string\.backup_report_private_notice/);

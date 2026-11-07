@@ -125,6 +125,7 @@ import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.TimeOfDayFormat
 import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.asString
+import com.example.gymapp.util.formatWeightDisplay
 import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
@@ -2507,6 +2508,7 @@ private fun createBackupPdfFile(context: Context, ownerKey: String, json: String
         val top = 48f
         val bottom = 800f
         val lineHeight = 16f
+        val printableWidth = pageWidth - left - left
         var pageNumber = 1
         var y = top
         var page = document.startPage(
@@ -2544,9 +2546,9 @@ private fun createBackupPdfFile(context: Context, ownerKey: String, json: String
             return true
         }
 
-        fun drawWrapped(text: String, paint: Paint = bodyPaint, maxChars: Int = 92) {
+        fun drawWrapped(text: String, paint: Paint = bodyPaint) {
             if (pageLimitReached) return
-            wrapPdfLine(text, maxChars).forEach { line ->
+            wrapPdfText(text, printableWidth) { paint.measureText(it) }.forEach { line ->
                 if (y > bottom && !newPage()) {
                     return
                 }
@@ -2558,12 +2560,12 @@ private fun createBackupPdfFile(context: Context, ownerKey: String, json: String
         reportLines.forEachIndexed { index, line ->
             when {
                 index == 0 -> {
-                    drawWrapped(line, titlePaint, maxChars = 58)
+                    drawWrapped(line, titlePaint)
                     y += 8f
                 }
                 line.startsWith("## ") -> {
                     y += 6f
-                    drawWrapped(line.removePrefix("## "), headingPaint, maxChars = 76)
+                    drawWrapped(line.removePrefix("## "), headingPaint)
                     y += 2f
                 }
                 else -> drawWrapped(line)
@@ -2789,10 +2791,13 @@ private fun backupReportLines(context: Context, json: String): List<String> {
     if (sessions == null || sessions.length() == 0) {
         lines += context.getString(R.string.backup_report_no_workouts)
     } else {
-        val sessionLimit = sessions.length().coerceAtMost(MAX_PDF_SESSIONS)
-        for (sessionIndex in 0 until sessionLimit) {
+        val sessionOrder = selectPdfSessionIndices(
+            List(sessions.length()) { sessions.optJSONObject(it)?.optLong("date", 0L) ?: 0L },
+            MAX_PDF_SESSIONS
+        )
+        for (sessionIndex in sessionOrder.indices) {
             if (lines.size >= MAX_PDF_REPORT_LINES) break
-            val session = sessions.optJSONObject(sessionIndex) ?: continue
+            val session = sessions.optJSONObject(sessionOrder[sessionIndex]) ?: continue
             val sessionTimestamp = session.optLong("date", 0L)
             val date = DateTimeUtils.formatDate(sessionTimestamp, locale) + " · " +
                 TimeOfDayFormat.formatTime(sessionTimestamp, locale, is24Hour)
@@ -2812,10 +2817,7 @@ private fun backupReportLines(context: Context, json: String): List<String> {
                 val setParts = buildList {
                     for (setIndex in 0 until setLimit) {
                         val set = sets?.optJSONObject(setIndex) ?: continue
-                        val weight = set.optDouble("weight", 0.0)
-                            .toString()
-                            .trimEnd('0')
-                            .trimEnd('.')
+                        val weight = pdfWeightText(set.optDouble("weight", 0.0), locale)
                         add(
                             context.safeGetString(
                                 R.string.backup_report_set_value,
@@ -2844,10 +2846,10 @@ private fun backupReportLines(context: Context, json: String): List<String> {
             }
             lines += ""
         }
-        if (sessions.length() > sessionLimit) {
+        if (sessions.length() > sessionOrder.size) {
             lines += context.safeGetString(
                 R.string.backup_report_more_workouts,
-                sessions.length() - sessionLimit
+                sessions.length() - sessionOrder.size
             )
         }
     }
@@ -2869,19 +2871,47 @@ private fun boundedPdfText(value: String): String = buildString {
     }
 }.trim()
 
-private fun wrapPdfLine(text: String, maxChars: Int): List<String> {
-    require(maxChars > 0)
+/**
+ * Indices of the sessions to print: the [limit] newest by date, newest first (ties keep the
+ * later backup position first, matching the DAO's "date ASC, id ASC" order reversed).
+ */
+internal fun selectPdfSessionIndices(dates: List<Long>, limit: Int): List<Int> =
+    dates.indices
+        .sortedWith(compareByDescending<Int> { dates[it] }.thenByDescending { it })
+        .take(limit)
+
+internal fun pdfWeightText(weight: Double, locale: Locale): String =
+    formatWeightDisplay(if (weight.isFinite()) weight else 0.0, locale)
+
+/**
+ * Wraps [text] so every returned line measures at most [maxWidth] by [measure] (the Paint that
+ * draws it). Words wider than the width are split by characters; a single character wider than
+ * the width is still emitted alone so wrapping always terminates.
+ */
+internal fun wrapPdfText(
+    text: String,
+    maxWidth: Float,
+    measure: (String) -> Float
+): List<String> {
+    require(maxWidth > 0f)
     val bounded = text.take(MAX_PDF_TEXT_CHARS)
-    if (bounded.length <= maxChars) return listOf(bounded)
-    val words = bounded.split(" ")
+    if (measure(bounded) <= maxWidth) return listOf(bounded)
     val lines = mutableListOf<String>()
     var current = ""
-    words.forEach { word ->
-        val chunks = if (word.length <= maxChars) listOf(word) else word.chunked(maxChars)
+    bounded.split(" ").forEach { word ->
+        val chunks = mutableListOf<String>()
+        var rest = word
+        while (rest.isNotEmpty() && measure(rest) > maxWidth) {
+            var end = rest.length - 1
+            while (end > 1 && measure(rest.substring(0, end)) > maxWidth) end--
+            chunks += rest.substring(0, end)
+            rest = rest.substring(end)
+        }
+        if (rest.isNotEmpty() || chunks.isEmpty()) chunks += rest
         chunks.forEach { chunk ->
             if (current.isBlank()) {
                 current = chunk
-            } else if (current.length + chunk.length + 1 <= maxChars) {
+            } else if (measure("$current $chunk") <= maxWidth) {
                 current += " $chunk"
             } else {
                 lines += current
