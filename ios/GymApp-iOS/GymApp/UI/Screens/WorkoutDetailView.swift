@@ -1322,6 +1322,14 @@ private struct WorkoutSharePayload: Identifiable {
     let plan: SharedWorkoutPlan
 }
 
+/// Weight for a set or exercise added to a past workout (mirrors Android): the last set of the
+/// block when it has one, else the exercise's last used weight before this workout, else 0.
+enum PastWorkoutSetDefaults {
+    static func weight(template: Double?, history: Double?) -> Double {
+        template ?? history ?? 0
+    }
+}
+
 @MainActor
 struct WorkoutDetailView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -1709,9 +1717,8 @@ struct WorkoutDetailView: View {
     /// year is appended by the shared helper only when it differs from the
     /// current year.
     private func compactHeroTitle(_ date: Date, languageCode: String) -> String {
-        let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
         let datePart = gymShortDate(date, languageCode: languageCode)
-        let timePart = date.formatted(.dateTime.hour().minute().locale(locale))
+        let timePart = gymFormattedTimeOfDay(date, languageCode: languageCode)
         return "\(datePart)\u{00A0}· \(timePart)"
     }
 
@@ -2478,7 +2485,13 @@ struct WorkoutDetailView: View {
                 toWorkout: workoutID,
                 exerciseID: exercise.id,
                 initialSet: WorkoutSetDraft(
-                    weight: store.lastWeight(exerciseID: exercise.id) ?? 0,
+                    weight: PastWorkoutSetDefaults.weight(
+                        template: nil,
+                        history: store.lastWeight(
+                            exerciseID: exercise.id,
+                            before: store.workouts.first(where: { $0.id == workoutID })?.date
+                        )
+                    ),
                     reps: 10
                 )
             )
@@ -2500,7 +2513,10 @@ struct WorkoutDetailView: View {
             _ = try store.addSet(
                 workoutID: workout.id,
                 workoutExerciseID: block.id,
-                weight: source?.weight ?? store.lastWeight(exerciseID: block.exerciseID) ?? 0,
+                weight: PastWorkoutSetDefaults.weight(
+                    template: source?.weight,
+                    history: store.lastWeight(exerciseID: block.exerciseID, before: workout.date)
+                ),
                 reps: source?.reps ?? 10
             )
         } catch {

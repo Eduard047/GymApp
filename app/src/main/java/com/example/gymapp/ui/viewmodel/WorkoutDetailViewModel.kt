@@ -288,7 +288,7 @@ class WorkoutDetailViewModel(
                     )
                     repository.addSet(
                         workoutExerciseId = workoutExerciseId,
-                        weight = template?.weight ?: historicalWeight ?: 20.0,
+                        weight = pastWorkoutSetWeight(template?.weight, historicalWeight),
                         reps = template?.reps ?: 10
                     )
                 }
@@ -320,10 +320,13 @@ class WorkoutDetailViewModel(
                     }
                     if (alreadyAdded) return@persistWorkoutDetailExercise
 
-                    val historicalWeight = repository.getLastWeightBeforeDate(
-                        exerciseId = exerciseId,
-                        beforeDate = currentDetails.session.date
-                    ) ?: 20.0
+                    val historicalWeight = pastWorkoutSetWeight(
+                        templateWeight = null,
+                        historicalWeight = repository.getLastWeightBeforeDate(
+                            exerciseId = exerciseId,
+                            beforeDate = currentDetails.session.date
+                        )
+                    )
 
                     repository.addExerciseToSession(
                         sessionId = currentDetails.session.id,
@@ -691,3 +694,10 @@ internal fun storedWorkoutPersonalRecordFlags(
 internal fun isValidWorkoutDetailsInput(dateMillis: Long, note: String): Boolean =
     WorkoutDataLimits.isValidTimestamp(dateMillis) &&
         WorkoutDataLimits.isValidNote(normalizedWorkoutNote(note))
+
+/**
+ * Weight for a set or exercise added to a past workout (mirrors iPhone): the last set of the
+ * block when it has one, else the exercise's last used weight from history, else 0.
+ */
+internal fun pastWorkoutSetWeight(templateWeight: Double?, historicalWeight: Double?): Double =
+    templateWeight ?: historicalWeight ?: 0.0
