@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import os
 
 enum LiveWorkoutInvitationResponseOutcome: Equatable, Sendable {
     case declined
@@ -638,6 +639,58 @@ final class LiveWorkoutCoordinator: ObservableObject {
         await refreshAll(showErrors: true)
         lastStatus = "Live room cancelled. Any local workout progress remains on this iPhone."
     }
+
+    /// Call after the local draft was durably discarded while attached to a live room
+    /// (Android parity: `afterLocalWorkoutDiscarded`). Detaches the sidecar synchronously so
+    /// navigation never waits for the network and the discarded workout can never resume, then
+    /// closes the room best-effort: the owner cancels it, a member leaves it. A network failure
+    /// is logged and never brings the draft back; the next refresh reconciles the room state.
+    /// Returns the background close task (nil when nothing was attached) so callers/tests can await it.
+    @discardableResult
+    func afterLocalWorkoutDiscarded() -> Task<Void, Never>? {
+        guard let attachment = sidecar.attachment else { return nil }
+        try? sidecar.clear()
+        return Task { @MainActor [weak self] in
+            await self?.closeRoomAfterLocalDiscard(attachment)
+        }
+    }
+
+    private func closeRoomAfterLocalDiscard(_ attachment: LiveWorkoutAttachment) async {
+        do {
+            let context = try await gateway.currentContext(expectedUserID: expectedUserID)
+            try ensureCurrent(context)
+            switch attachment.role {
+            case .owner:
+                _ = try await gateway.cancel(
+                    roomID: attachment.roomID,
+                    clientOperationID: UUID(),
+                    expectedRoomRevision: attachment.roomRevision,
+                    expectedUserID: expectedUserID
+                )
+            case .participant:
+                _ = try await gateway.leave(
+                    roomID: attachment.roomID,
+                    clientOperationID: UUID(),
+                    expectedMembershipRevision: attachment.membershipRevision,
+                    expectedUserID: expectedUserID
+                )
+            }
+            try ensureCurrent(context)
+            if let reservation = try slotReservation.current(context: context),
+               reservation.roomID == attachment.roomID {
+                try slotReservation.clear(
+                    operationID: reservation.operationID,
+                    roomID: attachment.roomID,
+                    context: context
+                )
+            }
+        } catch {
+            Self.discardLog.error("Live room close after local discard failed: \(String(describing: error), privacy: .public)")
+        }
+        await refreshAll(showErrors: false)
+    }
+
+    private static let discardLog = Logger(subsystem: "com.setforge.gymapp.ios", category: "LiveWorkoutCoordinator")
 
     func leaveRoom() async throws {
         try beginMutation()

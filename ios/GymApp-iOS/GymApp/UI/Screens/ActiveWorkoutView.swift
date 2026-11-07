@@ -482,65 +482,63 @@ struct ActiveWorkoutView: View {
                     )
                 )
             }
-            if !liveWorkoutCoordinator.isAttachedToCurrentDraft {
-                ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        if let draft = currentDraft,
-                           !liveWorkoutCoordinator.planIsFrozenForCurrentDraft,
-                           draft.commitIntent == nil,
-                           draft.exercises.contains(where: { $0.sets.contains(where: { !$0.isCompleted }) }) {
-                            Menu {
-                                ForEach(["equipmentUnavailable", "timeCut", "tooHard"], id: \.self) { reason in
-                                    Button(WorkoutAdaptationRequest.title(reason)) {
-                                        adaptationRequest = WorkoutAdaptationRequest(source: draft, reason: reason, store: workoutStore)
-                                    }
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    if let draft = currentDraft,
+                       !liveWorkoutCoordinator.planIsFrozenForCurrentDraft,
+                       draft.commitIntent == nil,
+                       draft.exercises.contains(where: { $0.sets.contains(where: { !$0.isCompleted }) }) {
+                        Menu {
+                            ForEach(["equipmentUnavailable", "timeCut", "tooHard"], id: \.self) { reason in
+                                Button(WorkoutAdaptationRequest.title(reason)) {
+                                    adaptationRequest = WorkoutAdaptationRequest(source: draft, reason: reason, store: workoutStore)
                                 }
-                            } label: {
-                                Label(
-                                    gymText(
-                                        "Adapt workout",
-                                        "Адаптувати тренування",
-                                        "Адаптировать тренировку",
-                                        languageCode: gymCurrentLanguageCode()
-                                    ),
-                                    systemImage: "slider.horizontal.3"
-                                )
                             }
-                        }
-                        Button(role: .destructive) {
-                            showingDiscardConfirmation = true
                         } label: {
                             Label(
                                 gymText(
-                                    "Discard workout",
-                                    "Відкинути тренування",
-                                    "Удалить тренировку",
+                                    "Adapt workout",
+                                    "Адаптувати тренування",
+                                    "Адаптировать тренировку",
                                     languageCode: gymCurrentLanguageCode()
                                 ),
-                                systemImage: "trash"
+                                systemImage: "slider.horizontal.3"
                             )
                         }
-                        .disabled(currentDraft?.commitIntent != nil)
+                    }
+                    Button(role: .destructive) {
+                        showingDiscardConfirmation = true
                     } label: {
                         Label(
                             gymText(
-                                "More workout options",
-                                "Інші дії",
-                                "Другие действия",
+                                "Discard workout",
+                                "Відкинути тренування",
+                                "Удалить тренировку",
                                 languageCode: gymCurrentLanguageCode()
                             ),
-                            systemImage: "ellipsis.circle"
+                            systemImage: "trash"
                         )
                     }
-                    .accessibilityLabel(
+                    .disabled(currentDraft?.commitIntent != nil)
+                } label: {
+                    Label(
                         gymText(
                             "More workout options",
                             "Інші дії",
                             "Другие действия",
                             languageCode: gymCurrentLanguageCode()
-                        )
+                        ),
+                        systemImage: "ellipsis.circle"
                     )
                 }
+                .accessibilityLabel(
+                    gymText(
+                        "More workout options",
+                        "Інші дії",
+                        "Другие действия",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
             }
         }
         .interactiveDismissDisabled(false)
@@ -3992,19 +3990,21 @@ struct ActiveWorkoutView: View {
     }
 
     private func discard() {
-        guard !liveWorkoutCoordinator.isAttachedToCurrentDraft else {
-            show(LiveWorkoutSidecarError.invalidState)
-            return
-        }
         guard let draft = currentDraft else {
             onDiscarded()
             return
         }
         do {
+            let wasAttached = liveWorkoutCoordinator.isAttachedToCurrentDraft
             try activeWorkoutStore.discard(
                 draftID: draft.id,
                 expectedRevision: draft.revision
             )
+            if wasAttached {
+                // Local discard is durable; detach the sidecar and close the room
+                // (owner cancels, member leaves) in the background, like Android.
+                liveWorkoutCoordinator.afterLocalWorkoutDiscarded()
+            }
             restTimers.cancel(id: timerKey(draftID: draft.id))
             reportStatus(
                 gymText(

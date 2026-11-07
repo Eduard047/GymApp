@@ -55,6 +55,124 @@ final class LiveWorkoutContractTests: XCTestCase {
         XCTAssertFalse(try LiveWorkoutPayloadParser.snapshot(from: liveJSONData(liveSnapshotObject())).allowsFinishedViewing)
     }
 
+    func testDiscardWhileAttachedAsOwnerCancelsTheRoomAndKeepsDraftGone() async throws {
+        let actions = try await runDiscardWhileAttached(asOwner: true, terminalSucceeds: true)
+        XCTAssertTrue(actions.contains("live_cancel"))
+        XCTAssertFalse(actions.contains("live_leave"))
+    }
+
+    func testDiscardWhileAttachedAsMemberLeavesTheRoomAndKeepsDraftGone() async throws {
+        let actions = try await runDiscardWhileAttached(asOwner: false, terminalSucceeds: true)
+        XCTAssertTrue(actions.contains("live_leave"))
+        XCTAssertFalse(actions.contains("live_cancel"))
+    }
+
+    func testDiscardWhileAttachedKeepsDraftGoneWhenTheNetworkStepFails() async throws {
+        let actions = try await runDiscardWhileAttached(asOwner: true, terminalSucceeds: false)
+        XCTAssertTrue(actions.contains("live_cancel"))
+    }
+
+    /// Opens an active room (materializing + attaching the draft), discards the local draft the way
+    /// `ActiveWorkoutView.discard()` does, and returns the gateway actions seen.
+    private func runDiscardWhileAttached(asOwner: Bool, terminalSucceeds: Bool) async throws -> [String] {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GymApp-LiveDiscardTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let suiteName = "LiveWorkoutDiscardTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let recorder = LiveGatewayActionRecorder()
+        let stub = LiveGatewayStubSession()
+        let urlSession = stub.urlSession
+        defer {
+            stub.handler = nil
+            urlSession.invalidateAndCancel()
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let auth = AuthService(keychain: LiveWorkoutTestKeychain(), urlSession: urlSession, defaults: defaults)
+        try auth.installSessionForTesting(.cloud(CloudAccountSession(
+            userID: liveUserID, email: "discard@example.invalid", displayName: "Discard Tester",
+            accessToken: try liveSyntheticJWT(sessionID: liveSessionID),
+            refreshToken: "synthetic-refresh-token", expiresAt: Date().addingTimeInterval(3_600)
+        )))
+        let storageKey = try XCTUnwrap(auth.session?.storageKey)
+        let workoutStore = try WorkoutStore(accountStorageKey: storageKey, directoryURL: root)
+        let activeStore = ActiveWorkoutStore(accountStorageKey: storageKey, workoutStorageURL: workoutStore.storageURL)
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let now = Date()
+        let startedAt = formatter.string(from: now.addingTimeInterval(-10 * 60))
+        var object = liveSnapshotObject()
+        var room = try XCTUnwrap(object["room"] as? [String: Any])
+        room["createdAt"] = formatter.string(from: now.addingTimeInterval(-15 * 60))
+        room["inviteExpiresAt"] = startedAt
+        room["startedAt"] = startedAt
+        room["activeExpiresAt"] = formatter.string(from: now.addingTimeInterval(6 * 60 * 60))
+        object["room"] = room
+        var participants = try XCTUnwrap(object["participants"] as? [[String: Any]])
+        participants[0]["joinedAt"] = formatter.string(from: now.addingTimeInterval(-15 * 60))
+        participants[1]["joinedAt"] = formatter.string(from: now.addingTimeInterval(-14 * 60))
+        if !asOwner {
+            participants[0]["isSelf"] = false
+            participants[1]["isSelf"] = true
+            participants[1]["progress"] = [
+                "version": 1,
+                "revision": 1,
+                "completedSets": [] as [Any],
+                "undoableSetId": NSNull(),
+                "finishedAt": NSNull()
+            ] as [String: Any]
+        }
+        object["participants"] = participants
+        let snapshotData = try liveJSONData(["version": 1, "result": object])
+        let terminalAction = asOwner ? "live_cancel" : "live_leave"
+        let terminalData = try liveJSONData([
+            "version": 1,
+            "result": asOwner ? "cancelled" : "left",
+            "roomId": liveRoomID,
+            "status": "cancelled",
+            "roomRevision": 4,
+            "membershipRevision": asOwner ? 1 : 2,
+            "endedAt": liveFinishedAt
+        ] as [String: Any])
+        stub.handler = { request in
+            let action = try XCTUnwrap(try LiveGatewayURLProtocolStub.requestObject(request)["action"] as? String)
+            recorder.append(action)
+            if action == "live_snapshot" {
+                return try LiveGatewayURLProtocolStub.response(for: request, jsonData: snapshotData)
+            }
+            if action == terminalAction, terminalSucceeds {
+                return try LiveGatewayURLProtocolStub.response(for: request, jsonData: terminalData)
+            }
+            throw URLError(.notConnectedToInternet)
+        }
+        let coordinator = LiveWorkoutCoordinator(
+            auth: auth, workoutStore: workoutStore, activeWorkoutStore: activeStore, urlSession: urlSession
+        )
+        defer { coordinator.stopMonitoring() }
+
+        try await coordinator.openRoom(liveRoomID)
+        let draft = try XCTUnwrap(activeStore.draft)
+        let attachment = try XCTUnwrap(coordinator.sidecar.attachment)
+        XCTAssertEqual(attachment.role, asOwner ? .owner : .participant)
+        XCTAssertTrue(coordinator.isAttachedToCurrentDraft)
+
+        try activeStore.discard(draftID: draft.id, expectedRevision: draft.revision)
+        let closing = try XCTUnwrap(coordinator.afterLocalWorkoutDiscarded())
+        // Detached synchronously, before any network round trip.
+        XCTAssertNil(coordinator.sidecar.attachment)
+        XCTAssertFalse(coordinator.isAttachedToCurrentDraft)
+        await closing.value
+
+        XCTAssertNil(activeStore.draft)
+        XCTAssertNil(coordinator.sidecar.attachment)
+        XCTAssertNil(coordinator.afterLocalWorkoutDiscarded())
+        return recorder.actions
+    }
+
     func testCanonicalActiveSnapshotAndGatewayEnvelopeAreAccepted() throws {
         let rawSnapshot = liveSnapshotObject()
         let snapshot = try LiveWorkoutPayloadParser.snapshot(from: liveJSONData(rawSnapshot))
