@@ -1543,7 +1543,8 @@ public final class WorkoutStore: ObservableObject {
                             averageHeartRate: cached.averageHeartRate,
                             maximumHeartRate: cached.maximumHeartRate,
                             endingHeartRateZone: cached.endingHeartRateZone,
-                            note: cached.note
+                            // Android updateWorkoutSession rewrites the sidecar with the edited note.
+                            note: validatedNote
                         )
                         remapped.sort { $0.workoutStartedAt < $1.workoutStartedAt }
                     }
@@ -3265,7 +3266,7 @@ public final class WorkoutStore: ObservableObject {
     /// orphan `<uuid>.jpg` custom photos. Re-key them by the same stable exercise
     /// identity that preserves favorites (exact name, then catalog key, then portable
     /// name) and drop photos whose exercise is gone. Never throws.
-    private func remapCustomExercisePhotos(from old: [Exercise], to new: [Exercise]) {
+    func remapCustomExercisePhotos(from old: [Exercise], to new: [Exercise]) {
         guard !old.isEmpty else { return }
         let newByCatalogKey = Dictionary(grouping: new.compactMap { exercise -> (String, Exercise)? in
             guard let key = BuiltInExerciseCatalog.resolvedKey(
@@ -3278,6 +3279,13 @@ public final class WorkoutStore: ObservableObject {
         var claimed = Set<UUID>()
         var moves: [(from: UUID, to: UUID?)] = []
         for exercise in old {
+            // Only exercises that own a custom photo may claim a target (Android
+            // planPhotoRemap): a photo-less duplicate must not starve the one with a photo.
+            guard ExerciseMediaStore.hasCustomImage(
+                ownerKey: accountStorageKey,
+                exerciseID: exercise.id,
+                mediaDirectoryURL: exerciseMediaDirectoryURL
+            ) else { continue }
             let legacyKey = Self.legacyPersistedNameKey(exercise.name)
             var target: UUID?
             if let exact = new.first(where: { Self.legacyPersistedNameKey($0.name) == legacyKey }) {

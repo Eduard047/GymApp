@@ -547,6 +547,45 @@ final class ActivityOnlyWorkoutCloudSidecarTests: XCTestCase {
         try assertMoved(try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory))
     }
 
+    func testDateAndNoteEditTogetherCachesEditedNoteAndMirrorRestoreUsesIt() throws {
+        let directory = try temporaryDirectory(named: "date-note-edit")
+        let storageKey = "activity-date-note-edit-owner"
+        let oldTimestamp: Int64 = 1_750_000_000_000
+        let newTimestamp: Int64 = 1_750_003_600_000
+        let original = try item(timestamp: oldTimestamp, duration: 900, gymCalories: 45.125,
+                                garminCalories: 50, averageHeartRate: 120, maximumHeartRate: 155,
+                                endingHeartRateZone: 3, note: "original note")
+        let store = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        _ = try store.applyActivityOnlyCloudItems([original], expectedLocalItems: [])
+        let workout = try XCTUnwrap(store.workouts.first)
+
+        // Android updateWorkoutSession rewrites the sidecar with the edited note.
+        try store.updateWorkout(
+            id: workout.id,
+            date: Date(gymEpochMilliseconds: newTimestamp),
+            note: "edited note"
+        )
+        func assertCachedNote(_ candidate: WorkoutStore) throws {
+            let cached = try XCTUnwrap(candidate.activityOnlyCloudItems.first)
+            XCTAssertEqual(candidate.activityOnlyCloudItems.count, 1)
+            XCTAssertEqual(cached.workoutStartedAt, newTimestamp)
+            XCTAssertEqual(cached.note, "edited note")
+            XCTAssertEqual(cached.garminCalories, 50)
+        }
+        try assertCachedNote(store)
+        try assertCachedNote(try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory))
+
+        // Enriching then deleting the workout rebuilds the mirror from the cached item.
+        let exercise = try store.addExercise(name: "Bench Press")
+        _ = try store.addExercise(toWorkout: workout.id, exerciseID: exercise.id,
+                                  initialSet: WorkoutSetDraft(weight: 55, reps: 12))
+        try store.deleteWorkout(id: workout.id)
+        let mirror = try XCTUnwrap(store.workouts.first)
+        XCTAssertEqual(store.workouts.count, 1)
+        XCTAssertEqual(mirror.date.gymEpochMilliseconds, newTimestamp)
+        XCTAssertEqual(mirror.note, "edited note")
+    }
+
     func testDateEditOfEnrichedWorkoutRestoresMetricsMirrorAtOldStartAcrossReopen() throws {
         let directory = try temporaryDirectory(named: "date-edit-enriched")
         let storageKey = "activity-date-edit-enriched-owner"

@@ -192,6 +192,22 @@ enum ExerciseMediaStore {
         return UIImage(contentsOfFile: target.path)
     }
 
+    /// Cheap existence check for a custom photo; never decodes the image.
+    static func hasCustomImage(
+        ownerKey: String,
+        exerciseID: UUID,
+        mediaDirectoryURL: URL? = nil,
+        fileManager: FileManager = .default
+    ) -> Bool {
+        guard let target = try? customURL(
+            ownerKey: ownerKey,
+            exerciseID: exerciseID,
+            mediaDirectoryURL: mediaDirectoryURL,
+            fileManager: fileManager
+        ) else { return false }
+        return fileManager.fileExists(atPath: target.path)
+    }
+
     static func saveCustomImage(
         _ data: Data,
         ownerKey: String,
