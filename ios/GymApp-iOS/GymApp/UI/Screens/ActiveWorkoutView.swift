@@ -4221,7 +4221,7 @@ struct ActiveWorkoutView: View {
                             voiceCommandPhase = nil
                             applyVoiceTranscript(
                                 transcript, set: set, exercise: exercise, exerciseName: exerciseName,
-                                position: position, draft: draft
+                                position: position, draft: draft, isSpoken: true
                             )
                         case .failed:
                             voiceCommandSetID = set.id
@@ -4262,7 +4262,7 @@ struct ActiveWorkoutView: View {
         voiceTranscriptionService.stop()
         voiceCommandSetID = nil
         voiceCommandPhase = nil
-        applyVoiceTranscript(transcript, set: set, exercise: exercise, exerciseName: exerciseName, position: position, draft: draft)
+        applyVoiceTranscript(transcript, set: set, exercise: exercise, exerciseName: exerciseName, position: position, draft: draft, isSpoken: true)
     }
 
     /// "ввести текстом": stops recognition without processing the partial
@@ -4318,9 +4318,24 @@ struct ActiveWorkoutView: View {
         exercise: ActiveWorkoutExercise,
         exerciseName: String,
         position: Int,
-        draft: ActiveWorkoutDraft
+        draft: ActiveWorkoutDraft,
+        isSpoken: Bool = false
     ) {
-        guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            // Spoken path only: tell the user nothing was recognized (typed-empty stays silent).
+            if isSpoken {
+                reportStatus(
+                    gymText(
+                        "Didn't catch that",
+                        "Нічого не почув",
+                        "Ничего не услышал",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                    true
+                )
+            }
+            return
+        }
         let command = VoiceWorkoutCommandParser.parse(transcript, locale: gymCurrentLanguageCode())
         switch command {
         case let .logSet(weightKg, reps):

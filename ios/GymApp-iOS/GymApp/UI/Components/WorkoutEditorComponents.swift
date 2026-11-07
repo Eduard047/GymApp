@@ -837,7 +837,7 @@ struct ExerciseMediaSheet: View {
                     }
                     .buttonStyle(GymPrimaryButtonStyle())
 
-                    if customImage != nil, !bundledImages.isEmpty {
+                    if ExerciseMediaStore.shouldShowRemovePhoto(hasCustomImage: customImage != nil) {
                         Button {
                             do {
                                 try ExerciseMediaStore.deleteCustomImage(
@@ -856,12 +856,19 @@ struct ExerciseMediaSheet: View {
                             }
                         } label: {
                             Label(
-                                gymText(
-                                    "Restore built-in preview",
-                                    "Повернути вбудовану демонстрацію",
-                                    "Вернуть встроенную демонстрацию",
-                                    languageCode: gymCurrentLanguageCode()
-                                ),
+                                bundledImages.isEmpty
+                                    ? gymText(
+                                        "Remove photo",
+                                        "Видалити фото",
+                                        "Удалить фото",
+                                        languageCode: gymCurrentLanguageCode()
+                                    )
+                                    : gymText(
+                                        "Restore built-in preview",
+                                        "Повернути вбудовану демонстрацію",
+                                        "Вернуть встроенную демонстрацию",
+                                        languageCode: gymCurrentLanguageCode()
+                                    ),
                                 systemImage: "arrow.uturn.backward"
                             )
                             .frame(maxWidth: .infinity)

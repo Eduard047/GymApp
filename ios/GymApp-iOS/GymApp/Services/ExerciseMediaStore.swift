@@ -258,6 +258,12 @@ enum ExerciseMediaStore {
         }
     }
 
+    /// "Remove photo" / "Restore built-in preview" is offered whenever a custom photo exists,
+    /// regardless of whether the exercise also has bundled images.
+    static func shouldShowRemovePhoto(hasCustomImage: Bool) -> Bool {
+        hasCustomImage
+    }
+
     static func deleteCustomImage(
         ownerKey: String,
         exerciseID: UUID,

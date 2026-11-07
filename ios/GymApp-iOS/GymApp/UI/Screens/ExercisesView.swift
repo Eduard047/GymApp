@@ -769,6 +769,11 @@ struct ExercisesView: View {
                     }
                     do {
                         try store.deleteExercise(id: target.exerciseID, cascadeFromWorkouts: true)
+                        // Best effort: a leftover private photo must never fail the delete.
+                        try? ExerciseMediaStore.deleteCustomImage(
+                            ownerKey: store.accountStorageKey,
+                            exerciseID: target.exerciseID
+                        )
                         target.restTimerIDs.forEach { appState.restTimers.cancel(id: $0) }
                         appState.show(
                             message: gymLocalized(

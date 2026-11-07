@@ -6333,6 +6333,32 @@ final class CoreParityTests: XCTestCase {
         XCTAssertNil(ExerciseMediaStore.customImage(ownerKey: ownerB, exerciseID: exerciseID))
     }
 
+    func testRemovePhotoIsOfferedWheneverCustomImageExistsAndDeleteRemovesTheFile() throws {
+        XCTAssertTrue(ExerciseMediaStore.shouldShowRemovePhoto(hasCustomImage: true))
+        XCTAssertFalse(ExerciseMediaStore.shouldShowRemovePhoto(hasCustomImage: false))
+
+        let mediaDirectory = try temporaryDirectory(named: "exercise-media-remove-photo")
+        let exerciseID = UUID()
+        let owner = "local_\(UUID().uuidString.lowercased())"
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { context in
+            UIColor.systemRed.setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
+        }
+        try ExerciseMediaStore.saveCustomImage(
+            try XCTUnwrap(image.jpegData(compressionQuality: 0.9)),
+            ownerKey: owner,
+            exerciseID: exerciseID,
+            mediaDirectoryURL: mediaDirectory
+        )
+        XCTAssertNotNil(ExerciseMediaStore.customImage(ownerKey: owner, exerciseID: exerciseID, mediaDirectoryURL: mediaDirectory))
+        try ExerciseMediaStore.deleteCustomImage(ownerKey: owner, exerciseID: exerciseID, mediaDirectoryURL: mediaDirectory)
+        XCTAssertNil(ExerciseMediaStore.customImage(ownerKey: owner, exerciseID: exerciseID, mediaDirectoryURL: mediaDirectory))
+        // Deleting a photo that no longer exists is a no-op.
+        XCTAssertNoThrow(
+            try ExerciseMediaStore.deleteCustomImage(ownerKey: owner, exerciseID: exerciseID, mediaDirectoryURL: mediaDirectory)
+        )
+    }
+
     func testDownsampledMediaThumbnailIsOwnerScopedAndInvalidatedAfterClear() async throws {
         let mediaDirectory = try temporaryDirectory(named: "exercise-media-thumbnail-cache")
         let exerciseID = UUID()
