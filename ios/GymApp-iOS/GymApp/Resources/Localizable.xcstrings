@@ -858,6 +858,22 @@
         }
       }
     },
+    "Garmin returned the same watch more than once. Start the selection again in GymApp." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Garmin вернул одни и те же часы несколько раз. Начни выбор заново в GymApp."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Garmin повернув ті самі годинники кілька разів. Почни вибір знову в GymApp."
+          }
+        }
+      }
+    },
     "Garmin returned too many watches. Select at most eight." : {
       "localizations" : {
         "ru" : {
