@@ -624,11 +624,14 @@ struct ExercisesView: View {
             favoritesOnly: favoritesOnly,
             sortMode: sortMode,
             muscleMappings: store.muscleMappings,
-            sessionCounts: Dictionary(
-                uniqueKeysWithValues: store.exercises.map { exercise in
-                    (exercise.id, store.progressStats(exerciseID: exercise.id).sessionCount)
-                }
-            )
+            sessionCounts: {
+                let stats = store.progressStatsByExercise()
+                return Dictionary(
+                    uniqueKeysWithValues: store.exercises.map { exercise in
+                        (exercise.id, stats[exercise.id]?.sessionCount ?? 0)
+                    }
+                )
+            }()
         )
     }
 

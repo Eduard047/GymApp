@@ -253,7 +253,7 @@ public final class WorkoutStore: ObservableObject {
     // including account switches, so they cannot outlive their owner-bound state.
     private var cachedWorkoutSummaries: [WorkoutSessionSummary]?
     private var cachedExerciseHistorySnapshot: [ExerciseHistoryEntry]?
-    private var cachedProgressStatsByExerciseID: [UUID: ExerciseProgressStats] = [:]
+    private var cachedProgressStatsByExerciseID: [UUID: ExerciseProgressStats]?
     private(set) var derivedDataRevision: UInt64 = 0
 
     public private(set) var accountStorageKey: String
@@ -2044,17 +2044,21 @@ public final class WorkoutStore: ObservableObject {
     }
 
     public func lastWeight(exerciseID: UUID, before date: Date? = nil) -> Double? {
-        workouts
-            .filter { date == nil || $0.date < date! }
-            .sorted { $0.date > $1.date }
-            .lazy
-            .flatMap { workout in
-                workout.exercises
-                    .filter { $0.exerciseID == exerciseID }
-                    .flatMap { $0.sets.reversed() }
-            }
-            .first?
-            .weight
+        // Single pass: the newest qualifying workout wins; equal dates keep the earlier
+        // stored workout (same as a stable newest-first sort). Inside that workout the
+        // last set of the first matching block that has sets is the answer.
+        var bestDate: Date?
+        var bestWeight: Double?
+        for workout in workouts {
+            if let date, !(workout.date < date) { continue }
+            if let bestDate, !(workout.date > bestDate) { continue }
+            guard let weight = workout.exercises
+                .first(where: { $0.exerciseID == exerciseID && !$0.sets.isEmpty })?
+                .sets.last?.weight else { continue }
+            bestDate = workout.date
+            bestWeight = weight
+        }
+        return bestWeight
     }
 
     public func maxWeight(exerciseID: UUID, excludingWorkout workoutID: UUID? = nil) -> Double? {
@@ -2068,21 +2072,96 @@ public final class WorkoutStore: ObservableObject {
     }
 
     public func progressStats(exerciseID: UUID) -> ExerciseProgressStats {
-        if let cached = cachedProgressStatsByExerciseID[exerciseID] {
-            return cached
+        if let stats = progressStatsByExercise()[exerciseID] {
+            return stats
         }
-        let history = exerciseHistory(exerciseID: exerciseID)
-        let stats = ExerciseProgressStats(
+        return ExerciseProgressStats(
             exerciseID: exerciseID,
-            sessionCount: Set(history.map(\.workoutID)).count,
-            setCount: history.count,
-            totalVolume: history.reduce(0) { $0 + $1.volume },
-            maxWeight: history.map(\.weight).max() ?? 0,
-            bestEstimatedOneRepMax: history.map(\.estimatedOneRepMax).max() ?? 0,
-            latestWeight: lastWeight(exerciseID: exerciseID)
+            sessionCount: 0,
+            setCount: 0,
+            totalVolume: 0,
+            maxWeight: 0,
+            bestEstimatedOneRepMax: 0,
+            latestWeight: nil
         )
-        cachedProgressStatsByExerciseID[exerciseID] = stats
+    }
+
+    /// Progress stats for every exercise, built in one pass over the workouts and cached
+    /// until the next publish. Same values as the per-exercise history reductions, with
+    /// the volume summed in the same newest-first, set-order sequence.
+    public func progressStatsByExercise() -> [UUID: ExerciseProgressStats] {
+        if let cachedProgressStatsByExerciseID {
+            return cachedProgressStatsByExerciseID
+        }
+        let stats = computeProgressStatsByExercise()
+        cachedProgressStatsByExerciseID = stats
         return stats
+    }
+
+    private func computeProgressStatsByExercise() -> [UUID: ExerciseProgressStats] {
+        struct Row {
+            let date: Date
+            let order: Int
+            let seq: Int
+            let workoutID: UUID
+            let weight: Double
+            let volume: Double
+            let oneRepMax: Double
+        }
+        let knownExerciseIDs = Set(exercises.map(\.id))
+        var rowsByExercise: [UUID: [Row]] = [:]
+        var latestByExercise: [UUID: (date: Date, weight: Double)] = [:]
+        var seq = 0
+        for workout in workouts {
+            for block in workout.exercises where !block.sets.isEmpty {
+                let id = block.exerciseID
+                if let latest = latestByExercise[id] {
+                    if workout.date > latest.date, let weight = block.sets.last?.weight {
+                        latestByExercise[id] = (workout.date, weight)
+                    }
+                } else if let weight = block.sets.last?.weight {
+                    latestByExercise[id] = (workout.date, weight)
+                }
+                guard knownExerciseIDs.contains(id) else { continue }
+                var rows = rowsByExercise[id] ?? []
+                rows.reserveCapacity(rows.count + block.sets.count)
+                for (index, set) in block.sets.enumerated() {
+                    rows.append(
+                        Row(
+                            date: workout.date,
+                            order: index,
+                            seq: seq,
+                            workoutID: workout.id,
+                            weight: set.weight,
+                            volume: set.weight * Double(set.reps),
+                            oneRepMax: GymOneRepMax.estimate(weight: set.weight, reps: set.reps)
+                        )
+                    )
+                    seq += 1
+                }
+                rowsByExercise[id] = rows
+            }
+        }
+
+        var result: [UUID: ExerciseProgressStats] = [:]
+        result.reserveCapacity(knownExerciseIDs.count)
+        for id in knownExerciseIDs.union(latestByExercise.keys) {
+            let rows = (rowsByExercise[id] ?? []).sorted {
+                if $0.date != $1.date { return $0.date > $1.date }
+                if $0.order != $1.order { return $0.order < $1.order }
+                return $0.seq < $1.seq
+            }
+            result[id] = ExerciseProgressStats(
+                exerciseID: id,
+                sessionCount: Set(rows.map(\.workoutID)).count,
+                setCount: rows.count,
+                totalVolume: rows.reduce(0) { $0 + $1.volume },
+                maxWeight: rows.map(\.weight).max() ?? 0,
+                bestEstimatedOneRepMax: rows.map(\.oneRepMax).max() ?? 0,
+                latestWeight: latestByExercise[id]?.weight
+            )
+        }
+        return result
     }
 
     public func personalRecords(exerciseID: UUID) -> [PersonalRecord] {
@@ -3761,7 +3840,7 @@ public final class WorkoutStore: ObservableObject {
     private func publish(_ state: WorkoutDataSnapshot) {
         cachedWorkoutSummaries = nil
         cachedExerciseHistorySnapshot = nil
-        cachedProgressStatsByExerciseID.removeAll(keepingCapacity: true)
+        cachedProgressStatsByExerciseID = nil
         derivedDataRevision &+= 1
         exercises = state.exercises
         workouts = state.workouts
@@ -5237,14 +5316,32 @@ public final class WorkoutStore: ObservableObject {
                 }
             }
         }
-        return result.sorted {
-            if $0.sessionDate != $1.sessionDate { return $0.sessionDate > $1.sessionDate }
-            if exerciseID == nil,
-               $0.exerciseName.localizedCaseInsensitiveCompare($1.exerciseName) != .orderedSame {
-                return $0.exerciseName.localizedCaseInsensitiveCompare($1.exerciseName) == .orderedAscending
+        // Name ranks are computed once per distinct name (localized, case-insensitive;
+        // equal-comparing names share a rank) so the 60k-entry sort never calls the
+        // locale-aware comparison. Ties fall back to stored order, like a stable sort.
+        var rankByName: [String: Int] = [:]
+        if exerciseID == nil {
+            let names = Array(Set(result.map(\.exerciseName)))
+                .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+            var rank = 0
+            for (offset, name) in names.enumerated() {
+                if offset > 0,
+                   names[offset - 1].localizedCaseInsensitiveCompare(name) != .orderedSame {
+                    rank += 1
+                }
+                rankByName[name] = rank
             }
-            return $0.setOrderIndex < $1.setOrderIndex
         }
+        let ranks = result.map { rankByName[$0.exerciseName] ?? 0 }
+        let order = result.indices.sorted { lhs, rhs in
+            let a = result[lhs]
+            let b = result[rhs]
+            if a.sessionDate != b.sessionDate { return a.sessionDate > b.sessionDate }
+            if ranks[lhs] != ranks[rhs] { return ranks[lhs] < ranks[rhs] }
+            if a.setOrderIndex != b.setOrderIndex { return a.setOrderIndex < b.setOrderIndex }
+            return lhs < rhs
+        }
+        return order.map { result[$0] }
     }
 
     private static func currentStreakDays(

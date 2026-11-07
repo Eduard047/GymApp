@@ -15793,6 +15793,177 @@ final class CoreParityTests: XCTestCase {
             .replacingOccurrences(of: "=", with: "")
     }
 
+    // MARK: - Derived-data performance parity
+
+    /// Reference implementations of the original per-exercise reductions.
+    private func referenceProgressStats(
+        _ store: WorkoutStore,
+        exerciseID: UUID
+    ) -> ExerciseProgressStats {
+        let history = store.exerciseHistory(exerciseID: exerciseID)
+        let newestFirst = store.workouts.sorted { $0.date > $1.date }
+        let latest = newestFirst
+            .lazy
+            .flatMap { workout in
+                workout.exercises
+                    .filter { $0.exerciseID == exerciseID }
+                    .flatMap { $0.sets.reversed() }
+            }
+            .first?
+            .weight
+        return ExerciseProgressStats(
+            exerciseID: exerciseID,
+            sessionCount: Set(history.map(\.workoutID)).count,
+            setCount: history.count,
+            totalVolume: history.reduce(0) { $0 + $1.volume },
+            maxWeight: history.map(\.weight).max() ?? 0,
+            bestEstimatedOneRepMax: history.map(\.estimatedOneRepMax).max() ?? 0,
+            latestWeight: latest
+        )
+    }
+
+    private func makeLargeHistoryStore(
+        name: String,
+        workoutCount: Int,
+        names: [String]
+    ) throws -> (store: WorkoutStore, exercises: [Exercise]) {
+        let store = try WorkoutStore(
+            accountStorageKey: name,
+            directoryURL: try temporaryDirectory(named: name)
+        )
+        let exercises = try names.map { try store.addExercise(name: $0) }
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        for index in 0..<workoutCount {
+            // Every third workout shares its date with the previous one (same-date ties).
+            let day = index - (index % 3 == 2 ? 1 : 0)
+            let picked = [
+                exercises[index % exercises.count],
+                exercises[(index * 7 + 3) % exercises.count]
+            ]
+            var seen = Set<UUID>()
+            var drafts: [WorkoutExerciseDraft] = []
+            for exercise in picked where seen.insert(exercise.id).inserted {
+                drafts.append(
+                    WorkoutExerciseDraft(
+                        exerciseID: exercise.id,
+                        sets: (0..<(1 + (index + drafts.count) % 4)).map { setIndex in
+                            .init(
+                                weight: 20 + Double((index * 3 + setIndex * 5) % 17) * 2.5 + 0.1,
+                                reps: 3 + (index + setIndex) % 9
+                            )
+                        }
+                    )
+                )
+            }
+            _ = try store.createWorkout(
+                date: base.addingTimeInterval(TimeInterval(day) * 86_400),
+                exercises: drafts
+            )
+        }
+        return (store, exercises)
+    }
+
+    func testBulkProgressStatsMatchPerExerciseReductionsIncludingSameDateTies() throws {
+        let (store, exercises) = try makeLargeHistoryStore(
+            name: "bulk-progress-stats",
+            workoutCount: 50,
+            names: ["Alpha lift", "beta lift", "Gamma lift", "delta lift", "Epsilon lift"]
+        )
+        let unused = try store.addExercise(name: "Never logged")
+
+        let bulk = store.progressStatsByExercise()
+        for exercise in exercises + [unused] {
+            let expected = referenceProgressStats(store, exerciseID: exercise.id)
+            XCTAssertEqual(bulk[exercise.id], expected, exercise.name)
+            XCTAssertEqual(store.progressStats(exerciseID: exercise.id), expected, exercise.name)
+        }
+        XCTAssertEqual(bulk[unused.id]?.sessionCount, 0)
+        XCTAssertNil(bulk[unused.id]?.latestWeight)
+        let stranger = UUID()
+        XCTAssertEqual(store.progressStats(exerciseID: stranger).setCount, 0)
+        XCTAssertNil(store.progressStats(exerciseID: stranger).latestWeight)
+
+        // Mutations drop the cache.
+        let before = store.progressStats(exerciseID: exercises[0].id).setCount
+        _ = try store.createWorkout(
+            date: Date(timeIntervalSince1970: 1_900_000_000),
+            exercises: [
+                WorkoutExerciseDraft(exerciseID: exercises[0].id, sets: [.init(weight: 99, reps: 1)])
+            ]
+        )
+        XCTAssertEqual(store.progressStats(exerciseID: exercises[0].id).setCount, before + 1)
+        XCTAssertEqual(store.progressStats(exerciseID: exercises[0].id).latestWeight, 99)
+    }
+
+    func testLastWeightKeepsEarlierStoredWorkoutOnEqualDatesAndHonorsBefore() throws {
+        let store = try WorkoutStore(
+            accountStorageKey: "last-weight-ties",
+            directoryURL: try temporaryDirectory(named: "last-weight-ties")
+        )
+        let lift = try store.addExercise(name: "Tie lift")
+        let shared = Date(timeIntervalSince1970: 1_750_000_000)
+        let older = Date(timeIntervalSince1970: 1_740_000_000)
+        _ = try store.createWorkout(
+            date: older,
+            exercises: [WorkoutExerciseDraft(exerciseID: lift.id, sets: [.init(weight: 10, reps: 5)])]
+        )
+        _ = try store.createWorkout(
+            date: shared,
+            exercises: [
+                WorkoutExerciseDraft(
+                    exerciseID: lift.id,
+                    sets: [.init(weight: 30, reps: 5), .init(weight: 31, reps: 5)]
+                )
+            ]
+        )
+        _ = try store.createWorkout(
+            date: shared,
+            exercises: [WorkoutExerciseDraft(exerciseID: lift.id, sets: [.init(weight: 77, reps: 5)])]
+        )
+
+        func reference(before: Date?) -> Double? {
+            store.workouts
+                .filter { before == nil || $0.date < before! }
+                .sorted { $0.date > $1.date }
+                .lazy
+                .flatMap { w in
+                    w.exercises.filter { $0.exerciseID == lift.id }.flatMap { $0.sets.reversed() }
+                }
+                .first?
+                .weight
+        }
+        for before in [nil, shared, older, shared.addingTimeInterval(1), older.addingTimeInterval(-1)] {
+            XCTAssertEqual(store.lastWeight(exerciseID: lift.id, before: before), reference(before: before))
+        }
+        XCTAssertNil(store.lastWeight(exerciseID: UUID()))
+    }
+
+    func testAllExerciseHistoryOrderMatchesOriginalComparatorWithCaseAndCyrillicNames() throws {
+        let (store, _) = try makeLargeHistoryStore(
+            name: "history-order",
+            workoutCount: 30,
+            names: ["apple press", "Zebra row", "Берпи", "жим лёжа", "Апельсин", "banana curl"]
+        )
+        let history = store.allExerciseHistory()
+        XCTAssertFalse(history.isEmpty)
+        // No adjacent pair may be out of order under the original comparator.
+        func original(_ a: ExerciseHistoryEntry, _ b: ExerciseHistoryEntry) -> Bool {
+            if a.sessionDate != b.sessionDate { return a.sessionDate > b.sessionDate }
+            if a.exerciseName.localizedCaseInsensitiveCompare(b.exerciseName) != .orderedSame {
+                return a.exerciseName.localizedCaseInsensitiveCompare(b.exerciseName) == .orderedAscending
+            }
+            return a.setOrderIndex < b.setOrderIndex
+        }
+        for (a, b) in zip(history, history.dropFirst()) {
+            XCTAssertFalse(original(b, a), "\(b.exerciseName) should not precede \(a.exerciseName)")
+        }
+        // Same projection as a sort of the entries with the original comparator (ties are identical on these fields).
+        let reference = history.shuffled().sorted(by: original(_:_:))
+        XCTAssertEqual(history.map(\.exerciseName), reference.map(\.exerciseName))
+        XCTAssertEqual(history.map(\.sessionDate), reference.map(\.sessionDate))
+        XCTAssertEqual(history.map(\.setOrderIndex), reference.map(\.setOrderIndex))
+    }
+
     private func temporaryDirectory(named name: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("GymAppTests-\(name)-\(UUID().uuidString)", isDirectory: true)
