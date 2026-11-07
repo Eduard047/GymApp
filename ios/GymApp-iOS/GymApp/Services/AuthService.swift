@@ -1700,6 +1700,7 @@ final class AuthService: ObservableObject {
         let isRateLimited = status == 429
             || code == "over_email_send_rate_limit"
             || code == "over_request_rate_limit"
+            || raw?.range(of: "rate limit", options: .caseInsensitive) != nil
         if passwordSignIn, isRateLimited {
             return GymAuthServerMessages.signInRateLimited
         }
@@ -1717,7 +1718,8 @@ final class AuthService: ObservableObject {
         let normalizedCode = (code ?? "").lowercased()
         if ["bad_jwt", "refresh_token_already_used",
             "refresh_token_not_found", "invalid_refresh_token",
-            "session_not_found"].contains(normalizedCode) {
+            "session_not_found", "session_expired", "user_banned",
+            "user_not_found"].contains(normalizedCode) {
             return true
         }
         let normalizedMessage = (message ?? "").lowercased()

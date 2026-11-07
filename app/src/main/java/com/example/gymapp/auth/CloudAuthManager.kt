@@ -513,7 +513,10 @@ internal fun isTerminalRefreshFailure(
             "refresh_token_already_used",
             "refresh_token_not_found",
             "invalid_refresh_token",
-            "session_not_found"
+            "session_not_found",
+            "session_expired",
+            "user_banned",
+            "user_not_found"
         ) ||
         normalizedMessage.contains("invalid refresh token") ||
         normalizedMessage.contains("refresh token not found") ||
