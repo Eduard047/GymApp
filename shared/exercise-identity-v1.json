@@ -1,0 +1,156 @@
+{
+  "version": 1,
+  "description": "Exercise name identity golden cases run by Android ExerciseIdentityGoldenTest and iOS ExerciseIdentityGoldenTests. normalized is the output of normalizeExerciseIdentityName (collapse whitespace incl. U+001C-U+001F, NFC, lowercase, U+02BC and U+2019 to apostrophe, yo to ye). catalogKey is the built-in key resolved from the raw name (English, Ukrainian and legacy alias names only; Russian catalog names are search-only and never identity), or null for a custom exercise. A present catalogKey in backup metadata never overrides the raw name.",
+  "cases": [
+    {
+      "id": "english-canonical",
+      "input": "Bench Press",
+      "normalized": "bench press",
+      "catalogKey": "bench_press"
+    },
+    {
+      "id": "mixed-case-latin",
+      "input": "BeNcH pReSs",
+      "normalized": "bench press",
+      "catalogKey": "bench_press"
+    },
+    {
+      "id": "ukrainian-canonical",
+      "input": "Жим штанги лежачи",
+      "normalized": "жим штанги лежачи",
+      "catalogKey": "bench_press"
+    },
+    {
+      "id": "ukrainian-mixed-case",
+      "input": "ЖИМ Штанги ЛЕЖАЧИ",
+      "normalized": "жим штанги лежачи",
+      "catalogKey": "bench_press"
+    },
+    {
+      "id": "legacy-alias",
+      "input": "Жим лежачи",
+      "normalized": "жим лежачи",
+      "catalogKey": "bench_press"
+    },
+    {
+      "id": "legacy-alias-latin",
+      "input": "Barbell SQUAT",
+      "normalized": "barbell squat",
+      "catalogKey": "squat"
+    },
+    {
+      "id": "russian-catalog-name-is-not-identity",
+      "input": "Жим штанги лежа",
+      "normalized": "жим штанги лежа",
+      "catalogKey": null
+    },
+    {
+      "id": "russian-yo-folds-and-stays-custom",
+      "input": "Жим штанги лёжа",
+      "normalized": "жим штанги лежа",
+      "catalogKey": null
+    },
+    {
+      "id": "yo-uppercase",
+      "input": "Ёлочка Тест",
+      "normalized": "елочка тест",
+      "catalogKey": null
+    },
+    {
+      "id": "apostrophe-modifier-letter",
+      "input": "Мʼяч",
+      "normalized": "м'яч",
+      "catalogKey": null
+    },
+    {
+      "id": "apostrophe-right-quote",
+      "input": "М’яч",
+      "normalized": "м'яч",
+      "catalogKey": null
+    },
+    {
+      "id": "apostrophe-ascii",
+      "input": "М'яч",
+      "normalized": "м'яч",
+      "catalogKey": null
+    },
+    {
+      "id": "double-spaces-and-tabs",
+      "input": "Bench \t\t  Press",
+      "normalized": "bench press",
+      "catalogKey": "bench_press"
+    },
+    {
+      "id": "leading-trailing-spaces",
+      "input": "   Deadlift \n ",
+      "normalized": "deadlift",
+      "catalogKey": "deadlift"
+    },
+    {
+      "id": "unicode-spaces",
+      "input": "Bench\u00a0\u2003 Press\u3000",
+      "normalized": "bench press",
+      "catalogKey": "bench_press"
+    },
+    {
+      "id": "information-separators",
+      "input": "\u001cBench\u001d\u001e\u001fPress\u001f",
+      "normalized": "bench press",
+      "catalogKey": "bench_press"
+    },
+    {
+      "id": "composed-y-short",
+      "input": "Жим гантелей лежачи",
+      "normalized": "жим гантелей лежачи",
+      "catalogKey": "dumbbell_bench_press"
+    },
+    {
+      "id": "decomposed-y-short",
+      "input": "Жим гантелеи\u0306 лежачи",
+      "normalized": "жим гантелей лежачи",
+      "catalogKey": "dumbbell_bench_press"
+    },
+    {
+      "id": "emoji-suffix-is-custom",
+      "input": "Bench Press 💪",
+      "normalized": "bench press 💪",
+      "catalogKey": null
+    },
+    {
+      "id": "emoji-only-spacing",
+      "input": "💪  Pump 🔥",
+      "normalized": "💪 pump 🔥",
+      "catalogKey": null
+    },
+    {
+      "id": "fullwidth-is-not-folded",
+      "input": "Ｂench Press",
+      "normalized": "ｂench press",
+      "catalogKey": null
+    },
+    {
+      "id": "custom-name",
+      "input": "My Custom Lift",
+      "normalized": "my custom lift",
+      "catalogKey": null
+    },
+    {
+      "id": "contains-builtin-words-is-custom",
+      "input": "Bench Press Variation",
+      "normalized": "bench press variation",
+      "catalogKey": null
+    },
+    {
+      "id": "empty",
+      "input": "",
+      "normalized": "",
+      "catalogKey": null
+    },
+    {
+      "id": "whitespace-only",
+      "input": " \t\u00a0 ",
+      "normalized": "",
+      "catalogKey": null
+    }
+  ]
+}
