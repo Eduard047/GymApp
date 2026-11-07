@@ -577,6 +577,37 @@ internal fun nextSetInput(previous: SetInputState?, lastWeight: Double?): SetInp
 internal fun hasPlannedExercise(current: List<ExerciseInputState>, exerciseId: Long): Boolean =
     current.any { it.exerciseId == exerciseId }
 
+/** An exercise card removed from the plan, kept with its old position so "Undo" can put it back. */
+internal data class RemovedExerciseDraft(val token: Long, val draft: ExerciseInputState, val index: Int)
+
+/** The plan without [draftId] plus what Undo needs; null when the card is not in the plan. */
+internal fun withExerciseRemoved(
+    current: List<ExerciseInputState>,
+    draftId: Long,
+    token: Long
+): Pair<List<ExerciseInputState>, RemovedExerciseDraft>? {
+    val index = current.indexOfFirst { it.draftId == draftId }
+    if (index < 0) return null
+    return current.filterIndexed { i, _ -> i != index } to RemovedExerciseDraft(token, current[index], index)
+}
+
+/**
+ * Puts a removed card back at its old position (clamped to the list end). Returns null when it
+ * cannot be restored: the same exercise was added meanwhile, the card is already there, or the
+ * per-workout exercise limit is reached.
+ */
+internal fun withExerciseRestored(
+    current: List<ExerciseInputState>,
+    removed: RemovedExerciseDraft,
+    maxExercises: Int = WorkoutDataLimits.MAX_EXERCISES_PER_SESSION
+): List<ExerciseInputState>? {
+    val exerciseId = removed.draft.exerciseId
+    if (exerciseId != null && hasPlannedExercise(current, exerciseId)) return null
+    if (current.any { it.draftId == removed.draft.draftId } || current.size >= maxExercises) return null
+    val at = removed.index.coerceIn(0, current.size)
+    return current.take(at) + removed.draft + current.drop(at)
+}
+
 internal fun formatPlannedWeight(weight: Double): String = formatWeightInput(weight)
 
 /**
@@ -925,6 +956,13 @@ class AddWorkoutViewModel internal constructor(
     private val isTemplatePickerOpen = MutableStateFlow(false)
     private val isTemplateLoading = MutableStateFlow(false)
     private val presetMessage = MutableStateFlow<WorkoutPresetMessage?>(null)
+    private var nextRemovalToken = 1L
+    private val removedExercise = MutableStateFlow<RemovedExerciseDraft?>(null)
+
+    /** Token of the removal the screen may offer to undo; null when nothing is pending. */
+    val removedExerciseUndoToken: StateFlow<Long?> = removedExercise
+        .map { it?.token }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     private val smartWorkoutEffort = MutableStateFlow(SmartWorkoutEffort.Auto)
     private val generatedSmartPlan = MutableStateFlow<SmartWorkoutPlanSummaryUiModel?>(null)
     private val smartAlternativePicker = MutableStateFlow<SmartWorkoutAlternativePickerUiState?>(null)
@@ -1752,10 +1790,39 @@ class AddWorkoutViewModel internal constructor(
         smartAlternativePicker.value = null
         clearStartFieldErrors()
         exerciseDrafts.update { current ->
-            if (current.none { it.draftId == draftId }) return@update current
+            val result = withExerciseRemoved(current, draftId, nextRemovalToken)
+                ?: return@update current
+            nextRemovalToken += 1L
+            removedExercise.value = result.second
             markDraftDirty()
-            current.filterNot { it.draftId == draftId }
+            result.first
         }
+    }
+
+    /**
+     * Restores the exercise removed with the token the screen is showing "Undo" for. Does nothing
+     * for a stale token; drops the undo without restoring when the same exercise was added meanwhile.
+     */
+    fun undoRemoveExerciseDraft(token: Long) {
+        val removed = removedExercise.value?.takeIf { it.token == token } ?: return
+        removedExercise.value = null
+        var restored = false
+        exerciseDrafts.update { current ->
+            val updated = withExerciseRestored(current, removed) ?: return@update current
+            restored = true
+            updated
+        }
+        if (!restored) return
+        resetWatchPlanSyncResult()
+        generatedSmartPlan.value = null
+        smartAlternativePicker.value = null
+        clearStartFieldErrors()
+        markDraftDirty()
+    }
+
+    /** Forgets the pending undo (leaving the screen); the removal stands. */
+    fun discardRemovedExerciseUndo() {
+        removedExercise.value = null
     }
 
     /**
@@ -1795,6 +1862,7 @@ class AddWorkoutViewModel internal constructor(
         generatedSmartPlan.value = null
         smartAlternativePicker.value = null
         exerciseDrafts.value = emptyList()
+        removedExercise.value = null
         hasValidationError.value = false
         clearStartFieldErrors()
         markDraftDirty()
@@ -1893,6 +1961,11 @@ class AddWorkoutViewModel internal constructor(
 
     fun duplicateSet(draftId: Long, setIndex: Int) {
         updateDraftSets(draftId, flagValidationWhenUnchanged = true) { it.withSetDuplicatedAfter(setIndex) }
+    }
+
+    /** Applies this set's weight and reps to every set of the exercise. */
+    fun applySetToAllSets(draftId: Long, setIndex: Int) {
+        updateDraftSets(draftId) { it.withAllSetsLike(setIndex) }
     }
 
     /** Applies [transform] to one draft's sets; a null result means "no change". */
@@ -2321,6 +2394,7 @@ class AddWorkoutViewModel internal constructor(
         workoutDateExplicit.value = false
         note.value = ""
         exerciseDrafts.value = emptyList()
+        removedExercise.value = null
         clearStartFieldErrors()
         isTemplatePickerOpen.value = false
         isTemplateLoading.value = false

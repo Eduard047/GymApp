@@ -89,4 +89,24 @@ class WorkoutSetChipActionsTest {
         val sets = listOf(SetInputState(weight = "", reps = ""))
         assertEquals("21.25", sets.withLastWeightAt(0, 21.25)?.single()?.weight)
     }
+
+    @Test
+    fun applyToAllCopiesTheChosenSetsWeightAndReps() {
+        val result = sets.withAllSetsLike(2)
+        assertEquals(List(3) { SetInputState("70", "6") }, result)
+    }
+
+    @Test
+    fun applyToAllIsUnavailableForOneSetBadIndexOrNoChange() {
+        assertNull(listOf(SetInputState("60", "8")).withAllSetsLike(0))
+        assertNull(sets.withAllSetsLike(-1))
+        assertNull(sets.withAllSetsLike(3))
+        assertNull(List(3) { SetInputState("60", "8") }.withAllSetsLike(1))
+    }
+
+    @Test
+    fun applyToAllKeepsBlankFieldsOfTheChosenSet() {
+        val result = sets.withAllSetsLike(1)
+        assertEquals(List(3) { SetInputState("", "10") }, result)
+    }
 }

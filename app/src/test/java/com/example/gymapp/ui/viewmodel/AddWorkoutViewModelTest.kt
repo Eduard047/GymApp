@@ -264,4 +264,52 @@ class AddWorkoutViewModelTest {
         assertFalse(hasPlannedExercise(plan, 6L))
         assertFalse(hasPlannedExercise(emptyList(), 5L))
     }
+
+    private fun draft(draftId: Long, exerciseId: Long?) = ExerciseInputState(draftId, exerciseId)
+
+    @Test
+    fun removingAnExerciseKeepsTheCardAndItsOldIndex() {
+        val plan = listOf(draft(1, 10), draft(2, 20), draft(3, 30))
+        val (rest, removed) = withExerciseRemoved(plan, 2, token = 7)!!
+        assertEquals(listOf(1L, 3L), rest.map { it.draftId })
+        assertEquals(RemovedExerciseDraft(7, plan[1], 1), removed)
+        assertNull(withExerciseRemoved(plan, 99, token = 8))
+    }
+
+    @Test
+    fun undoPutsTheCardBackAtItsOldIndex() {
+        val plan = listOf(draft(1, 10), draft(2, 20), draft(3, 30))
+        val (rest, removed) = withExerciseRemoved(plan, 2, token = 1)!!
+        assertEquals(plan, withExerciseRestored(rest, removed))
+    }
+
+    @Test
+    fun undoClampsTheIndexWhenTheListShrankMeanwhile() {
+        val plan = listOf(draft(1, 10), draft(2, 20), draft(3, 30))
+        val (rest, removed) = withExerciseRemoved(plan, 3, token = 1)!!
+        val shorter = rest.drop(1)
+        assertEquals(listOf(2L, 3L), withExerciseRestored(shorter, removed)?.map { it.draftId })
+    }
+
+    @Test
+    fun undoIsDroppedWhenTheSameExerciseWasAddedMeanwhile() {
+        val plan = listOf(draft(1, 10), draft(2, 20))
+        val (rest, removed) = withExerciseRemoved(plan, 2, token = 1)!!
+        assertNull(withExerciseRestored(rest + draft(5, 20), removed))
+    }
+
+    @Test
+    fun undoIsDroppedAtTheExerciseLimitOrWhenTheCardIsAlreadyBack() {
+        val plan = listOf(draft(1, 10), draft(2, 20))
+        val (rest, removed) = withExerciseRemoved(plan, 2, token = 1)!!
+        assertNull(withExerciseRestored(rest, removed, maxExercises = 1))
+        assertNull(withExerciseRestored(plan, removed.copy(draft = draft(2, null))))
+    }
+
+    @Test
+    fun undoRestoresABlankCardEvenIfAnotherBlankCardExists() {
+        val plan = listOf(draft(1, null), draft(2, null))
+        val (rest, removed) = withExerciseRemoved(plan, 1, token = 1)!!
+        assertEquals(plan, withExerciseRestored(rest, removed))
+    }
 }

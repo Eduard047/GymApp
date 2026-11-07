@@ -3636,6 +3636,11 @@ internal fun GymAppRoot(
                                 onApplyLastWeightToSet = viewModel::applyLastWeightToSet,
                                 onCopyPreviousSet = viewModel::copyPreviousSet,
                                 onDuplicateSet = viewModel::duplicateSet,
+                                onApplySetToAllSets = viewModel::applySetToAllSets,
+                                removedExerciseUndoToken = viewModel.removedExerciseUndoToken
+                                    .collectAsStateWithLifecycle().value,
+                                onUndoRemoveExercise = viewModel::undoRemoveExerciseDraft,
+                                onDiscardRemovedExerciseUndo = viewModel::discardRemovedExerciseUndo,
                                 onApplyWorkoutRecommendation = viewModel::applyWorkoutRecommendation,
                                 onRepeatLastWorkout = viewModel::repeatLastWorkout,
                                 onApplyWorkoutPreset = viewModel::applyWorkoutPreset,

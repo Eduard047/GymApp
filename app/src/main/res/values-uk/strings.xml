@@ -411,6 +411,7 @@
     <string name="label_exercise">Вправа</string>
     <string name="label_select_exercise">Обери вправу</string>
     <string name="plan_editor_exercise_already_added">Ця вправа вже є в тренуванні.</string>
+    <string name="plan_editor_apply_to_all_sets">Застосувати до всіх підходів</string>
     <string name="label_last_weight">Остання: %1$.1f кг</string>
     <string name="label_set">Підхід %1$d</string>
     <string name="label_set_short">Підхід</string>

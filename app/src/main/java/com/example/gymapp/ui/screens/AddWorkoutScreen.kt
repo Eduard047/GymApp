@@ -85,6 +85,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -125,6 +126,8 @@ import com.example.gymapp.ui.components.ExerciseDragHandle
 import com.example.gymapp.ui.components.ExerciseReorderSync
 import com.example.gymapp.ui.components.GymHapticEvent
 import com.example.gymapp.ui.components.GymMotion
+import com.example.gymapp.ui.components.GymToastResult
+import com.example.gymapp.ui.components.LocalGymToastController
 import com.example.gymapp.ui.components.exerciseReorderItem
 import com.example.gymapp.ui.components.exerciseReorderViewport
 import com.example.gymapp.ui.components.rememberExerciseReorderState
@@ -196,6 +199,10 @@ fun AddWorkoutScreen(
     onApplyLastWeightToSet: (Long, Int) -> Unit,
     onCopyPreviousSet: (Long, Int) -> Unit,
     onDuplicateSet: (Long, Int) -> Unit,
+    onApplySetToAllSets: (Long, Int) -> Unit = { _, _ -> },
+    removedExerciseUndoToken: Long? = null,
+    onUndoRemoveExercise: (Long) -> Unit = {},
+    onDiscardRemovedExerciseUndo: () -> Unit = {},
     onApplyWorkoutRecommendation: (Long) -> Unit,
     onRepeatLastWorkout: () -> Unit,
     onApplyWorkoutPreset: (WorkoutTemplatePreset, String) -> Unit = { _, _ -> },
@@ -273,6 +280,19 @@ fun AddWorkoutScreen(
             }
         }
     }
+    // "Exercise removed - Undo": a new removal replaces the pending toast; leaving the screen drops the undo.
+    val toastController = LocalGymToastController.current
+    val currentOnUndoRemoveExercise by rememberUpdatedState(onUndoRemoveExercise)
+    val currentOnDiscardRemovedExerciseUndo by rememberUpdatedState(onDiscardRemovedExerciseUndo)
+    LaunchedEffect(removedExerciseUndoToken) {
+        val token = removedExerciseUndoToken ?: return@LaunchedEffect
+        val result = toastController.show(
+            message = context.getString(R.string.message_exercise_removed),
+            actionLabel = context.getString(R.string.workout_detail_undo_action)
+        )
+        if (result == GymToastResult.ActionPerformed) currentOnUndoRemoveExercise(token)
+    }
+    DisposableEffect(Unit) { onDispose { currentOnDiscardRemovedExerciseUndo() } }
     var showDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
     var showClearConfirmation by rememberSaveable { mutableStateOf(false) }
     var showVoiceWorkoutSheet by rememberSaveable { mutableStateOf(false) }
@@ -479,6 +499,7 @@ fun AddWorkoutScreen(
                 onApplyLastWeightToSet = { setIndex -> onApplyLastWeightToSet(draft.draftId, setIndex) },
                 onCopyPreviousSet = { setIndex -> onCopyPreviousSet(draft.draftId, setIndex) },
                 onDuplicateSet = { setIndex -> onDuplicateSet(draft.draftId, setIndex) },
+                onApplySetToAllSets = { setIndex -> onApplySetToAllSets(draft.draftId, setIndex) },
                 onApplyWorkoutRecommendation = { onApplyWorkoutRecommendation(draft.draftId) },
                 onOpenSmartAlternatives = { onOpenSmartAlternatives(draft.draftId) },
                 onRemoveExerciseDraft = { onRemoveExerciseDraft(draft.draftId) },
@@ -1360,6 +1381,7 @@ private fun ExerciseDraftCard(
     onApplyLastWeightToSet: (Int) -> Unit,
     onCopyPreviousSet: (Int) -> Unit,
     onDuplicateSet: (Int) -> Unit,
+    onApplySetToAllSets: (Int) -> Unit,
     onApplyWorkoutRecommendation: () -> Unit,
     onOpenSmartAlternatives: () -> Unit,
     onRemoveExerciseDraft: () -> Unit,
@@ -1498,6 +1520,8 @@ private fun ExerciseDraftCard(
                         onApplyLastWeight = { onApplyLastWeightToSet(setIndex) },
                         onCopyPrevious = { onCopyPreviousSet(setIndex) },
                         onDuplicate = { onDuplicateSet(setIndex) },
+                        canApplyToAll = draft.sets.size > 1,
+                        onApplyToAll = { onApplySetToAllSets(setIndex) },
                         onDelete = { onRemoveSet(setIndex) }
                     )
                 }
@@ -1537,6 +1561,8 @@ private fun WorkoutSetDraftRow(
     onApplyLastWeight: () -> Unit,
     onCopyPrevious: () -> Unit,
     onDuplicate: () -> Unit,
+    canApplyToAll: Boolean,
+    onApplyToAll: () -> Unit,
     onDelete: () -> Unit
 ) {
     val number = position + 1
@@ -1599,6 +1625,14 @@ private fun WorkoutSetDraftRow(
                 enabled = true,
                 onClick = onDuplicate
             )
+            if (canApplyToAll) {
+                SetQuickChip(
+                    text = stringResource(R.string.plan_editor_apply_to_all_sets),
+                    description = null,
+                    enabled = true,
+                    onClick = onApplyToAll
+                )
+            }
         }
     }
 }

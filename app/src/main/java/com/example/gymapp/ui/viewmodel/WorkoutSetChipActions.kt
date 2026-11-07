@@ -33,3 +33,11 @@ internal fun List<SetInputState>.withSetDuplicatedAfter(
     if (index !in indices || size >= maxSets) return null
     return take(index + 1) + this[index].copy() + drop(index + 1)
 }
+
+/** Copies this set's weight and reps to every set; null when it is the only set, the index is invalid or nothing changes. */
+internal fun List<SetInputState>.withAllSetsLike(index: Int): List<SetInputState>? {
+    if (size < 2 || index !in indices) return null
+    val source = this[index]
+    if (all { it.weight == source.weight && it.reps == source.reps }) return null
+    return map { it.copy(weight = source.weight, reps = source.reps) }
+}
