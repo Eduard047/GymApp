@@ -610,6 +610,184 @@
      }
     ]
    }
+  },
+  {
+   "name": "weighted-pull-up-hold-keeps-exact-weight",
+   "trainingProfile": {
+    "split": "upperLower",
+    "workoutsPerWeek": 4,
+    "goal": "muscleGain",
+    "calorieMode": "surplus"
+   },
+   "effort": "standard",
+   "exerciseName": "Pull Up",
+   "nowOffsetDays": 0,
+   "history": [
+    {
+     "daysAgo": 4,
+     "setOrder": 0,
+     "weight": 12.3,
+     "reps": 7
+    },
+    {
+     "daysAgo": 4,
+     "setOrder": 1,
+     "weight": 12.3,
+     "reps": 7
+    },
+    {
+     "daysAgo": 4,
+     "setOrder": 2,
+     "weight": 12.3,
+     "reps": 7
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 0,
+     "weight": 12.3,
+     "reps": 7
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 1,
+     "weight": 12.3,
+     "reps": 7
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 2,
+     "weight": 12.3,
+     "reps": 7
+    }
+   ],
+   "expected": {
+    "kind": "holdAndBuild",
+    "targetRir": [
+     2,
+     3
+    ],
+    "sets": [
+     {
+      "weight": 12.3,
+      "reps": 8
+     },
+     {
+      "weight": 12.3,
+      "reps": 8
+     },
+     {
+      "weight": 12.3,
+      "reps": 8
+     }
+    ]
+   }
+  },
+  {
+   "name": "weighted-pull-up-plateau-keeps-exact-weight",
+   "trainingProfile": {
+    "split": "upperLower",
+    "workoutsPerWeek": 4,
+    "goal": "muscleGain",
+    "calorieMode": "surplus"
+   },
+   "effort": "standard",
+   "exerciseName": "Pull Up",
+   "nowOffsetDays": 0,
+   "history": [
+    {
+     "daysAgo": 3,
+     "setOrder": 0,
+     "weight": 12.3,
+     "reps": 7
+    },
+    {
+     "daysAgo": 3,
+     "setOrder": 1,
+     "weight": 12.3,
+     "reps": 7
+    },
+    {
+     "daysAgo": 3,
+     "setOrder": 2,
+     "weight": 12.3,
+     "reps": 7
+    },
+    {
+     "daysAgo": 10,
+     "setOrder": 0,
+     "weight": 12.3,
+     "reps": 7
+    },
+    {
+     "daysAgo": 10,
+     "setOrder": 1,
+     "weight": 12.3,
+     "reps": 7
+    },
+    {
+     "daysAgo": 10,
+     "setOrder": 2,
+     "weight": 12.3,
+     "reps": 7
+    },
+    {
+     "daysAgo": 17,
+     "setOrder": 0,
+     "weight": 12.3,
+     "reps": 7
+    },
+    {
+     "daysAgo": 17,
+     "setOrder": 1,
+     "weight": 12.3,
+     "reps": 7
+    },
+    {
+     "daysAgo": 17,
+     "setOrder": 2,
+     "weight": 12.3,
+     "reps": 7
+    },
+    {
+     "daysAgo": 24,
+     "setOrder": 0,
+     "weight": 12.3,
+     "reps": 7
+    },
+    {
+     "daysAgo": 24,
+     "setOrder": 1,
+     "weight": 12.3,
+     "reps": 7
+    },
+    {
+     "daysAgo": 24,
+     "setOrder": 2,
+     "weight": 12.3,
+     "reps": 7
+    }
+   ],
+   "expected": {
+    "kind": "plateauBreak",
+    "targetRir": [
+     2,
+     3
+    ],
+    "sets": [
+     {
+      "weight": 12.3,
+      "reps": 10
+     },
+     {
+      "weight": 12.3,
+      "reps": 10
+     },
+     {
+      "weight": 12.3,
+      "reps": 10
+     }
+    ]
+   }
   }
  ],
  "_comment": "Per-exercise progression golden vectors. Sessions are grouped by daysAgo; weight/reps only are compared (iOS set ids are random). now = nowEpochMillis, UTC."

@@ -725,6 +725,7 @@ public enum RecommendationEngine {
                 let increasedWeight = adjustedWeight(
                     baseline.weight,
                     adjustment: .harder,
+                    loadMode: loadMode,
                     machineLoadProfile: machineLoadProfile,
                     loadDirection: loadDirection
                 )
@@ -737,6 +738,7 @@ public enum RecommendationEngine {
                     adjustedWeight(
                         baseline.weight,
                         adjustment: .hold,
+                        loadMode: loadMode,
                         machineLoadProfile: machineLoadProfile,
                         loadDirection: loadDirection
                     ),
@@ -769,6 +771,7 @@ public enum RecommendationEngine {
                     adjustedWeight(
                         baseline.weight,
                         adjustment: .hold,
+                        loadMode: loadMode,
                         machineLoadProfile: machineLoadProfile,
                         loadDirection: loadDirection
                     ),
@@ -896,6 +899,7 @@ public enum RecommendationEngine {
                 adjustedWeight = self.adjustedWeight(
                     weight,
                     adjustment: harder ? .harder : .easier(multiplier: 0.95),
+                    loadMode: analysis?.loadMode ?? .standard,
                     machineLoadProfile: machineLoadProfile,
                     loadDirection: loadDirection
                 )
@@ -1379,6 +1383,7 @@ public enum RecommendationEngine {
     private static func adjustedWeight(
         _ baseline: Double,
         adjustment: LoadAdjustment,
+        loadMode: ExerciseLoadMode,
         machineLoadProfile: MachineLoadProfile?,
         loadDirection: MachineLoadDirection
     ) -> Double {
@@ -1407,6 +1412,8 @@ public enum RecommendationEngine {
         guard baseline > 0 else { return baseline }
         switch adjustment {
         case .hold:
+            // Weighted bodyweight and no-load exercises keep the exact logged load (Android parity).
+            if loadMode == .bodyweight || loadMode == .none { return baseline }
             return nearestFallbackGridWeight(baseline)
         case .harder:
             return loadDirection == .lowerIsHarder
