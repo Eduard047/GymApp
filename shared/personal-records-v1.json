@@ -1,0 +1,575 @@
+{
+  "version": 1,
+  "description": "Personal-record golden cases run by Android PersonalRecordsGoldenTest and iOS PersonalRecordsGoldenTests. history is every logged set before the workout (exercise keys map to local ids). workout lists exercises in order; every set is completed, one minute after the previous one in list order. expected.baselines are the history bests (bestWeight, bestEstimatedOneRepMax with Epley weight*(1+reps/30), compared with 1e-9 tolerance); expected.records holds one flag per set. Rules: no history means no record, 0 kg is never a record, equal to the best is not a record, each set compares with the better of history and earlier sets of the workout.",
+  "cases": [
+    {
+      "id": "first-session-no-history",
+      "description": "An exercise with no logged history never sets a record, however heavy.",
+      "history": [],
+      "workout": [
+        {
+          "exercise": "bench",
+          "sets": [
+            {
+              "weight": 60,
+              "reps": 8
+            },
+            {
+              "weight": 70,
+              "reps": 8
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "baselines": {},
+        "records": [
+          {
+            "exercise": "bench",
+            "sets": [
+              false,
+              false
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "heavier-weight",
+      "description": "A heavier set than any in history is a record; lighter sets are not.",
+      "history": [
+        {
+          "exercise": "bench",
+          "weight": 100,
+          "reps": 5
+        }
+      ],
+      "workout": [
+        {
+          "exercise": "bench",
+          "sets": [
+            {
+              "weight": 105,
+              "reps": 3
+            },
+            {
+              "weight": 95,
+              "reps": 5
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "baselines": {
+          "bench": {
+            "bestWeight": 100,
+            "bestEstimatedOneRepMax": 116.666666667
+          }
+        },
+        "records": [
+          {
+            "exercise": "bench",
+            "sets": [
+              true,
+              false
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "same-weight-more-reps",
+      "description": "Same weight, more reps beats the estimated one-rep max although the weight is not heavier.",
+      "history": [
+        {
+          "exercise": "bench",
+          "weight": 80,
+          "reps": 8
+        }
+      ],
+      "workout": [
+        {
+          "exercise": "bench",
+          "sets": [
+            {
+              "weight": 80,
+              "reps": 10
+            },
+            {
+              "weight": 80,
+              "reps": 9
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "baselines": {
+          "bench": {
+            "bestWeight": 80,
+            "bestEstimatedOneRepMax": 101.333333333
+          }
+        },
+        "records": [
+          {
+            "exercise": "bench",
+            "sets": [
+              true,
+              false
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "lighter-weight-more-reps",
+      "description": "A lighter set can still be a record through the estimated one-rep max.",
+      "history": [
+        {
+          "exercise": "bench",
+          "weight": 100,
+          "reps": 5
+        }
+      ],
+      "workout": [
+        {
+          "exercise": "bench",
+          "sets": [
+            {
+              "weight": 90,
+              "reps": 10
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "baselines": {
+          "bench": {
+            "bestWeight": 100,
+            "bestEstimatedOneRepMax": 116.666666667
+          }
+        },
+        "records": [
+          {
+            "exercise": "bench",
+            "sets": [
+              true
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "equal-to-best",
+      "description": "Repeating the previous best exactly is not a record.",
+      "history": [
+        {
+          "exercise": "bench",
+          "weight": 100,
+          "reps": 5
+        }
+      ],
+      "workout": [
+        {
+          "exercise": "bench",
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 5
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "baselines": {
+          "bench": {
+            "bestWeight": 100,
+            "bestEstimatedOneRepMax": 116.666666667
+          }
+        },
+        "records": [
+          {
+            "exercise": "bench",
+            "sets": [
+              false
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "bodyweight-zero-kg",
+      "description": "0 kg sets are never records even when reps beat history.",
+      "history": [
+        {
+          "exercise": "pullup",
+          "weight": 0,
+          "reps": 8
+        },
+        {
+          "exercise": "pullup",
+          "weight": 0,
+          "reps": 10
+        }
+      ],
+      "workout": [
+        {
+          "exercise": "pullup",
+          "sets": [
+            {
+              "weight": 0,
+              "reps": 12
+            },
+            {
+              "weight": 0,
+              "reps": 15
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "baselines": {
+          "pullup": {
+            "bestWeight": 0,
+            "bestEstimatedOneRepMax": 0.0
+          }
+        },
+        "records": [
+          {
+            "exercise": "pullup",
+            "sets": [
+              false,
+              false
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "weighted-after-bodyweight-history",
+      "description": "First weighted set over a 0 kg history is a record; a later lighter one is not.",
+      "history": [
+        {
+          "exercise": "pullup",
+          "weight": 0,
+          "reps": 10
+        }
+      ],
+      "workout": [
+        {
+          "exercise": "pullup",
+          "sets": [
+            {
+              "weight": 5,
+              "reps": 8
+            },
+            {
+              "weight": 2.5,
+              "reps": 8
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "baselines": {
+          "pullup": {
+            "bestWeight": 0,
+            "bestEstimatedOneRepMax": 0.0
+          }
+        },
+        "records": [
+          {
+            "exercise": "pullup",
+            "sets": [
+              true,
+              false
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "float-tolerance-equal-estimate",
+      "description": "90x10 and 80x15 both estimate 120 kg; a difference below 1e-9 is not a record.",
+      "history": [
+        {
+          "exercise": "bench",
+          "weight": 90,
+          "reps": 10
+        }
+      ],
+      "workout": [
+        {
+          "exercise": "bench",
+          "sets": [
+            {
+              "weight": 80,
+              "reps": 15
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "baselines": {
+          "bench": {
+            "bestWeight": 90,
+            "bestEstimatedOneRepMax": 120.0
+          }
+        },
+        "records": [
+          {
+            "exercise": "bench",
+            "sets": [
+              false
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "multiple-exercises-mixed",
+      "description": "Records are tracked per exercise; an exercise without history has none.",
+      "history": [
+        {
+          "exercise": "bench",
+          "weight": 80,
+          "reps": 5
+        },
+        {
+          "exercise": "squat",
+          "weight": 100,
+          "reps": 5
+        }
+      ],
+      "workout": [
+        {
+          "exercise": "bench",
+          "sets": [
+            {
+              "weight": 82.5,
+              "reps": 5
+            },
+            {
+              "weight": 80,
+              "reps": 5
+            }
+          ]
+        },
+        {
+          "exercise": "squat",
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 5
+            },
+            {
+              "weight": 100,
+              "reps": 6
+            }
+          ]
+        },
+        {
+          "exercise": "deadlift",
+          "sets": [
+            {
+              "weight": 150,
+              "reps": 5
+            },
+            {
+              "weight": 160,
+              "reps": 5
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "baselines": {
+          "bench": {
+            "bestWeight": 80,
+            "bestEstimatedOneRepMax": 93.333333333
+          },
+          "squat": {
+            "bestWeight": 100,
+            "bestEstimatedOneRepMax": 116.666666667
+          }
+        },
+        "records": [
+          {
+            "exercise": "bench",
+            "sets": [
+              true,
+              false
+            ]
+          },
+          {
+            "exercise": "squat",
+            "sets": [
+              false,
+              true
+            ]
+          },
+          {
+            "exercise": "deadlift",
+            "sets": [
+              false,
+              false
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "record-in-the-middle",
+      "description": "A record set that is neither first nor last in the exercise.",
+      "history": [
+        {
+          "exercise": "bench",
+          "weight": 100,
+          "reps": 5
+        }
+      ],
+      "workout": [
+        {
+          "exercise": "bench",
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 5
+            },
+            {
+              "weight": 110,
+              "reps": 3
+            },
+            {
+              "weight": 100,
+              "reps": 5
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "baselines": {
+          "bench": {
+            "bestWeight": 100,
+            "bestEstimatedOneRepMax": 116.666666667
+          }
+        },
+        "records": [
+          {
+            "exercise": "bench",
+            "sets": [
+              false,
+              true,
+              false
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "running-best-within-workout",
+      "description": "Each set compares with the better of history and earlier sets of this workout.",
+      "history": [
+        {
+          "exercise": "bench",
+          "weight": 80,
+          "reps": 5
+        }
+      ],
+      "workout": [
+        {
+          "exercise": "bench",
+          "sets": [
+            {
+              "weight": 90,
+              "reps": 5
+            },
+            {
+              "weight": 85,
+              "reps": 5
+            },
+            {
+              "weight": 95,
+              "reps": 5
+            },
+            {
+              "weight": 95,
+              "reps": 5
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "baselines": {
+          "bench": {
+            "bestWeight": 80,
+            "bestEstimatedOneRepMax": 93.333333333
+          }
+        },
+        "records": [
+          {
+            "exercise": "bench",
+            "sets": [
+              true,
+              false,
+              true,
+              false
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "decimal-weights",
+      "description": "Plate-sized decimals: 2.5 and 1.25 kg steps.",
+      "history": [
+        {
+          "exercise": "curl",
+          "weight": 1.25,
+          "reps": 8
+        },
+        {
+          "exercise": "curl",
+          "weight": 2.5,
+          "reps": 5
+        }
+      ],
+      "workout": [
+        {
+          "exercise": "curl",
+          "sets": [
+            {
+              "weight": 2.5,
+              "reps": 6
+            },
+            {
+              "weight": 3.75,
+              "reps": 1
+            },
+            {
+              "weight": 1.25,
+              "reps": 20
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "baselines": {
+          "curl": {
+            "bestWeight": 2.5,
+            "bestEstimatedOneRepMax": 2.916666667
+          }
+        },
+        "records": [
+          {
+            "exercise": "curl",
+            "sets": [
+              true,
+              true,
+              false
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
