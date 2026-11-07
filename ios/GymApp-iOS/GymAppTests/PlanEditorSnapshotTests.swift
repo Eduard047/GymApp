@@ -416,4 +416,30 @@ final class PlanEditorSnapshotTests: XCTestCase {
         // A new removal is a distinct pending undo.
         XCTAssertNotEqual(removal.id, PendingExerciseRemoval(draft: b, index: 1).id)
     }
+
+    func testVoiceAddSkipsExistingAndRepeatedExercisesAndRespectsCap() {
+        let a = WorkoutEditorExerciseDraft(exerciseID: UUID())
+        let b = WorkoutEditorExerciseDraft(exerciseID: UUID())
+        let dupOfA = WorkoutEditorExerciseDraft(exerciseID: a.exerciseID)
+        let dupOfB = WorkoutEditorExerciseDraft(exerciseID: b.exerciseID)
+
+        let merged = WorkoutEditorMerge.adding([dupOfA, b, dupOfB], to: [a])
+        XCTAssertEqual(merged.drafts.map(\.id), [a.id, b.id])
+        XCTAssertFalse(merged.hitExerciseCap)
+
+        let full = (0..<WorkoutEditorLimits.maxExercises - 1).map { _ in
+            WorkoutEditorExerciseDraft(exerciseID: UUID())
+        }
+        let x = WorkoutEditorExerciseDraft(exerciseID: UUID())
+        let y = WorkoutEditorExerciseDraft(exerciseID: UUID())
+        let capped = WorkoutEditorMerge.adding([x, y], to: full)
+        XCTAssertEqual(capped.drafts.count, WorkoutEditorLimits.maxExercises)
+        XCTAssertEqual(capped.drafts.last?.id, x.id)
+        XCTAssertTrue(capped.hitExerciseCap)
+
+        // Duplicates alone never report the cap.
+        let atCap = WorkoutEditorMerge.adding([WorkoutEditorExerciseDraft(exerciseID: full[0].exerciseID)], to: full + [x])
+        XCTAssertEqual(atCap.drafts.count, WorkoutEditorLimits.maxExercises)
+        XCTAssertFalse(atCap.hitExerciseCap)
+    }
 }

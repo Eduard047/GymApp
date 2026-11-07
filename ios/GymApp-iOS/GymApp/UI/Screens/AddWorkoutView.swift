@@ -1126,9 +1126,13 @@ struct AddWorkoutView: View {
     private func applyVoiceWorkoutDraft(_ voiceDrafts: [WorkoutEditorExerciseDraft], _ mode: VoiceWorkoutApplyMode) {
         switch mode {
         case .add:
-            drafts.append(contentsOf: voiceDrafts)
+            let merge = WorkoutEditorMerge.adding(voiceDrafts, to: drafts)
+            drafts = merge.drafts
+            if merge.hitExerciseCap {
+                show(WorkoutEditorLimits.exerciseLimitMessage(), error: true)
+            }
         case .replace:
-            drafts = voiceDrafts
+            replaceDrafts(voiceDrafts)
         }
         latestSmartPlan = nil
         smartGeneratedDraftIDs.removeAll()
@@ -1852,12 +1856,12 @@ struct AddWorkoutView: View {
         latestSmartPlan = nil
         smartGeneratedDraftIDs.removeAll()
         smartPlanIsStale = false
-        drafts = workout.exercises.map { block in
+        replaceDrafts(workout.exercises.map { block in
             WorkoutEditorExerciseDraft(
                 exerciseID: block.exerciseID,
                 sets: block.sets.map { WorkoutEditorSetDraft(weight: $0.weight, reps: $0.reps) }
             )
-        }
+        })
         if note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             note = workout.note ?? ""
         }
@@ -1873,7 +1877,7 @@ struct AddWorkoutView: View {
                 show(gymLocalized("A deload template needs a previous workout."), error: true)
                 return
             }
-            drafts = latest.exercises.map { block in
+            replaceDrafts(latest.exercises.map { block in
                 WorkoutEditorExerciseDraft(
                     exerciseID: block.exerciseID,
                     sets: block.sets.map {
@@ -1883,7 +1887,7 @@ struct AddWorkoutView: View {
                         )
                     }
                 )
-            }
+            })
             note = note.isEmpty ? gymLocalized("Deload") : note
             show(gymLocalized("Deload uses 90% of the latest weights with one extra repetition."), error: false)
             return
@@ -1911,7 +1915,7 @@ struct AddWorkoutView: View {
             return
         }
         let history = store.allExerciseHistory()
-        drafts = candidates.map { exercise, _, _ in
+        replaceDrafts(candidates.map { exercise, _, _ in
             let recommendation = RecommendationEngine.buildForExercise(
                 exerciseID: exercise.id,
                 history: history,
@@ -1929,7 +1933,7 @@ struct AddWorkoutView: View {
                     )
                 }
             )
-        }
+        })
         show(
             gymText(
                 "\(preset.title) template loaded from your exercise catalog.",
@@ -1961,10 +1965,10 @@ struct AddWorkoutView: View {
             let nonDuplicateGenerated = generatedDrafts.filter {
                 !manualExerciseIDs.contains($0.exerciseID)
             }
-            drafts = manualDrafts + nonDuplicateGenerated
+            replaceDrafts(manualDrafts + nonDuplicateGenerated)
             smartGeneratedDraftIDs = Set(nonDuplicateGenerated.map(\.id))
         } else {
-            drafts = generatedDrafts
+            replaceDrafts(generatedDrafts)
             smartGeneratedDraftIDs = Set(generatedDrafts.map(\.id))
         }
         smartPlanIsStale = false
@@ -2317,6 +2321,7 @@ struct AddWorkoutView: View {
     private func clearPlan() {
         guard !drafts.isEmpty else { return }
         drafts.removeAll()
+        pendingExerciseRemoval = nil
         latestSmartPlan = nil
         smartGeneratedDraftIDs.removeAll()
         smartPlanIsStale = false
@@ -2437,6 +2442,13 @@ struct AddWorkoutView: View {
         .accessibilityElement(children: .contain)
     }
 
+    /// Every path that swaps the whole plan goes through here so a stale
+    /// "Undo remove" can never restore an exercise into a different plan.
+    private func replaceDrafts(_ newDrafts: [WorkoutEditorExerciseDraft]) {
+        pendingExerciseRemoval = nil
+        drafts = newDrafts
+    }
+
     private func undoExerciseRemoval() {
         guard let removal = pendingExerciseRemoval else { return }
         pendingExerciseRemoval = nil
@@ -2463,6 +2475,29 @@ struct PendingExerciseRemoval: Equatable {
         var result = drafts
         result.insert(draft, at: min(max(index, 0), result.count))
         return result
+    }
+}
+
+/// Pure plan-merge rules for adding several exercises at once (voice "add").
+enum WorkoutEditorMerge {
+    /// Appends `incoming` skipping exercises already in the plan (or repeated in `incoming`),
+    /// stopping at the exercise cap; `hitExerciseCap` is true when something had to be dropped for it.
+    static func adding(
+        _ incoming: [WorkoutEditorExerciseDraft],
+        to drafts: [WorkoutEditorExerciseDraft]
+    ) -> (drafts: [WorkoutEditorExerciseDraft], hitExerciseCap: Bool) {
+        var result = drafts
+        var seen = Set(drafts.map(\.exerciseID))
+        var hitCap = false
+        for draft in incoming where !seen.contains(draft.exerciseID) {
+            guard result.count < WorkoutEditorLimits.maxExercises else {
+                hitCap = true
+                break
+            }
+            result.append(draft)
+            seen.insert(draft.exerciseID)
+        }
+        return (result, hitCap)
     }
 }
 
