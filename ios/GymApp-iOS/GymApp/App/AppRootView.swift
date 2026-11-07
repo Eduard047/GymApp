@@ -974,6 +974,11 @@ private struct MainTabShell: View {
             // working even when this view never mounts (e.g. a background
             // launch to run a Live Activity App Intent).
             liveWorkoutCoordinator.startMonitoring()
+            let coordinator = liveWorkoutCoordinator
+            appState.liveActivityController.isAttachedToLiveRoom = { [weak coordinator] in
+                coordinator?.isAttachedToCurrentDraft ?? false
+            }
+            appState.liveActivityController.refresh()
             openPendingPushRouteIfNeeded()
             if activeWorkoutStore.recoveryMessage != nil {
                 appState.show(
@@ -1032,6 +1037,9 @@ private struct MainTabShell: View {
             }
         }
         .onChange(of: liveWorkoutCoordinator.sidecar.attachment?.localDraftID) { _, draftID in
+            // Attachment alone does not touch the draft, so re-mirror the
+            // Live Activity to show/hide its "Record set" button.
+            appState.liveActivityController.refresh()
             guard let draftID, activeWorkoutStore.draft?.id == draftID else { return }
             workoutEditorDraft = nil
             workoutEditorLiveRecipient = nil

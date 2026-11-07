@@ -56,6 +56,13 @@ public struct WorkoutActivityAttributes: ActivityAttributes {
         public let setLabel: String?
         /// Already-localized "Next:" label (same fallback to the attributes).
         public let nextLabel: String?
+        /// Whether the Live Activity may offer the "Record set" button. The
+        /// app sets it to `false` while the current draft is attached to a
+        /// live room (sets are recorded through the room there, so a Lock
+        /// Screen tap would diverge the friend's state) - Android parity with
+        /// `ActiveWorkoutNotificationContent.canLogSet`. Decodes as `true`
+        /// when absent so a state encoded by an older app build still works.
+        public let canRecord: Bool
 
         public static let defaultRecordSetButtonTitle = "Record set"
         public static let defaultSkipRestButtonTitle = "Skip rest"
@@ -74,7 +81,8 @@ public struct WorkoutActivityAttributes: ActivityAttributes {
             recordSetButtonTitle: String? = nil,
             skipRestButtonTitle: String? = nil,
             setLabel: String? = nil,
-            nextLabel: String? = nil
+            nextLabel: String? = nil,
+            canRecord: Bool = true
         ) {
             self.exerciseName = exerciseName
             self.setIndex = setIndex
@@ -90,6 +98,33 @@ public struct WorkoutActivityAttributes: ActivityAttributes {
             self.skipRestButtonTitle = skipRestButtonTitle
             self.setLabel = setLabel
             self.nextLabel = nextLabel
+            self.canRecord = canRecord
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case exerciseName, setIndex, setCount, setProgressLabel, completedSets
+            case totalSets, restEndsAt, nextSetSummary, isResting, currentSetID
+            case recordSetButtonTitle, skipRestButtonTitle, setLabel, nextLabel
+            case canRecord
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            exerciseName = try container.decode(String.self, forKey: .exerciseName)
+            setIndex = try container.decode(Int.self, forKey: .setIndex)
+            setCount = try container.decode(Int.self, forKey: .setCount)
+            setProgressLabel = try container.decodeIfPresent(String.self, forKey: .setProgressLabel)
+            completedSets = try container.decode(Int.self, forKey: .completedSets)
+            totalSets = try container.decode(Int.self, forKey: .totalSets)
+            restEndsAt = try container.decodeIfPresent(Date.self, forKey: .restEndsAt)
+            nextSetSummary = try container.decode(String.self, forKey: .nextSetSummary)
+            isResting = try container.decode(Bool.self, forKey: .isResting)
+            currentSetID = try container.decodeIfPresent(UUID.self, forKey: .currentSetID)
+            recordSetButtonTitle = try container.decodeIfPresent(String.self, forKey: .recordSetButtonTitle)
+            skipRestButtonTitle = try container.decodeIfPresent(String.self, forKey: .skipRestButtonTitle)
+            setLabel = try container.decodeIfPresent(String.self, forKey: .setLabel)
+            nextLabel = try container.decodeIfPresent(String.self, forKey: .nextLabel)
+            canRecord = try container.decodeIfPresent(Bool.self, forKey: .canRecord) ?? true
         }
 
         public var resolvedRecordSetButtonTitle: String {

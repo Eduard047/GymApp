@@ -466,6 +466,39 @@ final class WorkoutLiveActivityBridgeGuardTests: XCTestCase {
         XCTAssertEqual(active.draft?.revision, revisionAfterFirst, "second call must no-op, not double-record")
     }
 
+    func testRecordCurrentSetIsNoOpWhileAttachedToLiveRoom() throws {
+        let (history, active, exercise) = try makeStores(account: "bridge-live-room")
+        let setID = UUID()
+        let draft = try active.start(
+            workoutDate: Date(),
+            note: nil,
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: exercise.id,
+                    exerciseName: exercise.name,
+                    exerciseCatalogKey: exercise.catalogKey,
+                    sets: [ActiveWorkoutSet(id: setID, weight: 60, reps: 8)]
+                )
+            ],
+            workoutStore: history,
+            now: Date()
+        )
+        let controller = WorkoutLiveActivityController(requester: FakeLiveActivityRequester())
+        controller.attach(workoutStore: history, activeWorkoutStore: active, restTimers: inertRestTimers())
+        var attached = true
+        controller.isAttachedToLiveRoom = { attached }
+        let revisionBefore = active.draft?.revision
+
+        LiveActivityActionBridge.recordCurrentSet?(draft.id, setID)
+
+        XCTAssertEqual(active.draft?.revision, revisionBefore, "live-room draft must not be recorded from the Lock Screen")
+        XCTAssertNil(active.draft?.exercises.first?.sets.first?.completedAt)
+
+        attached = false
+        LiveActivityActionBridge.recordCurrentSet?(draft.id, setID)
+        XCTAssertNotNil(active.draft?.exercises.first?.sets.first?.completedAt)
+    }
+
     func testMismatchedWorkoutIDNoOpsAndEndsTheStaleActivity() throws {
         let (history, active, exercise) = try makeStores(account: "bridge-mismatch")
         let setID = UUID()
@@ -735,6 +768,54 @@ final class WorkoutLiveActivityBridgeGuardTests: XCTestCase {
         XCTAssertEqual(state.resolvedSkipRestButtonTitle, "Skip rest")
         XCTAssertEqual(state.setIndex, 2)
         XCTAssertEqual(state.setCount, 4)
+    }
+
+    func testContentStateCanRecordDefaultsToTrueWhenAbsentAndRoundTrips() throws {
+        let legacyJSON = """
+        {"exerciseName":"Squat","setIndex":2,"setCount":4,"completedSets":1,"totalSets":4,\
+        "nextSetSummary":"100 kg × 5","isResting":false}
+        """
+        let legacy = try JSONDecoder().decode(
+            WorkoutActivityAttributes.ContentState.self,
+            from: Data(legacyJSON.utf8)
+        )
+        XCTAssertTrue(legacy.canRecord)
+
+        let hidden = WorkoutActivityAttributes.ContentState(
+            exerciseName: "Squat", setIndex: 1, setCount: 1, completedSets: 0, totalSets: 1,
+            restEndsAt: nil, nextSetSummary: "x", isResting: false, currentSetID: UUID(),
+            canRecord: false
+        )
+        let decoded = try JSONDecoder().decode(
+            WorkoutActivityAttributes.ContentState.self,
+            from: JSONEncoder().encode(hidden)
+        )
+        XCTAssertFalse(decoded.canRecord)
+        XCTAssertEqual(decoded, hidden)
+    }
+
+    func testSyncWhileAttachedToLiveRoomPublishesCanRecordFalseAndRefreshRestoresIt() {
+        let requester = FakeLiveActivityRequester()
+        let controller = WorkoutLiveActivityController(requester: requester)
+        var attached = true
+        controller.isAttachedToLiveRoom = { attached }
+        let draft = Fixture.draft(exercises: [
+            Fixture.exercise(name: "Bench Press", sets: [Fixture.set(weight: 60, reps: 8, completed: false)])
+        ])
+        let handle = requester.nextHandle
+
+        controller.sync(draft: draft)
+        XCTAssertEqual(handle.updates.last?.canRecord, false)
+
+        attached = false
+        controller.sync(draft: draft)
+        let expectation = expectation(description: "update delivered")
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 1)
+        XCTAssertEqual(handle.updates.last?.canRecord, true)
     }
 
     func testContentStateUsesLocalizedExerciseDisplayNameNotRawCatalogName() throws {

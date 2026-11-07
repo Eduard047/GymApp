@@ -105,6 +105,14 @@ final class WorkoutLiveActivityController: ObservableObject {
     private weak var activeWorkoutStore: ActiveWorkoutStore?
     private weak var restTimers: RestTimerManager?
 
+    /// Whether the active draft is currently attached to a live room. Set by
+    /// `MainTabShell` (which owns the `LiveWorkoutCoordinator`); `false` until
+    /// then. While `true` the Lock Screen "Record set" button is hidden and
+    /// `recordCurrentSet` is a no-op - sets are recorded through the room, so
+    /// a Lock Screen tap would diverge the friend's state (Android parity with
+    /// `ActiveWorkoutNotificationContent.canLogSet`).
+    var isAttachedToLiveRoom: () -> Bool = { false }
+
     init(requester: LiveActivityRequesting? = nil) {
         self.requester = requester ?? SystemLiveActivityRequester()
     }
@@ -176,7 +184,11 @@ final class WorkoutLiveActivityController: ObservableObject {
         liveActivityControllerLog.info("adoptRunningActivities: adopted matching activity")
         activity = adopted.handle
         let content = ActivityContent(
-            state: Self.contentState(for: draft, workoutStore: workoutStore),
+            state: Self.contentState(
+                for: draft,
+                workoutStore: workoutStore,
+                canRecord: !isAttachedToLiveRoom()
+            ),
             staleDate: nil
         )
         Task { await adopted.handle.update(content) }
@@ -192,7 +204,11 @@ final class WorkoutLiveActivityController: ObservableObject {
             return
         }
         guard requester.areActivitiesEnabled() else { return }
-        let state = Self.contentState(for: draft, workoutStore: workoutStore)
+        let state = Self.contentState(
+            for: draft,
+            workoutStore: workoutStore,
+            canRecord: !isAttachedToLiveRoom()
+        )
         if let activity {
             let content = ActivityContent(state: state, staleDate: nil)
             Task { await activity.update(content) }
@@ -213,10 +229,17 @@ final class WorkoutLiveActivityController: ObservableObject {
         let state = Self.contentState(
             for: draft,
             workoutStore: workoutStore,
-            languageCode: languageCode
+            languageCode: languageCode,
+            canRecord: !isAttachedToLiveRoom()
         )
         let content = ActivityContent(state: state, staleDate: nil)
         Task { await activity.update(content) }
+    }
+
+    /// Re-mirrors the current draft, e.g. after the live-room attachment
+    /// changed (which alone does not touch the draft).
+    func refresh() {
+        sync(draft: activeWorkoutStore?.draft)
     }
 
     /// Ends the activity right away (workout finished or discarded). Removes
@@ -266,6 +289,10 @@ final class WorkoutLiveActivityController: ObservableObject {
             // clear the now-stale activity instead of guessing at new state.
             liveActivityControllerLog.info("recordCurrentSet: workoutID mismatch, ending stale activity")
             endImmediately()
+            return
+        }
+        guard !isAttachedToLiveRoom() else {
+            liveActivityControllerLog.info("recordCurrentSet: no-op (draft is attached to a live room)")
             return
         }
         guard draft.commitIntent == nil,
@@ -399,7 +426,8 @@ final class WorkoutLiveActivityController: ObservableObject {
         for draft: ActiveWorkoutDraft,
         workoutStore: WorkoutStore?,
         now: Date = Date(),
-        languageCode: String = gymCurrentLanguageCode()
+        languageCode: String = gymCurrentLanguageCode(),
+        canRecord: Bool = true
     ) -> WorkoutActivityAttributes.ContentState {
         let allSets = draft.exercises.flatMap(\.sets)
         let totalSets = allSets.count
@@ -430,7 +458,8 @@ final class WorkoutLiveActivityController: ObservableObject {
                 recordSetButtonTitle: recordSetButtonTitle(languageCode: languageCode),
                 skipRestButtonTitle: skipRestButtonTitle(languageCode: languageCode),
             setLabel: setLabel(languageCode: languageCode),
-            nextLabel: nextLabel(languageCode: languageCode)
+            nextLabel: nextLabel(languageCode: languageCode),
+            canRecord: canRecord
             )
         }
 
@@ -455,7 +484,8 @@ final class WorkoutLiveActivityController: ObservableObject {
             recordSetButtonTitle: recordSetButtonTitle(languageCode: languageCode),
             skipRestButtonTitle: skipRestButtonTitle(languageCode: languageCode),
             setLabel: setLabel(languageCode: languageCode),
-            nextLabel: nextLabel(languageCode: languageCode)
+            nextLabel: nextLabel(languageCode: languageCode),
+            canRecord: canRecord
         )
     }
 }

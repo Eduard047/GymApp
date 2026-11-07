@@ -141,14 +141,16 @@ struct WorkoutLiveActivityWidget: Widget {
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
                         HStack(spacing: 12) {
-                            Button(intent: RecordCurrentSetIntent(
-                                workoutID: context.attributes.workoutID,
-                                setID: context.state.currentSetID
-                            )) {
-                                Label(context.state.resolvedRecordSetButtonTitle, systemImage: "checkmark")
+                            if context.state.canRecord {
+                                Button(intent: RecordCurrentSetIntent(
+                                    workoutID: context.attributes.workoutID,
+                                    setID: context.state.currentSetID
+                                )) {
+                                    Label(context.state.resolvedRecordSetButtonTitle, systemImage: "checkmark")
+                                }
+                                .accessibilityLabel(context.state.resolvedRecordSetButtonTitle)
+                                .buttonStyle(LiveActivityCapsuleButtonStyle(prominent: true))
                             }
-                            .accessibilityLabel(context.state.resolvedRecordSetButtonTitle)
-                            .buttonStyle(LiveActivityCapsuleButtonStyle(prominent: true))
                             if context.state.isResting, let restEndsAt = context.state.restEndsAt {
                                 Button(intent: SkipRestIntent(
                                     workoutID: context.attributes.workoutID,
@@ -230,14 +232,16 @@ private struct LockScreenLiveActivityView: View {
                 .progressViewStyle(LiveActivityProgressStyle())
 
             HStack(spacing: 10) {
-                Button(intent: RecordCurrentSetIntent(
-                    workoutID: attributes.workoutID,
-                    setID: state.currentSetID
-                )) {
-                    Label(state.resolvedRecordSetButtonTitle, systemImage: "checkmark")
+                if state.canRecord {
+                    Button(intent: RecordCurrentSetIntent(
+                        workoutID: attributes.workoutID,
+                        setID: state.currentSetID
+                    )) {
+                        Label(state.resolvedRecordSetButtonTitle, systemImage: "checkmark")
+                    }
+                    .buttonStyle(LiveActivityCapsuleButtonStyle(prominent: true))
+                    .accessibilityLabel(state.resolvedRecordSetButtonTitle)
                 }
-                .buttonStyle(LiveActivityCapsuleButtonStyle(prominent: true))
-                .accessibilityLabel(state.resolvedRecordSetButtonTitle)
                 if state.isResting, let restEndsAt = state.restEndsAt {
                     Button(intent: SkipRestIntent(
                         workoutID: attributes.workoutID,
