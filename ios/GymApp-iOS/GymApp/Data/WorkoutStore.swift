@@ -1502,12 +1502,53 @@ public final class WorkoutStore: ObservableObject {
     }
 
     public func updateWorkout(id: UUID, date: Date, note: String?) throws {
-        try mutate { state in
-            guard let index = state.workouts.firstIndex(where: { $0.id == id }) else {
-                throw WorkoutStoreError.workoutNotFound
+        let previousCloudItems = activityOnlyCloudItems
+        do {
+            try mutate { state in
+                guard let index = state.workouts.firstIndex(where: { $0.id == id }) else {
+                    throw WorkoutStoreError.workoutNotFound
+                }
+                let validatedNote = try Self.validatedNote(note)
+                let previousStartedAt = state.workouts[index].date.gymEpochMilliseconds
+                let newStartedAt = date.gymEpochMilliseconds
+                if Self.isActivityOnlyWorkout(state.workouts[index]),
+                   previousStartedAt != newStartedAt {
+                    // Activity metrics are keyed by the workout start time, so a date edit
+                    // must move the sidecar item in the same commit (same rule as Android).
+                    guard !state.workouts.contains(where: {
+                        $0.id != id && $0.date.gymEpochMilliseconds == newStartedAt
+                    }) else {
+                        throw WorkoutStoreError.invalidWorkout(
+                            "Activity-only workout timestamp already exists."
+                        )
+                    }
+                    var remapped = activityOnlyCloudItems.filter {
+                        $0.workoutStartedAt != newStartedAt
+                    }
+                    if let cachedIndex = remapped.firstIndex(where: {
+                        $0.workoutStartedAt == previousStartedAt
+                    }) {
+                        let cached = remapped[cachedIndex]
+                        remapped[cachedIndex] = try ActivityOnlyWorkoutCloudItem(
+                            workoutStartedAt: newStartedAt,
+                            durationSeconds: cached.durationSeconds,
+                            gymCalories: cached.gymCalories,
+                            garminCalories: cached.garminCalories,
+                            averageHeartRate: cached.averageHeartRate,
+                            maximumHeartRate: cached.maximumHeartRate,
+                            endingHeartRateZone: cached.endingHeartRateZone,
+                            note: cached.note
+                        )
+                        remapped.sort { $0.workoutStartedAt < $1.workoutStartedAt }
+                    }
+                    activityOnlyCloudItems = remapped
+                }
+                state.workouts[index].date = date
+                state.workouts[index].note = validatedNote
             }
-            state.workouts[index].date = date
-            state.workouts[index].note = try Self.validatedNote(note)
+        } catch {
+            activityOnlyCloudItems = previousCloudItems
+            throw error
         }
     }
 

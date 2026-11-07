@@ -496,6 +496,94 @@ final class ActivityOnlyWorkoutCloudSidecarTests: XCTestCase {
         XCTAssertEqual(try reopened.activityOnlyCloudSnapshotItems(), [edited])
     }
 
+    func testDateEditMovesExactCachedMetricsToNewStartAcrossReopen() throws {
+        let directory = try temporaryDirectory(named: "date-edit-moves-metrics")
+        let storageKey = "activity-date-edit-owner"
+        let oldTimestamp: Int64 = 1_750_000_000_000
+        let newTimestamp: Int64 = 1_750_003_600_000
+        let exact = try item(
+            timestamp: oldTimestamp,
+            duration: 900,
+            gymCalories: 45.125,
+            garminCalories: nil,
+            averageHeartRate: 0,
+            maximumHeartRate: 150,
+            endingHeartRateZone: 0,
+            note: "original note"
+        )
+        let store = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        let workout = try store.createActivityWorkout(
+            date: Date(gymEpochMilliseconds: oldTimestamp),
+            note: exact.note,
+            durationSeconds: exact.durationSeconds
+        )
+        try store.setActivityOnlyCloudItems([exact])
+        XCTAssertTrue(store.hasRecordedActivityMetrics(workout))
+
+        try store.updateWorkout(
+            id: workout.id,
+            date: Date(gymEpochMilliseconds: newTimestamp),
+            note: "moved note"
+        )
+
+        func assertMoved(_ candidate: WorkoutStore) throws {
+            let moved = try XCTUnwrap(candidate.workout(id: workout.id))
+            XCTAssertEqual(moved.date.gymEpochMilliseconds, newTimestamp)
+            XCTAssertTrue(candidate.hasRecordedActivityMetrics(moved))
+            let items = try candidate.activityOnlyCloudSnapshotItems()
+            XCTAssertEqual(items.count, 1)
+            let movedItem = try XCTUnwrap(items.first)
+            XCTAssertEqual(movedItem.workoutStartedAt, newTimestamp)
+            XCTAssertEqual(movedItem.note, "moved note")
+            XCTAssertEqual(movedItem.durationSeconds, exact.durationSeconds)
+            XCTAssertEqual(movedItem.gymCalories, 45.125)
+            XCTAssertNil(movedItem.garminCalories)
+            XCTAssertEqual(movedItem.averageHeartRate, 0)
+            XCTAssertEqual(movedItem.maximumHeartRate, 150)
+            XCTAssertEqual(movedItem.endingHeartRateZone, 0)
+            XCTAssertEqual(candidate.activityOnlyCloudItems.map(\.workoutStartedAt), [newTimestamp])
+        }
+        try assertMoved(store)
+        try assertMoved(try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory))
+    }
+
+    func testDateEditRejectsTimestampOfAnotherWorkoutAndChangesNothing() throws {
+        let directory = try temporaryDirectory(named: "date-edit-collision")
+        let storageKey = "activity-date-collision-owner"
+        let firstTimestamp: Int64 = 1_750_000_000_000
+        let secondTimestamp: Int64 = 1_750_003_600_000
+        let first = try item(timestamp: firstTimestamp, duration: 600, gymCalories: 10,
+                             garminCalories: 12, averageHeartRate: 120, maximumHeartRate: 150,
+                             endingHeartRateZone: 2, note: "first")
+        let second = try item(timestamp: secondTimestamp, duration: 700, gymCalories: 11,
+                              garminCalories: 13, averageHeartRate: 121, maximumHeartRate: 151,
+                              endingHeartRateZone: 3, note: "second")
+        let store = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        let firstWorkout = try store.createActivityWorkout(
+            date: Date(gymEpochMilliseconds: firstTimestamp),
+            note: first.note,
+            durationSeconds: first.durationSeconds
+        )
+        _ = try store.createActivityWorkout(
+            date: Date(gymEpochMilliseconds: secondTimestamp),
+            note: second.note,
+            durationSeconds: second.durationSeconds
+        )
+        try store.setActivityOnlyCloudItems([first, second])
+        let itemsBefore = try store.activityOnlyCloudSnapshotItems()
+
+        XCTAssertThrowsError(try store.updateWorkout(
+            id: firstWorkout.id,
+            date: Date(gymEpochMilliseconds: secondTimestamp),
+            note: "collides"
+        ))
+
+        XCTAssertEqual(store.workout(id: firstWorkout.id)?.date.gymEpochMilliseconds, firstTimestamp)
+        XCTAssertEqual(store.workout(id: firstWorkout.id)?.note, "first")
+        XCTAssertEqual(store.activityOnlyCloudItems, [first, second])
+        XCTAssertEqual(try store.activityOnlyCloudSnapshotItems(), itemsBefore)
+    }
+
     func testFreeWorkoutEnrichmentPreservesMetricsAcrossReopenAndSyncReplay() throws {
         let directory = try temporaryDirectory(named: "free-enrichment")
         let storageKey = "free-enrichment-owner"
