@@ -34,7 +34,7 @@ public enum MuscleMappingEngine {
         MuscleDefinition(id: "chest", titleEn: "Chest", titleUk: "Груди", titleRu: "Грудь"),
         MuscleDefinition(id: "shoulders", titleEn: "Shoulders", titleUk: "Плечі", titleRu: "Плечи"),
         MuscleDefinition(id: "biceps", titleEn: "Biceps", titleUk: "Біцепс", titleRu: "Бицепс"),
-        MuscleDefinition(id: "triceps", titleEn: "Triceps", titleUk: "Тріцепс", titleRu: "Трицепс"),
+        MuscleDefinition(id: "triceps", titleEn: "Triceps", titleUk: "Трицепс", titleRu: "Трицепс"),
         MuscleDefinition(id: "forearms", titleEn: "Forearms", titleUk: "Передпліччя", titleRu: "Предплечья"),
         MuscleDefinition(id: "abs", titleEn: "Abs", titleUk: "Прес", titleRu: "Пресс"),
         MuscleDefinition(id: "obliques", titleEn: "Obliques", titleUk: "Косі м’язи", titleRu: "Косые мышцы"),
