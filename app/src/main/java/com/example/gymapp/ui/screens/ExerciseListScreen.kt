@@ -1370,6 +1370,7 @@ fun ExerciseListScreen(
             AddExerciseBottomSheetContent(
                 exerciseName = uiState.newExerciseName,
                 hasInputError = uiState.hasInputError,
+                errorKind = uiState.newExerciseError ?: NewExerciseError.Invalid,
                 onExerciseNameChange = onNameChange,
                 onAdd = {
                     pendingAddedName = uiState.newExerciseName.trim().takeIf { it.isNotEmpty() }
@@ -1858,6 +1859,7 @@ internal fun ExerciseMuscleChip(
 private fun AddExerciseBottomSheetContent(
     exerciseName: String,
     hasInputError: Boolean,
+    errorKind: NewExerciseError,
     onExerciseNameChange: (String) -> Unit,
     onAdd: () -> Unit
 ) {
@@ -1881,7 +1883,13 @@ private fun AddExerciseBottomSheetContent(
         )
         if (hasInputError) {
             Text(
-                text = stringResource(R.string.message_exercise_error),
+                text = stringResource(
+                    when (errorKind) {
+                        NewExerciseError.Duplicate -> R.string.exercise_picker_create_error_duplicate
+                        NewExerciseError.LimitReached -> R.string.exercise_picker_create_error_limit
+                        NewExerciseError.Invalid -> R.string.exercise_picker_create_error_invalid
+                    }
+                ),
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodyMedium
             )

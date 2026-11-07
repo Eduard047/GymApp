@@ -334,7 +334,7 @@ internal fun ExerciseCatalogSelector(
 }
 
 /** Inline validation outcome of the picker's "Create exercise" panel (iOS invalid / duplicate name). */
-internal enum class NewExerciseError { Invalid, Duplicate, LimitReached }
+enum class NewExerciseError { Invalid, Duplicate, LimitReached }
 
 /** Maps a failed [com.example.gymapp.data.repository.GymRepository.addExercise] to its inline message. */
 internal fun newExerciseErrorFor(error: Throwable): NewExerciseError =

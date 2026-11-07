@@ -13,6 +13,8 @@ import com.example.gymapp.auth.localDatabaseLogicalName
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.repository.BackupFileReader
 import com.example.gymapp.data.repository.BackupFileTooLargeException
+import com.example.gymapp.ui.screens.NewExerciseError
+import com.example.gymapp.ui.screens.newExerciseErrorFor
 import com.example.gymapp.data.repository.BackupOwner
 import com.example.gymapp.data.repository.DiagnosticsContext
 import com.example.gymapp.data.repository.ExerciseDeletionSnapshot
@@ -60,6 +62,7 @@ data class ExerciseListUiState(
     val loadEditorHasError: Boolean = false,
     val newExerciseName: String = "",
     val hasInputError: Boolean = false,
+    val newExerciseError: NewExerciseError? = null,
     val editingExercise: ExerciseEntity? = null,
     val editingExerciseName: String = "",
     val selectedExerciseId: Long? = null,
@@ -183,6 +186,7 @@ private data class ExerciseListBaseState(
     val exerciseWorkoutCounts: Map<Long, Int>,
     val newExerciseName: String,
     val hasInputError: Boolean,
+    val newExerciseError: NewExerciseError?,
     val selectedExerciseId: Long?,
     val selectedExerciseHistory: List<ExerciseHistoryEntry>
 )
@@ -244,6 +248,7 @@ class ExerciseListViewModel(
 ) : ViewModel() {
     private val newExerciseName = MutableStateFlow("")
     private val hasInputError = MutableStateFlow(false)
+    private val newExerciseError = MutableStateFlow<NewExerciseError?>(null)
     private val editingExercise = MutableStateFlow<ExerciseEntity?>(null)
     private val editingExerciseName = MutableStateFlow("")
     private val selectedExerciseId = MutableStateFlow<Long?>(null)
@@ -288,15 +293,16 @@ class ExerciseListViewModel(
     private val baseState = combine(
         exerciseLibraryState,
         newExerciseName,
-        hasInputError,
+        combine(hasInputError, newExerciseError) { flag, kind -> flag to kind },
         selectedExerciseId,
         selectedExerciseHistory
-    ) { library, name, error, selectedId, history ->
+    ) { library, name, (error, errorKind), selectedId, history ->
         ExerciseListBaseState(
             exercises = library.exercises,
             exerciseWorkoutCounts = library.exerciseWorkoutCounts,
             newExerciseName = name,
             hasInputError = error,
+            newExerciseError = errorKind,
             selectedExerciseId = selectedId,
             selectedExerciseHistory = history
         )
@@ -426,6 +432,7 @@ class ExerciseListViewModel(
                 loadEditorHasError = loadEditor.hasError,
                 newExerciseName = base.newExerciseName,
                 hasInputError = base.hasInputError,
+                newExerciseError = base.newExerciseError,
                 editingExercise = edit.editingExercise,
                 editingExerciseName = edit.editingExerciseName,
                 selectedExerciseId = base.selectedExerciseId,
@@ -473,11 +480,13 @@ class ExerciseListViewModel(
     fun updateNewExerciseName(value: String) {
         newExerciseName.value = value
         hasInputError.value = false
+        newExerciseError.value = null
     }
 
     fun addExercise() {
         val candidate = newExerciseName.value.trim()
         if (candidate.isEmpty()) {
+            newExerciseError.value = NewExerciseError.Invalid
             hasInputError.value = true
             return
         }
@@ -488,7 +497,10 @@ class ExerciseListViewModel(
             }.onSuccess {
                 newExerciseName.value = ""
                 hasInputError.value = false
-            }.onFailure {
+                newExerciseError.value = null
+            }.onFailure { failure ->
+                if (failure is CancellationException) throw failure
+                newExerciseError.value = newExerciseErrorFor(failure)
                 hasInputError.value = true
             }
         }
