@@ -772,6 +772,7 @@ final class ActiveWorkoutStoreTests: XCTestCase {
             weight: 82.5,
             reps: 6,
             expectedRevision: resting.revision,
+            isSolo: { true },
             now: clock.date
         )
 
@@ -2373,6 +2374,26 @@ final class ActiveWorkoutStoreTests: XCTestCase {
             expectedRevision: deleted.revision, isSolo: { true }, now: now.addingTimeInterval(8)
         )
         XCTAssertEqual(restored.exercises.first?.sets.map(\.id), sets.map(\.id))
+    }
+
+    func testAppendSetRefusesFrozenLivePlanWithoutMutation() throws {
+        let context = try makeContext(account: "active-append-set-frozen")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let sets = [ActiveWorkoutSet(weight: 60, reps: 8)]
+        let started = try startSets(context, sets: sets, now: now)
+        let blockID = try XCTUnwrap(started.exercises.first?.id)
+
+        XCTAssertThrowsError(try context.active.appendSet(
+            draftID: started.id, exerciseBlockID: blockID, weight: 60, reps: 8,
+            expectedRevision: started.revision, isSolo: { false }, now: now.addingTimeInterval(5)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .invalidDraft) }
+        XCTAssertEqual(context.active.draft, started)
+
+        let appended = try context.active.appendSet(
+            draftID: started.id, exerciseBlockID: blockID, weight: 60, reps: 8,
+            expectedRevision: started.revision, isSolo: { true }, now: now.addingTimeInterval(6)
+        )
+        XCTAssertEqual(appended.exercises.first?.sets.count, 2)
     }
 
     func testDeleteSetRefusesLastFrozenStaleAndUnknownWithoutMutation() throws {

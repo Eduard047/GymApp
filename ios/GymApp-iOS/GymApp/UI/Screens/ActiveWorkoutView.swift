@@ -3570,7 +3570,8 @@ struct ActiveWorkoutView: View {
                 exerciseBlockID: exercise.id,
                 weight: source?.weight ?? workoutStore.lastWeight(exerciseID: exercise.exerciseID) ?? 0,
                 reps: source?.reps ?? 10,
-                expectedRevision: draft.revision
+                expectedRevision: draft.revision,
+                isSolo: { !liveWorkoutCoordinator.planIsFrozenForCurrentDraft }
             )
             let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
                 draft: updated,

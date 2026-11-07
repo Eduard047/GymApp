@@ -622,9 +622,11 @@ final class ActiveWorkoutStore: ObservableObject {
         weight: Double,
         reps: Int,
         expectedRevision: UInt64,
+        isSolo: () -> Bool,
         now: Date = Date()
     ) throws -> ActiveWorkoutDraft {
-        try mutate(
+        try assertStructuralChangeAllowed(isSolo: isSolo)
+        return try mutate(
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
