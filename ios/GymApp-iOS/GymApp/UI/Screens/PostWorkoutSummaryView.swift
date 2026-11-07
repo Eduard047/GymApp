@@ -331,11 +331,7 @@ struct PostWorkoutSummaryView: View {
     /// matches Android and the web app. The shared `gymVolumeText` keeps its
     /// one-decimal format for the other screens.
     private func heroVolumeText(_ volume: Double) -> String {
-        let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
-        let safe = volume.isFinite && volume >= 0 ? volume : 0
-        let number = safe.formatted(.number.locale(locale).precision(.fractionLength(0)))
-        // No-break space keeps the number and its unit on one line.
-        return "\(number)\u{00A0}\(gymLocalized("kg", languageCode: languageCode))"
+        gymHeroVolumeText(volume, languageCode: languageCode)
     }
 
     private func heroStat(value: String, label: String) -> some View {

@@ -152,6 +152,17 @@ struct ActiveWorkoutDraft: Codable, Identifiable, Equatable, Sendable {
         exercises.reduce(0) { $0 + $1.sets.count }
     }
 
+    /// Running session volume: weight x reps over the completed sets only, the same product the
+    /// saved workout's volume uses. Bodyweight sets (weight 0) add nothing.
+    var completedVolume: Double {
+        let total = exercises.reduce(0.0) { sum, exercise in
+            sum + exercise.sets.reduce(0.0) { setSum, set in
+                set.isCompleted ? setSum + set.weight * Double(set.reps) : setSum
+            }
+        }
+        return total.isFinite && total > 0 ? total : 0
+    }
+
     /// User-facing workout duration. It is a continuous wall-clock value from
     /// the durable workout start and intentionally includes rest intervals.
     func totalElapsedSeconds(at date: Date = Date()) -> TimeInterval {

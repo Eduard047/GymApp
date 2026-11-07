@@ -430,6 +430,19 @@ func gymVolumeText(
     return "\(number)\u{00A0}\(gymLocalized("kg", languageCode: languageCode))"
 }
 
+/// Whole-kilogram volume with locale grouping and the unit ("10,570 kg", "10 570 кг"), the format of
+/// the post-workout summary hero and of the running volume in the active-workout hero.
+func gymHeroVolumeText(
+    _ volume: Double,
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+    let safe = volume.isFinite && volume >= 0 ? volume : 0
+    let number = safe.formatted(.number.locale(locale).precision(.fractionLength(0)))
+    // No-break space keeps the number and its unit on one line.
+    return "\(number)\u{00A0}\(gymLocalized("kg", languageCode: languageCode))"
+}
+
 func gymErrorMessage(
     _ error: Error,
     languageCode: String = gymCurrentLanguageCode()

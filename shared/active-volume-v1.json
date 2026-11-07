@@ -1,0 +1,194 @@
+{
+  "version": 1,
+  "description": "Running session volume shown in the active-workout hero, run by Android ActiveWorkoutVolumeGoldenTest and iOS ActiveWorkoutVolumeGoldenTests. volume is the sum of weight x reps over completed sets only (Android activeWorkoutCompletedVolume, iOS ActiveWorkoutDraft.completedVolume); weight 0 sets contribute 0. text is the whole-kilogram number with locale grouping and no unit, like the post-workout summary (Android formatSessionVolume, iOS gymHeroVolumeText without the unit). visible is false while the volume rounds to 0, then the hero hides the item. Languages are en, uk and ru.",
+  "languages": [
+    "en",
+    "uk",
+    "ru"
+  ],
+  "cases": [
+    {
+      "id": "no-sets",
+      "description": "No sets at all: nothing to show",
+      "sets": [],
+      "volume": 0,
+      "text": {
+        "en": "0",
+        "uk": "0",
+        "ru": "0"
+      },
+      "visible": false
+    },
+    {
+      "id": "none-completed",
+      "description": "Planned but not logged sets add nothing",
+      "sets": [
+        {
+          "weight": 80,
+          "reps": 5,
+          "completed": false
+        },
+        {
+          "weight": 80,
+          "reps": 5,
+          "completed": false
+        }
+      ],
+      "volume": 0,
+      "text": {
+        "en": "0",
+        "uk": "0",
+        "ru": "0"
+      },
+      "visible": false
+    },
+    {
+      "id": "bodyweight-only",
+      "description": "Completed bodyweight sets (weight 0) contribute 0, so the item stays hidden",
+      "sets": [
+        {
+          "weight": 0,
+          "reps": 12,
+          "completed": true
+        },
+        {
+          "weight": 0,
+          "reps": 10,
+          "completed": true
+        }
+      ],
+      "volume": 0,
+      "text": {
+        "en": "0",
+        "uk": "0",
+        "ru": "0"
+      },
+      "visible": false
+    },
+    {
+      "id": "single-set",
+      "description": "One logged set",
+      "sets": [
+        {
+          "weight": 80,
+          "reps": 5,
+          "completed": true
+        }
+      ],
+      "volume": 400,
+      "text": {
+        "en": "400",
+        "uk": "400",
+        "ru": "400"
+      },
+      "visible": true
+    },
+    {
+      "id": "mixed",
+      "description": "Only completed weighted sets count; unlogged and bodyweight sets add nothing",
+      "sets": [
+        {
+          "weight": 100,
+          "reps": 5,
+          "completed": true
+        },
+        {
+          "weight": 100,
+          "reps": 5,
+          "completed": false
+        },
+        {
+          "weight": 0,
+          "reps": 10,
+          "completed": true
+        },
+        {
+          "weight": 60,
+          "reps": 8,
+          "completed": true
+        }
+      ],
+      "volume": 980,
+      "text": {
+        "en": "980",
+        "uk": "980",
+        "ru": "980"
+      },
+      "visible": true
+    },
+    {
+      "id": "fractional-weight",
+      "description": "Fractional plate weights",
+      "sets": [
+        {
+          "weight": 22.5,
+          "reps": 8,
+          "completed": true
+        },
+        {
+          "weight": 22.5,
+          "reps": 8,
+          "completed": true
+        },
+        {
+          "weight": 22.5,
+          "reps": 7,
+          "completed": true
+        }
+      ],
+      "volume": 517.5,
+      "text": {
+        "en": "518",
+        "uk": "518",
+        "ru": "518"
+      },
+      "visible": true
+    },
+    {
+      "id": "grouped-thousands",
+      "description": "Thousands are grouped per language",
+      "sets": [
+        {
+          "weight": 200,
+          "reps": 20,
+          "completed": true
+        },
+        {
+          "weight": 200,
+          "reps": 20,
+          "completed": true
+        },
+        {
+          "weight": 200,
+          "reps": 20,
+          "completed": true
+        }
+      ],
+      "volume": 12000,
+      "text": {
+        "en": "12,000",
+        "uk": "12\u00a0000",
+        "ru": "12\u00a0000"
+      },
+      "visible": true
+    },
+    {
+      "id": "exact-half",
+      "description": "A half kilogram rounds to the nearest even whole kilogram on both platforms",
+      "sets": [
+        {
+          "weight": 12.5,
+          "reps": 5,
+          "completed": true
+        }
+      ],
+      "volume": 62.5,
+      "text": {
+        "en": "62",
+        "uk": "62",
+        "ru": "62"
+      },
+      "visible": true
+    }
+  ]
+}

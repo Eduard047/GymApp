@@ -211,11 +211,13 @@ import java.text.NumberFormat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.material3.LocalContentColor
+import com.example.gymapp.util.formatSessionVolume
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
 import com.example.gymapp.util.safeGetString
 
 internal const val ACTIVE_WORKOUT_ELAPSED_METRIC_TAG = "active_workout_elapsed_metric"
+internal const val ACTIVE_WORKOUT_VOLUME_METRIC_TAG = "active_workout_volume_metric"
 internal const val ACTIVE_WORKOUT_COMPLETED_METRIC_TAG = "active_workout_completed_metric"
 /** How long a tapped Log waits for the workout state before its haptic is dropped. */
 private const val RECORD_HAPTIC_WAIT_MS = 1500L
@@ -1036,11 +1038,16 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
         completed,
         total
     )
-    val summary = if (currentExerciseName != null) {
+    // Hidden until a weighted set is logged; the same whole-kg format as the post-workout summary.
+    val volumeText = uiState.completedVolume
+        .takeIf { it.isFinite() && it >= 0.5 }
+        ?.let { formattedStringResource(R.string.stats_volume, formatSessionVolume(it, locale)) }
+    val baseSummary = if (currentExerciseName != null) {
         formattedStringResource(R.string.active_workout_hero_summary_now, elapsed, setsDone, currentExerciseName)
     } else {
         formattedStringResource(R.string.active_workout_hero_summary, elapsed, setsDone)
     }
+    val summary = if (volumeText != null) "$baseSummary, $volumeText" else baseSummary
     val targetFraction = (completed.toFloat() / total.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
     val reduceMotion = rememberReduceMotion()
     // The ring sweeps to the new fraction (spring, no bounce); reduced motion snaps. The count text never animates.
@@ -1095,6 +1102,16 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
                     color = titleColor,
                     maxLines = 1
                 )
+                if (volumeText != null) {
+                    Text(
+                        text = volumeText,
+                        modifier = Modifier.testTag(ACTIVE_WORKOUT_VOLUME_METRIC_TAG),
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+                            .tabularDigits(),
+                        color = softColor,
+                        maxLines = 1
+                    )
+                }
                 if (currentExerciseName != null) {
                     Text(
                         text = formattedStringResource(R.string.active_workout_now, currentExerciseName),

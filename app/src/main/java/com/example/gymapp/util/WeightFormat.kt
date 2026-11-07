@@ -29,3 +29,7 @@ fun formatVolumeTotal(volume: Double, locale: Locale = Locale.getDefault()): Str
         minimumFractionDigits = 0
         maximumFractionDigits = 1
     }.format(volume + 0.0)
+
+/** Whole-kilogram session volume with locale grouping ("10,570", "10 570"), like the post-workout summary. */
+fun formatSessionVolume(volume: Double, locale: Locale = Locale.getDefault()): String =
+    NumberFormat.getIntegerInstance(locale).format(if (volume.isFinite() && volume > 0.0) volume else 0.0)

@@ -788,6 +788,15 @@ struct ActiveWorkoutView: View {
                                 .minimumScaleFactor(0.6)
                                 .foregroundStyle(GymTheme.onHero)
 
+                            if let volumeLine = heroVolumeLine(draft) {
+                                Text(volumeLine)
+                                    .font(.caption.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(GymTheme.onHeroSecondary)
+                                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                                    .minimumScaleFactor(0.8)
+                                    .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
+                            }
+
                             if let exerciseName {
                                 Text(
                                     gymText(
@@ -871,6 +880,20 @@ struct ActiveWorkoutView: View {
         return gymExerciseName(stored)
     }
 
+    /// "Volume: 1,250 kg" for the sets logged so far, or nil while nothing weighted is logged
+    /// (bodyweight sets add 0), so the hero shows no empty "0 kg" line.
+    private func heroVolumeLine(_ draft: ActiveWorkoutDraft) -> String? {
+        let volume = draft.completedVolume
+        guard volume >= 0.5 else { return nil }
+        let text = gymHeroVolumeText(volume, languageCode: gymCurrentLanguageCode())
+        return gymText(
+            "Volume: \(text)",
+            "Обсяг: \(text)",
+            "Объём: \(text)",
+            languageCode: gymCurrentLanguageCode()
+        )
+    }
+
     /// "Прошло 14:40, выполнено 3 из 15 подходов, сейчас жим…" — the hero
     /// card's single combined accessibility element.
     private func heroAccessibilitySummary(
@@ -879,12 +902,15 @@ struct ActiveWorkoutView: View {
         exerciseName: String?
     ) -> String {
         let clock = Self.clock(elapsed)
-        let base = gymText(
+        var base = gymText(
             "Elapsed \(clock), \(setsProgressSummary(draft)) done",
             "Минуло \(clock), \(setsProgressSummary(draft)) виконано",
             "Прошло \(clock), выполнено \(setsProgressSummary(draft))",
             languageCode: gymCurrentLanguageCode()
         )
+        if let volumeLine = heroVolumeLine(draft) {
+            base += ", \(volumeLine)"
+        }
         guard let exerciseName else { return base }
         return base + gymText(
             ", now: \(exerciseName)",

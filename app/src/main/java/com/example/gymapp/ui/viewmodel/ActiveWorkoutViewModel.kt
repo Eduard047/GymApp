@@ -72,6 +72,10 @@ data class ActiveWorkoutSetUiState(
     val repsInput: String,
     val isCompleted: Boolean,
     val completedAt: Long?,
+    /** The stored (logged) weight of this set, not the editable input text. */
+    val loggedWeight: Double = 0.0,
+    /** The stored (logged) reps of this set, not the editable input text. */
+    val loggedReps: Int = 0,
     val previousWeight: Double? = null,
     val previousReps: Int? = null,
     val repeatWeight: Double? = null,
@@ -80,6 +84,16 @@ data class ActiveWorkoutSetUiState(
     /** A completed set that beat this exercise's history best (see LivePersonalRecords). */
     val isPersonalRecord: Boolean = false
 )
+
+/**
+ * Running session volume: weight x reps summed over the completed (logged) sets only, the same
+ * product the saved workout's volume uses. Bodyweight sets (weight 0) add nothing.
+ */
+fun activeWorkoutCompletedVolume(sets: List<ActiveWorkoutSetUiState>): Double =
+    sets.filter(ActiveWorkoutSetUiState::isCompleted)
+        .sumOf { set -> set.loggedWeight * set.loggedReps }
+        .takeIf { it.isFinite() && it > 0.0 }
+        ?: 0.0
 
 data class ActiveWorkoutExerciseUiState(
     val id: String,
@@ -128,6 +142,8 @@ data class ActiveWorkoutUiState(
     val exercises: List<ActiveWorkoutExerciseUiState> = emptyList(),
     val completedSetCount: Int = 0,
     val totalSetCount: Int = 0,
+    /** Sum of weight x reps over the completed sets, like the saved workout's volume (kg). */
+    val completedVolume: Double = 0.0,
     val workoutElapsedSeconds: Long = 0L,
     val restSecondsRemaining: Int = 0,
     val latestCompletedSetId: String? = null,
@@ -881,6 +897,8 @@ class ActiveWorkoutViewModel(
                         repsInput = input?.reps ?: set.reps.toString(),
                         isCompleted = set.completedAt != null,
                         completedAt = set.completedAt,
+                        loggedWeight = set.weight,
+                        loggedReps = set.reps,
                         previousWeight = last?.weight,
                         previousReps = last?.reps,
                         repeatWeight = preceding?.weight ?: last?.weight,
@@ -919,6 +937,7 @@ class ActiveWorkoutViewModel(
             exercises = exercises,
             completedSetCount = allSets.count(ActiveWorkoutSetUiState::isCompleted),
             totalSetCount = allSets.size,
+            completedVolume = activeWorkoutCompletedVolume(allSets),
             workoutElapsedSeconds = 0L,
             restSecondsRemaining = 0,
             latestCompletedSetId = latestCompletedSetId,
