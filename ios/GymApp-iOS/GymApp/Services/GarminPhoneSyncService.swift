@@ -96,15 +96,16 @@ enum GarminPhoneSyncProtocol {
             let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
             let bytes = trimmed.utf8.count
             guard !trimmed.isEmpty,
-                  trimmed.utf16.count <= GarminPhoneWorkoutParser.maximumExerciseCharacters,
+                  trimmed.unicodeScalars.count <= GarminPhoneWorkoutParser.maximumExerciseCharacters,
                   bytes <= GarminPhoneWorkoutParser.maximumExerciseBytes,
                   !trimmed.unicodeScalars.contains(where: {
                       CharacterSet.controlCharacters.contains($0)
                   }) else {
                 continue
             }
+            // A name that no longer fits is skipped; a later, shorter one may still fit.
             guard totalBytes <= GarminPhoneWorkoutParser.maximumTotalExerciseBytes - bytes else {
-                break
+                continue
             }
             totalBytes += bytes
             values.append(trimmed)
@@ -152,7 +153,7 @@ enum GarminPhoneSyncProtocol {
                 let trimmed = exercise.trimmingCharacters(in: .whitespacesAndNewlines)
                 let bytes = trimmed.utf8.count
                 guard !trimmed.isEmpty,
-                      trimmed.utf16.count <= GarminPhoneWorkoutParser.maximumExerciseCharacters,
+                      trimmed.unicodeScalars.count <= GarminPhoneWorkoutParser.maximumExerciseCharacters,
                       bytes <= GarminPhoneWorkoutParser.maximumExerciseBytes,
                       totalBytes <= GarminPhoneWorkoutParser.maximumTotalExerciseBytes - bytes,
                       !trimmed.unicodeScalars.contains(where: {
@@ -196,7 +197,7 @@ enum GarminPhoneSyncProtocol {
         for set in plan {
             let name = set.exerciseName
             guard !name.isEmpty, name == name.trimmingCharacters(in: .whitespacesAndNewlines),
-                  name.utf16.count <= GarminPhoneWorkoutParser.maximumExerciseCharacters,
+                  name.unicodeScalars.count <= GarminPhoneWorkoutParser.maximumExerciseCharacters,
                   name.utf8.count <= GarminPhoneWorkoutParser.maximumExerciseBytes,
                   !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
                   set.weight.isFinite, (0 ... GarminPlanValidator.maximumWeight).contains(set.weight),
@@ -207,13 +208,38 @@ enum GarminPhoneSyncProtocol {
         return plan
     }
 
+    /// Free-order picker catalog, mirroring Android `mergedGarminExerciseCatalogForFreeOrder`:
+    /// unique plan names first (so every plan target stays selectable), then valid library
+    /// names in input order. Duplicates cost nothing, a name that overflows the byte budget is
+    /// skipped (later, shorter names may still fit), and the count is capped at `maximumSets`.
     static func exerciseCatalog(plan: [NamedWorkoutSetDraft], candidates: [String]) -> [String]? {
-        guard validatedPlan(plan) != nil else { return nil }
+        guard let validPlan = validatedPlan(plan) else { return nil }
         var names: [String] = []
-        for name in plan.map(\.exerciseName) + boundedExerciseCatalog(candidates) {
-            if !names.contains(name) { names.append(name) }
+        var seen = Set<String>()
+        var totalBytes = 0
+        for set in validPlan where seen.insert(set.exerciseName).inserted {
+            totalBytes += set.exerciseName.utf8.count
+            names.append(set.exerciseName)
         }
-        return boundedExerciseCatalog(names)
+        for candidate in candidates {
+            guard names.count < GarminPhoneWorkoutParser.maximumSets else { break }
+            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            let bytes = trimmed.utf8.count
+            guard !trimmed.isEmpty,
+                  trimmed.unicodeScalars.count <= GarminPhoneWorkoutParser.maximumExerciseCharacters,
+                  bytes <= GarminPhoneWorkoutParser.maximumExerciseBytes,
+                  !trimmed.unicodeScalars.contains(where: {
+                      CharacterSet.controlCharacters.contains($0)
+                  }),
+                  !seen.contains(trimmed),
+                  totalBytes <= GarminPhoneWorkoutParser.maximumTotalExerciseBytes - bytes else {
+                continue
+            }
+            seen.insert(trimmed)
+            totalBytes += bytes
+            names.append(trimmed)
+        }
+        return names
     }
 
     static func syncRequestClaim(
@@ -669,7 +695,7 @@ enum GarminPhoneWorkoutParser {
                     set["exerciseName"],
                     maximumBytes: maximumExerciseBytes
                   ),
-                  rawName.utf16.count <= maximumExerciseCharacters else {
+                  rawName.unicodeScalars.count <= maximumExerciseCharacters else {
                 return nil
             }
             let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)

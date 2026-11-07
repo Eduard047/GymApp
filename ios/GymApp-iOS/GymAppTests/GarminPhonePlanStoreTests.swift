@@ -62,4 +62,46 @@ final class GarminPhonePlanStoreTests: XCTestCase {
         XCTAssertEqual(catalog.first, "Жим штанги")
         XCTAssertEqual(catalog.count, 60)
     }
+
+    func testFreeOrderCatalogSkipsOverflowingNamesAndCountsCodePoints() throws {
+        let plan = [
+            NamedWorkoutSetDraft(exerciseName: "Squat", weight: 100, reps: 5),
+            NamedWorkoutSetDraft(exerciseName: "Bench Press", weight: 80, reps: 8),
+            NamedWorkoutSetDraft(exerciseName: "Squat", weight: 105, reps: 3)
+        ]
+        // Mirrors Android freeOrderCatalogKeepsPlanTargetsThenBoundedPickerExtras.
+        XCTAssertEqual(
+            GarminPhoneSyncProtocol.exerciseCatalog(plan: plan, candidates: ["Deadlift", "Squat", "  Pull Up  "]),
+            ["Squat", "Bench Press", "Deadlift", "Pull Up"]
+        )
+        XCTAssertEqual(
+            GarminPhoneSyncProtocol.exerciseCatalog(plan: plan, candidates: (0..<61).map { "Exercise \($0)" }),
+            ["Squat", "Bench Press"] + (0..<58).map { "Exercise \($0)" }
+        )
+
+        // Plan names cost 16 bytes; each 160-scalar Cyrillic name costs 320. 37 of them fit
+        // (11,856 bytes), the 38th overflows the 12,000-byte budget and is skipped, and the
+        // short name after it still fits.
+        let longNames = (0..<38).map { String(repeating: "\u{416}", count: 158) + String(format: "%02d", $0) }
+        let catalog = try XCTUnwrap(
+            GarminPhoneSyncProtocol.exerciseCatalog(plan: plan, candidates: longNames + ["Short fits"])
+        )
+        XCTAssertEqual(catalog, ["Squat", "Bench Press"] + Array(longNames.prefix(37)) + ["Short fits"])
+        XCTAssertLessThanOrEqual(
+            catalog.reduce(0) { $0 + $1.utf8.count },
+            GarminPhoneWorkoutParser.maximumTotalExerciseBytes
+        )
+
+        // Emoji-heavy name: 160 scalars (640 bytes, 320 UTF-16 units) is allowed; 161 is not.
+        let emoji160 = String(repeating: "\u{1F3CB}", count: 160)
+        let emoji161 = String(repeating: "\u{1F3CB}", count: 161)
+        XCTAssertEqual(emoji160.unicodeScalars.count, 160)
+        XCTAssertEqual(
+            GarminPhoneSyncProtocol.exerciseCatalog(plan: plan, candidates: [emoji161, emoji160, "After"]),
+            ["Squat", "Bench Press", emoji160, "After"]
+        )
+        XCTAssertEqual(GarminPhoneSyncProtocol.boundedExerciseCatalog([emoji160, emoji161]), [emoji160])
+        XCTAssertNotNil(GarminPhoneSyncProtocol.validatedPlan([.init(exerciseName: emoji160, weight: 50, reps: 8)]))
+        XCTAssertNil(GarminPhoneSyncProtocol.validatedPlan([.init(exerciseName: emoji161, weight: 50, reps: 8)]))
+    }
 }
