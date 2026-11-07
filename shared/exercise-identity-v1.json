@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Exercise name identity golden cases run by Android ExerciseIdentityGoldenTest and iOS ExerciseIdentityGoldenTests. normalized is the output of normalizeExerciseIdentityName (collapse whitespace incl. U+001C-U+001F, NFC, lowercase, U+02BC and U+2019 to apostrophe, yo to ye). catalogKey is the built-in key resolved from the raw name (English, Ukrainian and legacy alias names only; Russian catalog names are search-only and never identity), or null for a custom exercise. A present catalogKey in backup metadata never overrides the raw name.",
+  "description": "Exercise name identity golden cases run by Android ExerciseIdentityGoldenTest and iOS ExerciseIdentityGoldenTests. normalized is the output of normalizeExerciseIdentityName (collapse whitespace incl. U+001C-U+001F, NFC, lowercase, U+02BC and U+2019 to apostrophe, yo to ye). catalogKey is the built-in key resolved from the raw name (English, Ukrainian and legacy alias names only; Russian catalog names are search-only and never identity), or null for a custom exercise. A present catalogKey in backup metadata never overrides the raw name. createCases run the pure add-exercise input canonicalization (Android BuiltInExerciseCatalog.catalogKeyForTypedName, iOS BuiltInExerciseCatalog.catalogKeyForTypedName): the exact full Russian display name of a built-in resolves to its key only when language is ru (the typed name is then stored as the canonical English name); English, Ukrainian and legacy alias names always resolve; anything else is null (custom). This never changes identity resolution of stored names.",
   "cases": [
     {
       "id": "english-canonical",
@@ -157,6 +157,92 @@
       "input": "\u001c\u001d\u001e\u001f",
       "normalized": "",
       "catalogKey": null
+    }
+  ],
+  "createCases": [
+    {
+      "id": "ru-exact-squat",
+      "input": "Приседания со штангой",
+      "language": "ru",
+      "expectedCatalogKey": "squat"
+    },
+    {
+      "id": "ru-exact-bench-press",
+      "input": "Жим штанги лёжа",
+      "language": "ru",
+      "expectedCatalogKey": "bench_press"
+    },
+    {
+      "id": "ru-exact-bench-press-ye",
+      "input": "жим штанги лежа",
+      "language": "ru",
+      "expectedCatalogKey": "bench_press"
+    },
+    {
+      "id": "ru-exact-deadlift",
+      "input": "Становая тяга",
+      "language": "ru",
+      "expectedCatalogKey": "deadlift"
+    },
+    {
+      "id": "ru-case-variant",
+      "input": "СТАНОВАЯ ТЯГА",
+      "language": "ru",
+      "expectedCatalogKey": "deadlift"
+    },
+    {
+      "id": "ru-extra-spaces",
+      "input": "  Приседания   со штангой  ",
+      "language": "ru",
+      "expectedCatalogKey": "squat"
+    },
+    {
+      "id": "ru-partial-name",
+      "input": "Приседания",
+      "language": "ru",
+      "expectedCatalogKey": null
+    },
+    {
+      "id": "ru-name-with-extra-word",
+      "input": "Становая тяга на одной ноге",
+      "language": "ru",
+      "expectedCatalogKey": null
+    },
+    {
+      "id": "ru-not-a-catalog-name",
+      "input": "Моя любимая растяжка",
+      "language": "ru",
+      "expectedCatalogKey": null
+    },
+    {
+      "id": "ru-name-for-uk-language",
+      "input": "Становая тяга",
+      "language": "uk",
+      "expectedCatalogKey": null
+    },
+    {
+      "id": "ru-name-for-en-language",
+      "input": "Становая тяга",
+      "language": "en",
+      "expectedCatalogKey": null
+    },
+    {
+      "id": "uk-identity-name",
+      "input": "Станова тяга",
+      "language": "ru",
+      "expectedCatalogKey": "deadlift"
+    },
+    {
+      "id": "en-identity-name",
+      "input": "Bench Press",
+      "language": "ru",
+      "expectedCatalogKey": "bench_press"
+    },
+    {
+      "id": "en-identity-name-en-language",
+      "input": "bench press",
+      "language": "en",
+      "expectedCatalogKey": "bench_press"
     }
   ]
 }

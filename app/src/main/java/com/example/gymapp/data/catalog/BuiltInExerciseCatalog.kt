@@ -296,6 +296,43 @@ object BuiltInExerciseCatalog {
     fun inferKey(rawName: String?): String? = definitionForName(rawName)?.key
 
     /**
+     * Russian catalog names are search-only and never identity (see shared/exercise-identity-v1.json),
+     * so a Russian user typing one would otherwise create a custom duplicate. This INPUT-time map
+     * lets the add-exercise path recognize an exact full Russian display name and store the built-in
+     * instead. Names shared by two built-ins, or equal to an identity name, are left out.
+     */
+    private val russianNameKeys: Map<String, String> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        val keys = mutableMapOf<String, String>()
+        val ambiguous = mutableSetOf<String>()
+        definitions.forEach { definition ->
+            val normalized = normalizeExerciseIdentityName(displayName(definition.nameEn, "ru"))
+            if (normalized.isEmpty() || normalized in definitionsByName) return@forEach
+            if (keys.putIfAbsent(normalized, definition.key) != null) ambiguous += normalized
+        }
+        keys.filterKeys { it !in ambiguous }
+    }
+
+    /**
+     * Pure input canonicalization: the built-in key a typed name stands for. English, Ukrainian and
+     * legacy alias names always count; the exact full Russian display name counts only for a Russian
+     * UI language. Partial or fuzzy names return null (custom exercise).
+     */
+    fun catalogKeyForTypedName(rawName: String?, languageTag: String?): String? {
+        inferKey(rawName)?.let { return it }
+        val isRussian = !languageTag.isNullOrBlank() &&
+            Locale.forLanguageTag(languageTag).language.equals("ru", ignoreCase = true)
+        if (!isRussian) return null
+        return russianNameKeys[normalizeExerciseIdentityName(rawName.orEmpty())]
+    }
+
+    /** The name to store for a typed one: the canonical English name for a Russian built-in name, else unchanged. */
+    fun canonicalTypedName(rawName: String, languageTag: String?): String {
+        if (inferKey(rawName) != null) return rawName
+        val key = catalogKeyForTypedName(rawName, languageTag) ?: return rawName
+        return canonicalNameForKey(key) ?: rawName
+    }
+
+    /**
      * Resolves optional backup metadata without allowing it to override a recognized raw name.
      *
      * Backups are user-controlled input. A stale or hostile `catalogKey` must therefore never

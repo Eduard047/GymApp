@@ -32,6 +32,30 @@ class ExerciseIdentityGoldenTest {
         }
     }
 
+    @Test
+    fun sharedCreateCasesCanonicalizeTypedNames() {
+        val cases = contract().getJSONArray("createCases")
+        assertTrue(cases.length() >= 10)
+        for (index in 0 until cases.length()) {
+            val case = cases.getJSONObject(index)
+            val id = case.getString("id")
+            val input = case.getString("input")
+            val language = case.getString("language")
+            val expectedKey = if (case.isNull("expectedCatalogKey")) null else case.getString("expectedCatalogKey")
+
+            assertEquals("$id catalogKeyForTypedName", expectedKey, BuiltInExerciseCatalog.catalogKeyForTypedName(input, language))
+            val stored = BuiltInExerciseCatalog.canonicalTypedName(input.trim(), language)
+            assertEquals("$id stored name resolves to the same key", expectedKey, BuiltInExerciseCatalog.inferKey(stored))
+        }
+    }
+
+    @Test
+    fun russianCatalogNamesStaySearchOnlyForIdentity() {
+        assertEquals(null, BuiltInExerciseCatalog.inferKey("Приседания со штангой"))
+        assertEquals("Squat", BuiltInExerciseCatalog.canonicalTypedName("Приседания со штангой", "ru"))
+        assertEquals("Приседания со штангой", BuiltInExerciseCatalog.canonicalTypedName("Приседания со штангой", "uk"))
+    }
+
     private fun contract(): JSONObject {
         val direct = File("shared/exercise-identity-v1.json")
         val file = if (direct.isFile) direct else File("../shared/exercise-identity-v1.json")

@@ -1057,9 +1057,15 @@ public final class WorkoutStore: ObservableObject {
     @discardableResult
     public func addExercise(
         name: String,
-        machineLoadProfile: MachineLoadProfile? = nil
+        machineLoadProfile: MachineLoadProfile? = nil,
+        languageCode: String? = nil
     ) throws -> Exercise {
-        let cleaned = try Self.validatedExerciseName(name)
+        // For Russian, an exact built-in Russian name is stored as that built-in (canonical English
+        // name) instead of a custom duplicate, and hits the usual duplicate error if already listed.
+        let cleaned = BuiltInExerciseCatalog.canonicalTypedName(
+            try Self.validatedExerciseName(name),
+            languageCode: languageCode ?? gymCurrentLanguageCode()
+        )
         var created: Exercise?
         try mutate { state in
             guard state.exercises.count < BackupImportLimits.standard.maximumExercises else {

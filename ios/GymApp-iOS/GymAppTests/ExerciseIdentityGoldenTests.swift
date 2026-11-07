@@ -41,6 +41,43 @@ final class ExerciseIdentityGoldenTests: XCTestCase {
         }
     }
 
+    func testSharedCreateCasesCanonicalizeTypedNames() throws {
+        let root = try contract()
+        let cases = try XCTUnwrap(root["createCases"] as? [[String: Any]])
+        XCTAssertGreaterThanOrEqual(cases.count, 10)
+
+        for item in cases {
+            let id = try XCTUnwrap(item["id"] as? String)
+            let input = try XCTUnwrap(item["input"] as? String)
+            let language = try XCTUnwrap(item["language"] as? String)
+            let expectedKey = item["expectedCatalogKey"] as? String
+
+            XCTAssertEqual(
+                BuiltInExerciseCatalog.catalogKeyForTypedName(input, languageCode: language),
+                expectedKey,
+                "\(id) catalogKeyForTypedName"
+            )
+            let stored = BuiltInExerciseCatalog.canonicalTypedName(input.gymTrimmed, languageCode: language)
+            XCTAssertEqual(
+                BuiltInExerciseCatalog.canonicalKey(forName: stored),
+                expectedKey,
+                "\(id) stored name resolves to the same key"
+            )
+        }
+    }
+
+    func testRussianCatalogNamesStaySearchOnlyForIdentity() {
+        XCTAssertNil(BuiltInExerciseCatalog.canonicalKey(forName: "Приседания со штангой"))
+        XCTAssertEqual(
+            BuiltInExerciseCatalog.canonicalTypedName("Приседания со штангой", languageCode: "ru"),
+            "Squat"
+        )
+        XCTAssertEqual(
+            BuiltInExerciseCatalog.canonicalTypedName("Приседания со штангой", languageCode: "uk"),
+            "Приседания со штангой"
+        )
+    }
+
     private func contract() throws -> [String: Any] {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

@@ -212,6 +212,43 @@ public enum BuiltInExerciseCatalog {
         keyByAlias[normalizedAlias(name)]
     }
 
+    /// Russian catalog names are search-only and never identity (see shared/exercise-identity-v1.json),
+    /// so a Russian user typing one would otherwise create a custom duplicate. This INPUT-time map lets
+    /// the add-exercise path recognize an exact full Russian display name (what the ru UI shows) and
+    /// store the built-in instead. Names shared by two built-ins, or equal to an identity name, are left out.
+    private static let keyByRussianName: [String: String] = {
+        var result: [String: String] = [:]
+        var ambiguous = Set<String>()
+        for definition in definitions {
+            let normalized = normalizedAlias(
+                displayName(catalogKey: definition.key, rawName: definition.englishName, languageCode: "ru")
+            )
+            if normalized.isEmpty || keyByAlias[normalized] != nil { continue }
+            if result[normalized] != nil { ambiguous.insert(normalized) }
+            result[normalized] = definition.key
+        }
+        for name in ambiguous { result[name] = nil }
+        return result
+    }()
+
+    /// Pure input canonicalization: the built-in key a typed name stands for. English, Ukrainian and
+    /// legacy alias names always count; the exact full Russian display name counts only for a Russian
+    /// UI language. Partial or fuzzy names return nil (custom exercise).
+    public static func catalogKeyForTypedName(_ name: String, languageCode: String) -> String? {
+        if let key = canonicalKey(forName: name) { return key }
+        guard languageCode.lowercased().hasPrefix("ru") else { return nil }
+        return keyByRussianName[normalizedAlias(name)]
+    }
+
+    /// The name to store for a typed one: the canonical English name for a Russian built-in name,
+    /// otherwise unchanged.
+    public static func canonicalTypedName(_ name: String, languageCode: String) -> String {
+        if canonicalKey(forName: name) != nil { return name }
+        guard let key = catalogKeyForTypedName(name, languageCode: languageCode),
+              let definition = definition(forKey: key) else { return name }
+        return definition.englishName
+    }
+
     public static func resolvedKey(catalogKey: String?, name: String) -> String? {
         // Backup JSON is user-controlled input. Any non-empty raw name is authoritative:
         // recognized names resolve through reviewed aliases, while unknown names remain custom.

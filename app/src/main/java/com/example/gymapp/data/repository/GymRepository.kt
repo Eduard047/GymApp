@@ -36,6 +36,7 @@ import com.example.gymapp.sync.WorkoutMergeSet
 import com.example.gymapp.sync.WorkoutCloudSyncState
 import com.example.gymapp.sync.toValidatedBackup
 import com.example.gymapp.sync.workoutMergeExerciseIdentity
+import com.example.gymapp.util.AppLanguageSignal
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.TrainingProfile
 import java.nio.ByteBuffer
@@ -530,11 +531,16 @@ class GymRepository(
         inserted
     }
 
-    suspend fun addExercise(name: String): Long {
+    /**
+     * [languageTag] is the UI language: for Russian, an exact built-in Russian name is stored as that
+     * built-in (canonical English name) instead of a custom duplicate, and hits the usual duplicate
+     * error when the built-in is already in the list.
+     */
+    suspend fun addExercise(name: String, languageTag: String = AppLanguageSignal.tag.value): Long {
         require(name.length <= WorkoutDataLimits.MAX_EXERCISE_NAME_LENGTH * 2) {
             "Exercise name is outside the supported length."
         }
-        val cleanedName = name.trim()
+        val cleanedName = BuiltInExerciseCatalog.canonicalTypedName(name.trim(), languageTag)
         require(WorkoutDataLimits.isValidExerciseName(cleanedName)) {
             "Exercise name is outside the supported length."
         }

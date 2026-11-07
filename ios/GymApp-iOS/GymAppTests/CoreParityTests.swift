@@ -38,6 +38,30 @@ final class CoreParityTests: XCTestCase {
         )
     }
 
+    func testAddExerciseStoresRussianBuiltInNameAsBuiltInAndRefusesDuplicate() throws {
+        let storageKey = "add-exercise-russian-built-in"
+        let store = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: try temporaryDirectory(named: storageKey)
+        )
+        let created = try store.addExercise(name: "  приседания   со штангой ", languageCode: "ru")
+        XCTAssertEqual(created.name, "Squat")
+        XCTAssertEqual(created.catalogKey, "squat")
+        // The built-in is now in the list: the usual duplicate error, in Russian and in English.
+        XCTAssertThrowsError(try store.addExercise(name: "Приседания со штангой", languageCode: "ru")) { error in
+            XCTAssertEqual(error as? WorkoutStoreError, .duplicateExerciseName)
+        }
+        XCTAssertThrowsError(try store.addExercise(name: "Squat", languageCode: "ru")) { error in
+            XCTAssertEqual(error as? WorkoutStoreError, .duplicateExerciseName)
+        }
+        // Other UI languages and non-catalog Russian names stay custom.
+        let custom = try store.addExercise(name: "Становая тяга", languageCode: "uk")
+        XCTAssertEqual(custom.name, "Становая тяга")
+        XCTAssertNil(custom.catalogKey)
+        let partial = try store.addExercise(name: "Приседания", languageCode: "ru")
+        XCTAssertNil(partial.catalogKey)
+    }
+
     func testRestNotificationsCountAsDeniedOnlyWhenExplicitlyDenied() {
         XCTAssertTrue(RestTimerManager.notificationsDenied(for: .denied))
         XCTAssertFalse(RestTimerManager.notificationsDenied(for: .notDetermined))
