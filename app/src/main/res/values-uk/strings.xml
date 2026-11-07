@@ -371,7 +371,7 @@
     <string name="cloud_sync_round_trip_failed">Не вдалося безпечно перевірити хмарний стан. Автоматичне вивантаження призупинено.</string>
     <string name="cloud_sync_conflict_title">Які тренування зберегти?</string>
     <string name="cloud_sync_conflict_description">На цьому телефоні та в хмарі різні зміни. Поки що нічого не видалено й не перезаписано.</string>
-    <string name="cloud_sync_conflict_backup_hint">Не впевнений? Натисни «Спочатку зробити копію», експортуй приватну резервну копію та повернися сюди.</string>
+    <string name="cloud_sync_conflict_backup_hint">Не впевнений? Спочатку збережи приватну резервну копію цього телефона, потім повернися сюди та обери.</string>
     <string name="cloud_sync_conflict_cloud_missing">У хмарі зараз немає копії для завантаження. Можна зберегти туди історію тренувань із цього телефона.</string>
     <string name="cloud_sync_conflict_cloud_unverified">Хмарну копію не вдалося безпечно перевірити, тому GymApp не завантажуватиме її на телефон. Її можна замінити перевіреною історією тренувань із цього телефона.</string>
     <string name="cloud_sync_conflict_keep_device_description">Вибери це, якщо останні тренування записував на цьому телефоні. Ця історія замінить хмарну копію.</string>
@@ -379,7 +379,8 @@
     <string name="cloud_sync_conflict_keep_device">Зберегти тренування з телефона</string>
     <string name="cloud_sync_conflict_use_cloud">Завантажити тренування з хмари</string>
     <string name="cloud_sync_conflict_resolving">Звіряємо обидві історії…</string>
-    <string name="cloud_sync_conflict_not_now">Спочатку зробити копію</string>
+    <string name="cloud_sync_conflict_not_now">Спочатку зробити копію цього телефона</string>
+    <string name="cloud_sync_conflict_backup_saved">Копію збережено.</string>
     <string name="cloud_sync_resolve_action">Вибрати</string>
     <string name="cloud_sync_choice_card_title">Потрібно вибрати тренування</string>
     <string name="cloud_sync_choice_card_description">На телефоні та в хмарі різні історії тренувань. Синхронізацію зупинено, щоб жодну з них не було перезаписано.</string>

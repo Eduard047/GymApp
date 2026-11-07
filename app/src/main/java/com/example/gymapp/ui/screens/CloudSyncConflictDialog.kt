@@ -25,6 +25,8 @@ internal fun CloudSyncConflictDialog(
     cloudVersionAvailable: Boolean,
     cloudVersionNeedsRepair: Boolean,
     resolving: Boolean,
+    backingUp: Boolean,
+    onBackupFirst: () -> Unit,
     onKeepDeviceVersion: () -> Unit,
     onUseCloudVersion: () -> Unit,
     onDismiss: () -> Unit
@@ -103,8 +105,8 @@ internal fun CloudSyncConflictDialog(
                     }
                 }
                 TextButton(
-                    onClick = onDismiss,
-                    enabled = !resolving,
+                    onClick = onBackupFirst,
+                    enabled = !resolving && !backingUp,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 48.dp)

@@ -371,7 +371,7 @@
     <string name="cloud_sync_round_trip_failed">Cloud state could not be verified safely. Automatic upload is paused.</string>
     <string name="cloud_sync_conflict_title">Which workout history should GymApp keep?</string>
     <string name="cloud_sync_conflict_description">This phone and the cloud contain different changes. Nothing has been deleted or overwritten.</string>
-    <string name="cloud_sync_conflict_backup_hint">Not sure? Choose “Back up first”, export a private backup, then return here.</string>
+    <string name="cloud_sync_conflict_backup_hint">Not sure? Back up this phone first, then return here and choose.</string>
     <string name="cloud_sync_conflict_cloud_missing">There is no cloud copy to download. You can restore this phone’s workout history to the cloud.</string>
     <string name="cloud_sync_conflict_cloud_unverified">The cloud copy could not be verified safely, so GymApp will not load it onto this phone. You can replace it with the verified workout history from this phone.</string>
     <string name="cloud_sync_conflict_keep_device_description">Choose this if your latest workouts were recorded on this phone. This history will replace the cloud copy.</string>
@@ -379,7 +379,8 @@
     <string name="cloud_sync_conflict_keep_device">Keep workouts from this phone</string>
     <string name="cloud_sync_conflict_use_cloud">Use workouts from the cloud</string>
     <string name="cloud_sync_conflict_resolving">Checking both histories…</string>
-    <string name="cloud_sync_conflict_not_now">Back up first</string>
+    <string name="cloud_sync_conflict_not_now">Back up this phone first</string>
+    <string name="cloud_sync_conflict_backup_saved">Backup saved.</string>
     <string name="cloud_sync_resolve_action">Choose</string>
     <string name="cloud_sync_choice_card_title">Workout sync needs your choice</string>
     <string name="cloud_sync_choice_card_description">This phone and the cloud have different workout histories. Sync is paused so neither one is overwritten.</string>

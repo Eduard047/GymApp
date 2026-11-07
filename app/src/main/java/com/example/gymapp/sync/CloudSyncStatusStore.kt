@@ -1,6 +1,8 @@
 package com.example.gymapp.sync
 
 import android.content.Context
+import com.example.gymapp.R
+import com.example.gymapp.util.LocalizedText
 import java.security.MessageDigest
 
 enum class CloudSyncPhase {
@@ -11,9 +13,46 @@ enum class CloudSyncPhase {
     Error
 }
 
+/**
+ * In-memory sync state for the UI. [message] is the localized reason shown while [phase] is
+ * [CloudSyncPhase.Error]; it is never persisted and never carries free-form server text.
+ */
 data class CloudSyncUiStatus(
     val phase: CloudSyncPhase,
-    val lastSuccessAt: Long? = null
+    val lastSuccessAt: Long? = null,
+    val message: LocalizedText? = null
+)
+
+/** Localized failure reasons that may be kept on the persistent sync card. */
+private val CLOUD_SYNC_ERROR_REASONS = setOf(
+    R.string.auth_error_connection,
+    R.string.auth_error_cloud_unavailable,
+    R.string.cloud_sync_load_failed,
+    R.string.cloud_sync_conflict,
+    R.string.cloud_sync_save_failed,
+    R.string.cloud_sync_account_changed,
+    R.string.cloud_sync_baseline_failed,
+    R.string.cloud_sync_round_trip_failed,
+    R.string.cloud_sync_resolution_failed
+)
+
+/**
+ * Builds the status for [phase]. The reason is kept only for [CloudSyncPhase.Error] and only
+ * when it is one of the known argument-free localized sync reasons, so entering any other phase
+ * (a new attempt, success, conflict) clears it.
+ */
+fun cloudSyncUiStatus(
+    phase: CloudSyncPhase,
+    lastSuccessAt: Long?,
+    errorReason: LocalizedText? = null
+): CloudSyncUiStatus = CloudSyncUiStatus(
+    phase = phase,
+    lastSuccessAt = lastSuccessAt,
+    message = errorReason?.takeIf {
+        phase == CloudSyncPhase.Error &&
+            it.formatArguments.isEmpty() &&
+            it.resourceId in CLOUD_SYNC_ERROR_REASONS
+    }
 )
 
 /** Persists only a bounded timestamp under a one-way account key; no account identifier is stored. */

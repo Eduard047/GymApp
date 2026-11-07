@@ -69,6 +69,7 @@ import com.example.gymapp.ui.viewmodel.ExerciseListUiState
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.delay
+import com.example.gymapp.util.asString
 import com.example.gymapp.util.formattedStringResource
 
 internal const val PROFILE_SUPPORT_URL = "https://gymapptracker.com/support.html"
@@ -498,6 +499,15 @@ private fun CloudSyncStatusCard(
                     )
                 } ?: stringResource(R.string.cloud_sync_status_never)
             )
+            if (status.phase == CloudSyncPhase.Error) {
+                status.message?.let { reason ->
+                    Text(
+                        text = reason.asString(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
             Button(
                 onClick = onSyncNow,
                 enabled = status.phase != CloudSyncPhase.Checking &&

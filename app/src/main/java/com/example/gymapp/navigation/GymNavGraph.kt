@@ -150,7 +150,9 @@ import com.example.gymapp.ui.screens.ActiveWorkoutScreen
 import com.example.gymapp.ui.screens.ActiveWorkoutToolbarState
 import com.example.gymapp.ui.screens.AppIntroSplash
 import com.example.gymapp.ui.screens.AuthScreen
+import com.example.gymapp.ui.screens.CLOUD_SYNC_CONFLICT_BACKUP_FILE_NAME
 import com.example.gymapp.ui.screens.CloudSyncConflictDialog
+import com.example.gymapp.ui.screens.writeCloudSyncConflictBackup
 import com.example.gymapp.ui.screens.clearPrivateBackupShareArtifacts
 import com.example.gymapp.ui.screens.ExerciseListScreen
 import com.example.gymapp.ui.screens.FriendDetailScreen
@@ -204,6 +206,7 @@ import com.example.gymapp.sync.CloudSyncStatusStore
 import com.example.gymapp.sync.CloudSyncUiStatus
 import com.example.gymapp.sync.attachSharedCloudExtensions
 import com.example.gymapp.sync.cloudSnapshotApplyDecision
+import com.example.gymapp.sync.cloudSyncUiStatus
 import com.example.gymapp.sync.isCanonicalSharedCloudEnvelope
 import com.example.gymapp.sync.isSharedCloudStateCandidate
 import com.example.gymapp.sync.prepareSharedCloudState
@@ -1491,11 +1494,16 @@ internal fun GymAppRoot(
         )
     }
 
-    fun updateCloudSyncPhase(session: AccountSession.Cloud, phase: CloudSyncPhase) {
+    fun updateCloudSyncPhase(
+        session: AccountSession.Cloud,
+        phase: CloudSyncPhase,
+        errorReason: LocalizedText? = null
+    ) {
         if (isSameCloudSessionGeneration(session, authManager.authState.value.session)) {
-            cloudSyncStatus = CloudSyncUiStatus(
+            cloudSyncStatus = cloudSyncUiStatus(
                 phase = phase,
-                lastSuccessAt = cloudSyncStatusStore.readLastSuccess(session.userId)
+                lastSuccessAt = cloudSyncStatusStore.readLastSuccess(session.userId),
+                errorReason = errorReason
             )
         }
     }
@@ -1895,9 +1903,9 @@ internal fun GymAppRoot(
         pullResult.onFailure { throwable ->
             if (throwable is CancellationException) throw throwable
             if (isSameCloudSessionGeneration(session, authManager.authState.value.session)) {
-                updateCloudSyncPhase(session, CloudSyncPhase.Error)
-                cloudSyncRetryMode = CloudSyncRetryMode.Pull
                 val loadMessage = authErrorText(throwable, R.string.cloud_sync_load_failed)
+                updateCloudSyncPhase(session, CloudSyncPhase.Error, loadMessage)
+                cloudSyncRetryMode = CloudSyncRetryMode.Pull
                 cloudAutoRetryDelayMillis(
                     message = loadMessage,
                     attempt = cloudAutoRetryAttempts,
@@ -1940,7 +1948,8 @@ internal fun GymAppRoot(
                 )
                 updateCloudSyncPhase(
                     session,
-                    if (cloudSyncConflict == null) CloudSyncPhase.Error else CloudSyncPhase.Conflict
+                    if (cloudSyncConflict == null) CloudSyncPhase.Error else CloudSyncPhase.Conflict,
+                    LocalizedText(R.string.cloud_sync_conflict)
                 )
             }
         }
@@ -2061,7 +2070,8 @@ internal fun GymAppRoot(
                                 CloudSyncPhase.Conflict
                             } else {
                                 CloudSyncPhase.Error
-                            }
+                            },
+                            message
                         )
                         authManager.setMessage(message)
                     }
@@ -2174,6 +2184,65 @@ internal fun GymAppRoot(
                     post()
                 }
             }
+    }
+
+    var cloudConflictBackupInProgress by key(uiIsolationKey) { mutableStateOf(false) }
+    var cloudConflictBackupJson by key(uiIsolationKey) { mutableStateOf<String?>(null) }
+    val cloudConflictBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        val json = cloudConflictBackupJson
+        cloudConflictBackupJson = null
+        if (uri == null || json == null) {
+            cloudConflictBackupInProgress = false
+        } else {
+            coroutineScope.launch {
+                val saved = withContext(Dispatchers.IO) {
+                    writeCloudSyncConflictBackup(json) {
+                        applicationContext.contentResolver.openOutputStream(uri, "wt")
+                    }
+                }
+                cloudConflictBackupInProgress = false
+                authManager.setMessage(
+                    LocalizedText(
+                        if (saved) R.string.cloud_sync_conflict_backup_saved
+                        else R.string.backup_export_failed
+                    ),
+                    isError = !saved
+                )
+            }
+        }
+    }
+    val backupBeforeCloudSyncChoice: () -> Unit = backup@{
+        if (cloudConflictBackupInProgress || cloudConflictResolutionInProgress) return@backup
+        val conflict = cloudSyncConflict ?: return@backup
+        val session = cloudSession ?: return@backup
+        if (conflict.userId != session.userId ||
+            conflict.sessionGeneration != session.sessionGeneration
+        ) return@backup
+        cloudConflictBackupInProgress = true
+        coroutineScope.launch {
+            // Same manual-backup JSON as the Account sheet export, of this phone's data only.
+            runCatching {
+                check(isSameCloudSessionGeneration(session, authManager.authState.value.session))
+                repository.exportBackupJson(
+                    includeDiagnostics = false,
+                    owner = BackupOwner(
+                        accountId = session.userId,
+                        userId = session.userId,
+                        email = session.email,
+                        remote = true
+                    )
+                )
+            }.onSuccess { json ->
+                cloudConflictBackupJson = json
+                cloudConflictBackupLauncher.launch(CLOUD_SYNC_CONFLICT_BACKUP_FILE_NAME)
+            }.onFailure { throwable ->
+                if (throwable is CancellationException) throw throwable
+                cloudConflictBackupInProgress = false
+                authManager.setMessage(LocalizedText(R.string.backup_export_failed))
+            }
+        }
     }
 
     val resolveCloudSyncConflict: (Boolean) -> Unit = resolve@{ useCloudVersion ->
@@ -2347,10 +2416,10 @@ internal fun GymAppRoot(
                     showCloudSyncConflictDialog = false
                     cloudPullGeneration = null
                     cloudSyncRetryMode = CloudSyncRetryMode.Pull
-                    updateCloudSyncPhase(session, CloudSyncPhase.Error)
-                    authManager.setMessage(
+                    val resolutionMessage =
                         authErrorText(throwable, R.string.cloud_sync_resolution_failed)
-                    )
+                    updateCloudSyncPhase(session, CloudSyncPhase.Error, resolutionMessage)
+                    authManager.setMessage(resolutionMessage)
                 }
             }
         }
@@ -5052,6 +5121,8 @@ internal fun GymAppRoot(
                     cloudVersionNeedsRepair =
                         conflict.remoteExists && conflict.remoteDigest == null,
                     resolving = cloudConflictResolutionInProgress,
+                    backingUp = cloudConflictBackupInProgress,
+                    onBackupFirst = backupBeforeCloudSyncChoice,
                     onKeepDeviceVersion = { resolveCloudSyncConflict(false) },
                     onUseCloudVersion = { resolveCloudSyncConflict(true) },
                     onDismiss = {
