@@ -823,6 +823,21 @@ private enum ExerciseEditorValidationError: LocalizedError {
     }
 }
 
+/// One allowed machine weight as editable text in the app language's decimal separator
+/// (ru/uk comma, en dot), at most 2 decimals so step arithmetic noise like 0.30000000000000004
+/// never shows. No digit grouping: the editor splits the text on whitespace when saving.
+func gymMachineWeightEditText(
+    _ weight: Double,
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    weight.formatted(
+        .number
+            .precision(.fractionLength(0 ... 2))
+            .grouping(.never)
+            .locale(gymAppLocale(languageCode: languageCode))
+    )
+}
+
 @MainActor
 private struct ExerciseEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -986,7 +1001,7 @@ private struct ExerciseEditorSheet: View {
     }
 
     private static func displayWeight(_ weight: Double) -> String {
-        weight.rounded() == weight ? String(Int(weight)) : String(weight)
+        gymMachineWeightEditText(weight)
     }
 
     private func applyPreset(step: Double, maximum: Double) {

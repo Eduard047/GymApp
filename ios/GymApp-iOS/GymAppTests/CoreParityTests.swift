@@ -2595,6 +2595,14 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(gymWeightRepsText(weight: 62.5, reps: 8, languageCode: "uk"), "62,5 кг × 8")
     }
 
+    func testMachineWeightEditTextUsesLanguageSeparatorWithoutFloatNoise() {
+        XCTAssertEqual(gymMachineWeightEditText(0.1 * 3, languageCode: "uk"), "0,3")
+        XCTAssertEqual(gymMachineWeightEditText(82.5, languageCode: "ru"), "82,5")
+        XCTAssertEqual(gymMachineWeightEditText(82.5, languageCode: "en"), "82.5")
+        XCTAssertEqual(gymMachineWeightEditText(80, languageCode: "uk"), "80")
+        XCTAssertEqual(gymMachineWeightEditText(1250, languageCode: "ru"), "1250")
+    }
+
     func testPluralRulesFollowUkrainianAndRussianGrammar() {
         let oneCounts: [Int] = [1, 21, 101, -1]
         let fewCounts: [Int] = [2, 4, 22, -3]
