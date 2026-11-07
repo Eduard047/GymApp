@@ -959,8 +959,8 @@ enum LiveWorkoutPayloadParser {
             maximumBytes: maximumBytes
         )
         guard !value.isEmpty,
-              value.first != " ",
-              value.last != " ",
+              value.unicodeScalars.first?.value != 0x20,
+              value.unicodeScalars.last?.value != 0x20,
               !value.unicodeScalars.contains(where: { scalar in
                   CharacterSet.controlCharacters.contains(scalar) ||
                       scalar.properties.generalCategory == .format ||
@@ -977,7 +977,7 @@ enum LiveWorkoutPayloadParser {
         maximumBytes: Int
     ) throws -> String {
         guard let value = value as? String,
-              value.count <= maximumCharacters,
+              value.unicodeScalars.count <= maximumCharacters,
               value.utf8.count <= maximumBytes else {
             throw LiveWorkoutContractError.invalidResponse
         }

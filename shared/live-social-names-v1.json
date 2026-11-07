@@ -1,0 +1,456 @@
+{
+  "version": 1,
+  "description": "Accept/reject vectors for exercise names and profile display names in live-workout and social responses. Expected values are what the server accepts: gymapp_private.social_name_is_safe (trim of spaces, 1..120 code points, <=480 UTF-8 bytes, fixed control/format/separator code-point list). Display names use the same rule with 40 code points and 160 bytes. Text is prefix + unit x count + suffix when repeat is present, otherwise text. Every client (Android and iOS, live and social) must give the same verdict.",
+  "limits": {
+    "exerciseName": {
+      "maxCodePoints": 120,
+      "maxUtf8Bytes": 480
+    },
+    "displayName": {
+      "maxCodePoints": 40,
+      "maxUtf8Bytes": 160
+    }
+  },
+  "vectors": [
+    {
+      "id": "latin",
+      "note": "plain Latin",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": true,
+      "text": "Bench press"
+    },
+    {
+      "id": "cyrillic",
+      "note": "plain Cyrillic",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": true,
+      "text": "\u0416\u0438\u043c \u043b\u0451\u0436\u0430"
+    },
+    {
+      "id": "yo-letter",
+      "note": "Cyrillic yo",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": true,
+      "text": "\u0401\u0436\u0438\u043a"
+    },
+    {
+      "id": "modifier-apostrophe",
+      "note": "U+02BC modifier letter apostrophe",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": true,
+      "text": "Pull\u02bcup"
+    },
+    {
+      "id": "emoji",
+      "note": "single emoji (So, 4 UTF-8 bytes)",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": true,
+      "text": "Max \ud83d\ude00"
+    },
+    {
+      "id": "combining-mark",
+      "note": "letter with combining acute (Mn is allowed)",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": true,
+      "text": "Cafe\u0301"
+    },
+    {
+      "id": "zwj-emoji",
+      "note": "emoji ZWJ sequence: U+200D is in the server reject list, so every platform rejects it",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "Fam \ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67"
+    },
+    {
+      "id": "leading-space",
+      "note": "leading space",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": " Bench"
+    },
+    {
+      "id": "leading-space-before-combining-mark",
+      "note": "space followed by a combining mark: one grapheme cluster, but the space is still a leading space code point",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": " \u0301Bench"
+    },
+    {
+      "id": "trailing-space",
+      "note": "trailing space",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "Bench "
+    },
+    {
+      "id": "only-space",
+      "note": "space only",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "  "
+    },
+    {
+      "id": "empty",
+      "note": "empty string",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": ""
+    },
+    {
+      "id": "reject-u0000",
+      "note": "U+0000 NUL inside the name",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "ab\u0000cd"
+    },
+    {
+      "id": "reject-u0009",
+      "note": "U+0009 tab inside the name",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "ab\tcd"
+    },
+    {
+      "id": "reject-u007f",
+      "note": "U+007F DEL inside the name",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "ab\u007fcd"
+    },
+    {
+      "id": "reject-u0085",
+      "note": "U+0085 C1 NEL inside the name",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "ab\u0085cd"
+    },
+    {
+      "id": "reject-u00ad",
+      "note": "U+00AD soft hyphen (Cf) inside the name",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "ab\u00adcd"
+    },
+    {
+      "id": "reject-u200b",
+      "note": "U+200B zero width space inside the name",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "ab\u200bcd"
+    },
+    {
+      "id": "reject-u200d",
+      "note": "U+200D zero width joiner between letters inside the name",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "ab\u200dcd"
+    },
+    {
+      "id": "reject-u200e",
+      "note": "U+200E left-to-right mark inside the name",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "ab\u200ecd"
+    },
+    {
+      "id": "reject-u2028",
+      "note": "U+2028 line separator inside the name",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "ab\u2028cd"
+    },
+    {
+      "id": "reject-u2029",
+      "note": "U+2029 paragraph separator inside the name",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "ab\u2029cd"
+    },
+    {
+      "id": "reject-u202e",
+      "note": "U+202E right-to-left override inside the name",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "ab\u202ecd"
+    },
+    {
+      "id": "reject-u2060",
+      "note": "U+2060 word joiner inside the name",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "ab\u2060cd"
+    },
+    {
+      "id": "reject-ufeff",
+      "note": "U+FEFF BOM / zero width no-break space inside the name",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "ab\ufeffcd"
+    },
+    {
+      "id": "reject-ue0001",
+      "note": "U+E0001 language tag (supplementary-plane Cf) inside the name",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "ab\udb40\udc01cd"
+    },
+    {
+      "id": "reject-ue0041",
+      "note": "U+E0041 tag latin capital A (supplementary-plane Cf) inside the name",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "ab\udb40\udc41cd"
+    },
+    {
+      "id": "reject-u2028-edge",
+      "note": "line separator at the end (no trailing-space rescue)",
+      "kinds": [
+        "exerciseName",
+        "displayName"
+      ],
+      "valid": false,
+      "text": "abcd\u2028"
+    },
+    {
+      "id": "name-120-ascii",
+      "note": "120 code points",
+      "kinds": [
+        "exerciseName"
+      ],
+      "valid": true,
+      "repeat": {
+        "unit": "a",
+        "count": 120
+      }
+    },
+    {
+      "id": "name-121-ascii",
+      "note": "121 code points",
+      "kinds": [
+        "exerciseName"
+      ],
+      "valid": false,
+      "repeat": {
+        "unit": "a",
+        "count": 121
+      }
+    },
+    {
+      "id": "name-120-cyrillic",
+      "note": "120 Cyrillic letters (240 bytes)",
+      "kinds": [
+        "exerciseName"
+      ],
+      "valid": true,
+      "repeat": {
+        "unit": "\u0436",
+        "count": 120
+      }
+    },
+    {
+      "id": "name-121-cyrillic",
+      "note": "121 Cyrillic letters",
+      "kinds": [
+        "exerciseName"
+      ],
+      "valid": false,
+      "repeat": {
+        "unit": "\u0436",
+        "count": 121
+      }
+    },
+    {
+      "id": "name-120-four-byte",
+      "note": "120 x U+1F600 = exactly 480 UTF-8 bytes",
+      "kinds": [
+        "exerciseName"
+      ],
+      "valid": true,
+      "repeat": {
+        "unit": "\ud83d\ude00",
+        "count": 120
+      }
+    },
+    {
+      "id": "name-121-four-byte",
+      "note": "121 x U+1F600 = 121 code points, 484 bytes",
+      "kinds": [
+        "exerciseName"
+      ],
+      "valid": false,
+      "repeat": {
+        "unit": "\ud83d\ude00",
+        "count": 121
+      }
+    },
+    {
+      "id": "name-120-code-points-one-grapheme",
+      "note": "'a' + 119 combining acutes: 120 code points, 1 grapheme cluster",
+      "kinds": [
+        "exerciseName"
+      ],
+      "valid": true,
+      "repeat": {
+        "prefix": "a",
+        "unit": "\u0301",
+        "count": 119
+      }
+    },
+    {
+      "id": "name-121-code-points-one-grapheme",
+      "note": "'a' + 120 combining acutes: 121 code points but 1 grapheme cluster (length counts code points, not graphemes)",
+      "kinds": [
+        "exerciseName"
+      ],
+      "valid": false,
+      "repeat": {
+        "prefix": "a",
+        "unit": "\u0301",
+        "count": 120
+      }
+    },
+    {
+      "id": "display-40-ascii",
+      "note": "40 code points",
+      "kinds": [
+        "displayName"
+      ],
+      "valid": true,
+      "repeat": {
+        "unit": "a",
+        "count": 40
+      }
+    },
+    {
+      "id": "display-41-ascii",
+      "note": "41 code points",
+      "kinds": [
+        "displayName"
+      ],
+      "valid": false,
+      "repeat": {
+        "unit": "a",
+        "count": 41
+      }
+    },
+    {
+      "id": "display-40-four-byte",
+      "note": "40 x U+1F600 = exactly 160 UTF-8 bytes",
+      "kinds": [
+        "displayName"
+      ],
+      "valid": true,
+      "repeat": {
+        "prefix": "",
+        "unit": "\ud83d\ude00",
+        "count": 40
+      }
+    },
+    {
+      "id": "display-41-four-byte",
+      "note": "41 x U+1F600 = 41 code points, 164 bytes",
+      "kinds": [
+        "displayName"
+      ],
+      "valid": false,
+      "repeat": {
+        "unit": "\ud83d\ude00",
+        "count": 41
+      }
+    },
+    {
+      "id": "display-41-code-points-one-grapheme",
+      "note": "'a' + 40 combining acutes: 41 code points, 1 grapheme cluster",
+      "kinds": [
+        "displayName"
+      ],
+      "valid": false,
+      "repeat": {
+        "prefix": "a",
+        "unit": "\u0301",
+        "count": 40
+      }
+    }
+  ]
+}

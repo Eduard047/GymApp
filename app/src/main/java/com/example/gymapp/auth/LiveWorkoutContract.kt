@@ -821,7 +821,7 @@ private fun JSONObject.liveString(key: String, maxCodePoints: Int): String {
     val value = opt(key) as? String
         ?: throw IllegalArgumentException("Live workout response is invalid.")
     require(value.isNotEmpty() && value.codePointCount(0, value.length) <= maxCodePoints &&
-        value.none { it.isISOControl() || Character.getType(it) == Character.FORMAT.toInt() }) {
+        !value.hasUnsafeSocialScalar()) {
         "Live workout response is invalid."
     }
     return value
@@ -882,7 +882,7 @@ private fun requireSafeLiveExerciseName(raw: Any?): String {
     require(value.isNotEmpty() && value == value.trim(' ') &&
         value.codePointCount(0, value.length) <= SharedWorkoutLink.MAX_NAME_CODE_POINTS &&
         value.toByteArray(Charsets.UTF_8).size <= SharedWorkoutLink.MAX_NAME_UTF8_BYTES &&
-        value.none { it.isISOControl() || Character.getType(it) == Character.FORMAT.toInt() }) {
+        !value.hasUnsafeSocialScalar()) {
         "Live workout response is invalid."
     }
     return value

@@ -1349,7 +1349,8 @@ private fun requireSafeSocialExerciseName(raw: Any?): String {
     return value
 }
 
-private fun String.hasUnsafeSocialScalar(): Boolean {
+/** Code-point check shared by the social and live contracts: control, format, line and paragraph separators. */
+internal fun String.hasUnsafeSocialScalar(): Boolean {
     var index = 0
     while (index < length) {
         val codePoint = Character.codePointAt(this, index)
