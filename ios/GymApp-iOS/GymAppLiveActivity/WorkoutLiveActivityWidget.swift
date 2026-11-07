@@ -85,6 +85,9 @@ struct WorkoutLiveActivityWidget: Widget {
         ActivityConfiguration(for: WorkoutActivityAttributes.self) { context in
             LockScreenLiveActivityView(attributes: context.attributes, state: context.state)
                 .activityBackgroundTint(LiveActivityColor.surface)
+                // Lock Screen / banner tap: the island's widgetURL below does not apply here.
+                // Keep in sync with `ActiveWorkoutDeepLink` in the app target.
+                .widgetURL(URL(string: "com.setforge.gymapp.ios://active-workout"))
                 .activitySystemActionForegroundColor(LiveActivityColor.actionText)
         } dynamicIsland: { context in
             DynamicIsland {

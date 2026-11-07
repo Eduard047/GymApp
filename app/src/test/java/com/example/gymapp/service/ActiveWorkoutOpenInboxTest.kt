@@ -18,6 +18,13 @@ class ActiveWorkoutOpenInboxTest {
     }
 
     @Test
+    fun recreatedActivityDoesNotReplayTheOpenRequest() {
+        assertTrue(shouldRequestOpenActiveWorkout(ACTION_OPEN_ACTIVE_WORKOUT, restoredInstance = false))
+        assertFalse(shouldRequestOpenActiveWorkout(ACTION_OPEN_ACTIVE_WORKOUT, restoredInstance = true))
+        assertFalse(shouldRequestOpenActiveWorkout(null, restoredInstance = false))
+    }
+
+    @Test
     fun requestsAreConsumedOnlyByTheirOwnId() {
         val inbox = ActiveWorkoutOpenInbox()
         assertNull(inbox.pending.value)

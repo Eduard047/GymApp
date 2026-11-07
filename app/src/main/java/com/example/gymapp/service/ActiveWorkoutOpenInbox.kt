@@ -15,6 +15,10 @@ internal const val OPEN_ACTIVE_WORKOUT_GRACE_MILLIS = 4_000L
 internal fun isOpenActiveWorkoutAction(action: String?): Boolean =
     action == ACTION_OPEN_ACTIVE_WORKOUT
 
+/** A restored/recreated activity replays its launch intent; only a fresh launch or new intent counts. */
+internal fun shouldRequestOpenActiveWorkout(action: String?, restoredInstance: Boolean): Boolean =
+    isOpenActiveWorkoutAction(action) && !restoredInstance
+
 /**
  * Process-local hand-off from a notification tap to the root UI. A request is only acted on
  * when an active workout exists; otherwise the UI drops it after [OPEN_ACTIVE_WORKOUT_GRACE_MILLIS]
