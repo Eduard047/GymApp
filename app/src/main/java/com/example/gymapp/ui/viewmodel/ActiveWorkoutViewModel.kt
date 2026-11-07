@@ -1035,10 +1035,11 @@ class ActiveWorkoutViewModel(
         if (activeWorkoutOperationInProgress()) return
         if (!recordGate.tryStart(setId)) return
 
-        val restDurationSeconds = snapshot.exercises
+        val restExerciseName = snapshot.exercises
             .firstOrNull { exercise -> exercise.sets.any { it.id == setId } }
             ?.activeWorkoutExercise
             ?.exerciseName
+        val restDurationSeconds = restExerciseName
             ?.let(WorkoutRecommendationEngine::recommendedRestSeconds)
             ?: DEFAULT_ACTIVE_REST_SECONDS
         operationState.update { state -> state.copy(message = null, messageSetId = null) }
@@ -1082,7 +1083,8 @@ class ActiveWorkoutViewModel(
                             restTimerController.startActiveWorkoutRest(
                                 accountKey = timerAccountKey,
                                 sessionStartedAt = snapshot.activeWorkout.startedAt,
-                                seconds = restDurationSeconds
+                                seconds = restDurationSeconds,
+                                exerciseName = restExerciseName
                             )
                         ) { "Active workout rest timer could not be persisted." }
                     }

@@ -20,6 +20,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.example.gymapp.MainActivity
 import com.example.gymapp.R
+import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.util.RestTimerState
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -148,6 +149,7 @@ class RestTimerService : Service() {
         RestTimerState.update(0)
         cancelNotification(NOTIFICATION_FINISHED_ID)
         cancelNotification(NOTIFICATION_RUNNING_ID)
+        clearFinishedExercise(this)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -255,6 +257,9 @@ class RestTimerService : Service() {
         private const val ACTION_DISMISS_ALERT = "com.setforge.gymapp.action.REST_TIMER_DISMISS_ALERT"
         private const val EXTRA_DURATION_SECONDS = "extra_duration_seconds"
 
+        private const val ALERT_PREFERENCES_NAME = "rest_timer_alert"
+        private const val KEY_FINISHED_EXERCISE = "finished_exercise"
+
         private const val CHANNEL_RUNNING_ID = "rest_timer_running"
         internal const val CHANNEL_FINISHED_ID = "rest_timer_finished"
         private const val NOTIFICATION_RUNNING_ID = 4001
@@ -282,8 +287,28 @@ class RestTimerService : Service() {
             ContextCompat.startForegroundService(appContext, intent)
         }
 
+        /**
+         * Remembers the exercise the finished alert names. It lives in preferences, not in the
+         * service, because the backstop alarm posts the alert even when the process was killed.
+         */
+        fun setFinishedExercise(context: Context, exerciseName: String?) {
+            val name = exerciseName?.trim()?.takeIf { it.isNotEmpty() }
+            val editor = context.applicationContext
+                .getSharedPreferences(ALERT_PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .edit()
+            if (name == null) editor.remove(KEY_FINISHED_EXERCISE) else editor.putString(KEY_FINISHED_EXERCISE, name)
+            editor.apply()
+        }
+
+        private fun clearFinishedExercise(context: Context) = setFinishedExercise(context, null)
+
+        private fun storedFinishedExercise(context: Context): String? =
+            context.getSharedPreferences(ALERT_PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_FINISHED_EXERCISE, null)
+
         fun stop(context: Context) {
             val appContext = context.applicationContext
+            clearFinishedExercise(appContext)
             // After a timeout hand-off no service is running: clear its countdown and alarm here.
             cancelFinishedAlarm(appContext)
             NotificationManagerCompat.from(appContext).cancel(NOTIFICATION_RUNNING_ID)
@@ -308,10 +333,19 @@ class RestTimerService : Service() {
         }
 
         private fun buildFinishedNotification(context: Context): Notification {
+            val language = context.resources.configuration.locales[0]?.language
+            val exerciseLabel = restFinishedExerciseLabel(storedFinishedExercise(context)) { rawName ->
+                BuiltInExerciseCatalog.displayName(rawName, language)
+            }
+            val body = if (exerciseLabel != null) {
+                context.safeGetString(restFinishedBodyResource(exerciseLabel), exerciseLabel)
+            } else {
+                context.getString(restFinishedBodyResource(null))
+            }
             return NotificationCompat.Builder(context, CHANNEL_FINISHED_ID)
                 .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
                 .setContentTitle(context.getString(R.string.timer_notification_finished_title))
-                .setContentText(context.getString(R.string.timer_notification_finished_text))
+                .setContentText(body)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
                 .setAutoCancel(true)

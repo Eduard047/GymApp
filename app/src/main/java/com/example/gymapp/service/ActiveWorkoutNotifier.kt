@@ -307,7 +307,8 @@ class ActiveWorkoutNotificationReceiver : BroadcastReceiver() {
                         sessionStartedAt = startedAt,
                         seconds = WorkoutRecommendationEngine.recommendedRestSeconds(
                             exercise.activeWorkoutExercise.exerciseName
-                        )
+                        ),
+                        exerciseName = exercise.activeWorkoutExercise.exerciseName
                     )
                 }
             }

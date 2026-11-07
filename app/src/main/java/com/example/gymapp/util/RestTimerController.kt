@@ -24,13 +24,15 @@ class RestTimerController internal constructor(
     private val exerciseTimers: ExerciseRestTimerLedger,
     private val activeWorkoutTimer: ActiveWorkoutTimerLedger,
     private val startService: (seconds: Int) -> Unit,
-    private val stopService: () -> Unit
+    private val stopService: () -> Unit,
+    private val setFinishedExercise: (exerciseName: String?) -> Unit = {}
 ) {
     constructor(appContext: Context) : this(
         ExerciseRestTimerLedger(SharedPreferencesExerciseRestTimerPersistence(appContext)),
         ActiveWorkoutTimerLedger(SharedPreferencesActiveWorkoutTimerPersistence(appContext)),
         { seconds -> RestTimerService.start(appContext, seconds) },
-        { RestTimerService.stop(appContext) }
+        { RestTimerService.stop(appContext) },
+        { exerciseName -> RestTimerService.setFinishedExercise(appContext, exerciseName) }
     )
 
     private val accountSwitchTracker = RestTimerAccountSwitchTracker()
@@ -51,6 +53,7 @@ class RestTimerController internal constructor(
     }
 
     fun start(seconds: Int) {
+        runCatching { setFinishedExercise(null) }
         startService(seconds)
     }
 
@@ -66,9 +69,13 @@ class RestTimerController internal constructor(
     internal fun startActiveWorkoutRest(
         accountKey: String,
         sessionStartedAt: Long,
-        seconds: Int
+        seconds: Int,
+        exerciseName: String? = null
     ): Boolean {
         if (!activeWorkoutTimer.startRest(accountKey, sessionStartedAt, seconds)) return false
+        // Stored before the service starts so the finished alert can name the exercise even if
+        // the process dies mid-rest. Raw catalog name; the alert localizes it when it is posted.
+        runCatching { setFinishedExercise(exerciseName) }
         // The ledger already holds the deadline, so the rest started even if the service did not.
         runCatching { startService(seconds) }
         return true

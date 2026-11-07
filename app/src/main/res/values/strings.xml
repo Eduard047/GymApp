@@ -635,6 +635,7 @@
     <string name="timer_notification_running_text">%1$s remaining</string>
     <string name="timer_notification_finished_title">Rest timer done</string>
     <string name="timer_notification_finished_text">Tap to return to workout.</string>
+    <string name="timer_notification_finished_body_exercise">Time for the next %1$s set.</string>
     <string name="timer_channel_running_name">Rest timer running</string>
     <string name="timer_channel_running_description">Ongoing rest countdown.</string>
     <string name="timer_channel_finished_name">Rest timer alert</string>

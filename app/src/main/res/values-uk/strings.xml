@@ -647,6 +647,7 @@
     <string name="timer_notification_running_text">Залишилось: %1$s</string>
     <string name="timer_notification_finished_title">Відпочинок завершено</string>
     <string name="timer_notification_finished_text">Натисніть, щоб повернутися до тренування.</string>
+    <string name="timer_notification_finished_body_exercise">Час наступного підходу: %1$s.</string>
     <string name="timer_channel_running_name">Таймер працює</string>
     <string name="timer_channel_running_description">Поточний відлік відпочинку.</string>
     <string name="timer_channel_finished_name">Сигнал таймера</string>
