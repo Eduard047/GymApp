@@ -1,6 +1,52 @@
 import Charts
 import SwiftUI
 
+/// One remembered value: recomputed only when its key changes. A reference type so
+/// SwiftUI `body` can fill it without publishing a state change.
+final class ProgressMemo<Key: Equatable, Value> {
+    private var entry: (key: Key, value: Value)?
+
+    func value(for key: Key, compute: () -> Value) -> Value {
+        if let entry, entry.key == key { return entry.value }
+        let value = compute()
+        entry = (key, value)
+        return value
+    }
+
+    func invalidate() { entry = nil }
+}
+
+/// Everything the Progress overview's derived values depend on besides their own
+/// extra inputs. `referenceDate` is compared exactly so memoized output is the same
+/// as recomputing on every render.
+struct ProgressOverviewKey: Equatable {
+    let revision: UInt64
+    let accountStorageKey: String
+    let referenceDate: Date
+    let calendar: Calendar
+    let languageCode: String
+    let workoutsPerWeek: Int
+}
+
+struct ProgressMonthKey: Equatable {
+    let base: ProgressOverviewKey
+    let monthOffset: Int
+}
+
+struct ProgressMuscleKey: Equatable {
+    let base: ProgressOverviewKey
+    let period: WorkoutMusclePeriod
+    let selectedMuscleID: String?
+}
+
+final class ProgressOverviewMemo {
+    let gamification = ProgressMemo<ProgressOverviewKey, GamificationSnapshot>()
+    let monthXP = ProgressMemo<ProgressMonthKey, Int>()
+    let weeklyStreak = ProgressMemo<ProgressOverviewKey, Int>()
+    let muscleHistory = ProgressMemo<ProgressMuscleKey, [ExerciseHistoryEntry]>()
+    let muscleData = ProgressMemo<ProgressMuscleKey, WorkoutMuscleDashboardData>()
+}
+
 @MainActor
 struct ProgressHubView: View {
     private enum Section: String, CaseIterable, Identifiable {
@@ -32,6 +78,8 @@ struct ProgressHubView: View {
     @State private var monthOffset = 0
     @State private var musclePeriod: WorkoutMusclePeriod = .month
     @State private var selectedMuscleID: String?
+    /// Reference-typed memo: filled while `body` runs without invalidating the view.
+    @State private var memo = ProgressOverviewMemo()
 
     private let onOpenRanks: () -> Void
     private let onStartWorkout: () -> Void
@@ -166,17 +214,23 @@ struct ProgressHubView: View {
                 if store.workoutSummaries.isEmpty {
                     emptyOverview
                 } else {
+                    // One profile read per evaluation; every derived value below is
+                    // memoized on the store revision plus the inputs it depends on.
+                    let profile = trainingProfile
+                    let key = overviewKey(profile: profile)
+                    let streakWeeks = weeklyStreakWeeks(key)
+
                     WeeklyReviewCard(store: store)
 
                     WorkoutProgressHero(
-                        snapshot: gamification,
-                        monthXP: monthXP,
-                        weeklyStreakWeeks: weeklyStreakWeeks,
-                        weeklyTarget: trainingProfile.workoutsPerWeek,
+                        snapshot: gamification(key),
+                        monthXP: monthXP(key),
+                        weeklyStreakWeeks: streakWeeks,
+                        weeklyTarget: profile.workoutsPerWeek,
                         onOpenRanks: onOpenRanks
                     )
 
-                    lifetimeMetricsCard
+                    lifetimeMetricsCard(weeklyStreakWeeks: streakWeeks)
 
                     WorkoutActivityHeatmap(
                         month: selectedMonth,
@@ -195,7 +249,7 @@ struct ProgressHubView: View {
                     WorkoutMuscleLoadCard(
                         period: $musclePeriod,
                         selectedMuscleID: $selectedMuscleID,
-                        data: muscleDashboardData
+                        data: muscleDashboardData(key)
                     )
 #if DEBUG
                     .id("ui-audit-muscle-map")
@@ -242,7 +296,7 @@ struct ProgressHubView: View {
         }
     }
 
-    private var lifetimeMetricsCard: some View {
+    private func lifetimeMetricsCard(weeklyStreakWeeks: Int) -> some View {
         let metrics = TodayHeroMetrics(
             sessions: store.workoutSummaries,
             weeklyStreakWeeks: weeklyStreakWeeks
@@ -300,39 +354,66 @@ struct ProgressHubView: View {
             ?? DateInterval(start: calendar.startOfDay(for: selectedMonth), duration: 1)
     }
 
-    private var monthWorkouts: [WorkoutSessionSummary] {
-        store.workoutSummaries.filter { selectedMonthInterval.contains($0.date) }
-    }
-
-    private var gamification: GamificationSnapshot {
-        store.gamificationSnapshot(now: referenceDate, calendar: calendar)
-    }
-
-    private var monthXP: Int {
-        monthWorkouts.reduce(0) { $0 + GamificationEngine.xpForSession($1) }
-    }
-
-    private var weeklyStreakWeeks: Int {
-        WeeklyStreakCalculator.current(
-            sessions: store.workoutSummaries,
-            targetTrainingDays: trainingProfile.workoutsPerWeek,
-            now: referenceDate,
-            calendar: calendar
+    private func overviewKey(profile: TrainingProfile) -> ProgressOverviewKey {
+        ProgressOverviewKey(
+            revision: store.derivedDataRevision,
+            accountStorageKey: store.accountStorageKey,
+            referenceDate: referenceDate,
+            calendar: calendar,
+            languageCode: languageCode,
+            workoutsPerWeek: profile.workoutsPerWeek
         )
     }
 
-    private var muscleDashboardData: WorkoutMuscleDashboardData {
-        let history = WorkoutDashboardDataBuilder.filteredHistory(
-            store.allExerciseHistory(),
-            for: musclePeriod,
-            now: referenceDate,
-            calendar: calendar
-        )
-        return WorkoutDashboardDataBuilder.muscleData(
-            history: history,
-            mappings: store.muscleMappings,
-            selectedMuscleID: selectedMuscleID
-        )
+    private func gamification(_ key: ProgressOverviewKey) -> GamificationSnapshot {
+        memo.gamification.value(for: key) {
+            GamificationEngine.buildSnapshot(
+                sessions: store.workoutSummaries,
+                targetTrainingDays: key.workoutsPerWeek,
+                now: referenceDate,
+                calendar: calendar
+            )
+        }
+    }
+
+    private func monthXP(_ key: ProgressOverviewKey) -> Int {
+        memo.monthXP.value(for: ProgressMonthKey(base: key, monthOffset: monthOffset)) {
+            let interval = selectedMonthInterval
+            return store.workoutSummaries
+                .filter { interval.contains($0.date) }
+                .reduce(0) { $0 + GamificationEngine.xpForSession($1) }
+        }
+    }
+
+    private func weeklyStreakWeeks(_ key: ProgressOverviewKey) -> Int {
+        memo.weeklyStreak.value(for: key) {
+            WeeklyStreakCalculator.current(
+                sessions: store.workoutSummaries,
+                targetTrainingDays: key.workoutsPerWeek,
+                now: referenceDate,
+                calendar: calendar
+            )
+        }
+    }
+
+    private func muscleDashboardData(_ key: ProgressOverviewKey) -> WorkoutMuscleDashboardData {
+        let periodKey = ProgressMuscleKey(base: key, period: musclePeriod, selectedMuscleID: nil)
+        let history = memo.muscleHistory.value(for: periodKey) {
+            WorkoutDashboardDataBuilder.filteredHistory(
+                store.allExerciseHistory(),
+                for: musclePeriod,
+                now: referenceDate,
+                calendar: calendar
+            )
+        }
+        let dataKey = ProgressMuscleKey(base: key, period: musclePeriod, selectedMuscleID: selectedMuscleID)
+        return memo.muscleData.value(for: dataKey) {
+            WorkoutDashboardDataBuilder.muscleData(
+                history: history,
+                mappings: store.muscleMappings,
+                selectedMuscleID: selectedMuscleID
+            )
+        }
     }
 
     private var appLocale: Locale {

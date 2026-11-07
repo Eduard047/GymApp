@@ -1,10 +1,20 @@
 import SwiftUI
 
+/// Memo key for the weekly review: store revision, week offset and the calendar day
+/// (so a card left open across midnight still moves on).
+struct WeeklyReviewMemoKey: Equatable {
+    let revision: UInt64
+    let accountStorageKey: String
+    let offset: Int
+    let day: Date
+}
+
 struct WeeklyReviewCard: View {
     @ObservedObject var store: WorkoutStore
     @State private var offset = 0
     @State private var evidence: WeeklyReview.Insight?
     @State private var showsWeeklyTargetEditor = false
+    @State private var reviewMemo = ProgressMemo<WeeklyReviewMemoKey, WeeklyReview>()
     private func t(_ en: String, _ uk: String, _ ru: String) -> String {
         gymText(en, uk, ru, languageCode: gymCurrentLanguageCode())
     }
@@ -17,7 +27,15 @@ struct WeeklyReviewCard: View {
         )
     }
     var body: some View {
-        let review = WeeklyReview.build(store.allExerciseHistory(), offset: offset)
+        let reviewKey = WeeklyReviewMemoKey(
+            revision: store.derivedDataRevision,
+            accountStorageKey: store.accountStorageKey,
+            offset: offset,
+            day: Calendar.current.startOfDay(for: Date())
+        )
+        let review = reviewMemo.value(for: reviewKey) {
+            WeeklyReview.build(store.allExerciseHistory(), offset: offset, historySortedNewestFirst: true)
+        }
         let trainingProfile = TrainingProfileStore().load(accountStorageKey: store.accountStorageKey)
         let target = trainingProfile.workoutsPerWeek
         let targetNoun = gymPlural(

@@ -14,14 +14,40 @@ struct WeeklyReview {
     let comparableCount: Int
     let insights: [Insight]
 
-    static func build(_ history: [ExerciseHistoryEntry], offset: Int = 0, now: Date = Date(), calendar: Calendar = .current) -> WeeklyReview {
+    /// Entries with `lower <= sessionDate <= throughInclusive` and `sessionDate < beforeExclusive`,
+    /// found by binary search. `history` must be sorted by `sessionDate`, newest first.
+    static func window(
+        _ history: [ExerciseHistoryEntry],
+        from lower: Date,
+        through upperInclusive: Date,
+        before upperExclusive: Date
+    ) -> ArraySlice<ExerciseHistoryEntry> {
+        func partitionPoint(_ isBefore: (Date) -> Bool) -> Int {
+            var low = 0, high = history.count
+            while low < high {
+                let mid = (low + high) / 2
+                if isBefore(history[mid].sessionDate) { low = mid + 1 } else { high = mid }
+            }
+            return low
+        }
+        let start = partitionPoint { $0 > upperInclusive || $0 >= upperExclusive }
+        let end = partitionPoint { $0 >= lower }
+        return history[start ..< max(start, end)]
+    }
+
+    /// Pass `historySortedNewestFirst: true` only for `allExerciseHistory()`-style input;
+    /// it narrows the scan to the two-week window without changing the result.
+    static func build(_ history: [ExerciseHistoryEntry], offset: Int = 0, now: Date = Date(), calendar: Calendar = .current, historySortedNewestFirst: Bool = false) -> WeeklyReview {
         var calendar = calendar
         calendar.firstWeekday = 2
         let monday = calendar.dateInterval(of: .weekOfYear, for: now)!.start
         let start = calendar.date(byAdding: .day, value: min(0, max(-520, offset)) * 7, to: monday)!
         let until = calendar.date(byAdding: .day, value: 7, to: start)!
         let before = calendar.date(byAdding: .day, value: -7, to: start)!
-        let valid = history.filter { $0.sessionDate <= now && $0.sessionDate >= before && $0.sessionDate < until &&
+        let candidates: ArraySlice<ExerciseHistoryEntry> = historySortedNewestFirst
+            ? window(history, from: before, through: now, before: until)
+            : history[...]
+        let valid = candidates.filter { $0.sessionDate <= now && $0.sessionDate >= before && $0.sessionDate < until &&
             $0.weight.isFinite && (0 ... 1_000_000).contains($0.weight) && (1 ... 10_000).contains($0.reps) }
         let current = valid.filter { $0.sessionDate >= start }
         let previous = valid.filter { $0.sessionDate < start }
