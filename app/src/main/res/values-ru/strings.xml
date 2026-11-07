@@ -1666,6 +1666,7 @@
     <string name="plate_calculator_bar_only">Только гриф (%1$s кг)</string>
     <string name="plate_calculator_per_side">На каждую сторону: %1$s</string>
     <string name="plate_calculator_remainder">Остаток: %1$s кг на сторону</string>
+    <string name="plate_calculator_warmup">Разминка</string>
     <string name="friend_ghost_line">%1$s: %2$s · %3$s</string>
     <string name="friend_ghost_weight_reps">%1$s × %2$d</string>
     <string name="friend_ghost_today">сегодня</string>

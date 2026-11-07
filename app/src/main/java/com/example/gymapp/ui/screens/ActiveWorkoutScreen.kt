@@ -2503,7 +2503,45 @@ private fun PlateCalculatorButton(weight: Double?) {
                     )
                     plateSummaryLines(PlateCalculator.load(weight)) { value -> numberFormat.format(value) }
                         .forEach { line -> Text(text = line, style = MaterialTheme.typography.bodyMedium) }
+                    WarmupRampSection(weight = weight, format = { value -> numberFormat.format(value) })
                 }
+            }
+        }
+    }
+}
+
+/** Read-only "Warm-up" list under the plates: weight × reps and the plates per side for each step. */
+@Composable
+private fun WarmupRampSection(weight: Double, format: (Double) -> String) {
+    val steps = remember(weight) { PlateCalculator.warmup(weight) }
+    if (steps.isEmpty()) return
+    Column(
+        modifier = Modifier.padding(top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.plate_calculator_warmup),
+            style = MaterialTheme.typography.titleSmall
+        )
+        steps.forEach { step ->
+            Column {
+                Text(
+                    text = formattedStringResource(
+                        R.string.active_workout_set_summary,
+                        format(step.weight),
+                        step.reps.toString()
+                    ),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                // The bar step reads "Bar only (20 kg)"; loaded steps read "Per side: 25 + 5".
+                plateSummaryLines(step.load.takeIf { it.platesPerSide.isNotEmpty() } ?: PlateCalculator.load(step.weight), format)
+                    .forEach { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
             }
         }
     }

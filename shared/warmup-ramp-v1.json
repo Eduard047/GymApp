@@ -1,0 +1,367 @@
+{
+  "version": 1,
+  "description": "Warm-up ramp golden cases run by Android WarmupRampGoldenTest and iOS WarmupRampGoldenTests. For a working barbell weight above bar + 20 kg the ramp is bar x 10, then 50% x 5, 70% x 3, 85% x 1 of the working weight (percent computed in hundredths of a kilogram, rounded down), each rounded down to what the plate set can load (greedy heaviest-first per side, as the plate calculator does). Steps at or below the bar, at or above the working weight, or with the same loaded weight as an earlier step are dropped. Working weight <= bar + 20 kg gives no steps (the section is hidden). weight is the loaded total in kg; platesPerSide is heaviest first.",
+  "minimumAboveBarKg": 20,
+  "cases": [
+    {
+      "id": "barbell-100",
+      "workingWeight": 100,
+      "bar": 20,
+      "plates": [
+        25,
+        20,
+        15,
+        10,
+        5,
+        2.5,
+        1.25
+      ],
+      "steps": [
+        {
+          "weight": 20,
+          "reps": 10,
+          "platesPerSide": []
+        },
+        {
+          "weight": 50,
+          "reps": 5,
+          "platesPerSide": [
+            15
+          ]
+        },
+        {
+          "weight": 70,
+          "reps": 3,
+          "platesPerSide": [
+            25
+          ]
+        },
+        {
+          "weight": 85,
+          "reps": 1,
+          "platesPerSide": [
+            25,
+            5,
+            2.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "barbell-60",
+      "workingWeight": 60,
+      "bar": 20,
+      "plates": [
+        25,
+        20,
+        15,
+        10,
+        5,
+        2.5,
+        1.25
+      ],
+      "steps": [
+        {
+          "weight": 20,
+          "reps": 10,
+          "platesPerSide": []
+        },
+        {
+          "weight": 30,
+          "reps": 5,
+          "platesPerSide": [
+            5
+          ]
+        },
+        {
+          "weight": 40,
+          "reps": 3,
+          "platesPerSide": [
+            10
+          ]
+        },
+        {
+          "weight": 50,
+          "reps": 1,
+          "platesPerSide": [
+            15
+          ]
+        }
+      ]
+    },
+    {
+      "id": "at-threshold-40-skipped",
+      "workingWeight": 40,
+      "bar": 20,
+      "plates": [
+        25,
+        20,
+        15,
+        10,
+        5,
+        2.5,
+        1.25
+      ],
+      "steps": []
+    },
+    {
+      "id": "just-above-threshold-42-5",
+      "workingWeight": 42.5,
+      "bar": 20,
+      "plates": [
+        25,
+        20,
+        15,
+        10,
+        5,
+        2.5,
+        1.25
+      ],
+      "steps": [
+        {
+          "weight": 20,
+          "reps": 10,
+          "platesPerSide": []
+        },
+        {
+          "weight": 27.5,
+          "reps": 3,
+          "platesPerSide": [
+            2.5,
+            1.25
+          ]
+        },
+        {
+          "weight": 35,
+          "reps": 1,
+          "platesPerSide": [
+            5,
+            2.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "barbell-140",
+      "workingWeight": 140,
+      "bar": 20,
+      "plates": [
+        25,
+        20,
+        15,
+        10,
+        5,
+        2.5,
+        1.25
+      ],
+      "steps": [
+        {
+          "weight": 20,
+          "reps": 10,
+          "platesPerSide": []
+        },
+        {
+          "weight": 70,
+          "reps": 5,
+          "platesPerSide": [
+            25
+          ]
+        },
+        {
+          "weight": 97.5,
+          "reps": 3,
+          "platesPerSide": [
+            25,
+            10,
+            2.5,
+            1.25
+          ]
+        },
+        {
+          "weight": 117.5,
+          "reps": 1,
+          "platesPerSide": [
+            25,
+            20,
+            2.5,
+            1.25
+          ]
+        }
+      ]
+    },
+    {
+      "id": "odd-weight-87-5",
+      "workingWeight": 87.5,
+      "bar": 20,
+      "plates": [
+        25,
+        20,
+        15,
+        10,
+        5,
+        2.5,
+        1.25
+      ],
+      "steps": [
+        {
+          "weight": 20,
+          "reps": 10,
+          "platesPerSide": []
+        },
+        {
+          "weight": 42.5,
+          "reps": 5,
+          "platesPerSide": [
+            10,
+            1.25
+          ]
+        },
+        {
+          "weight": 60,
+          "reps": 3,
+          "platesPerSide": [
+            20
+          ]
+        },
+        {
+          "weight": 72.5,
+          "reps": 1,
+          "platesPerSide": [
+            25,
+            1.25
+          ]
+        }
+      ]
+    },
+    {
+      "id": "no-small-plates-87-5",
+      "workingWeight": 87.5,
+      "bar": 20,
+      "plates": [
+        25,
+        20,
+        15,
+        10,
+        5
+      ],
+      "steps": [
+        {
+          "weight": 20,
+          "reps": 10,
+          "platesPerSide": []
+        },
+        {
+          "weight": 40,
+          "reps": 5,
+          "platesPerSide": [
+            10
+          ]
+        },
+        {
+          "weight": 60,
+          "reps": 3,
+          "platesPerSide": [
+            20
+          ]
+        },
+        {
+          "weight": 70,
+          "reps": 1,
+          "platesPerSide": [
+            25
+          ]
+        }
+      ]
+    },
+    {
+      "id": "coarse-plates-duplicate-dropped-100",
+      "workingWeight": 100,
+      "bar": 20,
+      "plates": [
+        25,
+        10
+      ],
+      "steps": [
+        {
+          "weight": 20,
+          "reps": 10,
+          "platesPerSide": []
+        },
+        {
+          "weight": 40,
+          "reps": 5,
+          "platesPerSide": [
+            10
+          ]
+        },
+        {
+          "weight": 70,
+          "reps": 3,
+          "platesPerSide": [
+            25
+          ]
+        }
+      ]
+    },
+    {
+      "id": "light-bar-15-kg-60",
+      "workingWeight": 60,
+      "bar": 15,
+      "plates": [
+        25,
+        20,
+        15,
+        10,
+        5,
+        2.5,
+        1.25
+      ],
+      "steps": [
+        {
+          "weight": 15,
+          "reps": 10,
+          "platesPerSide": []
+        },
+        {
+          "weight": 30,
+          "reps": 5,
+          "platesPerSide": [
+            5,
+            2.5
+          ]
+        },
+        {
+          "weight": 40,
+          "reps": 3,
+          "platesPerSide": [
+            10,
+            2.5
+          ]
+        },
+        {
+          "weight": 50,
+          "reps": 1,
+          "platesPerSide": [
+            15,
+            2.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "below-bar-10",
+      "workingWeight": 10,
+      "bar": 20,
+      "plates": [
+        25,
+        20,
+        15,
+        10,
+        5,
+        2.5,
+        1.25
+      ],
+      "steps": []
+    }
+  ]
+}

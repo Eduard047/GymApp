@@ -50,10 +50,45 @@ struct PlateCalculatorButton: View {
                         .font(.subheadline.monospacedDigit())
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                warmupSection(languageCode: languageCode)
             }
             .padding(16)
             .frame(minWidth: 220, alignment: .leading)
             .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    /// Read-only "Warm-up" list: weight x reps and the plates per side for each step.
+    @ViewBuilder
+    private func warmupSection(languageCode: String) -> some View {
+        let steps = PlateCalculator.warmup(workingWeight: weight)
+        if !steps.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(gymText("Warm-up", "Розминка", "Разминка", languageCode: languageCode))
+                    .font(.headline)
+                ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("\(gymWeightText(step.weight, languageCode: languageCode)) × \(step.reps)")
+                            .font(.subheadline.monospacedDigit())
+                        // The bar step reads "Bar only (20 kg)"; loaded steps read "Per side: 25 + 5".
+                        ForEach(
+                            PlateCalculator.summaryLines(
+                                for: step.load.platesPerSide.isEmpty
+                                    ? PlateCalculator.load(total: step.weight)
+                                    : step.load,
+                                languageCode: languageCode
+                            ),
+                            id: \.self
+                        ) { line in
+                            Text(line)
+                                .font(.footnote.monospacedDigit())
+                                .foregroundStyle(GymTheme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+            .padding(.top, 8)
         }
     }
 }

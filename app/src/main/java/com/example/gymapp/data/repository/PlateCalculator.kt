@@ -20,6 +20,9 @@ internal data class PlateLoad(
     }
 }
 
+/** One read-only warm-up step: the loaded total, its reps, and the plates on each side. */
+internal data class WarmupStep(val weight: Double, val reps: Int, val load: PlateLoad)
+
 /**
  * Splits a barbell total into standard plates per side (20 kg bar; 25, 20, 15, 10, 5, 2.5, and
  * 1.25 kg plates), matching iOS. Every plate is a multiple of the smallest one, so filling
@@ -58,6 +61,44 @@ internal object PlateCalculator {
             }
         }
         return PlateLoad(PlateLoad.Status.Loaded, perSide, remainingUnits / 100.0)
+    }
+
+    /** The ramp is skipped unless the working weight is more than this many kg above the bar. */
+    const val WARMUP_MIN_ABOVE_BAR = 20.0
+    private const val WARMUP_BAR_REPS = 10
+
+    /** Share of the working weight (in percent) and reps for each step after the empty bar. */
+    private val warmupRamp = listOf(50 to 5, 70 to 3, 85 to 1)
+
+    /**
+     * Read-only warm-up for [workingWeight]: bar x 10, then 50% x 5, 70% x 3, 85% x 1, each rounded
+     * down to what [plates] can load (the same greedy fill as [load]). Steps at or below the bar, at
+     * or above the working weight, or equal to an earlier step are dropped; no steps at all when the
+     * working weight is at most [WARMUP_MIN_ABOVE_BAR] over the bar. Matches iOS (shared/warmup-ramp-v1.json).
+     */
+    fun warmup(workingWeight: Double, bar: Double = BAR_WEIGHT, plates: List<Double> = PLATES): List<WarmupStep> {
+        // Hundredths of a kilogram, like [load]; invalid weights produce no ramp.
+        val workingUnits = if (workingWeight.isFinite() && workingWeight <= 1_000_000.0) {
+            (workingWeight * 100).roundToLong()
+        } else {
+            0L
+        }
+        val barUnits = (bar * 100).roundToLong()
+        if (workingUnits <= barUnits + (WARMUP_MIN_ABOVE_BAR * 100).roundToLong()) return emptyList()
+        val steps = mutableListOf(WarmupStep(bar, WARMUP_BAR_REPS, load(bar, bar, plates)))
+        val seenUnits = mutableSetOf(barUnits)
+        for ((percent, reps) in warmupRamp) {
+            val target = load(workingUnits * percent / 100 / 100.0, bar, plates)
+            if (target.status != PlateLoad.Status.Loaded) continue
+            val loadedUnits = barUnits + 2 * target.platesPerSide.sumOf { (it * 100).roundToLong() }
+            if (loadedUnits <= barUnits || loadedUnits >= workingUnits || !seenUnits.add(loadedUnits)) continue
+            steps += WarmupStep(
+                weight = loadedUnits / 100.0,
+                reps = reps,
+                load = PlateLoad(PlateLoad.Status.Loaded, target.platesPerSide, 0.0)
+            )
+        }
+        return steps
     }
 
     /** Plate math applies only to built-in barbell exercises. */

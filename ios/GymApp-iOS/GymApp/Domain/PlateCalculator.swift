@@ -56,6 +56,53 @@ enum PlateCalculator {
         )
     }
 
+    /// One read-only warm-up step: the loaded total, its reps, and the plates on each side.
+    struct WarmupStep: Equatable, Sendable {
+        let weight: Double
+        let reps: Int
+        let load: PlateLoad
+    }
+
+    /// The ramp is skipped unless the working weight is more than this many kg above the bar.
+    static let warmupMinimumAboveBar = 20.0
+    private static let warmupBarReps = 10
+    /// Share of the working weight (in percent) and reps for each step after the empty bar.
+    private static let warmupRamp: [(percent: Int, reps: Int)] = [(50, 5), (70, 3), (85, 1)]
+
+    /// Read-only warm-up for `workingWeight`: bar x 10, then 50% x 5, 70% x 3, 85% x 1, each rounded
+    /// down to what `plates` can load (the same greedy fill as `load`). Steps at or below the bar, at
+    /// or above the working weight, or equal to an earlier step are dropped; no steps at all when the
+    /// working weight is at most `warmupMinimumAboveBar` over the bar. Matches Android
+    /// (shared/warmup-ramp-v1.json).
+    static func warmup(
+        workingWeight: Double,
+        bar: Double = barWeight,
+        plates: [Double] = plates
+    ) -> [WarmupStep] {
+        // Hundredths of a kilogram, like `load`; invalid weights produce no ramp.
+        let workingUnits = workingWeight.isFinite && workingWeight <= ActiveWorkoutStore.maximumWeight
+            ? Int((workingWeight * 100).rounded())
+            : 0
+        let barUnits = Int((bar * 100).rounded())
+        guard workingUnits > barUnits + Int((warmupMinimumAboveBar * 100).rounded()) else { return [] }
+        var steps = [WarmupStep(weight: bar, reps: warmupBarReps, load: load(total: bar, bar: bar, plates: plates))]
+        var seenUnits: Set<Int> = [barUnits]
+        for (percent, reps) in warmupRamp {
+            let target = load(total: Double(workingUnits * percent / 100) / 100, bar: bar, plates: plates)
+            guard target.status == .loaded else { continue }
+            let loadedUnits = barUnits + 2 * target.platesPerSide.reduce(0) { $0 + Int(($1 * 100).rounded()) }
+            guard loadedUnits > barUnits, loadedUnits < workingUnits, seenUnits.insert(loadedUnits).inserted else {
+                continue
+            }
+            steps.append(WarmupStep(
+                weight: Double(loadedUnits) / 100,
+                reps: reps,
+                load: PlateLoad(status: .loaded, platesPerSide: target.platesPerSide, remainderPerSide: 0)
+            ))
+        }
+        return steps
+    }
+
     /// Plate math applies only to built-in barbell exercises.
     static func applies(toCatalogKey catalogKey: String?) -> Bool {
         guard let catalogKey else { return false }
