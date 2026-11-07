@@ -280,7 +280,9 @@ data class WeeklyTrainingSummaryUiModel(
     val completedTrainingDays: Int = 0,
     val targetTrainingDays: Int = 0,
     val estimatedMinutes: Int = 0,
-    val totalVolume: Double = 0.0
+    val totalVolume: Double = 0.0,
+    /** Volume change against the same days of the previous week (current week) or the full previous week; null when not comparable. */
+    val volumeDeltaPercent: Int? = null
 )
 
 enum class TrainingHistoryPeriod {
@@ -2134,8 +2136,66 @@ internal fun buildWeeklyTrainingSummary(
         completedTrainingDays = completedDates.size,
         targetTrainingDays = targetTrainingDays.coerceIn(2, 6),
         estimatedMinutes = estimatedMinutes,
-        totalVolume = totalVolume
+        totalVolume = totalVolume,
+        volumeDeltaPercent = weekVolumeDeltaPercent(
+            samples = sessions.asSequence()
+                .take(WorkoutDataLimits.MAX_SESSIONS)
+                .map { WeekVolumeSample(it.session.date, it.totalVolume) }
+                .toList(),
+            nowMillis = nowMillis,
+            zoneId = zoneId,
+            weekOffset = weekOffset
+        )
     )
+}
+
+internal data class WeekVolumeSample(val dateMillis: Long, val volume: Double)
+
+internal const val WEEK_VOLUME_DELTA_CAP_PERCENT = 999
+
+/**
+ * Volume change of the selected week against the previous one, in whole percent (half away from
+ * zero, capped at [WEEK_VOLUME_DELTA_CAP_PERCENT]). The current week (offset 0) is compared with the
+ * same elapsed days (Monday..today) of the previous week; a past week with the whole previous week.
+ * Null when the previous volume is 0. Contract: shared/week-volume-delta-v1.json.
+ */
+internal fun weekVolumeDeltaPercent(
+    samples: List<WeekVolumeSample>,
+    nowMillis: Long,
+    zoneId: ZoneId,
+    weekOffset: Int = 0
+): Int? {
+    val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
+    val offset = weekOffset.coerceIn(-5_200, 0)
+    val weekStart = today.plusWeeks(offset.toLong())
+        .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+    val elapsedDays = if (offset == 0) {
+        java.time.temporal.ChronoUnit.DAYS.between(weekStart, today) + 1
+    } else {
+        7L
+    }
+    val currentEnd = weekStart.plusDays(elapsedDays)
+    val previousStart = weekStart.minusWeeks(1)
+    val previousEnd = previousStart.plusDays(elapsedDays)
+    var current = 0.0
+    var previous = 0.0
+    for (sample in samples) {
+        if (!WorkoutDataLimits.isValidTimestamp(sample.dateMillis) || sample.dateMillis > nowMillis) continue
+        val date = runCatching {
+            Instant.ofEpochMilli(sample.dateMillis).atZone(zoneId).toLocalDate()
+        }.getOrNull() ?: continue
+        val volume = sample.volume.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+        when {
+            date >= weekStart && date < currentEnd ->
+                current = (current + volume).coerceAtMost(MAX_TODAY_HERO_VOLUME)
+            date >= previousStart && date < previousEnd ->
+                previous = (previous + volume).coerceAtMost(MAX_TODAY_HERO_VOLUME)
+        }
+    }
+    if (previous <= 0.0) return null
+    val raw = (current - previous) * 100.0 / previous
+    val rounded = Math.signum(raw) * Math.floor(abs(raw) + 0.5)
+    return rounded.coerceAtMost(WEEK_VOLUME_DELTA_CAP_PERCENT.toDouble()).toInt()
 }
 
 internal fun buildMonthlyTrainingSummary(

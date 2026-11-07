@@ -1,0 +1,359 @@
+{
+  "version": 1,
+  "rule": "Week starts Monday in the case zone. weekOffset 0: compare Monday..today of the current week with the same number of days (Monday..) of the previous week; weekOffset < 0: compare the whole selected week with the whole previous week. Sessions after 'now' are ignored. Volumes that are negative or not finite count as 0. percent = (current - previous) * 100 / previous rounded half away from zero, capped at 999; null when previous volume is 0. 'at' and 'now' are local date-times in the case zone.",
+  "cases": [
+    {
+      "id": "same-days-increase",
+      "description": "Wed: Mon..Wed this week vs Mon..Wed last week; last Thursday is outside the same days",
+      "zone": "UTC",
+      "now": "2026-11-04T12:00:00",
+      "weekOffset": 0,
+      "sessions": [
+        {
+          "at": "2026-11-02T08:00:00",
+          "volume": 1000
+        },
+        {
+          "at": "2026-11-04T09:00:00",
+          "volume": 500
+        },
+        {
+          "at": "2026-10-26T08:00:00",
+          "volume": 1000
+        },
+        {
+          "at": "2026-10-29T08:00:00",
+          "volume": 2000
+        }
+      ],
+      "expectedPercent": 50
+    },
+    {
+      "id": "same-days-decrease",
+      "description": "Minus sign case",
+      "zone": "UTC",
+      "now": "2026-11-04T12:00:00",
+      "weekOffset": 0,
+      "sessions": [
+        {
+          "at": "2026-11-03T08:00:00",
+          "volume": 920
+        },
+        {
+          "at": "2026-10-27T08:00:00",
+          "volume": 1000
+        }
+      ],
+      "expectedPercent": -8
+    },
+    {
+      "id": "round-half-up",
+      "description": "12.5 rounds away from zero to 13",
+      "zone": "UTC",
+      "now": "2026-11-04T12:00:00",
+      "weekOffset": 0,
+      "sessions": [
+        {
+          "at": "2026-11-03T08:00:00",
+          "volume": 1125
+        },
+        {
+          "at": "2026-10-27T08:00:00",
+          "volume": 1000
+        }
+      ],
+      "expectedPercent": 13
+    },
+    {
+      "id": "round-half-down-negative",
+      "description": "-12.5 rounds away from zero to -13",
+      "zone": "UTC",
+      "now": "2026-11-04T12:00:00",
+      "weekOffset": 0,
+      "sessions": [
+        {
+          "at": "2026-11-03T08:00:00",
+          "volume": 875
+        },
+        {
+          "at": "2026-10-27T08:00:00",
+          "volume": 1000
+        }
+      ],
+      "expectedPercent": -13
+    },
+    {
+      "id": "round-below-half",
+      "description": "0.4 rounds to 0",
+      "zone": "UTC",
+      "now": "2026-11-04T12:00:00",
+      "weekOffset": 0,
+      "sessions": [
+        {
+          "at": "2026-11-03T08:00:00",
+          "volume": 1004
+        },
+        {
+          "at": "2026-10-27T08:00:00",
+          "volume": 1000
+        }
+      ],
+      "expectedPercent": 0
+    },
+    {
+      "id": "cap-999",
+      "description": "1900 percent is capped at 999",
+      "zone": "UTC",
+      "now": "2026-11-04T12:00:00",
+      "weekOffset": 0,
+      "sessions": [
+        {
+          "at": "2026-11-03T08:00:00",
+          "volume": 20000
+        },
+        {
+          "at": "2026-10-27T08:00:00",
+          "volume": 1000
+        }
+      ],
+      "expectedPercent": 999
+    },
+    {
+      "id": "empty-previous",
+      "description": "No previous volume hides the comparison",
+      "zone": "UTC",
+      "now": "2026-11-04T12:00:00",
+      "weekOffset": 0,
+      "sessions": [
+        {
+          "at": "2026-11-03T08:00:00",
+          "volume": 1000
+        },
+        {
+          "at": "2026-10-29T08:00:00",
+          "volume": 3000
+        }
+      ],
+      "expectedPercent": null
+    },
+    {
+      "id": "zero-previous-volume",
+      "description": "Previous sessions with 0 volume hide the comparison",
+      "zone": "UTC",
+      "now": "2026-11-04T12:00:00",
+      "weekOffset": 0,
+      "sessions": [
+        {
+          "at": "2026-11-03T08:00:00",
+          "volume": 1000
+        },
+        {
+          "at": "2026-10-27T08:00:00",
+          "volume": 0
+        }
+      ],
+      "expectedPercent": null
+    },
+    {
+      "id": "no-sessions",
+      "description": "Nothing at all hides the comparison",
+      "zone": "UTC",
+      "now": "2026-11-04T12:00:00",
+      "weekOffset": 0,
+      "sessions": [],
+      "expectedPercent": null
+    },
+    {
+      "id": "empty-current",
+      "description": "No volume yet this week is -100",
+      "zone": "UTC",
+      "now": "2026-11-04T12:00:00",
+      "weekOffset": 0,
+      "sessions": [
+        {
+          "at": "2026-10-27T08:00:00",
+          "volume": 1000
+        }
+      ],
+      "expectedPercent": -100
+    },
+    {
+      "id": "monday-only",
+      "description": "Monday: one elapsed day; previous Monday counts even after the current time of day, later same-day session is ignored",
+      "zone": "UTC",
+      "now": "2026-11-02T08:00:00",
+      "weekOffset": 0,
+      "sessions": [
+        {
+          "at": "2026-11-02T06:00:00",
+          "volume": 300
+        },
+        {
+          "at": "2026-11-02T09:00:00",
+          "volume": 5000
+        },
+        {
+          "at": "2026-10-26T20:00:00",
+          "volume": 600
+        },
+        {
+          "at": "2026-10-27T09:00:00",
+          "volume": 9999
+        }
+      ],
+      "expectedPercent": -50
+    },
+    {
+      "id": "sunday-full-week",
+      "description": "Sunday: all seven days compared; last Sunday 23:59:59 included, the Sunday before excluded",
+      "zone": "UTC",
+      "now": "2026-11-08T22:00:00",
+      "weekOffset": 0,
+      "sessions": [
+        {
+          "at": "2026-11-08T21:00:00",
+          "volume": 1500
+        },
+        {
+          "at": "2026-11-01T23:59:59",
+          "volume": 1000
+        },
+        {
+          "at": "2026-10-25T23:59:59",
+          "volume": 9999
+        }
+      ],
+      "expectedPercent": 50
+    },
+    {
+      "id": "past-week-full-previous",
+      "description": "Offset -1 compares the whole selected week with the whole week before it; Monday 00:00 and Sunday 23:30 belong to their weeks",
+      "zone": "UTC",
+      "now": "2026-11-04T12:00:00",
+      "weekOffset": -1,
+      "sessions": [
+        {
+          "at": "2026-10-26T00:00:00",
+          "volume": 1000
+        },
+        {
+          "at": "2026-11-01T23:30:00",
+          "volume": 1000
+        },
+        {
+          "at": "2026-11-02T00:00:00",
+          "volume": 5000
+        },
+        {
+          "at": "2026-10-19T00:00:00",
+          "volume": 800
+        },
+        {
+          "at": "2026-10-25T23:30:00",
+          "volume": 800
+        },
+        {
+          "at": "2026-10-18T23:59:59",
+          "volume": 800
+        }
+      ],
+      "expectedPercent": 25
+    },
+    {
+      "id": "auckland-week-start",
+      "description": "Auckland local Monday 00:30 is still Sunday in UTC; the week is decided in the given zone",
+      "zone": "Pacific/Auckland",
+      "now": "2026-11-04T08:00:00",
+      "weekOffset": 0,
+      "sessions": [
+        {
+          "at": "2026-11-02T00:30:00",
+          "volume": 1000
+        },
+        {
+          "at": "2026-10-26T00:15:00",
+          "volume": 500
+        },
+        {
+          "at": "2026-10-29T10:00:00",
+          "volume": 800
+        }
+      ],
+      "expectedPercent": 100
+    },
+    {
+      "id": "new-york-dst-end-week",
+      "description": "Offset -1 across the 25-hour Sunday when US daylight time ends",
+      "zone": "America/New_York",
+      "now": "2026-11-04T12:00:00",
+      "weekOffset": -1,
+      "sessions": [
+        {
+          "at": "2026-10-26T00:10:00",
+          "volume": 1250
+        },
+        {
+          "at": "2026-11-01T23:30:00",
+          "volume": 1250
+        },
+        {
+          "at": "2026-10-19T00:00:00",
+          "volume": 1250
+        },
+        {
+          "at": "2026-10-25T23:59:00",
+          "volume": 1250
+        }
+      ],
+      "expectedPercent": 0
+    },
+    {
+      "id": "new-york-dst-end-week-decrease",
+      "description": "Same zone, smaller selected week",
+      "zone": "America/New_York",
+      "now": "2026-11-04T12:00:00",
+      "weekOffset": -1,
+      "sessions": [
+        {
+          "at": "2026-10-26T00:10:00",
+          "volume": 1000
+        },
+        {
+          "at": "2026-11-01T23:30:00",
+          "volume": 1000
+        },
+        {
+          "at": "2026-10-19T00:00:00",
+          "volume": 1250
+        },
+        {
+          "at": "2026-10-25T23:59:00",
+          "volume": 1250
+        }
+      ],
+      "expectedPercent": -20
+    },
+    {
+      "id": "negative-volume-ignored",
+      "description": "Negative volumes count as 0",
+      "zone": "UTC",
+      "now": "2026-11-04T12:00:00",
+      "weekOffset": 0,
+      "sessions": [
+        {
+          "at": "2026-11-03T08:00:00",
+          "volume": 1000
+        },
+        {
+          "at": "2026-11-04T08:00:00",
+          "volume": -500
+        },
+        {
+          "at": "2026-10-27T08:00:00",
+          "volume": 800
+        }
+      ],
+      "expectedPercent": 25
+    }
+  ]
+}

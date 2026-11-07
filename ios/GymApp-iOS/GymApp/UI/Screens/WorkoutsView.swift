@@ -111,6 +111,8 @@ struct WeeklyTrainingSummary: Equatable {
     let completedTrainingDays: Set<Int64>
     let totalMinutes: Int
     let totalVolume: Double
+    /// Volume change against the same days of the previous week (current week) or the full previous week; nil when not comparable.
+    let volumeDeltaPercent: Int?
 
     init(
         sessions: [WorkoutSessionSummary],
@@ -152,6 +154,12 @@ struct WeeklyTrainingSummary: Equatable {
             guard session.totalVolume.isFinite, session.totalVolume >= 0 else { return running }
             return min(maximumTodayHeroVolume, running + session.totalVolume)
         }
+        volumeDeltaPercent = weekVolumeDeltaPercent(
+            sessions: sessions,
+            weekContaining: referenceDate,
+            now: now,
+            calendar: calendar
+        )
     }
 
     func hasWorkout(on date: Date, calendar: Calendar) -> Bool {
@@ -176,6 +184,55 @@ struct WeeklyTrainingSummary: Equatable {
             setCount: session.setCount
         )
     }
+}
+
+let weekVolumeDeltaCapPercent = 999
+
+/// Volume change of the week containing `referenceDate` against the previous week, in whole percent
+/// (half away from zero, capped at `weekVolumeDeltaCapPercent`). The current week is compared with the
+/// same elapsed days (Monday..today) of the previous week; a past week with the whole previous week.
+/// Nil when the previous volume is 0. Contract: shared/week-volume-delta-v1.json.
+func weekVolumeDeltaPercent(
+    sessions: [WorkoutSessionSummary],
+    weekContaining referenceDate: Date,
+    now: Date,
+    calendar: Calendar
+) -> Int? {
+    let weekStart = calendar.gymMondayStart(of: referenceDate)
+    let isCurrentWeek = weekStart == calendar.gymMondayStart(of: now)
+    let elapsedDays: Int
+    if isCurrentWeek {
+        let days = calendar.dateComponents([.day], from: weekStart, to: calendar.startOfDay(for: now)).day ?? 0
+        elapsedDays = min(7, max(0, days) + 1)
+    } else {
+        elapsedDays = 7
+    }
+    guard
+        let currentEnd = calendar.date(byAdding: .day, value: elapsedDays, to: weekStart),
+        let previousStart = calendar.date(byAdding: .day, value: -7, to: weekStart),
+        let previousEnd = calendar.date(byAdding: .day, value: elapsedDays, to: previousStart)
+    else { return nil }
+
+    var current = 0.0
+    var previous = 0.0
+    for session in sessions where session.date <= now {
+        let volume = session.totalVolume.isFinite && session.totalVolume >= 0 ? session.totalVolume : 0
+        if session.date >= weekStart && session.date < currentEnd {
+            current = min(maximumTodayHeroVolume, current + volume)
+        } else if session.date >= previousStart && session.date < previousEnd {
+            previous = min(maximumTodayHeroVolume, previous + volume)
+        }
+    }
+    guard previous > 0 else { return nil }
+    let raw = (current - previous) * 100 / previous
+    let rounded = raw.rounded(.toNearestOrAwayFromZero)
+    return Int(min(Double(weekVolumeDeltaCapPercent), rounded))
+}
+
+/// "+12%" / "−8%" (true minus sign) / "0%".
+func weekVolumeDeltaText(_ percent: Int, locale: Locale) -> String {
+    let sign = percent > 0 ? "+" : (percent < 0 ? "\u{2212}" : "")
+    return sign + abs(percent).formatted(.number.locale(locale)) + "%"
 }
 
 enum TrainingHistoryPeriod: String, CaseIterable, Identifiable {
@@ -1533,28 +1590,53 @@ public struct WorkoutsView: View {
                         monthlyTrainingCalendar(monthly)
                     }
 
-                    GymAdaptiveStack(rowAlignment: .top, spacing: 8) {
-                        weeklyTrainingMetric(
-                            value: completedSessionCount.formatted(.number.locale(gymAppLocale())),
-                            label: gymText(
-                                "Workouts", "Тренування", "Тренировки",
-                                languageCode: languageCode
+                    VStack(alignment: .leading, spacing: 6) {
+                        GymAdaptiveStack(rowAlignment: .top, spacing: 8) {
+                            weeklyTrainingMetric(
+                                value: completedSessionCount.formatted(.number.locale(gymAppLocale())),
+                                label: gymText(
+                                    "Workouts", "Тренування", "Тренировки",
+                                    languageCode: languageCode
+                                )
                             )
-                        )
-                        weeklyTrainingMetric(
-                            value: totalMinutes.formatted(.number.locale(gymAppLocale())),
-                            label: gymText(
-                                "Minutes", "Хвилини", "Минуты",
-                                languageCode: languageCode
+                            weeklyTrainingMetric(
+                                value: totalMinutes.formatted(.number.locale(gymAppLocale())),
+                                label: gymText(
+                                    "Minutes", "Хвилини", "Минуты",
+                                    languageCode: languageCode
+                                )
                             )
-                        )
-                        weeklyTrainingMetric(
-                            value: formattedTodayHeroVolumeWithUnit(totalVolume),
-                            label: gymText(
-                                "Volume", "Обсяг", "Объём",
-                                languageCode: languageCode
+                            weeklyTrainingMetric(
+                                value: formattedTodayHeroVolumeWithUnit(totalVolume),
+                                label: gymText(
+                                    "Volume", "Обсяг", "Объём",
+                                    languageCode: languageCode
+                                )
                             )
-                        )
+                        }
+                        if historyPeriod == .week, let deltaPercent = weekly.volumeDeltaPercent {
+                            Text(
+                                weekVolumeDeltaText(deltaPercent, locale: gymAppLocale())
+                                    + " "
+                                    + (weekOffset == 0
+                                        ? gymText(
+                                            "vs same days last week",
+                                            "порівняно з тими ж днями минулого тижня",
+                                            "по сравнению с теми же днями прошлой недели",
+                                            languageCode: languageCode
+                                        )
+                                        : gymText(
+                                            "vs previous week",
+                                            "порівняно з попереднім тижнем",
+                                            "по сравнению с предыдущей неделей",
+                                            languageCode: languageCode
+                                        ))
+                            )
+                            .font(.footnote)
+                            .foregroundStyle(GymTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
 
                     Divider().overlay(GymTheme.outlineSoft)

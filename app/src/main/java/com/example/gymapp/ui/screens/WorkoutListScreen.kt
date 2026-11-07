@@ -1136,28 +1136,47 @@ private fun TrainingHistoryPanel(
             } else {
                 TrainingHistoryMonthGrid(summary = monthlySummary, locale = locale)
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                WeeklyTrainingMetric(
-                    value = completedWorkoutCount,
-                    label = stringResource(R.string.weekly_training_workouts_label),
-                    modifier = Modifier.weight(1f)
-                )
-                WeeklyTrainingMetric(
-                    value = formattedStringResource(
-                        R.string.weekly_training_minutes_value,
-                        estimatedMinutes
-                    ),
-                    label = stringResource(R.string.weekly_training_minutes_label),
-                    modifier = Modifier.weight(1f)
-                )
-                WeeklyTrainingMetric(
-                    value = formattedStringResource(R.string.today_history_volume_kg, volume),
-                    label = stringResource(R.string.weekly_training_volume_label),
-                    modifier = Modifier.weight(1f)
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    WeeklyTrainingMetric(
+                        value = completedWorkoutCount,
+                        label = stringResource(R.string.weekly_training_workouts_label),
+                        modifier = Modifier.weight(1f)
+                    )
+                    WeeklyTrainingMetric(
+                        value = formattedStringResource(
+                            R.string.weekly_training_minutes_value,
+                            estimatedMinutes
+                        ),
+                        label = stringResource(R.string.weekly_training_minutes_label),
+                        modifier = Modifier.weight(1f)
+                    )
+                    WeeklyTrainingMetric(
+                        value = formattedStringResource(R.string.today_history_volume_kg, volume),
+                        label = stringResource(R.string.weekly_training_volume_label),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                val volumeDeltaPercent = weeklySummary.volumeDeltaPercent
+                if (isWeekPeriod && volumeDeltaPercent != null) {
+                    Text(
+                        text = formatWeekVolumeDelta(volumeDeltaPercent, locale) + " " +
+                            stringResource(
+                                if (weekOffset == 0) {
+                                    R.string.training_week_delta_same_days
+                                } else {
+                                    R.string.training_week_delta_previous_week
+                                }
+                            ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
 
             Box(
@@ -1573,6 +1592,16 @@ internal fun formatTodayHeroCount(value: Int, locale: Locale): String {
     } else {
         NumberFormat.getIntegerInstance(locale).format(safeValue)
     }
+}
+
+/** "+12%" / "−8%" (true minus sign) / "0%"; the sign is part of the text, the number follows the locale. */
+internal fun formatWeekVolumeDelta(percent: Int, locale: Locale): String {
+    val sign = when {
+        percent > 0 -> "+"
+        percent < 0 -> "\u2212"
+        else -> ""
+    }
+    return sign + NumberFormat.getIntegerInstance(locale).format(Math.abs(percent.toLong())) + "%"
 }
 
 internal fun formatTodayHeroVolume(value: Double, locale: Locale): String {

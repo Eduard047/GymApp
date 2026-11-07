@@ -1737,6 +1737,8 @@
     <string name="message_remove_exercise_failed">Не удалось удалить упражнение. Обнови тренировку и попробуй снова.</string>
     <string name="workout_detail_best_set_label">Лучший</string>
     <string name="workout_detail_best_set_a11y">лучший подход</string>
+    <string name="training_week_delta_same_days">по сравнению с теми же днями прошлой недели</string>
+    <string name="training_week_delta_previous_week">по сравнению с предыдущей неделей</string>
     <string name="progress_pr_history_title">Личные рекорды</string>
     <string name="progress_pr_history_show_all">Показать все</string>
     <string name="progress_pr_history_show_less">Показать меньше</string>
