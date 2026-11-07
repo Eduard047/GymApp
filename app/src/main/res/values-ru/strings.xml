@@ -632,6 +632,7 @@
     <string name="label_exercise_name">Название упражнения</string>
     <string name="hint_exercise_name">например, Жим лежа</string>
     <string name="exercise_rename_title">Переименовать упражнение</string>
+    <string name="exercise_discard_title">Отменить изменения упражнения?</string>
     <string name="exercises_loading">Загружаем библиотеку упражнений…</string>
     <string name="exercises_load_failed">Не удалось загрузить библиотеку упражнений.</string>
     <string name="workouts_loading">Загружаем тренировки…</string>

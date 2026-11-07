@@ -60,6 +60,7 @@ data class ExerciseListUiState(
     val loadEditorDirection: ExerciseLoadDirection = ExerciseLoadDirection.HigherIsHarder,
     val loadEditorWeights: String = "",
     val loadEditorHasError: Boolean = false,
+    val loadEditorIsDirty: Boolean = false,
     val newExerciseName: String = "",
     val hasInputError: Boolean = false,
     val newExerciseError: NewExerciseError? = null,
@@ -190,6 +191,18 @@ private data class ExerciseListBaseState(
     val selectedExerciseId: Long?,
     val selectedExerciseHistory: List<ExerciseHistoryEntry>
 )
+
+/** True when the typed exercise name differs from the saved one, ignoring surrounding spaces. */
+internal fun isRenameExerciseDirty(originalName: String, editedName: String): Boolean =
+    editedName.trim() != originalName.trim()
+
+/** True when the machine-weights editor holds edits that were not saved yet. */
+internal fun isLoadProfileEditorDirty(
+    baselineDirection: ExerciseLoadDirection,
+    baselineWeights: String,
+    direction: ExerciseLoadDirection,
+    weights: String
+): Boolean = direction != baselineDirection || weights.trim() != baselineWeights.trim()
 
 private data class ExerciseLibraryState(
     val exercises: List<ExerciseEntity>,
@@ -430,6 +443,15 @@ class ExerciseListViewModel(
                 loadEditorDirection = loadEditor.direction,
                 loadEditorWeights = loadEditor.weights,
                 loadEditorHasError = loadEditor.hasError,
+                loadEditorIsDirty = loadEditor.exercise?.let { exercise ->
+                    val profile = loadEditor.profiles[exercise.id]
+                    isLoadProfileEditorDirty(
+                        baselineDirection = profile?.direction ?: defaultLoadDirection(exercise),
+                        baselineWeights = loadEditorWeightsText(profile),
+                        direction = loadEditor.direction,
+                        weights = loadEditor.weights
+                    )
+                } ?: false,
                 newExerciseName = base.newExerciseName,
                 hasInputError = base.hasInputError,
                 newExerciseError = base.newExerciseError,
@@ -668,9 +690,7 @@ class ExerciseListViewModel(
         val current = uiState.value.loadProfiles[exercise.id]
         loadEditorExercise.value = exercise
         loadEditorDirection.value = current?.direction ?: defaultLoadDirection(exercise)
-        loadEditorWeights.value = current?.allowedWeightsKg
-            ?.joinToString(separator = "\n", transform = ::formatLoadWeight)
-            .orEmpty()
+        loadEditorWeights.value = loadEditorWeightsText(current)
         loadEditorHasError.value = false
     }
 
@@ -761,6 +781,11 @@ class ExerciseListViewModel(
             ExerciseLoadProfile.isValid(loadEditorDirection.value, it)
         }
     }
+
+    private fun loadEditorWeightsText(profile: ExerciseLoadProfile?): String =
+        profile?.allowedWeightsKg
+            ?.joinToString(separator = "\n", transform = ::formatLoadWeight)
+            .orEmpty()
 
     private fun formatLoadWeight(weight: Double): String =
         if (weight % 1.0 == 0.0) weight.toLong().toString() else weight.toString()

@@ -120,6 +120,7 @@ import com.example.gymapp.ui.util.localizedMuscleName
 import com.example.gymapp.ui.util.SensitiveClipboard
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
 import com.example.gymapp.ui.viewmodel.ExerciseMuscleOptionUiModel
+import com.example.gymapp.ui.viewmodel.isRenameExerciseDirty
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.asString
@@ -1019,6 +1020,8 @@ fun ExerciseListScreen(
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     var isAddExerciseOpen by rememberSaveable { mutableStateOf(false) }
     var pendingAddedName by rememberSaveable { mutableStateOf<String?>(null) }
+    var showRenameDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
+    var showLoadProfileDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var bodyFilter by rememberSaveable { mutableStateOf(ExerciseBodyFilter.All) }
     var muscleFilter by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1388,8 +1391,15 @@ fun ExerciseListScreen(
 
     val editingExercise = uiState.editingExercise
     if (editingExercise != null) {
+        val requestRenameClose = {
+            if (isRenameExerciseDirty(editingExercise.name, uiState.editingExerciseName)) {
+                showRenameDiscardConfirmation = true
+            } else {
+                onDismissRenameExercise()
+            }
+        }
         GymModalBottomSheet(
-            onDismissRequest = onDismissRenameExercise,
+            onDismissRequest = requestRenameClose,
         ) {
             RenameExerciseBottomSheetContent(
                 exerciseName = uiState.editingExerciseName,
@@ -1397,9 +1407,20 @@ fun ExerciseListScreen(
                 hasInputError = uiState.hasInputError,
                 onExerciseNameChange = onRenameExerciseNameChange,
                 onSave = onSaveRenameExercise,
-                onDismiss = onDismissRenameExercise
+                onDismiss = requestRenameClose
             )
         }
+        if (showRenameDiscardConfirmation) {
+            ExerciseDiscardChangesDialog(
+                onDiscard = {
+                    showRenameDiscardConfirmation = false
+                    onDismissRenameExercise()
+                },
+                onKeepEditing = { showRenameDiscardConfirmation = false }
+            )
+        }
+    } else if (showRenameDiscardConfirmation) {
+        showRenameDiscardConfirmation = false
     }
 
     val selectedExerciseId = uiState.selectedExerciseId
@@ -1440,8 +1461,15 @@ fun ExerciseListScreen(
 
     val loadEditorExercise = uiState.loadEditorExercise
     if (loadEditorExercise != null) {
+        val requestLoadProfileClose = {
+            if (uiState.loadEditorIsDirty) {
+                showLoadProfileDiscardConfirmation = true
+            } else {
+                onDismissExerciseLoadProfile()
+            }
+        }
         GymModalBottomSheet(
-            onDismissRequest = onDismissExerciseLoadProfile,
+            onDismissRequest = requestLoadProfileClose,
         ) {
             ExerciseLoadProfileBottomSheetContent(
                 exerciseName = loadEditorExercise.name,
@@ -1454,11 +1482,47 @@ fun ExerciseListScreen(
                 onApplyPreset = onApplyExerciseLoadPreset,
                 onSave = onSaveExerciseLoadProfile,
                 onClear = onClearExerciseLoadProfile,
-                onDismiss = onDismissExerciseLoadProfile
+                onDismiss = requestLoadProfileClose
             )
         }
+        if (showLoadProfileDiscardConfirmation) {
+            ExerciseDiscardChangesDialog(
+                onDiscard = {
+                    showLoadProfileDiscardConfirmation = false
+                    onDismissExerciseLoadProfile()
+                },
+                onKeepEditing = { showLoadProfileDiscardConfirmation = false }
+            )
+        }
+    } else if (showLoadProfileDiscardConfirmation) {
+        showLoadProfileDiscardConfirmation = false
     }
 
+}
+
+@Composable
+private fun ExerciseDiscardChangesDialog(
+    onDiscard: () -> Unit,
+    onKeepEditing: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onKeepEditing,
+        title = { Text(stringResource(R.string.exercise_discard_title)) },
+        text = { Text(stringResource(R.string.workout_plan_discard_message)) },
+        confirmButton = {
+            TextButton(onClick = onDiscard) {
+                Text(
+                    text = stringResource(R.string.workout_plan_discard_changes),
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onKeepEditing) {
+                Text(stringResource(R.string.workout_plan_keep_editing))
+            }
+        }
+    )
 }
 
 @Composable

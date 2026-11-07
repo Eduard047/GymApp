@@ -620,6 +620,7 @@
     <string name="label_exercise_name">Exercise name</string>
     <string name="hint_exercise_name">e.g. Bench Press</string>
     <string name="exercise_rename_title">Rename exercise</string>
+    <string name="exercise_discard_title">Discard exercise changes?</string>
     <string name="exercises_loading">Loading your exercise library…</string>
     <string name="exercises_load_failed">Could not load your exercise library.</string>
     <string name="workouts_loading">Loading your workouts…</string>
