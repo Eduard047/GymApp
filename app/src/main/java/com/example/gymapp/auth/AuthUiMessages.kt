@@ -3,6 +3,7 @@ package com.example.gymapp.auth
 import androidx.annotation.StringRes
 import com.example.gymapp.R
 import com.example.gymapp.util.LocalizedText
+import java.io.IOException
 
 internal fun requiresEmailConfirmation(error: Throwable): Boolean {
     return error.message in setOf(
@@ -16,6 +17,7 @@ internal fun authErrorText(
     error: Throwable,
     @StringRes fallbackResource: Int
 ): LocalizedText {
+    if (error.isNetworkFailure()) return LocalizedText(R.string.auth_error_connection)
     val message = error.message.orEmpty()
     val resource = when {
         message == "Too many authentication emails were requested. Try again later, or contact support if the newest email never arrives." ->
@@ -72,4 +74,16 @@ internal fun authErrorText(
         else -> fallbackResource
     }
     return LocalizedText(resource)
+}
+
+/** True when the failure (or a bounded-depth cause) is a transport IOException such as offline/DNS/timeout. */
+private fun Throwable.isNetworkFailure(): Boolean {
+    var current: Throwable? = this
+    var depth = 0
+    while (current != null && depth < 8) {
+        if (current is IOException) return true
+        current = current.cause?.takeIf { it !== current }
+        depth++
+    }
+    return false
 }

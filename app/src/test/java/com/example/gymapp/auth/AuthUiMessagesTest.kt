@@ -75,6 +75,47 @@ class AuthUiMessagesTest {
     }
 
     @Test
+    fun networkIoFailuresMapToTheConnectionMessageForEveryAuthFallback() {
+        val failures = listOf(
+            java.net.UnknownHostException("Unable to resolve host \"example.invalid\""),
+            java.net.SocketTimeoutException("timeout"),
+            java.net.ConnectException("Failed to connect"),
+            java.io.IOException("generic")
+        )
+        val fallbacks = listOf(
+            R.string.auth_message_login_failed,
+            R.string.auth_message_signup_failed,
+            R.string.auth_message_confirmation_failed,
+            R.string.auth_message_password_reset_failed
+        )
+        failures.forEach { failure ->
+            fallbacks.forEach { fallback ->
+                assertEquals(
+                    failure.javaClass.simpleName,
+                    R.string.auth_error_connection,
+                    authErrorText(failure, fallback).resourceId
+                )
+            }
+        }
+    }
+
+    @Test
+    fun wrappedNetworkFailuresMapToConnectionButOtherErrorsKeepTheFallback() {
+        val fallback = R.string.auth_message_login_failed
+        assertEquals(
+            R.string.auth_error_connection,
+            authErrorText(
+                IllegalStateException("wrapper", java.net.UnknownHostException("offline")),
+                fallback
+            ).resourceId
+        )
+        assertEquals(
+            fallback,
+            authErrorText(IllegalStateException("x", IllegalArgumentException("y")), fallback).resourceId
+        )
+    }
+
+    @Test
     fun emailConfirmationRequirementIsSeparatedFromActualLoginErrors() {
         assertEquals(
             true,
