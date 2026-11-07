@@ -3246,6 +3246,50 @@ public final class WorkoutStore: ObservableObject {
         return try restoreBackup(data: data, activeOwner: activeOwner, limits: limits)
     }
 
+    /// Test seam: overrides the exercise-photo root; nil uses Application Support.
+    var exerciseMediaDirectoryURL: URL?
+
+    /// An authoritative restore rebuilds the exercise list with fresh UUIDs, which would
+    /// orphan `<uuid>.jpg` custom photos. Re-key them by the same stable exercise
+    /// identity that preserves favorites (exact name, then catalog key, then portable
+    /// name) and drop photos whose exercise is gone. Never throws.
+    private func remapCustomExercisePhotos(from old: [Exercise], to new: [Exercise]) {
+        guard !old.isEmpty else { return }
+        let newByCatalogKey = Dictionary(grouping: new.compactMap { exercise -> (String, Exercise)? in
+            guard let key = BuiltInExerciseCatalog.resolvedKey(
+                catalogKey: exercise.catalogKey,
+                name: exercise.name
+            ) else { return nil }
+            return (key, exercise)
+        }, by: { $0.0 })
+        let newByPortableName = Dictionary(grouping: new, by: { Self.nameKey($0.name) })
+        var claimed = Set<UUID>()
+        var moves: [(from: UUID, to: UUID?)] = []
+        for exercise in old {
+            let legacyKey = Self.legacyPersistedNameKey(exercise.name)
+            var target: UUID?
+            if let exact = new.first(where: { Self.legacyPersistedNameKey($0.name) == legacyKey }) {
+                target = exact.id
+            } else if let resolved = BuiltInExerciseCatalog.resolvedKey(
+                catalogKey: exercise.catalogKey,
+                name: exercise.name
+            ) {
+                let matches = newByCatalogKey[resolved] ?? []
+                target = matches.count == 1 ? matches[0].1.id : nil
+            } else {
+                let matches = newByPortableName[Self.nameKey(exercise.name)] ?? []
+                target = matches.count == 1 ? matches[0].id : nil
+            }
+            if let id = target, !claimed.insert(id).inserted { target = nil }
+            moves.append((exercise.id, target))
+        }
+        ExerciseMediaStore.remapCustomImages(
+            ownerKey: accountStorageKey,
+            moves: moves,
+            mediaDirectoryURL: exerciseMediaDirectoryURL
+        )
+    }
+
     private func applyBackup(
         data: Data,
         activeOwner: BackupOwner?,
@@ -3599,7 +3643,11 @@ public final class WorkoutStore: ObservableObject {
             }
         }
 
+        let exercisesBeforeRestore = snapshot.exercises
         try commit(next)
+        if replacingExisting {
+            remapCustomExercisePhotos(from: exercisesBeforeRestore, to: next.exercises)
+        }
         return BackupImportResult(
             importedSessions: importedSessions,
             skippedDuplicateSessions: skippedDuplicates,

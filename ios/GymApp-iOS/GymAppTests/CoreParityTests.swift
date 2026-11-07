@@ -6359,6 +6359,98 @@ final class CoreParityTests: XCTestCase {
         )
     }
 
+    func testCloudRestoreKeepsCustomPhotoOnSameExerciseWhenIdsChange() throws {
+        let mediaDirectory = try temporaryDirectory(named: "restore-photo-media")
+        let accountID = "cloud_photo-restore"
+        let owner = BackupOwner(accountID: accountID, userID: "photo-restore", remote: true)
+        let source = try WorkoutStore(
+            accountStorageKey: accountID,
+            directoryURL: try temporaryDirectory(named: "restore-photo-source")
+        )
+        _ = try source.addExercise(name: "Zercher Squat Custom")
+        _ = try source.addExercise(name: "Sled Drag Custom")
+        let remoteData = try source.exportBackupData(owner: owner)
+
+        let target = try WorkoutStore(
+            accountStorageKey: accountID,
+            directoryURL: try temporaryDirectory(named: "restore-photo-target")
+        )
+        target.exerciseMediaDirectoryURL = mediaDirectory
+        let zercherBefore = try target.addExercise(name: "Zercher Squat Custom")
+        let sledBefore = try target.addExercise(name: "Sled Drag Custom")
+        let goneBefore = try target.addExercise(name: "Removed Remotely Custom")
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { context in
+            UIColor.systemGreen.setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
+        }
+        let jpeg = try XCTUnwrap(image.jpegData(compressionQuality: 0.9))
+        for exercise in [zercherBefore, sledBefore, goneBefore] {
+            try ExerciseMediaStore.saveCustomImage(
+                jpeg,
+                ownerKey: accountID,
+                exerciseID: exercise.id,
+                mediaDirectoryURL: mediaDirectory
+            )
+        }
+
+        _ = try target.restoreBackup(data: remoteData, activeOwner: owner)
+
+        let zercherAfter = try XCTUnwrap(target.exercise(named: "Zercher Squat Custom"))
+        let sledAfter = try XCTUnwrap(target.exercise(named: "Sled Drag Custom"))
+        XCTAssertNotEqual(zercherAfter.id, zercherBefore.id, "restore is expected to regenerate ids")
+        XCTAssertNil(target.exercise(named: "Removed Remotely Custom"))
+        for (before, after) in [(zercherBefore, zercherAfter), (sledBefore, sledAfter)] {
+            XCTAssertNotNil(ExerciseMediaStore.customImage(
+                ownerKey: accountID, exerciseID: after.id, mediaDirectoryURL: mediaDirectory
+            ))
+            XCTAssertNil(ExerciseMediaStore.customImage(
+                ownerKey: accountID, exerciseID: before.id, mediaDirectoryURL: mediaDirectory
+            ))
+        }
+        XCTAssertNil(ExerciseMediaStore.customImage(
+            ownerKey: accountID, exerciseID: goneBefore.id, mediaDirectoryURL: mediaDirectory
+        ), "a photo whose exercise disappeared in the restore must be deleted")
+    }
+
+    func testRemapCustomImagesSurvivesSwappedIdsAndMissingFiles() throws {
+        let mediaDirectory = try temporaryDirectory(named: "remap-photo-media")
+        let owner = "local_\(UUID().uuidString.lowercased())"
+        let a = UUID(), b = UUID()
+        func solid(_ color: UIColor) throws -> Data {
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { context in
+                color.setFill()
+                context.cgContext.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
+            }
+            return try XCTUnwrap(image.jpegData(compressionQuality: 0.9))
+        }
+        try ExerciseMediaStore.saveCustomImage(try solid(.systemRed), ownerKey: owner, exerciseID: a, mediaDirectoryURL: mediaDirectory)
+        try ExerciseMediaStore.saveCustomImage(try solid(.systemBlue), ownerKey: owner, exerciseID: b, mediaDirectoryURL: mediaDirectory)
+        let aBytesBefore = try Data(contentsOf: mediaFileURL(owner: owner, id: a, root: mediaDirectory))
+
+        ExerciseMediaStore.remapCustomImages(
+            ownerKey: owner,
+            moves: [(a, b), (b, a), (UUID(), UUID())],
+            mediaDirectoryURL: mediaDirectory
+        )
+
+        XCTAssertEqual(
+            try Data(contentsOf: mediaFileURL(owner: owner, id: b, root: mediaDirectory)),
+            aBytesBefore,
+            "the photo of exercise a must now live under b after a swap"
+        )
+        XCTAssertNotNil(ExerciseMediaStore.customImage(ownerKey: owner, exerciseID: a, mediaDirectoryURL: mediaDirectory))
+        // Invalid owner key is a silent no-op, never a throw.
+        ExerciseMediaStore.remapCustomImages(ownerKey: "", moves: [(a, b)], mediaDirectoryURL: mediaDirectory)
+    }
+
+    private func mediaFileURL(owner: String, id: UUID, root: URL) throws -> URL {
+        let fingerprint = SHA256.hash(data: Data("gymapp-exercise-media-v1:\(owner)".utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        return root.appendingPathComponent(fingerprint, isDirectory: true)
+            .appendingPathComponent("\(id.uuidString).jpg")
+    }
+
     func testDownsampledMediaThumbnailIsOwnerScopedAndInvalidatedAfterClear() async throws {
         let mediaDirectory = try temporaryDirectory(named: "exercise-media-thumbnail-cache")
         let exerciseID = UUID()

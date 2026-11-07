@@ -289,6 +289,54 @@ enum ExerciseMediaStore {
         }
     }
 
+    /// Re-keys custom photos after an authoritative restore regenerated exercise ids.
+    /// Each move sends a photo to the exercise that kept its identity, or deletes it when
+    /// `to` is nil. Two phases (park under unique temporary names, then place) keep
+    /// swapped or overlapping ids from overwriting one another. Best effort: it never
+    /// throws, so a media problem cannot fail the data restore that triggered it.
+    static func remapCustomImages(
+        ownerKey: String,
+        moves: [(from: UUID, to: UUID?)],
+        mediaDirectoryURL: URL? = nil,
+        fileManager: FileManager = .default
+    ) {
+        defer { customThumbnailCache.removeAll() }
+        guard let ownerDirectory = try? ownerDirectoryURL(
+            ownerKey: ownerKey,
+            mediaDirectoryURL: mediaDirectoryURL,
+            fileManager: fileManager
+        ), fileManager.fileExists(atPath: ownerDirectory.path) else { return }
+
+        var parked: [(temporary: URL, destination: URL)] = []
+        for move in moves {
+            let source = ownerDirectory.appendingPathComponent("\(move.from.uuidString).jpg")
+            guard fileManager.fileExists(atPath: source.path) else { continue }
+            guard let destinationID = move.to else {
+                try? fileManager.removeItem(at: source)
+                continue
+            }
+            guard destinationID != move.from else { continue }
+            let temporary = ownerDirectory.appendingPathComponent(
+                "\(UUID().uuidString).migrating"
+            )
+            do {
+                try fileManager.moveItem(at: source, to: temporary)
+                parked.append((
+                    temporary,
+                    ownerDirectory.appendingPathComponent("\(destinationID.uuidString).jpg")
+                ))
+            } catch {
+                continue
+            }
+        }
+        for item in parked {
+            try? fileManager.removeItem(at: item.destination)
+            if (try? fileManager.moveItem(at: item.temporary, to: item.destination)) == nil {
+                try? fileManager.removeItem(at: item.temporary)
+            }
+        }
+    }
+
     static func clearAccount(
         ownerKey: String,
         mediaDirectoryURL: URL? = nil,
