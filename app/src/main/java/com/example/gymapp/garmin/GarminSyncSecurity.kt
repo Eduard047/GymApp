@@ -717,6 +717,13 @@ internal const val GARMIN_PLAN_TOO_LARGE_STATUS = "Garmin plan is too large for 
 internal const val GARMIN_PLAN_TOO_LARGE_REASON = "plan_too_large"
 
 /**
+ * Status for a plan that is saved on this phone but cannot be sent yet (the Garmin SDK is not
+ * ready). The saved plan is delivered when the watch next connects, so the UI treats it as a
+ * non-error, like the iPhone "Plan saved on this iPhone" message.
+ */
+internal const val GARMIN_PLAN_QUEUED_STATUS = "Garmin plan saved; waiting for watch"
+
+/**
  * A watch with a small memory tier refused a plan or catalog it cannot hold: the normal
  * `sync_ack` with `applied=false` and `reason=plan_too_large`. Resending the same message cannot
  * help, so the sender stops retrying. Correlation matches [garminSyncAckMatches] exactly; binding

@@ -786,7 +786,8 @@ fun AddWorkoutScreen(
                     }
                     when (uiState.didSyncPlanToWatch) {
                         true -> Text(
-                            text = stringResource(R.string.message_plan_sync_success),
+                            text = uiState.watchPlanSyncNotice?.asString()
+                                ?: stringResource(R.string.message_plan_sync_success),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
                         )

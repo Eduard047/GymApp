@@ -38,6 +38,7 @@ import com.example.gymapp.data.repository.WorkoutSetDraft
 import com.example.gymapp.garmin.GARMIN_LITE_PLAN_UNSUPPORTED_STATUS
 import com.example.gymapp.garmin.GARMIN_PLAN_TOO_LARGE_STATUS
 import com.example.gymapp.sync.PhoneSyncClient
+import com.example.gymapp.sync.PlanPushResult
 import com.example.gymapp.util.CalorieMode
 import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.TrainingGoal
@@ -352,6 +353,8 @@ data class AddWorkoutUiState(
     val isSyncingPlanToWatch: Boolean = false,
     val didSyncPlanToWatch: Boolean? = null,
     val watchPlanSyncError: LocalizedText? = null,
+    /** Non-error notice shown with a successful sync, e.g. the plan is saved and waiting for the watch. */
+    val watchPlanSyncNotice: LocalizedText? = null,
     val isSaving: Boolean = false,
     val hasValidationError: Boolean = false,
     val isDirty: Boolean = false,
@@ -763,6 +766,11 @@ private fun parsePersistedWorkoutPlanDraft(payload: String): PersistedWorkoutPla
 internal fun canHydrateLaunchPlanIntoDraft(state: AddWorkoutUiState): Boolean =
     !hasRetainedWorkoutDraft(state)
 
+internal fun planSyncSuccessNotice(result: PlanPushResult): LocalizedText? = when (result) {
+    PlanPushResult.Delivered -> null
+    PlanPushResult.Queued -> LocalizedText(R.string.message_plan_sync_queued)
+}
+
 internal fun planSyncErrorText(error: Throwable): LocalizedText {
     val message = error.message.orEmpty()
     val resource = when {
@@ -818,6 +826,7 @@ class AddWorkoutViewModel internal constructor(
         val isSyncingPlanToWatch: Boolean,
         val didSyncPlanToWatch: Boolean?,
         val watchPlanSyncError: LocalizedText?,
+        val watchPlanSyncNotice: LocalizedText?,
         val isSaving: Boolean,
         val hasValidationError: Boolean,
         val isDirty: Boolean,
@@ -837,6 +846,7 @@ class AddWorkoutViewModel internal constructor(
         val isSyncingPlanToWatch: Boolean,
         val didSyncPlanToWatch: Boolean?,
         val watchPlanSyncError: LocalizedText?,
+        val watchPlanSyncNotice: LocalizedText?,
         val isSaving: Boolean,
         val hasValidationError: Boolean,
         val isDirty: Boolean,
@@ -896,6 +906,7 @@ class AddWorkoutViewModel internal constructor(
     private val isSyncingPlanToWatch = MutableStateFlow(false)
     private val didSyncPlanToWatch = MutableStateFlow<Boolean?>(null)
     private val watchPlanSyncError = MutableStateFlow<LocalizedText?>(null)
+    private val watchPlanSyncNotice = MutableStateFlow<LocalizedText?>(null)
     private val isSaving = MutableStateFlow(false)
     private val hasValidationError = MutableStateFlow(false)
     private val startValidation = MutableStateFlow(StartValidationFeedback())
@@ -1077,6 +1088,7 @@ class AddWorkoutViewModel internal constructor(
         isSyncingPlanToWatch.value = false
         didSyncPlanToWatch.value = null
         watchPlanSyncError.value = null
+        watchPlanSyncNotice.value = null
     }
 
     private fun markDraftDirty() {
@@ -1145,12 +1157,20 @@ class AddWorkoutViewModel internal constructor(
         )
     }
 
+    private data class PlanSyncResult(
+        val didSync: Boolean?,
+        val error: LocalizedText?,
+        val notice: LocalizedText?,
+        val isDirty: Boolean
+    )
+
     private val planSyncResult = combine(
         didSyncPlanToWatch,
         watchPlanSyncError,
+        watchPlanSyncNotice,
         isDirty
-    ) { planSyncState, planSyncError, dirty ->
-        Triple(planSyncState, planSyncError, dirty)
+    ) { planSyncState, planSyncError, planSyncNotice, dirty ->
+        PlanSyncResult(planSyncState, planSyncError, planSyncNotice, dirty)
     }
 
     private val transientState = combine(
@@ -1162,11 +1182,12 @@ class AddWorkoutViewModel internal constructor(
     ) { syncingPlan, planSyncResult, saving, validationError, workoutStarted ->
         TransientState(
             isSyncingPlanToWatch = syncingPlan,
-            didSyncPlanToWatch = planSyncResult.first,
-            watchPlanSyncError = planSyncResult.second,
+            didSyncPlanToWatch = planSyncResult.didSync,
+            watchPlanSyncError = planSyncResult.error,
+            watchPlanSyncNotice = planSyncResult.notice,
             isSaving = saving,
             hasValidationError = validationError,
-            isDirty = planSyncResult.third,
+            isDirty = planSyncResult.isDirty,
             activeWorkoutStarted = workoutStarted
         )
     }
@@ -1191,6 +1212,7 @@ class AddWorkoutViewModel internal constructor(
             isSyncingPlanToWatch = transient.isSyncingPlanToWatch,
             didSyncPlanToWatch = transient.didSyncPlanToWatch,
             watchPlanSyncError = transient.watchPlanSyncError,
+            watchPlanSyncNotice = transient.watchPlanSyncNotice,
             isSaving = transient.isSaving,
             hasValidationError = transient.hasValidationError,
             isDirty = transient.isDirty,
@@ -1235,6 +1257,7 @@ class AddWorkoutViewModel internal constructor(
             isSyncingPlanToWatch = local.isSyncingPlanToWatch,
             didSyncPlanToWatch = local.didSyncPlanToWatch,
             watchPlanSyncError = local.watchPlanSyncError,
+            watchPlanSyncNotice = local.watchPlanSyncNotice,
             isSaving = local.isSaving,
             hasValidationError = local.hasValidationError,
             isDirty = local.isDirty,
@@ -2026,6 +2049,7 @@ class AddWorkoutViewModel internal constructor(
                 hasValidationError.value = true
                 didSyncPlanToWatch.value = false
                 watchPlanSyncError.value = LocalizedText(R.string.message_workout_plan_empty)
+                watchPlanSyncNotice.value = null
                 return@launch
             }
 
@@ -2035,6 +2059,7 @@ class AddWorkoutViewModel internal constructor(
             isSyncingPlanToWatch.value = true
             didSyncPlanToWatch.value = null
             watchPlanSyncError.value = null
+            watchPlanSyncNotice.value = null
 
             val result = runCatching {
                 val exerciseCatalog = uiState.value.exercises.map { it.name }
@@ -2045,12 +2070,14 @@ class AddWorkoutViewModel internal constructor(
                 )
             }
             if (watchPlanSyncResultIsCurrent(syncGeneration, watchPlanSyncGeneration)) {
-                result.onSuccess {
+                result.onSuccess { pushResult ->
                     didSyncPlanToWatch.value = true
                     watchPlanSyncError.value = null
+                    watchPlanSyncNotice.value = planSyncSuccessNotice(pushResult)
                 }.onFailure { error ->
                     didSyncPlanToWatch.value = false
                     watchPlanSyncError.value = planSyncErrorText(error)
+                    watchPlanSyncNotice.value = null
                 }
                 isSyncingPlanToWatch.value = false
             }
@@ -2267,6 +2294,7 @@ class AddWorkoutViewModel internal constructor(
         isSyncingPlanToWatch.value = false
         didSyncPlanToWatch.value = null
         watchPlanSyncError.value = null
+        watchPlanSyncNotice.value = null
         isSaving.value = false
         hasValidationError.value = false
         isDirty.value = false

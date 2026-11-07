@@ -658,7 +658,14 @@ class GarminSyncManager(
             }
             lastPlanSyncStatus = "Waiting for Garmin SDK"
             if (!ensureSdkReady()) {
-                lastPlanSyncStatus = "Garmin SDK not ready"
+                // The plan is saved: the watch receives it on its next sync request. Also store it
+                // under the trusted watch's key so an older per-watch plan cannot shadow it.
+                val trustedDevice = trustedDeviceBinding(account)
+                if (trustedDevice != null && !cachePlan(plan, account, trustedDevice)) {
+                    lastPlanSyncStatus = "Cannot persist Garmin plan"
+                    return@submit false
+                }
+                lastPlanSyncStatus = GARMIN_PLAN_QUEUED_STATUS
                 return@submit false
             }
             if (!isStillActive(account)) {

@@ -684,6 +684,7 @@
 
     <string name="message_validation_error">Заполни все выбранные упражнения и подходы.</string>
     <string name="message_plan_sync_success">План синхронизирован на часы.</string>
+    <string name="message_plan_sync_queued">План сохранён на телефоне. Открой GymApp на часах, чтобы получить его.</string>
     <string name="message_plan_sync_failed">Не удалось синхронизировать план. Открой GymApp на Garmin и проверь Connect IQ/Bluetooth.</string>
     <string name="message_workout_plan_empty">Добавь хотя бы один корректный подход перед синхронизацией.</string>
     <string name="message_plan_outside_garmin_limits">План тренировки выходит за ограничения Garmin.</string>

@@ -666,6 +666,7 @@
 
     <string name="message_validation_error">Please fill all selected exercises and sets.</string>
     <string name="message_plan_sync_success">Plan synced to watch.</string>
+    <string name="message_plan_sync_queued">Plan saved on this phone. Open GymApp on the watch to receive it.</string>
     <string name="message_plan_sync_failed">Unable to sync plan to watch. Open GymApp on Garmin and check Connect IQ/Bluetooth connection.</string>
     <string name="message_workout_plan_empty">Add at least one valid set before syncing.</string>
     <string name="message_plan_outside_garmin_limits">The workout plan is outside Garmin limits.</string>
