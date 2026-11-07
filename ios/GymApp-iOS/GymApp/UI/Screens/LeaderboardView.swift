@@ -736,6 +736,7 @@ struct FriendsView: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "wave.3.right.circle.fill")
                 .foregroundStyle(GymTheme.primary)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(name).font(.headline)
                 Text(state).font(.caption.bold()).foregroundStyle(GymTheme.primary)
@@ -912,6 +913,7 @@ struct FriendsView: View {
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: "lock.shield")
+                            .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(friend.displayName).font(.headline)
                                 Text(friend.progressShared
@@ -922,6 +924,7 @@ struct FriendsView: View {
                             }
                             Spacer()
                             Image(systemName: "chevron.right")
+                            .accessibilityHidden(true)
                         }
                         .contentShape(Rectangle())
                     }
@@ -1005,7 +1008,7 @@ struct FriendsView: View {
             }
             Spacer()
             Text("\(item.xp) XP").font(.subheadline.bold().monospacedDigit())
-            if item.friend != nil { Image(systemName: "chevron.right").font(.caption) }
+            if item.friend != nil { Image(systemName: "chevron.right").font(.caption).accessibilityHidden(true) }
         }
         .contentShape(Rectangle())
     }
@@ -2496,6 +2499,7 @@ private struct FriendWorkoutPickerSheet: View {
                                     HStack(spacing: 12) {
                                         Image(systemName: mode == .live ? "wave.3.right.circle.fill" : "doc.on.doc.fill")
                                             .foregroundStyle(GymTheme.primary)
+                                            .accessibilityHidden(true)
                                         VStack(alignment: .leading, spacing: 3) {
                                             Text(gymShortDateTime(workout.date))
                                                 .font(.headline)
@@ -2510,6 +2514,7 @@ private struct FriendWorkoutPickerSheet: View {
                                         } else {
                                             Image(systemName: "chevron.right")
                                                 .foregroundStyle(GymTheme.textSecondary)
+                                                .accessibilityHidden(true)
                                         }
                                     }
                                     .padding(12)

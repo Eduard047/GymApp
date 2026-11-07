@@ -483,6 +483,7 @@ struct ProfileView: View {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(GymTheme.textSecondary)
+                    .accessibilityHidden(true)
             }
             .padding(.vertical, 12)
             .frame(minHeight: 56)
@@ -521,6 +522,7 @@ struct ProfileView: View {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(GymTheme.textSecondary)
+                    .accessibilityHidden(true)
             }
             .padding(.vertical, 12)
             .frame(minHeight: 56)
@@ -642,6 +644,7 @@ struct ProfileView: View {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(GymTheme.textSecondary)
+                    .accessibilityHidden(true)
             }
             .padding(.vertical, 12)
             .frame(minHeight: 56)
@@ -679,6 +682,7 @@ struct ProfileView: View {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(GymTheme.textSecondary)
+                    .accessibilityHidden(true)
             }
             .padding(.vertical, 12)
             .frame(minHeight: 56)
