@@ -907,7 +907,7 @@ private fun TrainingCircleCard(
                                 text = friend.displayName,
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
@@ -955,7 +955,7 @@ private fun RankedProfileRow(
                         text = profile.displayName,
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
                     )
@@ -1186,7 +1186,7 @@ private fun FriendRankingCard(place: Int, friend: SocialFriend, onOpen: () -> Un
                     Text(
                         friend.displayName,
                         style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
