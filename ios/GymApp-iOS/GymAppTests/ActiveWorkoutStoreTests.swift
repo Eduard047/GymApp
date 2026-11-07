@@ -397,6 +397,56 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertEqual(restored.totalElapsedSeconds(at: startedAt.addingTimeInterval(125)), 125)
     }
 
+    func testAdjustRestAfterRestEndedIsQuietNoOp() throws {
+        let context = try makeContext(account: "active-rest-adjust-ended")
+        let startedAt = Date()
+        let setID = UUID()
+        let started = try startSingleSet(
+            context,
+            setID: setID,
+            weight: 60,
+            reps: 8,
+            now: startedAt
+        )
+        let resting = try context.active.recordSet(
+            draftID: started.id,
+            setID: setID,
+            expectedRevision: started.revision,
+            restSeconds: 30,
+            now: startedAt.addingTimeInterval(10)
+        )
+        let deadline = startedAt.addingTimeInterval(40)
+        XCTAssertEqual(resting.timing?.restingUntil, deadline)
+
+        // +15 right after the rest ended must not throw and must not restart rest.
+        let adjusted = try context.active.adjustRest(
+            draftID: resting.id,
+            expectedRevision: resting.revision,
+            remainingSeconds: 15,
+            now: startedAt.addingTimeInterval(41)
+        )
+        XCTAssertNil(adjusted.timing?.restingUntil)
+        XCTAssertEqual(adjusted.timing?.activeSince, deadline)
+
+        // Same with no rest ever started (restingUntil already nil).
+        let again = try context.active.adjustRest(
+            draftID: adjusted.id,
+            expectedRevision: adjusted.revision,
+            remainingSeconds: 15,
+            now: startedAt.addingTimeInterval(45)
+        )
+        XCTAssertNil(again.timing?.restingUntil)
+        XCTAssertEqual(again.timing?.activeSince, deadline)
+        XCTAssertThrowsError(
+            try context.active.adjustRest(
+                draftID: again.id,
+                expectedRevision: again.revision,
+                remainingSeconds: 0,
+                now: startedAt.addingTimeInterval(46)
+            )
+        ) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .invalidDraft) }
+    }
+
     func testRestProjectionReconcilesStartAdjustAndStopCrashWindows() throws {
         let context = try makeContext(account: "active-rest-reconciliation")
         let base = Date()

@@ -476,10 +476,11 @@ final class ActiveWorkoutStore: ObservableObject {
                 throw ActiveWorkoutStoreError.invalidDraft
             }
             var timing = Self.normalizedTiming(in: candidate, at: now)
-            guard timing.restingUntil != nil else {
-                throw ActiveWorkoutStoreError.invalidDraft
+            // No running rest (it just ended): adjusting is a quiet no-op, like Android.
+            // The expired deadline is already folded back into active time by normalization.
+            if timing.restingUntil != nil {
+                timing.restingUntil = now.addingTimeInterval(TimeInterval(remainingSeconds))
             }
-            timing.restingUntil = now.addingTimeInterval(TimeInterval(remainingSeconds))
             candidate.timing = timing
         }
     }
