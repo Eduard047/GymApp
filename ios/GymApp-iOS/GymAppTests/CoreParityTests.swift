@@ -2115,6 +2115,89 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(target.workouts.first?.exercises.first?.sets.count, 2)
     }
 
+    func testManualBackupImportAppliesAndroidFavoriteFlagsAndExportCarriesThem() throws {
+        func backupJSON(benchFavorite: String, squatFavorite: String) -> String {
+            """
+            {"schemaVersion":2,"exportedAt":1750000000000,"app":"GymApp","diagnostics":false,
+             "owner":{"accountId":"local_test","userId":null,"email":null,"remote":false},
+             "catalogSeedVersion":3,
+             "exercises":[
+               {"name":"Bench Press","catalogKey":"bench_press","favorite":\(benchFavorite)},
+               {"name":"Back Squat","favorite":\(squatFavorite)},
+               {"name":"Plain Row"}
+             ],
+             "sessions":[{"date":1750000000000,"note":"Push","exercises":[
+               {"name":"Bench Press","catalogKey":"bench_press","sets":[{"weight":80,"reps":8}]}
+             ]}]}
+            """
+        }
+        let owner = BackupOwner(accountID: "local_test", remote: false)
+
+        // New exercises: explicit true is applied, false and absent stay off.
+        let target = try WorkoutStore(
+            accountStorageKey: "local_test",
+            directoryURL: try temporaryDirectory(named: "favorite-import-target")
+        )
+        let first = try target.importBackup(
+            json: backupJSON(benchFavorite: "true", squatFavorite: "false"),
+            activeOwner: owner
+        )
+        XCTAssertEqual(first.addedExercises, 3)
+        XCTAssertEqual(target.exercise(named: "Bench Press")?.isFavorite, true)
+        XCTAssertEqual(target.exercise(named: "Back Squat")?.isFavorite, false)
+        XCTAssertEqual(target.exercise(named: "Plain Row")?.isFavorite, false)
+
+        // Existing exercises: an explicit flag overrides, true or false; absent keeps the local value.
+        XCTAssertTrue(try target.toggleExerciseFavorite(id: try XCTUnwrap(target.exercise(named: "Plain Row")?.id)))
+        _ = try target.importBackup(
+            json: backupJSON(benchFavorite: "false", squatFavorite: "true"),
+            activeOwner: owner
+        )
+        XCTAssertEqual(target.exercise(named: "Bench Press")?.isFavorite, false)
+        XCTAssertEqual(target.exercise(named: "Back Squat")?.isFavorite, true)
+        XCTAssertEqual(target.exercise(named: "Plain Row")?.isFavorite, true)
+
+        // A non-boolean flag is malformed, like Android.
+        XCTAssertThrowsError(
+            try target.importBackup(
+                json: backupJSON(benchFavorite: "\"yes\"", squatFavorite: "false"),
+                activeOwner: owner
+            )
+        )
+
+        // Manual export writes the flag; the cloud shape stays without it.
+        let exported = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try target.exportManualBackupData(owner: owner)) as? [String: Any]
+        )
+        let exportedExercises = try XCTUnwrap(exported["exercises"] as? [[String: Any]])
+        let flags = Dictionary(uniqueKeysWithValues: exportedExercises.compactMap { row in
+            (row["name"] as? String).flatMap { name in (row["favorite"] as? Bool).map { (name, $0) } }
+        })
+        XCTAssertEqual(flags, ["Bench Press": false, "Back Squat": true, "Plain Row": true])
+        let plain = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try target.exportBackupData(owner: owner)) as? [String: Any]
+        )
+        XCTAssertFalse(
+            try XCTUnwrap(plain["exercises"] as? [[String: Any]]).contains { $0["favorite"] != nil }
+        )
+        let cloud = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: try target.exportCloudBackupData(owner: BackupOwner(accountID: "local_test", remote: false))
+            ) as? [String: Any]
+        )
+        let cloudExercises = try XCTUnwrap(cloud["exercises"] as? [[String: Any]])
+        XCTAssertFalse(cloudExercises.contains { $0["favorite"] != nil })
+
+        // Round trip into a fresh store keeps the flags.
+        let fresh = try WorkoutStore(
+            accountStorageKey: "local_test",
+            directoryURL: try temporaryDirectory(named: "favorite-import-fresh")
+        )
+        _ = try fresh.importBackup(data: try target.exportManualBackupData(owner: owner), activeOwner: owner)
+        XCTAssertEqual(fresh.exercise(named: "Back Squat")?.isFavorite, true)
+        XCTAssertEqual(fresh.exercise(named: "Bench Press")?.isFavorite, false)
+    }
+
     func testActivityOnlyWorkoutPersistsAndRoundTripsWithoutFabricatedSets() throws {
         let sourceDirectory = try temporaryDirectory(named: "activity-only-source")
         let targetDirectory = try temporaryDirectory(named: "activity-only-target")

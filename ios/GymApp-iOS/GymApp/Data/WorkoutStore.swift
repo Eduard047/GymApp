@@ -2202,16 +2202,54 @@ public final class WorkoutStore: ObservableObject {
         )
     }
 
+    /// Portable schema-v2 core, also the base of the cloud shape: no favorite flag.
     public func exportBackupData(
         owner: BackupOwner? = nil,
         prettyPrinted: Bool = true
+    ) throws -> Data {
+        try encodeBackupData(owner: owner, prettyPrinted: prettyPrinted, includeFavorites: false)
+    }
+
+    /// User-facing manual backup file. Like Android it carries each exercise's local
+    /// favorite flag so a restore on another device keeps it. Never feed this to the cloud
+    /// path: favorites stay out of the shared row, its identity, and its digest.
+    public func exportManualBackupData(
+        owner: BackupOwner? = nil,
+        prettyPrinted: Bool = true
+    ) throws -> Data {
+        try encodeBackupData(owner: owner, prettyPrinted: prettyPrinted, includeFavorites: true)
+    }
+
+    private func encodeBackupData(
+        owner: BackupOwner?,
+        prettyPrinted: Bool,
+        includeFavorites: Bool
     ) throws -> Data {
         let encoder = JSONEncoder()
         var formatting: JSONEncoder.OutputFormatting = [.sortedKeys]
         if prettyPrinted { formatting.insert(.prettyPrinted) }
         encoder.outputFormatting = formatting
         do {
-            return try encoder.encode(try makeBackup(owner: owner))
+            let backup = try makeBackup(owner: owner)
+            guard includeFavorites else { return try encoder.encode(backup) }
+            var favoriteByIdentity: [String: Bool] = [:]
+            for exercise in exercises {
+                let identity = Self.backupExerciseIdentity(
+                    name: exercise.name,
+                    catalogKey: exercise.catalogKey
+                )
+                favoriteByIdentity[identity] = (favoriteByIdentity[identity] ?? false) || exercise.isFavorite
+            }
+            return try encoder.encode(
+                BackupWithFavorites(
+                    backup: backup,
+                    favorites: backup.exercises.map {
+                        favoriteByIdentity[
+                            Self.backupExerciseIdentity(name: $0.name, catalogKey: $0.catalogKey)
+                        ] ?? false
+                    }
+                )
+            )
         } catch let error as WorkoutStoreError {
             throw error
         } catch {
@@ -3159,6 +3197,10 @@ public final class WorkoutStore: ObservableObject {
             throw WorkoutStoreError.importLimitExceeded("session count")
         }
         try Self.validateBackupMetadata(backup, limits: limits)
+        // Manual imports only: an authoritative cloud restore keeps local favorites by identity.
+        let importedFavorites = replacingExisting
+            ? [:]
+            : try Self.manualImportExerciseFavorites(data: data, decoded: backup)
         let resolvedOwner = activeOwner ?? BackupOwner(accountID: accountStorageKey)
         let destinationIsFresh = snapshot.exercises.isEmpty &&
             snapshot.workouts.isEmpty && snapshot.muscleMappings.isEmpty
@@ -3177,9 +3219,10 @@ public final class WorkoutStore: ObservableObject {
             )
         }
 
-        // Favorite status is local to this account and deliberately absent from the
-        // Android/PWA-compatible backup. Preserve it by stable exercise identity when
-        // a cloud restore replaces UUIDs, so an older client cannot erase the choice.
+        // Favorite status is local to this account and absent from the cloud row. Manual
+        // backups carry an optional per-exercise flag (`importedFavorites`, applied below);
+        // for everything else preserve it by stable exercise identity when a cloud restore
+        // replaces UUIDs, so an older client cannot erase the choice.
         let localExercisesByCatalogKey = Dictionary(grouping: snapshot.exercises.compactMap {
             exercise -> (key: String, exercise: Exercise)? in
             guard let key = BuiltInExerciseCatalog.resolvedKey(
@@ -3324,11 +3367,19 @@ public final class WorkoutStore: ObservableObject {
         }
 
         for item in backup.exercises {
-            _ = try resolveExercise(
+            let id = try resolveExercise(
                 item.name,
                 catalogKey: item.catalogKey,
                 machineLoadProfile: item.machineLoadProfile
             )
+            // Same rule as Android: an explicit flag overrides the stored one, true or false.
+            if let id,
+               let index = exerciseIndexByID[id],
+               let favorite = importedFavorites[
+                   Self.backupExerciseIdentity(name: item.name, catalogKey: item.catalogKey)
+               ] {
+                next.exercises[index].isFavorite = favorite
+            }
         }
 
         var existingSignatures = Set(next.workouts.map(Self.importSignature))
@@ -4455,6 +4506,31 @@ public final class WorkoutStore: ObservableObject {
         return canonical
     }
 
+    /// Reads the optional boolean `favorite` flag Android writes on catalog exercises.
+    /// Absent or null means "no opinion"; any other non-boolean value is malformed.
+    private static func manualImportExerciseFavorites(
+        data: Data,
+        decoded: GymBackup
+    ) throws -> [String: Bool] {
+        guard data.range(of: Data("\"favorite\"".utf8)) != nil else { return [:] }
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let rawExercises = root["exercises"] as? [Any],
+              rawExercises.count == decoded.exercises.count else {
+            return [:]
+        }
+        var result: [String: Bool] = [:]
+        for (raw, exercise) in zip(rawExercises, decoded.exercises) {
+            guard let object = raw as? [String: Any],
+                  let value = object["favorite"],
+                  !(value is NSNull) else { continue }
+            guard let favorite = jsonBoolean(value) else {
+                throw WorkoutStoreError.malformedBackup("An exercise favorite flag must be a boolean.")
+            }
+            result[backupExerciseIdentity(name: exercise.name, catalogKey: exercise.catalogKey)] = favorite
+        }
+        return result
+    }
+
     private static func canonicalBackupExerciseWire(
         name rawName: String,
         catalogKey rawCatalogKey: String?
@@ -5078,5 +5154,47 @@ public final class WorkoutStore: ObservableObject {
         guard maximum >= 0 else { return false }
         if maximum == Int.max { return true }
         return value.utf8.prefix(maximum + 1).count <= maximum
+    }
+}
+
+/// Manual-backup encoding: `GymBackup` plus the Android-compatible `favorite` flag on each
+/// catalog exercise. Kept separate from `BackupExercise` so cloud identity and digests,
+/// which are built from that type, never see it.
+private struct BackupWithFavorites: Encodable {
+    let backup: GymBackup
+    let favorites: [Bool]
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, exportedAt, app, diagnostics, owner, catalogSeedVersion
+        case exercises, sessions, summary
+    }
+
+    private struct ExerciseWire: Encodable {
+        let exercise: BackupExercise
+        let favorite: Bool
+
+        private enum ExtraKeys: String, CodingKey { case favorite }
+
+        func encode(to encoder: Encoder) throws {
+            try exercise.encode(to: encoder)
+            var container = encoder.container(keyedBy: ExtraKeys.self)
+            try container.encode(favorite, forKey: .favorite)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(backup.schemaVersion, forKey: .schemaVersion)
+        try container.encode(backup.exportedAt, forKey: .exportedAt)
+        try container.encode(backup.app, forKey: .app)
+        try container.encode(backup.diagnostics, forKey: .diagnostics)
+        try container.encodeIfPresent(backup.owner, forKey: .owner)
+        try container.encode(backup.catalogSeedVersion, forKey: .catalogSeedVersion)
+        try container.encode(
+            zip(backup.exercises, favorites).map { ExerciseWire(exercise: $0, favorite: $1) },
+            forKey: .exercises
+        )
+        try container.encode(backup.sessions, forKey: .sessions)
+        try container.encodeIfPresent(backup.summary, forKey: .summary)
     }
 }

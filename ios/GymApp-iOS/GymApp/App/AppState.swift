@@ -2498,7 +2498,7 @@ final class AppState: ObservableObject {
 
     func exportBackup() throws -> Data {
         guard isAccountReady else { throw WorkoutStoreError.storageAccountMismatch }
-        return try workoutStore.exportBackupData(
+        return try workoutStore.exportManualBackupData(
             owner: backupOwner,
             prettyPrinted: true
         )
