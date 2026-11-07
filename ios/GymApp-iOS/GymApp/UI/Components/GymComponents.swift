@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Reusable content surface with a quiet fill and restrained depth.
 public struct GymPanel<Content: View>: View {
@@ -683,5 +684,33 @@ public struct GymSecondaryButtonStyle: ButtonStyle {
             .opacity(isEnabled ? 1 : 0.48)
             .scaleEffect(configuration.isPressed && !reduceMotion ? GymPressFeedback.scale : 1)
             .animation(reduceMotion ? nil : GymPressFeedback.animation(isPressed: configuration.isPressed), value: configuration.isPressed)
+    }
+}
+
+/// Synchronously ends text editing, which makes a number field commit its pending text.
+@MainActor
+func gymResignFirstResponder() {
+    UIApplication.shared.sendAction(
+        #selector(UIResponder.resignFirstResponder),
+        to: nil, from: nil, for: nil
+    )
+}
+
+extension View {
+    /// Decimal pads have no return key. Docks a "Done" button on the keyboard
+    /// that resigns the first responder, which also commits the number field's
+    /// pending text. Declared once per screen (not per field) so the bar is
+    /// never duplicated. Screens with their own Done bar (the active workout)
+    /// do not use it.
+    func gymKeyboardDoneToolbar() -> some View {
+        toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button(gymLocalized("Done")) {
+                    gymResignFirstResponder()
+                }
+                .fontWeight(.semibold)
+            }
+        }
     }
 }

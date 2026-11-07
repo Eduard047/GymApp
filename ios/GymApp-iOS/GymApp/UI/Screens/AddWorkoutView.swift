@@ -412,6 +412,7 @@ struct AddWorkoutView: View {
                     .padding(.bottom, 28)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                .gymKeyboardDoneToolbar()
                 .gymExerciseReorderContainer(
                     exerciseReorder,
                     ids: visibleDraftIDs,

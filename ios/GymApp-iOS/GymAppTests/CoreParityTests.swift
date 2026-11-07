@@ -19312,6 +19312,30 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(summary.contains("(selected ? GymTheme.primaryAction : GymTheme.surfaceVariant)"))
     }
 
+    /// The weight field commits only on focus loss and Log does not blur it, so
+    /// recording must end editing first and re-read the set from the draft.
+    /// Past-workout and plan editors dock a keyboard Done toolbar.
+    func testIOSLogCommitsTypedWeightAndEditorsDockKeyboardDone() throws {
+        let active = try iosSource("GymApp/UI/Screens/ActiveWorkoutView.swift")
+        let start = try XCTUnwrap(active.range(of: "    private func recordSet(\n"))
+        let end = try XCTUnwrap(active.range(of: "    private func performRecordSet(", range: start.upperBound..<active.endIndex))
+        let body = String(active[start.lowerBound..<end.lowerBound])
+        let blur = try XCTUnwrap(body.range(of: "focusedWeightSetID = nil"))
+        let reread = try XCTUnwrap(body.range(of: "liveDraft.exercises.first(where: { $0.id == exerciseID })"))
+        let record = try XCTUnwrap(body.range(of: "performRecordSet(liveSet,"))
+        XCTAssertLessThan(blur.lowerBound, reread.lowerBound)
+        XCTAssertLessThan(reread.lowerBound, record.lowerBound)
+        XCTAssertTrue(body.contains("gymResignFirstResponder()"))
+        XCTAssertTrue(body.contains("!liveSet.isCompleted"))
+        for screen in ["WorkoutDetailView", "AddWorkoutView"] {
+            let source = try iosSource("GymApp/UI/Screens/\(screen).swift")
+            XCTAssertTrue(source.contains(".gymKeyboardDoneToolbar()"), screen)
+        }
+        let components = try iosSource("GymApp/UI/Components/GymComponents.swift")
+        XCTAssertTrue(components.contains("ToolbarItemGroup(placement: .keyboard)"))
+        XCTAssertTrue(components.contains("Button(gymLocalized(\"Done\"))"))
+    }
+
     /// Rest lives compactly on the latest completed row (no standing rest
     /// panel or full-width "Undo" button any more): a countdown plus
     /// "−15"/"+15"/"Стоп" capsules calling the same `adjustManualRest`/

@@ -2807,6 +2807,28 @@ struct ActiveWorkoutView: View {
         exerciseName: String,
         draft: ActiveWorkoutDraft
     ) {
+        // A weight field commits its typed text only when it loses focus, and
+        // tapping Log does not blur it. End editing first, then record the
+        // set as it is after the commit, never the copy captured at render time.
+        if focusedWeightSetID != nil {
+            focusedWeightSetID = nil
+            gymResignFirstResponder()
+            let setID = set.id
+            let exerciseID = exercise.id
+            Task { @MainActor in
+                // Let the focus change and the field's commit land first.
+                await Task.yield()
+                guard let liveDraft = currentDraft,
+                      liveDraft.commitIntent == nil,
+                      let liveExercise = liveDraft.exercises.first(where: { $0.id == exerciseID }),
+                      let liveSet = liveExercise.sets.first(where: { $0.id == setID }),
+                      !liveSet.isCompleted else { return }
+                withAnimation(GymMotion.animation(reduceMotion: reduceMotion)) {
+                    performRecordSet(liveSet, exercise: liveExercise, exerciseName: exerciseName, draft: liveDraft)
+                }
+            }
+            return
+        }
         // One animation transaction for the whole state change: the row swap,
         // the next set expanding, the progress ring and the "Recorded" banner.
         withAnimation(GymMotion.animation(reduceMotion: reduceMotion)) {

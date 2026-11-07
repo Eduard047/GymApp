@@ -1472,6 +1472,7 @@ struct WorkoutDetailView: View {
                     .padding(.bottom, 32)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                .gymKeyboardDoneToolbar()
             } else {
                 GymContentUnavailableView(
                     "Workout unavailable",
