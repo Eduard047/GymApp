@@ -1436,6 +1436,7 @@
     <string name="workout_share_live_friend_action">Разом із %1$s</string>
     <string name="live_workout_lobby_eyebrow">Разом</string>
     <string name="live_workout_lobby_title">Кімната спільного тренування</string>
+    <string name="live_workout_no_invitations">Немає запрошень на спільні тренування.</string>
     <string name="live_workout_connection_realtime">Підключено в реальному часі. Стан усе одно перевіряється на сервері.</string>
     <string name="live_workout_connection_polling">Realtime недоступний; працює безпечне опитування.</string>
     <string name="live_workout_connection_offline">Немає мережі. Локальні зміни чекають точного повтору.</string>

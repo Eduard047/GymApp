@@ -643,8 +643,6 @@ private fun LazyListScope.liveWorkoutLobby(
 ) {
     val invitations = state.inbox?.invitations.orEmpty()
     val rooms = state.inbox?.rooms.orEmpty()
-    if (invitations.isEmpty() && rooms.isEmpty()) return
-
     item {
         SectionTitle(
             eyebrow = stringResource(R.string.live_workout_lobby_eyebrow),
@@ -657,6 +655,15 @@ private fun LazyListScope.liveWorkoutLobby(
                 }
             )
         )
+    }
+    if (invitations.isEmpty() && rooms.isEmpty()) {
+        item {
+            Text(
+                stringResource(R.string.live_workout_no_invitations),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
     items(invitations, key = { "live-invite-${it.roomId}" }) { invitation ->
         AppPanel(

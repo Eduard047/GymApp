@@ -1396,6 +1396,7 @@
     <string name="workout_share_live_friend_action">Live with %1$s</string>
     <string name="live_workout_lobby_eyebrow">Live</string>
     <string name="live_workout_lobby_title">Shared workout lobby</string>
+    <string name="live_workout_no_invitations">No live workout invitations.</string>
     <string name="live_workout_connection_realtime">Connected live. Durable state is still verified from the server.</string>
     <string name="live_workout_connection_polling">Realtime is unavailable; secure polling is active.</string>
     <string name="live_workout_connection_offline">Offline. Local updates stay queued for an exact retry.</string>

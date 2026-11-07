@@ -1436,6 +1436,7 @@
     <string name="workout_share_live_friend_action">Вместе с %1$s</string>
     <string name="live_workout_lobby_eyebrow">Вместе</string>
     <string name="live_workout_lobby_title">Комната совместной тренировки</string>
+    <string name="live_workout_no_invitations">Нет приглашений на совместные тренировки.</string>
     <string name="live_workout_connection_realtime">Подключено в реальном времени. Состояние всё равно проверяется на сервере.</string>
     <string name="live_workout_connection_polling">Realtime недоступен; работает безопасный опрос.</string>
     <string name="live_workout_connection_offline">Нет сети. Локальные изменения ждут точного повтора.</string>
