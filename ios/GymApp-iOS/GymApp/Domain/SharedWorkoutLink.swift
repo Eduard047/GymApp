@@ -156,19 +156,14 @@ enum SharedWorkoutLinkDecoder {
         }
         if scheme == "https", host == "gymapptracker.com" {
             let path = components.path
-            return path == "/workout" || path.hasPrefix("/workout/")
+            return path == "/" || path == "/workout" || path.hasPrefix("/workout/")
         }
         return false
     }
 
-    static func decode(
-        _ url: URL,
-        allowLegacyHTTPSRoot: Bool = false
-    ) throws -> SharedWorkoutPlan {
-        guard let destination = destination(
-            for: url,
-            allowLegacyHTTPSRoot: allowLegacyHTTPSRoot
-        ), let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+    static func decode(_ url: URL) throws -> SharedWorkoutPlan {
+        guard let destination = destination(for: url),
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             throw SharedWorkoutLinkError.invalidURL
         }
         guard components.user == nil,
@@ -191,8 +186,7 @@ enum SharedWorkoutLinkDecoder {
                 throw SharedWorkoutLinkError.invalidURL
             }
         case .legacyHTTPSRoot:
-            guard allowLegacyHTTPSRoot,
-                  components.scheme?.lowercased() == "https",
+            guard components.scheme?.lowercased() == "https",
                   components.percentEncodedHost?.lowercased() == "gymapptracker.com",
                   components.percentEncodedPath == "/" else {
                 throw SharedWorkoutLinkError.invalidURL
@@ -293,10 +287,7 @@ enum SharedWorkoutLinkDecoder {
         )
     }
 
-    private static func destination(
-        for url: URL,
-        allowLegacyHTTPSRoot: Bool
-    ) -> Destination? {
+    private static func destination(for url: URL) -> Destination? {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let scheme = components.scheme?.lowercased(),
               let host = components.host?.lowercased() else {
@@ -304,7 +295,7 @@ enum SharedWorkoutLinkDecoder {
         }
         if scheme == "https", host == "gymapptracker.com" {
             if components.path == "/workout/" { return .canonicalHTTPS }
-            if allowLegacyHTTPSRoot, components.path == "/" { return .legacyHTTPSRoot }
+            if components.path == "/" { return .legacyHTTPSRoot }
         }
         if scheme == "com.setforge.gymapp.ios",
            host == "workout",

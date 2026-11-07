@@ -45,11 +45,8 @@ final class SharedWorkoutLinkTests: XCTestCase {
 
         XCTAssertEqual(appLink.absoluteString.split(separator: "#").first, "https://gymapptracker.com/workout/")
         XCTAssertEqual(websiteLink.absoluteString.split(separator: "#").first, "https://gymapptracker.com/")
-        XCTAssertThrowsError(try SharedWorkoutLinkDecoder.decode(websiteLink))
-        XCTAssertEqual(
-            try SharedWorkoutLinkDecoder.decode(websiteLink, allowLegacyHTTPSRoot: true),
-            plan
-        )
+        XCTAssertTrue(SharedWorkoutLinkDecoder.isRecognizedDestination(websiteLink))
+        XCTAssertEqual(try SharedWorkoutLinkDecoder.decode(websiteLink), plan)
     }
 
     func testEditorDraftEncoderUsesCurrentV1PlanAndExcludesExerciseMetadata() throws {

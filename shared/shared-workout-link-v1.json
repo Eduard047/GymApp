@@ -28,6 +28,31 @@
       }
     },
     {
+      "id": "legacy-root-path",
+      "description": "Legacy website-root link (path /) is accepted like the /workout/ link; it is never produced, so no round trip",
+      "link": "https://gymapptracker.com/#workout=eyJ2IjoxLCJlIjpbWyJiZW5jaF9wcmVzcyIsIkJlbmNoIFByZXNzIixbWzgwLDhdLFs4Mi41LDZdXV1dfQ",
+      "valid": true,
+      "encodeRoundTrip": false,
+      "expected": {
+        "exercises": [
+          {
+            "catalogKey": "bench_press",
+            "name": "Bench Press",
+            "sets": [
+              [
+                80,
+                8
+              ],
+              [
+                82.5,
+                6
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
       "id": "custom-cyrillic-apostrophe",
       "description": "Custom exercise: Cyrillic name with an apostrophe, no catalog key, zero weight",
       "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxLCJlIjpbWyIiLCLQotGP0LPQsCDQlCfQkNGA0YLQsNC90YzRj9C90LAiLFtbMCwxMl0sWzAsMTBdXV1dfQ",
@@ -893,6 +918,12 @@
       "id": "empty-fragment",
       "description": "Empty payload",
       "link": "https://gymapptracker.com/workout/#workout=",
+      "valid": false
+    },
+    {
+      "id": "root-path-with-query",
+      "description": "Legacy root path still rejects a query string",
+      "link": "https://gymapptracker.com/?x=1#workout=eyJ2IjoxLCJlIjpbWyJiZW5jaF9wcmVzcyIsIkJlbmNoIFByZXNzIixbWzgwLDhdLFs4Mi41LDZdXV1dfQ",
       "valid": false
     }
   ]
