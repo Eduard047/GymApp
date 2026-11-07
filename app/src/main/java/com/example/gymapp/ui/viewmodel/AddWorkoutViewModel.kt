@@ -45,6 +45,7 @@ import com.example.gymapp.util.TrainingGoal
 import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.util.TrainingProfileManager
 import com.example.gymapp.util.TrainingSplit
+import com.example.gymapp.util.formatWeightInput
 import com.example.gymapp.util.parseWeightInputOrNull
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -148,11 +149,7 @@ internal fun normalizeSharedWorkoutPlanForDraftImport(plan: SharedWorkoutPlan): 
 internal fun smartWorkoutWeightInput(weight: Double?): String {
     val resolved = weight ?: 0.0
     require(WorkoutDataLimits.isValidWeight(resolved))
-    return if (resolved % 1.0 == 0.0) {
-        resolved.toInt().toString()
-    } else {
-        String.format(java.util.Locale.US, "%.1f", resolved)
-    }
+    return formatWeightInput(resolved)
 }
 
 private const val SHARED_WORKOUT_REPS_INPUT_MAX_LENGTH = 10
@@ -553,8 +550,7 @@ internal fun withInitialWeightIfBlank(
     }
 }
 
-internal fun formatPlannedWeight(weight: Double): String =
-    if (weight % 1.0 == 0.0) weight.toInt().toString() else String.format(java.util.Locale.US, "%.1f", weight)
+internal fun formatPlannedWeight(weight: Double): String = formatWeightInput(weight)
 
 /**
  * Sessions the previous-workout picker can offer: only those with recorded sets (activity-only

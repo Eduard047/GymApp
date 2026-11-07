@@ -317,6 +317,16 @@ class AddWorkoutDraftShareTest {
     }
 
     @Test
+    fun fractionalWeightsKeepTwoDecimalsInDraftInputs() {
+        assertEquals("21.25", smartWorkoutWeightInput(21.25))
+        assertEquals("1.25", smartWorkoutWeightInput(1.25))
+        assertEquals("62.5", smartWorkoutWeightInput(62.5))
+        assertEquals("21.25", formatPlannedWeight(21.25))
+        assertEquals("1.25", formatPlannedWeight(1.25))
+        assertEquals("60", formatPlannedWeight(60.0))
+    }
+
+    @Test
     fun smartCoachNullableLoadIsShownAndSharedAsExplicitZero() {
         assertEquals("0", smartWorkoutWeightInput(null))
         assertEquals("0", smartWorkoutWeightInput(0.0))

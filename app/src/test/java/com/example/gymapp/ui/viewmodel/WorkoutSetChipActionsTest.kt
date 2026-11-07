@@ -95,4 +95,14 @@ class WorkoutSetChipActionsTest {
         assertNull(sets.withSetDuplicatedAfter(0, maxSets = 3))
         assertNull(sets.withSetDuplicatedAfter(7))
     }
+
+    @Test
+    fun planWeightKeepsTwoDecimalsWithoutRoundingToTenths() {
+        assertEquals("21.25", formatPlanWeight(21.25))
+        assertEquals("1.25", formatPlanWeight(1.25))
+        assertEquals("62.5", formatPlanWeight(62.5))
+        assertEquals("60", formatPlanWeight(60.0))
+        val sets = listOf(SetInputState(weight = "", reps = ""))
+        assertEquals("21.25", sets.withLastWeightAt(0, 21.25)?.single()?.weight)
+    }
 }

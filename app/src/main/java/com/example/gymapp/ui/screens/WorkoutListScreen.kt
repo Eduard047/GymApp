@@ -150,6 +150,7 @@ import java.text.NumberFormat
 import java.time.format.TextStyle
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.example.gymapp.util.formatVolumeTotal
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
 
@@ -1501,11 +1502,11 @@ private fun TodayHeroMetricsRow(
         NumberFormat.getIntegerInstance(locale).format(metrics.totalWorkouts.coerceAtLeast(0))
     }
     val volumeAccessibilityValue = remember(metrics.totalVolume, locale) {
-        NumberFormat.getNumberInstance(locale).apply {
-            maximumFractionDigits = 1
-            isGroupingUsed = true
-        }.format(metrics.totalVolume.takeIf { it.isFinite() && it >= 0.0 }
-            ?.coerceAtMost(1_000_000_000_000_000.0) ?: 0.0)
+        formatVolumeTotal(
+            metrics.totalVolume.takeIf { it.isFinite() && it >= 0.0 }
+                ?.coerceAtMost(1_000_000_000_000_000.0) ?: 0.0,
+            locale
+        )
     }
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -1598,10 +1599,7 @@ internal fun formatTodayHeroVolumeSpoken(value: Double, locale: Locale): String 
         .takeIf { it.isFinite() && it >= 0.0 }
         ?.coerceAtMost(1_000_000_000_000_000.0)
         ?: 0.0
-    return NumberFormat.getNumberInstance(locale).apply {
-        maximumFractionDigits = 1
-        isGroupingUsed = true
-    }.format(safeValue)
+    return formatVolumeTotal(safeValue, locale)
 }
 
 @Composable

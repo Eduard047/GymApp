@@ -64,6 +64,7 @@ import com.example.gymapp.ui.viewmodel.ExerciseProgressUiState
 import com.example.gymapp.util.DateTimeUtils
 import java.text.NumberFormat
 import java.util.Locale
+import com.example.gymapp.util.formatVolumeTotal
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
 
@@ -456,7 +457,7 @@ private fun ProgressSummaryCard(
             label = stringResource(R.string.progress_stat_total_volume),
             value = formattedStringResource(
                 R.string.today_history_volume_kg,
-                NumberFormat.getIntegerInstance(Locale.getDefault()).format(totalVolume)
+                formatVolumeTotal(totalVolume, Locale.getDefault())
             )
         )
     )
@@ -526,7 +527,7 @@ private fun ProgressSessionHistoryCard(
                 text = "${formattedStringResource(R.string.progress_reps_value, totalReps)} • " +
                     formattedStringResource(
                         R.string.stats_volume,
-                        java.text.NumberFormat.getIntegerInstance(Locale.getDefault()).format(totalVolume)
+                        formatVolumeTotal(totalVolume, Locale.getDefault())
                     ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

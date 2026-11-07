@@ -1,17 +1,13 @@
 package com.example.gymapp.ui.viewmodel
 
 import com.example.gymapp.data.repository.WorkoutDataLimits
+import com.example.gymapp.util.formatWeightInput
 import com.example.gymapp.util.parseWeightInputOrNull
 
 /** Pure per-set quick actions for the workout plan editor chips (Last, Prev., +2.5, Copy). */
 internal const val WORKOUT_SET_QUICK_WEIGHT_STEP = 2.5
 
-internal fun formatPlanWeight(weight: Double): String =
-    if (weight % 1.0 == 0.0) {
-        weight.toInt().toString()
-    } else {
-        String.format(java.util.Locale.US, "%.1f", weight)
-    }
+internal fun formatPlanWeight(weight: Double): String = formatWeightInput(weight)
 
 /** Sets this set's weight to the last logged weight; null when there is nothing to apply. */
 internal fun List<SetInputState>.withLastWeightAt(index: Int, lastWeight: Double?): List<SetInputState>? {

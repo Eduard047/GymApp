@@ -126,6 +126,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.Locale
+import com.example.gymapp.util.formatVolumeTotal
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
 
@@ -646,7 +647,7 @@ private fun WorkoutHeaderCard(
             add(
                 formattedStringResource(
                     R.string.today_history_volume_kg,
-                    NumberFormat.getIntegerInstance(Locale.getDefault()).format(volume)
+                    formatVolumeTotal(volume, Locale.getDefault())
                 )
             )
             durationSeconds?.let { add(formatWorkoutDuration(it)) }
@@ -2031,7 +2032,7 @@ private fun SavedWorkoutExerciseCard(
     val repsLabel = formattedPluralStringResource(R.plurals.saved_workout_rep_count, repCount, repCount)
     val volumeLabel = formattedStringResource(
         R.string.stats_volume,
-        NumberFormat.getIntegerInstance(Locale.getDefault()).format(sets.sumOf { it.weight * it.reps })
+        formatVolumeTotal(sets.sumOf { it.weight * it.reps }, Locale.getDefault())
     )
     val removeLabel = stringResource(R.string.active_workout_remove_exercise)
     val removeAction = canRemoveExercise && controls.showRemoveExercise

@@ -25,6 +25,7 @@ import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.asString
 import java.util.Locale
+import com.example.gymapp.util.formatWeightDisplay
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
 
@@ -84,11 +85,7 @@ internal fun SetDeleteConfirmationDialog(
     onConfirm: () -> Unit
 ) {
     val exerciseName = localizedExerciseName(snapshot.exerciseName)
-    val weight = if (snapshot.weight.isFinite() && snapshot.weight % 1.0 == 0.0) {
-        String.format(Locale.getDefault(), "%.0f", snapshot.weight)
-    } else {
-        String.format(Locale.getDefault(), "%.1f", snapshot.weight)
-    }
+    val weight = formatWeightDisplay(snapshot.weight, Locale.getDefault())
     val impact = stringResource(
         if (snapshot.retainsRecordedActivity) R.string.dialog_delete_set_impact_watch_activity
         else setDeleteImpactTextResource(snapshot.impact)
