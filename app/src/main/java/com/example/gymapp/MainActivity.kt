@@ -1,10 +1,12 @@
 package com.example.gymapp
 
+import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import com.example.gymapp.util.AppLanguageSignal
+import com.example.gymapp.util.CurrentDaySignal
 import android.util.Log
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
@@ -17,6 +19,7 @@ import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.data.repository.SharedWorkoutOfferResult
 import com.example.gymapp.navigation.GymAppRoot
 import com.example.gymapp.service.isOpenActiveWorkoutAction
+import com.example.gymapp.service.shouldRequestOpenActiveWorkout
 import com.example.gymapp.ui.theme.GymAppTheme
 import com.example.gymapp.uiaudit.UiAuditHooks
 import kotlinx.coroutines.launch
@@ -40,7 +43,7 @@ class MainActivity : AppCompatActivity() {
         }
         AppLanguageSignal.refresh()
 
-        handleIncomingIntent(intent)
+        handleIncomingIntent(intent, restoredInstance = savedInstanceState != null)
         UiAuditHooks.handleIntent(this, intent)
 
         configureEdgeToEdge()
@@ -78,15 +81,33 @@ class MainActivity : AppCompatActivity() {
         UiAuditHooks.handleIntent(this, intent)
     }
 
+    private var currentDayReceiver: BroadcastReceiver? = null
+
+    override fun onStart() {
+        super.onStart()
+        currentDayReceiver = CurrentDaySignal.register(this)
+    }
+
+    override fun onStop() {
+        currentDayReceiver?.let { CurrentDaySignal.unregister(this, it) }
+        currentDayReceiver = null
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
+        CurrentDaySignal.refresh()
         (application as GymApplication).pushManager.refreshSystemState()
     }
 
-    private fun handleIncomingIntent(intent: Intent?) {
+    private fun handleIncomingIntent(intent: Intent?, restoredInstance: Boolean = false) {
         if (isOpenActiveWorkoutAction(intent?.action)) {
-            // Notification tap: the root UI opens the active workout if one exists.
-            (application as GymApplication).activeWorkoutOpenInbox.request()
+            // Notification tap: the root UI opens the active workout if one exists. A
+            // recreated instance (rotation, language/theme change) replays the same launch
+            // intent and must not re-open the screen the user already left.
+            if (shouldRequestOpenActiveWorkout(intent?.action, restoredInstance)) {
+                (application as GymApplication).activeWorkoutOpenInbox.request()
+            }
             return
         }
         if (intent != null && intent.action?.startsWith(PUSH_TAP_ACTION_PREFIX) == true) {

@@ -126,6 +126,7 @@ struct ProgressHubView: View {
         .onAppear { applyUIAuditSectionIfRequested() }
 #endif
         .onReceive(store.objectWillChange) { _ in referenceDate = Date() }
+        .onReceive(GymDayChange.publisher) { _ in referenceDate = Date() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { referenceDate = Date() }
         }

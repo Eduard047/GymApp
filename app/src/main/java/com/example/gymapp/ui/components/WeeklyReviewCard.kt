@@ -23,8 +23,9 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import com.example.gymapp.util.TrainingProfile
-import java.time.LocalDate
 import java.util.Locale
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.gymapp.util.CurrentDaySignal
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.WeeklyReview
@@ -54,6 +55,8 @@ fun WeeklyReviewCard(
     var offset by rememberSaveable { mutableIntStateOf(0) }
     var evidence by remember { mutableStateOf<WeeklyReviewInsight?>(null) }
     var expanded by rememberSaveable { mutableStateOf(false) }
+    // Reading the current day recomposes the card (and rebuilds the review) after midnight.
+    val today = CurrentDaySignal.state.collectAsStateWithLifecycle().value.date
     val review = WeeklyReview.build(history, offset)
     // The card follows the finger between weeks (rubber-banded at the current week); the chevrons stay.
     val swipe = rememberGymTrackedSwipe(
@@ -69,9 +72,9 @@ fun WeeklyReviewCard(
                 IconButton(onClick = { offset = (offset - 1).coerceAtLeast(-520) }, enabled = offset > -520) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, stringResource(R.string.training_previous_week))
                 }
-                val spokenRange = DateTimeUtils.formatDateRangeSpoken(review.start, review.end, locale, LocalDate.now())
+                val spokenRange = DateTimeUtils.formatDateRangeSpoken(review.start, review.end, locale, today)
                 Text(
-                    DateTimeUtils.formatDateRange(review.start, review.end, locale, LocalDate.now()),
+                    DateTimeUtils.formatDateRange(review.start, review.end, locale, today),
                     modifier = Modifier.weight(1f).semantics { contentDescription = spokenRange }, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center
                 )
                 IconButton(onClick = { offset = (offset + 1).coerceAtMost(0) }, enabled = offset < 0) {

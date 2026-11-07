@@ -47,6 +47,8 @@ import com.example.gymapp.data.repository.muscleContributionsForExercise
 import com.example.gymapp.data.repository.normalizedExerciseName
 import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.util.AppLanguageSignal
+import com.example.gymapp.util.CurrentDay
+import com.example.gymapp.util.CurrentDaySignal
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.TrainingGoal
@@ -362,7 +364,9 @@ class WorkoutListViewModel(
     private val zoneProvider: () -> ZoneId = { ZoneId.systemDefault() },
     // The in-app language; localized text in the UI state is rebuilt when it changes (the ViewModel
     // outlives the Activity recreate that follows a language switch).
-    private val languageTag: StateFlow<String> = AppLanguageSignal.tag
+    private val languageTag: StateFlow<String> = AppLanguageSignal.tag,
+    // Re-emits the UI state when the local day or timezone changes while the app stays open.
+    private val currentDay: StateFlow<CurrentDay> = CurrentDaySignal.state
 ) : ViewModel() {
     private val accountBinding = trainingGuidanceManager.activeBinding
     private val profileAccountBinding = trainingProfileManager.activeBinding
@@ -511,8 +515,9 @@ class WorkoutListViewModel(
             sourceState,
             muscleSelection,
             experienceState,
-            languageTag
-        ) { source, selection, experience, _ ->
+            languageTag,
+            currentDay
+        ) { source, selection, experience, _, _ ->
         val offset = source.offset
         val selectedWeekOffset = source.weekOffset
         val selectedHistoryPeriod = source.historyPeriod

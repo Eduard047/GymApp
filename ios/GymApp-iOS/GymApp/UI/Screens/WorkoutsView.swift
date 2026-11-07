@@ -5,6 +5,7 @@ STORY: See the next useful action, understand its size and weekly rhythm, start 
 FIRST VIEWPORT: A large asymmetric lens leads; core facts sit inside it and the start capsule attaches near thumb reach, followed by progressive analytics.
 FORM: User-selected Focus Lens from Fluid Focus; seed af1a1dee. iOS keeps native TabView, NavigationStack, Dynamic Type, Reduce Transparency, and system materials.
 */
+import Combine
 import SwiftUI
 
 private let maximumTodayHeroVolume = 1_000_000_000_000_000.0
@@ -394,6 +395,21 @@ final class TodayScreenProjectionCache: ObservableObject {
     }
 }
 
+/// Fires when the local day rolls over or the system timezone changes while the app stays
+/// open, so screens that cache "today" can re-read the clock (`scenePhase` does not change
+/// in either case).
+enum GymDayChange {
+    static var publisher: AnyPublisher<Void, Never> {
+        let center = NotificationCenter.default
+        return Publishers.Merge(
+            center.publisher(for: .NSCalendarDayChanged),
+            center.publisher(for: NSNotification.Name.NSSystemTimeZoneDidChange)
+        )
+        .map { _ in () }
+        .eraseToAnyPublisher()
+    }
+}
+
 @MainActor
 public struct WorkoutsView: View {
     @Environment(\.calendar) private var calendar
@@ -561,6 +577,7 @@ public struct WorkoutsView: View {
         }
         .onAppear { referenceDate = Date() }
         .onReceive(store.objectWillChange) { _ in referenceDate = Date() }
+        .onReceive(GymDayChange.publisher) { _ in referenceDate = Date() }
         .onChange(of: store.accountStorageKey) { _, storageKey in
             referenceDate = Date()
             monthOffset = 0
