@@ -213,8 +213,8 @@ final class WorkoutLiveActivityController: ObservableObject {
         let attributes = WorkoutActivityAttributes(
             workoutID: draft.id,
             startDate: draft.startedAt,
-            setLabel: gymText("Set", "Підхід", "Подход", languageCode: languageCode),
-            nextLabel: gymText("Next:", "Далі:", "Следующий:", languageCode: languageCode)
+            setLabel: Self.setLabel(languageCode: languageCode),
+            nextLabel: Self.nextLabel(languageCode: languageCode)
         )
         do {
             activity = try requester.request(
@@ -369,6 +369,14 @@ final class WorkoutLiveActivityController: ObservableObject {
         gymText("Skip rest", "Пропустити відпочинок", "Пропустить отдых", languageCode: languageCode)
     }
 
+    static func setLabel(languageCode: String) -> String {
+        gymText("Set", "Підхід", "Подход", languageCode: languageCode)
+    }
+
+    static func nextLabel(languageCode: String) -> String {
+        gymText("Next:", "Далі:", "Следующий:", languageCode: languageCode)
+    }
+
     static func contentState(
         for draft: ActiveWorkoutDraft,
         workoutStore: WorkoutStore?,
@@ -402,7 +410,9 @@ final class WorkoutLiveActivityController: ObservableObject {
                 isResting: false,
                 currentSetID: nil,
                 recordSetButtonTitle: recordSetButtonTitle(languageCode: languageCode),
-                skipRestButtonTitle: skipRestButtonTitle(languageCode: languageCode)
+                skipRestButtonTitle: skipRestButtonTitle(languageCode: languageCode),
+            setLabel: setLabel(languageCode: languageCode),
+            nextLabel: nextLabel(languageCode: languageCode)
             )
         }
 
@@ -425,7 +435,9 @@ final class WorkoutLiveActivityController: ObservableObject {
             isResting: restEndsAt != nil,
             currentSetID: set.id,
             recordSetButtonTitle: recordSetButtonTitle(languageCode: languageCode),
-            skipRestButtonTitle: skipRestButtonTitle(languageCode: languageCode)
+            skipRestButtonTitle: skipRestButtonTitle(languageCode: languageCode),
+            setLabel: setLabel(languageCode: languageCode),
+            nextLabel: nextLabel(languageCode: languageCode)
         )
     }
 }

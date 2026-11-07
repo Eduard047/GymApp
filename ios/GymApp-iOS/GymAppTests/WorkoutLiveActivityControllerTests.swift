@@ -620,6 +620,51 @@ final class WorkoutLiveActivityBridgeGuardTests: XCTestCase {
         }
     }
 
+    func testStateLabelsFollowTheCurrentLanguageAfterALanguageChange() {
+        let bench = Fixture.exercise(
+            name: "Bench Press",
+            sets: [Fixture.set(weight: 60, reps: 8, completed: false)]
+        )
+        let draft = Fixture.draft(exercises: [bench])
+        let finished = Fixture.draft(exercises: [
+            Fixture.exercise(name: "Row", sets: [Fixture.set(weight: 40, reps: 10, completed: true)])
+        ])
+        let expected: [(String, String, String)] = [
+            ("en", "Set", "Next:"),
+            ("uk", "Підхід", "Далі:"),
+            ("ru", "Подход", "Следующий:")
+        ]
+        // Same draft, language switched between builds: each state carries the
+        // labels of the language it was built with, not the one at start.
+        for (code, set, next) in expected {
+            for source in [draft, finished] {
+                let state = WorkoutLiveActivityController.contentState(
+                    for: source, workoutStore: nil, languageCode: code
+                )
+                XCTAssertEqual(state.setLabel, set, code)
+                XCTAssertEqual(state.nextLabel, next, code)
+                XCTAssertEqual(state.resolvedSetLabel(fallback: "start"), set, code)
+                XCTAssertEqual(state.resolvedNextLabel(fallback: "start"), next, code)
+            }
+        }
+    }
+
+    func testContentStateEncodedWithoutSetAndNextLabelsStillDecodesAndFallsBack() throws {
+        let legacyJSON = """
+        {"exerciseName":"Squat","setIndex":2,"setCount":4,"completedSets":1,"totalSets":4,\
+        "nextSetSummary":"100 kg × 5","isResting":false}
+        """
+        let state = try JSONDecoder().decode(
+            WorkoutActivityAttributes.ContentState.self,
+            from: Data(legacyJSON.utf8)
+        )
+
+        XCTAssertNil(state.setLabel)
+        XCTAssertNil(state.nextLabel)
+        XCTAssertEqual(state.resolvedSetLabel(fallback: "Підхід"), "Підхід")
+        XCTAssertEqual(state.resolvedNextLabel(fallback: "Далі:"), "Далі:")
+    }
+
     func testFinishedStateStillCarriesALocalizedSetProgressLabel() {
         let row = Fixture.exercise(
             name: "Row",

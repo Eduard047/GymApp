@@ -124,7 +124,7 @@ struct WorkoutLiveActivityWidget: Widget {
                             .minimumScaleFactor(0.7)
                         Text(
                             context.state.setProgressLabel
-                                ?? "\(context.attributes.setLabel) \(context.state.setIndex)/\(context.state.setCount)"
+                                ?? "\(context.state.resolvedSetLabel(fallback: context.attributes.setLabel)) \(context.state.setIndex)/\(context.state.setCount)"
                         )
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -135,7 +135,7 @@ struct WorkoutLiveActivityWidget: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(spacing: 8) {
-                        Text("\(context.attributes.nextLabel) \(context.state.nextSetSummary)")
+                        Text("\(context.state.resolvedNextLabel(fallback: context.attributes.nextLabel)) \(context.state.nextSetSummary)")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -203,7 +203,7 @@ private struct LockScreenLiveActivityView: View {
                         .font(.headline)
                         .foregroundStyle(LiveActivityColor.text)
                         .lineLimit(1)
-                    Text(state.setProgressLabel ?? "\(attributes.setLabel) \(state.setIndex)/\(state.setCount)")
+                    Text(state.setProgressLabel ?? "\(state.resolvedSetLabel(fallback: attributes.setLabel)) \(state.setIndex)/\(state.setCount)")
                         .font(.subheadline)
                         .foregroundStyle(LiveActivityColor.textMuted)
                 }
@@ -220,7 +220,7 @@ private struct LockScreenLiveActivityView: View {
                     .monospacedDigit()
                     .foregroundStyle(LiveActivityColor.text)
             } else {
-                Text("\(attributes.nextLabel) \(state.nextSetSummary)")
+                Text("\(state.resolvedNextLabel(fallback: attributes.nextLabel)) \(state.nextSetSummary)")
                     .font(.title3)
                     .fontWeight(.semibold)
                     .foregroundStyle(LiveActivityColor.text)

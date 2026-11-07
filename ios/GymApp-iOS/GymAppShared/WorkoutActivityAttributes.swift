@@ -49,6 +49,13 @@ public struct WorkoutActivityAttributes: ActivityAttributes {
         public let recordSetButtonTitle: String?
         /// Already-localized title of the "skip rest" button (same fallback).
         public let skipRestButtonTitle: String?
+        /// Already-localized "Set" label used when `setProgressLabel` is
+        /// absent. Optional so a state encoded by an older app build still
+        /// decodes; the widget then falls back to the (start-time) value in
+        /// the activity attributes.
+        public let setLabel: String?
+        /// Already-localized "Next:" label (same fallback to the attributes).
+        public let nextLabel: String?
 
         public static let defaultRecordSetButtonTitle = "Record set"
         public static let defaultSkipRestButtonTitle = "Skip rest"
@@ -65,7 +72,9 @@ public struct WorkoutActivityAttributes: ActivityAttributes {
             isResting: Bool,
             currentSetID: UUID?,
             recordSetButtonTitle: String? = nil,
-            skipRestButtonTitle: String? = nil
+            skipRestButtonTitle: String? = nil,
+            setLabel: String? = nil,
+            nextLabel: String? = nil
         ) {
             self.exerciseName = exerciseName
             self.setIndex = setIndex
@@ -79,6 +88,8 @@ public struct WorkoutActivityAttributes: ActivityAttributes {
             self.currentSetID = currentSetID
             self.recordSetButtonTitle = recordSetButtonTitle
             self.skipRestButtonTitle = skipRestButtonTitle
+            self.setLabel = setLabel
+            self.nextLabel = nextLabel
         }
 
         public var resolvedRecordSetButtonTitle: String {
@@ -87,6 +98,17 @@ public struct WorkoutActivityAttributes: ActivityAttributes {
 
         public var resolvedSkipRestButtonTitle: String {
             skipRestButtonTitle ?? Self.defaultSkipRestButtonTitle
+        }
+
+        /// The "Set" label to draw: the live in-app-language value when the
+        /// state carries one, else the one frozen into the attributes at start.
+        public func resolvedSetLabel(fallback: String) -> String {
+            setLabel ?? fallback
+        }
+
+        /// The "Next:" label to draw (same fallback as `resolvedSetLabel`).
+        public func resolvedNextLabel(fallback: String) -> String {
+            nextLabel ?? fallback
         }
 
         /// Fraction of the workout completed, clamped to [0, 1].
@@ -101,7 +123,8 @@ public struct WorkoutActivityAttributes: ActivityAttributes {
     /// When the workout started (used for elapsed-time display if needed).
     public let startDate: Date
     /// Already-localized "Подход" / "Set" style label, so the widget never
-    /// has to choose a language on its own.
+    /// has to choose a language on its own. Frozen at start: kept only as a
+    /// fallback for states without `ContentState.setLabel`.
     public let setLabel: String
     /// Already-localized "Следующий:" / "Next:" style label.
     public let nextLabel: String
