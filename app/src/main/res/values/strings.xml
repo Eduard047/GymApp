@@ -1283,6 +1283,11 @@
     <string name="exercise_search_label">Search exercises</string>
     <string name="exercise_search_placeholder">Name in English, Ukrainian, or Russian</string>
     <string name="exercise_search_clear">Clear search</string>
+    <string name="exercise_picker_create_title">Create exercise</string>
+    <string name="exercise_picker_create_name">Exercise name</string>
+    <string name="exercise_picker_create_action">Create and add</string>
+    <string name="exercise_picker_create_error_invalid">Enter a valid exercise name.</string>
+    <string name="exercise_picker_create_error_duplicate">An exercise with this name already exists.</string>
     <string name="exercise_search_no_results">No matching exercises</string>
     <string name="exercise_search_no_results_supporting">Try another name, body area, or muscle group.</string>
     <string name="exercise_search_result_count">%1$d exercises</string>

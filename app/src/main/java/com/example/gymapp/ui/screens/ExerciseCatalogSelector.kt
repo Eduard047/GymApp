@@ -43,6 +43,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.rememberCoroutineScope
+import com.example.gymapp.data.repository.DuplicateExerciseNameException
+import com.example.gymapp.data.repository.WorkoutDataLimits
+import com.example.gymapp.ui.theme.Button
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.ui.components.ExerciseMediaPreview
@@ -74,7 +82,12 @@ internal fun ExerciseCatalogSelector(
     externalOpen: Boolean = false,
     onExternalDismiss: () -> Unit = {},
     /** [ExerciseSelectorMode.Choose] is the Progress picker: own title, no add-flow chips, session counts. */
-    mode: ExerciseSelectorMode = ExerciseSelectorMode.Add
+    mode: ExerciseSelectorMode = ExerciseSelectorMode.Add,
+    /**
+     * Adds a "Create exercise" panel (Add mode only): creates a custom exercise and returns its id,
+     * which is then selected and the picker closes, like iOS "Create and add".
+     */
+    onCreateExercise: (suspend (String) -> Long)? = null
 ) {
     val isChooseMode = mode == ExerciseSelectorMode.Choose
     var internalExpanded by rememberSaveable { mutableStateOf(false) }
@@ -202,6 +215,18 @@ internal fun ExerciseCatalogSelector(
                         .nestedScroll(remember { ConsumeListOverscrollConnection }),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    if (!isChooseMode && onCreateExercise != null) {
+                        item(key = "create-exercise") {
+                            CreateExercisePanel(
+                                searchQuery = query,
+                                onCreate = onCreateExercise,
+                                onCreated = { exerciseId ->
+                                    onExerciseSelected(exerciseId)
+                                    closePicker()
+                                }
+                            )
+                        }
+                    }
                     if (visibleExercises.isEmpty()) {
                         item {
                             Text(
@@ -302,6 +327,107 @@ internal fun ExerciseCatalogSelector(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Inline validation outcome of the picker's "Create exercise" panel (iOS invalid / duplicate name). */
+internal enum class NewExerciseError { Invalid, Duplicate }
+
+/** Maps a failed [com.example.gymapp.data.repository.GymRepository.addExercise] to its inline message. */
+internal fun newExerciseErrorFor(error: Throwable): NewExerciseError =
+    if (error is DuplicateExerciseNameException) NewExerciseError.Duplicate else NewExerciseError.Invalid
+
+/**
+ * Name field + "Create and add" at the top of the picker list, always present in Add mode (iOS puts
+ * the same section first). Until the user edits the field it mirrors the search query, so a search
+ * with no match is one tap from creating that exercise.
+ */
+@Composable
+private fun CreateExercisePanel(
+    searchQuery: String,
+    onCreate: suspend (String) -> Long,
+    onCreated: (Long) -> Unit
+) {
+    var edited by rememberSaveable { mutableStateOf(false) }
+    var typedName by rememberSaveable { mutableStateOf("") }
+    var error by remember { mutableStateOf<NewExerciseError?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val name = if (edited) typedName else searchQuery
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = GymPanelShape,
+        color = androidx.compose.material3.MaterialTheme.colorScheme.surface,
+        contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(
+            1.dp,
+            androidx.compose.material3.MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.exercise_picker_create_title),
+                style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            OutlinedTextField(
+                value = name,
+                onValueChange = {
+                    edited = true
+                    typedName = it.take(WorkoutDataLimits.MAX_EXERCISE_NAME_LENGTH)
+                    error = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.exercise_picker_create_name)) },
+                isError = error != null,
+                singleLine = true
+            )
+            error?.let { current ->
+                Text(
+                    text = stringResource(
+                        if (current == NewExerciseError.Duplicate) {
+                            R.string.exercise_picker_create_error_duplicate
+                        } else {
+                            R.string.exercise_picker_create_error_invalid
+                        }
+                    ),
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium
+                )
+            }
+            Button(
+                onClick = {
+                    if (busy) return@Button
+                    busy = true
+                    scope.launch {
+                        try {
+                            onCreated(onCreate(name.trim()))
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (failure: Throwable) {
+                            error = newExerciseErrorFor(failure)
+                        } finally {
+                            busy = false
+                        }
+                    }
+                },
+                enabled = name.isNotBlank() && !busy,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 52.dp)
+            ) {
+                Icon(imageVector = Icons.Default.Add, contentDescription = null)
+                Text(
+                    text = stringResource(R.string.exercise_picker_create_action),
+                    modifier = Modifier.padding(start = 8.dp)
+                )
             }
         }
     }

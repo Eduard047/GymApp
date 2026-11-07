@@ -1323,6 +1323,11 @@
     <string name="exercise_search_label">Поиск упражнений</string>
     <string name="exercise_search_placeholder">Название на английском, украинском или русском</string>
     <string name="exercise_search_clear">Очистить поиск</string>
+    <string name="exercise_picker_create_title">Создать упражнение</string>
+    <string name="exercise_picker_create_name">Название упражнения</string>
+    <string name="exercise_picker_create_action">Создать и добавить</string>
+    <string name="exercise_picker_create_error_invalid">Введи корректное название упражнения.</string>
+    <string name="exercise_picker_create_error_duplicate">Упражнение с таким названием уже существует.</string>
     <string name="exercise_search_no_results">Упражнений не найдено</string>
     <string name="exercise_search_no_results_supporting">Попробуй другое название, часть тела или группу мышц.</string>
     <string name="exercise_search_result_count">Упражнений: %1$d</string>

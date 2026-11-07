@@ -542,11 +542,9 @@ class GymRepository(
             require(existingExercises.size < WorkoutDataLimits.MAX_EXERCISES) {
                 "This account has reached the exercise limit."
             }
-            require(
-                existingExercises.none { existing ->
-                    exerciseNamesConflict(existing.name, cleanedName)
-                }
-            )
+            if (existingExercises.any { existing -> exerciseNamesConflict(existing.name, cleanedName) }) {
+                throw DuplicateExerciseNameException()
+            }
             exerciseDao.insert(ExerciseEntity(name = cleanedName))
         }
     }
@@ -4447,6 +4445,10 @@ internal fun isRecognizedCloudAccountId(accountId: String?, activeUserId: String
 private fun String.toExerciseMappingKey(): String {
     return normalizedExerciseName()
 }
+
+/** Thrown by [GymRepository.addExercise] when the name resolves to an existing exercise identity. */
+internal class DuplicateExerciseNameException :
+    IllegalArgumentException("An exercise with this name already exists.")
 
 private fun exerciseNamesConflict(existingName: String, candidateName: String): Boolean {
     if (existingName.normalizedExerciseName() == candidateName.normalizedExerciseName()) {

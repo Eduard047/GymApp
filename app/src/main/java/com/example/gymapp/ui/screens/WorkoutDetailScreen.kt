@@ -222,6 +222,7 @@ internal fun WorkoutDetailScreen(
     exerciseMediaOwnerKey: String,
     events: Flow<WorkoutDetailEvent>,
     onAddExerciseToWorkout: (Long) -> Unit,
+    onCreateExercise: (suspend (String) -> Long)? = null,
     onAddSet: (Long) -> Unit,
     onDeleteSet: (SetEntryEntity) -> Unit,
     onConfirmDeleteSet: () -> Unit,
@@ -519,6 +520,7 @@ internal fun WorkoutDetailScreen(
                             exerciseMuscleIds = uiState.exerciseMuscleIds,
                             exerciseMediaOwnerKey = exerciseMediaOwnerKey,
                             onExerciseSelected = onAddExerciseToWorkout,
+                            onCreateExercise = onCreateExercise,
                             trigger = { openPicker ->
                                 WorkoutFooterButton(
                                     label = stringResource(R.string.workout_detail_add_exercise_short),

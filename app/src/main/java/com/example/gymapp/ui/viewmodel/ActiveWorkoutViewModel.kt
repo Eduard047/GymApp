@@ -1562,6 +1562,9 @@ class ActiveWorkoutViewModel(
      * Appends a catalog exercise with three prefilled pending sets. Refused in live rooms; the UI
      * hides the button there too. Undo and the rest timer are untouched.
      */
+    /** Creates a custom exercise from the picker; the caller then selects the returned id. */
+    suspend fun createExerciseForPicker(name: String): Long = repository.addExercise(name)
+
     fun addExercise(exerciseId: Long) {
         val snapshot = details.value
         val block = activeWorkoutExerciseAdditionBlock(

@@ -51,6 +51,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -156,6 +157,7 @@ internal fun smartWorkoutWeightInput(weight: Double?): String {
 
 private const val SHARED_WORKOUT_REPS_INPUT_MAX_LENGTH = 10
 private const val WORKOUT_TEMPLATE_LIMIT = 60
+private const val CREATED_EXERCISE_CATALOG_WAIT_MS = 2_000L
 
 data class WorkoutTemplatePreviewUiModel(
     val sessionId: Long,
@@ -1656,6 +1658,18 @@ class AddWorkoutViewModel internal constructor(
         } else {
             hasValidationError.value = true
         }
+    }
+
+    /**
+     * Creates a custom exercise from the picker and waits (briefly) until the catalog stream carries
+     * it, so the immediate [addExerciseDraftWithExercise] with the returned id finds the exercise.
+     */
+    suspend fun createExerciseForPicker(name: String): Long {
+        val id = repository.addExercise(name)
+        withTimeoutOrNull(CREATED_EXERCISE_CATALOG_WAIT_MS) {
+            exerciseCatalogState.first { catalog -> catalog.exercises.any { it.id == id } }
+        }
+        return id
     }
 
     /**

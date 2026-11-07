@@ -129,6 +129,7 @@ import java.text.Normalizer
 import java.text.NumberFormat
 import java.security.MessageDigest
 import java.util.Date
+import java.text.Collator
 import java.util.Locale
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -902,8 +903,16 @@ internal fun filterAndSortExercises(
             null
         }
     }
-    val byName = compareBy<RankedExercise> {
-        BuiltInExerciseCatalog.displayName(it.exercise.name, languageTag).lowercase(Locale.ROOT)
+    // One collator per sort (not per comparison): language rules put uk є/і/ї/ґ and ru ё next to
+    // their base letters, and SECONDARY ignores case like iOS localizedCaseInsensitiveCompare.
+    val nameCollator = Collator.getInstance(Locale.forLanguageTag(languageTag)).apply {
+        strength = Collator.SECONDARY
+    }
+    val byName = Comparator<RankedExercise> { left, right ->
+        nameCollator.compare(
+            BuiltInExerciseCatalog.displayName(left.exercise.name, languageTag),
+            BuiltInExerciseCatalog.displayName(right.exercise.name, languageTag)
+        )
     }.thenBy { it.exercise.id }
     val existingSort = when (sortMode) {
         ExerciseSortMode.Name -> filtered.sortedWith(byName)

@@ -182,6 +182,7 @@ fun AddWorkoutScreen(
     onCloseSmartAlternatives: () -> Unit,
     onApplySmartAlternative: (Long, Long, Long) -> Unit,
     onAddExerciseWithSelection: (Long) -> Unit,
+    onCreateExercise: (suspend (String) -> Long)? = null,
     onClearPlan: () -> Unit,
     onRemoveExerciseDraft: (Long) -> Unit,
     onMoveExerciseDraft: (Long, Int) -> Boolean = { _, _ -> false },
@@ -290,7 +291,8 @@ fun AddWorkoutScreen(
         },
         trigger = {},
         externalOpen = showAddExercisePicker && !editorInteractionsLocked,
-        onExternalDismiss = { showAddExercisePicker = false }
+        onExternalDismiss = { showAddExercisePicker = false },
+        onCreateExercise = onCreateExercise
     )
     val gymHaptics = rememberGymHaptics()
     val reduceMotion = rememberReduceMotion()

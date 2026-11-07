@@ -287,6 +287,9 @@ class WorkoutDetailViewModel(
         }
     }
 
+    /** Creates a custom exercise from the picker; the caller then selects the returned id. */
+    suspend fun createExerciseForPicker(name: String): Long = repository.addExercise(name)
+
     fun addExerciseToWorkout(exerciseId: Long) {
         viewModelScope.launch {
             when (

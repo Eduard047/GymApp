@@ -408,4 +408,55 @@ class ExerciseSearchLocalizationTest {
         assertEquals(listOf(bench, crunch, squat), mostFrequent)
         assertEquals(listOf(crunch, squat, bench), leastFrequent)
     }
+
+    private fun sortedNames(names: List<String>, languageTag: String): List<String> =
+        filterAndSortExercises(
+            exercises = names.mapIndexed { index, name -> ExerciseEntity(id = index + 1L, name = name) },
+            exerciseWorkoutCounts = emptyMap(),
+            muscleIdsByExerciseName = emptyMap(),
+            query = "",
+            bodyFilter = ExerciseBodyFilter.All,
+            muscleFilter = null,
+            sortMode = ExerciseSortMode.Name,
+            favoritesOnly = false,
+            languageTag = languageTag
+        ).map { it.name }
+
+    @Test
+    fun nameSortUsesUkrainianCollationSoGhePrimeAndYiStayNextToTheirLetters() {
+        assertEquals(
+            listOf("Гантелі", "Ґудмонінг", "Жим", "Їжак"),
+            sortedNames(listOf("Ґудмонінг", "Їжак", "Гантелі", "Жим"), "uk")
+        )
+    }
+
+    @Test
+    fun nameSortUsesRussianCollationSoYoStaysNextToYe() {
+        val sorted = sortedNames(listOf("Ёлка", "Яма", "Елка", "Жим"), "ru")
+        assertEquals(listOf("Елка", "Ёлка", "Жим", "Яма"), sorted)
+    }
+
+    @Test
+    fun nameSortIgnoresCaseAndKeepsIdTieBreak() {
+        assertEquals(
+            listOf("apple", "Banana", "cherry"),
+            sortedNames(listOf("cherry", "Banana", "apple"), "en")
+        )
+        assertEquals(
+            listOf("Squat", "squat"),
+            sortedNames(listOf("Squat", "squat"), "en")
+        )
+    }
+
+    @Test
+    fun newExerciseErrorSeparatesDuplicateFromOtherFailures() {
+        assertEquals(
+            NewExerciseError.Duplicate,
+            newExerciseErrorFor(com.example.gymapp.data.repository.DuplicateExerciseNameException())
+        )
+        assertEquals(
+            NewExerciseError.Invalid,
+            newExerciseErrorFor(IllegalArgumentException("Exercise name is outside the supported length."))
+        )
+    }
 }

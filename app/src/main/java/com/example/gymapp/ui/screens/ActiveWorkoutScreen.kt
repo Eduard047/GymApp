@@ -236,6 +236,7 @@ fun ActiveWorkoutScreen(
     onMoveExerciseTo: (String, Int) -> Unit = { _, _ -> },
     addExerciseCatalog: ActiveWorkoutAddExerciseCatalog = ActiveWorkoutAddExerciseCatalog(),
     onAddExercise: (Long) -> Unit = {},
+    onCreateExercise: (suspend (String) -> Long)? = null,
     onRecordSet: (String) -> Unit,
     onRecordAllPendingSets: () -> Unit,
     onUndoSet: (String) -> Unit,
@@ -710,6 +711,7 @@ fun ActiveWorkoutScreen(
                         exerciseMuscleIds = addExerciseCatalog.exerciseMuscleIds,
                         exerciseMediaOwnerKey = exerciseMediaOwnerKey,
                         onExerciseSelected = onAddExercise,
+                        onCreateExercise = onCreateExercise,
                         trigger = { openPicker ->
                             WorkoutFooterButton(
                                 label = stringResource(R.string.workout_detail_add_exercise_short),
