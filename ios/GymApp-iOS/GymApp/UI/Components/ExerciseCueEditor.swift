@@ -91,6 +91,6 @@ struct ExerciseCueEditorSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .gymSheetPresentation(.compact)
     }
 }
