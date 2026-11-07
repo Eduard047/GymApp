@@ -1,0 +1,169 @@
+{
+  "version": 1,
+  "description": "Phone to watch Garmin sync message. Each case runs through the real Android and iOS builders and must produce expected plus that platform's extras, key for key.",
+  "watchMaximumKeys": 15,
+  "binding": {
+    "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "device": "123456789",
+    "pairingGeneration": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "syncId": "sync-11111111-2222-3333-4444-555555555555",
+  "cases": [
+    {
+      "id": "plan-cyrillic-two-decimal-weight-with-catalog",
+      "input": {
+        "language": "ru",
+        "syncRevision": 1800000000123,
+        "plan": [
+          { "exerciseName": "Жим лёжа", "weight": 21.25, "reps": 8 },
+          { "exerciseName": "Жим лёжа", "weight": 22.5, "reps": 6 },
+          { "exerciseName": "Присед", "weight": 100, "reps": 5 }
+        ],
+        "exerciseCandidates": ["Присед", "Тяга штанги", "Жим лёжа", "Румынская тяга"],
+        "resetWorkout": false,
+        "repairPairing": false,
+        "bindingOnly": false
+      },
+      "expected": {
+        "type": "sync",
+        "bindingVersion": 2,
+        "syncId": "sync-11111111-2222-3333-4444-555555555555",
+        "requestId": "sync-11111111-2222-3333-4444-555555555555",
+        "accountBinding": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "deviceBinding": "123456789",
+        "pairingGeneration": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "syncRevision": 1800000000123,
+        "language": "ru",
+        "resetWorkout": false,
+        "planNames": ["Жим лёжа", "Жим лёжа", "Присед"],
+        "planWeights": [21.25, 22.5, 100],
+        "planReps": [8, 6, 5],
+        "exercises": ["Жим лёжа", "Присед", "Тяга штанги", "Румынская тяга"]
+      },
+      "platformExtras": { "android": {}, "ios": { "bindingSource": "phone" } }
+    },
+    {
+      "id": "plan-zero-weight-no-extra-catalog",
+      "input": {
+        "language": "uk",
+        "syncRevision": 1800000000124,
+        "plan": [
+          { "exerciseName": "Станова тяга", "weight": 0, "reps": 12 },
+          { "exerciseName": "Станова тяга", "weight": 62.5, "reps": 1 }
+        ],
+        "exerciseCandidates": [],
+        "resetWorkout": false,
+        "repairPairing": false,
+        "bindingOnly": false
+      },
+      "expected": {
+        "type": "sync",
+        "bindingVersion": 2,
+        "syncId": "sync-11111111-2222-3333-4444-555555555555",
+        "requestId": "sync-11111111-2222-3333-4444-555555555555",
+        "accountBinding": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "deviceBinding": "123456789",
+        "pairingGeneration": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "syncRevision": 1800000000124,
+        "language": "uk",
+        "resetWorkout": false,
+        "planNames": ["Станова тяга", "Станова тяга"],
+        "planWeights": [0, 62.5],
+        "planReps": [12, 1],
+        "exercises": ["Станова тяга"]
+      },
+      "platformExtras": { "android": {}, "ios": { "bindingSource": "phone" } }
+    },
+    {
+      "id": "binding-only-lite-empty-plan",
+      "input": {
+        "language": "en",
+        "syncRevision": 1800000000125,
+        "plan": [],
+        "exerciseCandidates": [],
+        "resetWorkout": false,
+        "repairPairing": false,
+        "bindingOnly": true
+      },
+      "expected": {
+        "type": "sync",
+        "bindingVersion": 2,
+        "syncId": "sync-11111111-2222-3333-4444-555555555555",
+        "requestId": "sync-11111111-2222-3333-4444-555555555555",
+        "accountBinding": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "deviceBinding": "123456789",
+        "pairingGeneration": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "syncRevision": 1800000000125,
+        "language": "en",
+        "resetWorkout": false,
+        "planNames": [],
+        "planWeights": [],
+        "planReps": []
+      },
+      "platformExtras": { "android": {}, "ios": { "bindingSource": "phone" } }
+    },
+    {
+      "id": "binding-only-reset-workout",
+      "input": {
+        "language": "uk",
+        "syncRevision": 1800000000126,
+        "plan": [],
+        "exerciseCandidates": [],
+        "resetWorkout": true,
+        "repairPairing": false,
+        "bindingOnly": true
+      },
+      "expected": {
+        "type": "sync",
+        "bindingVersion": 2,
+        "syncId": "sync-11111111-2222-3333-4444-555555555555",
+        "requestId": "sync-11111111-2222-3333-4444-555555555555",
+        "accountBinding": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "deviceBinding": "123456789",
+        "pairingGeneration": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "syncRevision": 1800000000126,
+        "language": "uk",
+        "resetWorkout": true,
+        "planNames": [],
+        "planWeights": [],
+        "planReps": []
+      },
+      "platformExtras": { "android": {}, "ios": { "bindingSource": "phone" } }
+    },
+    {
+      "id": "binding-only-repair-pairing",
+      "input": {
+        "language": "ru",
+        "syncRevision": 1800000000127,
+        "plan": [],
+        "exerciseCandidates": [],
+        "resetWorkout": false,
+        "repairPairing": true,
+        "bindingOnly": true
+      },
+      "expected": {
+        "type": "sync",
+        "bindingVersion": 2,
+        "syncId": "sync-11111111-2222-3333-4444-555555555555",
+        "requestId": "sync-11111111-2222-3333-4444-555555555555",
+        "accountBinding": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "deviceBinding": "123456789",
+        "pairingGeneration": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "syncRevision": 1800000000127,
+        "language": "ru",
+        "repairPairing": true,
+        "planNames": [],
+        "planWeights": [],
+        "planReps": []
+      },
+      "platformExtras": {
+        "android": { "resetWorkout": false },
+        "ios": { "bindingSource": "phone" }
+      }
+    }
+  ],
+  "knownPlatformDifferences": [
+    "iOS adds bindingSource=phone to every sync; Android omits it (the watch derives the source from the transport).",
+    "With repairPairing, Android also sends resetWorkout=false; iOS omits resetWorkout. The watch accepts both."
+  ]
+}
