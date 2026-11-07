@@ -2041,17 +2041,24 @@ internal fun buildDashboardStatsForMonth(
 }
 
 /**
- * Prefer a measured, bounded duration and round it up to a whole minute. Historical
- * rows without measured time use the shared fallback: three minutes per exercise plus two minutes
+ * Shared training-minutes chain (shared/training-minutes-v1.json, same as iPhone): a measured
+ * duration inside 0...7 days wins and is rounded up to a whole minute; otherwise a parsable Garmin
+ * note duration above zero; otherwise the fallback of three minutes per exercise plus two minutes
  * per set, clamped to 10...90 minutes.
  */
 internal fun estimateWorkoutMinutes(
     exerciseCount: Int,
     setCount: Int,
-    measuredDurationSeconds: Long? = null
+    measuredDurationSeconds: Long? = null,
+    note: String? = null
 ): Int {
     measuredDurationSeconds
         ?.takeIf { it in 0L..MAX_GARMIN_DURATION_SECONDS }
+        ?.let { duration -> return ((duration + 59L) / 60L).toInt() }
+    note
+        ?.let(::parseGarminWorkoutMetrics)
+        ?.durationSeconds
+        ?.takeIf { it in 1L..MAX_GARMIN_DURATION_SECONDS }
         ?.let { duration -> return ((duration + 59L) / 60L).toInt() }
     val estimated = exerciseCount.coerceAtLeast(0).toLong() * 3L +
         setCount.coerceAtLeast(0).toLong() * 2L
@@ -2099,12 +2106,11 @@ internal fun buildWeeklyTrainingSummary(
         .toList()
     val completedDates = currentWeekSessions.mapTo(linkedSetOf()) { it.first }
     val estimatedMinutes = currentWeekSessions.fold(0L) { total, (_, session) ->
-        val measuredDurationSeconds = session.session.durationSeconds
-            ?: session.session.note?.let(::parseGarminWorkoutMetrics)?.durationSeconds
         (total + estimateWorkoutMinutes(
             exerciseCount = session.exerciseCount,
             setCount = session.setCount,
-            measuredDurationSeconds = measuredDurationSeconds
+            measuredDurationSeconds = session.session.durationSeconds,
+            note = session.session.note
         ))
             .coerceAtMost(Int.MAX_VALUE.toLong())
     }.toInt()
@@ -2155,12 +2161,11 @@ internal fun buildMonthlyTrainingSummary(
         .toList()
     val completedDates = monthSessions.mapTo(linkedSetOf()) { it.first }
     val estimatedMinutes = monthSessions.fold(0L) { total, (_, session) ->
-        val measuredDurationSeconds = session.session.durationSeconds
-            ?: session.session.note?.let(::parseGarminWorkoutMetrics)?.durationSeconds
         (total + estimateWorkoutMinutes(
             exerciseCount = session.exerciseCount,
             setCount = session.setCount,
-            measuredDurationSeconds = measuredDurationSeconds
+            measuredDurationSeconds = session.session.durationSeconds,
+            note = session.session.note
         )).coerceAtMost(Int.MAX_VALUE.toLong())
     }.toInt()
     val totalVolume = monthSessions.fold(0.0) { total, (_, session) ->

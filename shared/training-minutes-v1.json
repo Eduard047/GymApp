@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "description": "Training-history minutes golden cases run by Android TrainingMinutesGoldenTest and iOS TrainingMinutesGoldenTests. Chain per session: (1) durationSeconds, when present and inside 0..604800 (inclusive, 0 counts as 0 minutes), is rounded up to whole minutes; (2) otherwise the duration of a well-formed Garmin note (prefix 'Garmin', 'Duration'/'Тривалість'/'Длительность' m:ss or h:mm:ss) when it is above 0 and at most 604800 seconds; (3) otherwise the estimate min(90, max(10, 3 * exerciseCount + 2 * setCount)). durationSeconds and note are null when absent.",
+  "maximumDurationSeconds": 604800,
+  "cases": [
+    { "id": "valid-duration-95s-rounds-up", "durationSeconds": 95, "note": null, "exerciseCount": 20, "setCount": 100, "expectedMinutes": 2 },
+    { "id": "valid-duration-exact-minute", "durationSeconds": 60, "note": null, "exerciseCount": 3, "setCount": 9, "expectedMinutes": 1 },
+    { "id": "valid-duration-one-second-over-minute", "durationSeconds": 61, "note": null, "exerciseCount": 3, "setCount": 9, "expectedMinutes": 2 },
+    { "id": "valid-duration-one-second", "durationSeconds": 1, "note": null, "exerciseCount": 3, "setCount": 9, "expectedMinutes": 1 },
+    { "id": "valid-duration-59s-rounds-up", "durationSeconds": 59, "note": null, "exerciseCount": 3, "setCount": 9, "expectedMinutes": 1 },
+    { "id": "valid-duration-zero-counts-zero", "durationSeconds": 0, "note": null, "exerciseCount": 20, "setCount": 100, "expectedMinutes": 0 },
+    { "id": "valid-duration-zero-beats-note", "durationSeconds": 0, "note": "Garmin · Duration 30:00", "exerciseCount": 3, "setCount": 9, "expectedMinutes": 0 },
+    { "id": "valid-duration-beats-note", "durationSeconds": 600, "note": "Garmin · Duration 30:00", "exerciseCount": 3, "setCount": 9, "expectedMinutes": 10 },
+    { "id": "valid-duration-upper-bound", "durationSeconds": 604800, "note": null, "exerciseCount": 3, "setCount": 9, "expectedMinutes": 10080 },
+    { "id": "nil-duration-note-rounds-up", "durationSeconds": null, "note": "Garmin · Duration 45:30", "exerciseCount": 3, "setCount": 9, "expectedMinutes": 46 },
+    { "id": "nil-duration-note-hours", "durationSeconds": null, "note": "Garmin · Duration 1:02:03", "exerciseCount": 3, "setCount": 9, "expectedMinutes": 63 },
+    { "id": "nil-duration-note-exact-minute", "durationSeconds": null, "note": "Garmin · Duration 25:00", "exerciseCount": 3, "setCount": 9, "expectedMinutes": 25 },
+    { "id": "nil-duration-note-ukrainian-label", "durationSeconds": null, "note": "Garmin · Тривалість 25:01", "exerciseCount": 3, "setCount": 9, "expectedMinutes": 26 },
+    { "id": "nil-duration-note-russian-label", "durationSeconds": null, "note": "Garmin · Длительность 0:30", "exerciseCount": 3, "setCount": 9, "expectedMinutes": 1 },
+    { "id": "out-of-range-duration-uses-note", "durationSeconds": 604801, "note": "Garmin · Duration 30:00", "exerciseCount": 3, "setCount": 9, "expectedMinutes": 30 },
+    { "id": "negative-duration-uses-note", "durationSeconds": -5, "note": "Garmin · Duration 30:00", "exerciseCount": 3, "setCount": 9, "expectedMinutes": 30 },
+    { "id": "out-of-range-duration-without-note-estimates", "durationSeconds": 604801, "note": null, "exerciseCount": 3, "setCount": 9, "expectedMinutes": 27 },
+    { "id": "out-of-range-duration-and-zero-note-estimates", "durationSeconds": 9999999, "note": "Garmin · Duration 0:00", "exerciseCount": 2, "setCount": 4, "expectedMinutes": 14 },
+    { "id": "note-zero-duration-estimates", "durationSeconds": null, "note": "Garmin · Duration 0:00", "exerciseCount": 20, "setCount": 100, "expectedMinutes": 90 },
+    { "id": "note-duration-above-limit-estimates", "durationSeconds": null, "note": "Garmin · Duration 10081:00", "exerciseCount": 2, "setCount": 4, "expectedMinutes": 14 },
+    { "id": "note-without-garmin-marker-estimates", "durationSeconds": null, "note": "Duration 30:00", "exerciseCount": 3, "setCount": 9, "expectedMinutes": 27 },
+    { "id": "note-without-duration-estimates", "durationSeconds": null, "note": "Heavy leg day", "exerciseCount": 3, "setCount": 9, "expectedMinutes": 27 },
+    { "id": "nothing-estimates-from-sets-and-exercises", "durationSeconds": null, "note": null, "exerciseCount": 3, "setCount": 9, "expectedMinutes": 27 },
+    { "id": "nothing-estimate-floor", "durationSeconds": null, "note": null, "exerciseCount": 0, "setCount": 0, "expectedMinutes": 10 },
+    { "id": "nothing-estimate-small-floor", "durationSeconds": null, "note": null, "exerciseCount": 1, "setCount": 2, "expectedMinutes": 10 },
+    { "id": "nothing-estimate-cap", "durationSeconds": null, "note": null, "exerciseCount": 20, "setCount": 100, "expectedMinutes": 90 }
+  ]
+}
