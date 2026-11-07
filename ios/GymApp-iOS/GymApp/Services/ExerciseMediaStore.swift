@@ -307,7 +307,7 @@ enum ExerciseMediaStore {
             fileManager: fileManager
         ), fileManager.fileExists(atPath: ownerDirectory.path) else { return }
 
-        var parked: [(temporary: URL, destination: URL)] = []
+        var parked: [(source: URL, temporary: URL, destination: URL)] = []
         for move in moves {
             let source = ownerDirectory.appendingPathComponent("\(move.from.uuidString).jpg")
             guard fileManager.fileExists(atPath: source.path) else { continue }
@@ -322,6 +322,7 @@ enum ExerciseMediaStore {
             do {
                 try fileManager.moveItem(at: source, to: temporary)
                 parked.append((
+                    source,
                     temporary,
                     ownerDirectory.appendingPathComponent("\(destinationID.uuidString).jpg")
                 ))
@@ -330,9 +331,18 @@ enum ExerciseMediaStore {
             }
         }
         for item in parked {
-            try? fileManager.removeItem(at: item.destination)
-            if (try? fileManager.moveItem(at: item.temporary, to: item.destination)) == nil {
-                try? fileManager.removeItem(at: item.temporary)
+            // Never delete the destination first: replace it atomically (or move into
+            // an empty slot), and only drop the parked file once the final one exists.
+            let placed: Bool
+            if fileManager.fileExists(atPath: item.destination.path) {
+                placed = (try? fileManager.replaceItemAt(item.destination, withItemAt: item.temporary)) != nil
+            } else {
+                placed = (try? fileManager.moveItem(at: item.temporary, to: item.destination)) != nil
+            }
+            // On failure keep the parked file: restore it to its original name when
+            // that is free, otherwise leave it rather than lose the photo.
+            if !placed, !fileManager.fileExists(atPath: item.source.path) {
+                try? fileManager.moveItem(at: item.temporary, to: item.source)
             }
         }
     }

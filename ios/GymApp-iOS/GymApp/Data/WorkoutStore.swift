@@ -1068,7 +1068,10 @@ public final class WorkoutStore: ObservableObject {
             state.exercises.append(exercise)
             created = exercise
         }
-        return created!
+        guard let created else {
+            throw WorkoutStoreError.persistenceFailure("The change was not applied.")
+        }
+        return created
     }
 
     /// Adds every missing public catalog item while preserving custom exercises and history.
@@ -1235,7 +1238,10 @@ public final class WorkoutStore: ObservableObject {
             state.workouts.append(workout)
             created = workout
         }
-        return created!
+        guard let created else {
+            throw WorkoutStoreError.persistenceFailure("The change was not applied.")
+        }
+        return created
     }
 
     /// Runs the exact shared-plan resolver against a copy of the current catalog. This
@@ -1820,7 +1826,10 @@ public final class WorkoutStore: ObservableObject {
             state.workouts[workoutIndex].exercises.append(block)
             created = block
         }
-        return created!
+        guard let created else {
+            throw WorkoutStoreError.persistenceFailure("The change was not applied.")
+        }
+        return created
     }
 
     public func removeExercise(
@@ -1861,7 +1870,10 @@ public final class WorkoutStore: ObservableObject {
             state.workouts[location.workout].exercises[location.block].sets.append(set)
             created = set
         }
-        return created!
+        guard let created else {
+            throw WorkoutStoreError.persistenceFailure("The change was not applied.")
+        }
+        return created
     }
 
     public func updateSet(

@@ -98,7 +98,10 @@ enum GarminPhoneWorkoutTransfer {
                 (metrics == nil || metrics!.count == sets.count))
             try check((intervals != nil) == (frame["interval"] != nil) &&
                 (metrics != nil) == (frame["metrics"] != nil))
-            created = integer64(retained["createdAt"])!
+            // Already validated above (retained is the checked previous state); still
+            // reject rather than trap if it is ever missing or non-integer.
+            guard let retainedCreated = integer64(retained["createdAt"]) else { throw Invalid.state }
+            created = retainedCreated
         } else { try check(offset == 0) }
         try check(offset <= sets.count)
         if !free {

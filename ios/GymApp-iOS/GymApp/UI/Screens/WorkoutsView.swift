@@ -2035,7 +2035,7 @@ public struct WorkoutsView: View {
                 .font(.subheadline)
                 .foregroundStyle(GymTheme.textSecondary)
             } else {
-                ForEach(Array(workouts.prefix(14))) { workout in
+                ForEach(workouts) { workout in
                     Button {
                         historyReturnWorkoutID = workout.id
                         onOpenWorkout(workout.id)

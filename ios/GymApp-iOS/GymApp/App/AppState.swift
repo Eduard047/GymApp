@@ -1,6 +1,7 @@
 import Combine
 import CryptoKit
 import Foundation
+import OSLog
 import SwiftUI
 
 func leaderboardHiddenProfilesDefaultsKey(for accountStorageKey: String) -> String {
@@ -497,7 +498,16 @@ final class AppState: ObservableObject {
                 // Logout is a local security boundary and must not depend on network
                 // availability. Keep the account-bound store and dirty checkpoint for
                 // a later sign-in, then continue to clear reusable local credentials.
-                try? store.saveNow()
+                do {
+                    try store.saveNow()
+                } catch let saveError {
+                    // The upload failed and the local copy could not be saved either:
+                    // signing out now could leave unsynced workouts nowhere. Stay signed
+                    // in, keep the upload pending and tell the user.
+                    markCloudPending(storageKey: session.storageKey)
+                    show(error: saveError)
+                    return false
+                }
                 markCloudPending(storageKey: session.storageKey)
                 deferredCloudUploadStorageKey = session.storageKey
                 shouldRescheduleCloudSave = isAccountReady
@@ -2743,9 +2753,18 @@ final class AppState: ObservableObject {
         accountDeletionTarget = nil
     }
 
+    private static let backgroundSaveLog = Logger(subsystem: "com.setforge.gymapp.ios", category: "AppState")
+
     func saveBeforeBackgrounding() {
         guard isAccountReady else { return }
-        try? workoutStore.saveNow()
+        // Every store mutation already persists itself, so there is no separate dirty
+        // flag to retry from; the next mutation or foreground save writes again.
+        // Log the failure kind only (no user data) so it is not silently lost.
+        do {
+            try workoutStore.saveNow()
+        } catch {
+            Self.backgroundSaveLog.error("Background local save failed: \(String(describing: type(of: error)), privacy: .public)")
+        }
         if auth.session?.cloud != nil { scheduleCloudSave(delay: .zero) }
     }
 

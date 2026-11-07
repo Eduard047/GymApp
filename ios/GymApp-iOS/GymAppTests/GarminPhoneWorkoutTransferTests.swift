@@ -75,6 +75,19 @@ final class GarminPhoneWorkoutTransferTests: XCTestCase {
         XCTAssertNil(GarminPhoneWorkoutTransfer.accept(previous: first.state, raw: missing, binding: binding, now: now))
     }
 
+    func testRejectsStoredStateWithMissingOrNonIntegerCreatedAtWithoutCrashing() throws {
+        let first = try XCTUnwrap(GarminPhoneWorkoutTransfer.accept(previous: nil, raw: frame(0, total: 2), binding: binding, now: now))
+        let original = try XCTUnwrap(JSONSerialization.jsonObject(with: first.state) as? [String: Any])
+        let variants: [Any?] = [nil, "soon", 1.5, NSNull(), -1]
+        for value in variants {
+            var state = original
+            if let value { state["createdAt"] = value } else { state.removeValue(forKey: "createdAt") }
+            let data = try JSONSerialization.data(withJSONObject: state)
+            XCTAssertNil(GarminPhoneWorkoutTransfer.accept(previous: data, raw: frame(1, total: 2), binding: binding, now: now))
+        }
+        XCTAssertNotNil(GarminPhoneWorkoutTransfer.accept(previous: first.state, raw: frame(1, total: 2), binding: binding, now: now))
+    }
+
     func testBoundsAndExpiredContinuation() throws {
         var invalid = frame(0)
         invalid["offset"] = true
