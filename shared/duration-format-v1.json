@@ -1,0 +1,360 @@
+{
+  "version": 1,
+  "description": "Shared duration/time formatter vectors run by Android DurationFormatGoldenTest and iOS DurationFormatGoldenTests. Localized formatters give one string per language; others give one 'expected' string. A case carries 'android'/'ios' instead of 'expected' only where the platforms differ today (see knownDifferences).",
+  "languages": [
+    "en",
+    "uk",
+    "ru"
+  ],
+  "formatters": {
+    "compactDuration": {
+      "android": "DateTimeUtils.formatCompactDuration",
+      "ios": "gymCompactDuration",
+      "note": "Raw compact duration (post-workout summary hero and subtitle, iPhone hero stats). Empty string when not positive; any positive duration under a minute reads 1 min.",
+      "cases": [
+        {
+          "seconds": 0,
+          "expected": {
+            "en": "",
+            "uk": "",
+            "ru": ""
+          }
+        },
+        {
+          "seconds": 1,
+          "expected": {
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
+          }
+        },
+        {
+          "seconds": 59,
+          "expected": {
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
+          }
+        },
+        {
+          "seconds": 60,
+          "expected": {
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
+          }
+        },
+        {
+          "seconds": 61,
+          "expected": {
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
+          }
+        },
+        {
+          "seconds": 599,
+          "expected": {
+            "en": "9 min",
+            "uk": "9 хв",
+            "ru": "9 мин"
+          }
+        },
+        {
+          "seconds": 3599,
+          "expected": {
+            "en": "59 min",
+            "uk": "59 хв",
+            "ru": "59 мин"
+          }
+        },
+        {
+          "seconds": 3600,
+          "expected": {
+            "en": "1 h",
+            "uk": "1 год",
+            "ru": "1 ч"
+          }
+        },
+        {
+          "seconds": 3661,
+          "expected": {
+            "en": "1 h 1 min",
+            "uk": "1 год 1 хв",
+            "ru": "1 ч 1 мин"
+          }
+        },
+        {
+          "seconds": 36000,
+          "expected": {
+            "en": "10 h",
+            "uk": "10 год",
+            "ru": "10 ч"
+          }
+        },
+        {
+          "seconds": 86399,
+          "expected": {
+            "en": "23 h 59 min",
+            "uk": "23 год 59 хв",
+            "ru": "23 ч 59 мин"
+          }
+        }
+      ]
+    },
+    "workoutDuration": {
+      "android": "workoutDurationText (core of formatWorkoutDuration)",
+      "ios": "gymWorkoutDuration",
+      "note": "Workout list and detail duration: compact duration floored at one minute, so 0 reads 1 min.",
+      "cases": [
+        {
+          "seconds": 0,
+          "expected": {
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
+          }
+        },
+        {
+          "seconds": 1,
+          "expected": {
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
+          }
+        },
+        {
+          "seconds": 59,
+          "expected": {
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
+          }
+        },
+        {
+          "seconds": 60,
+          "expected": {
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
+          }
+        },
+        {
+          "seconds": 61,
+          "expected": {
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
+          }
+        },
+        {
+          "seconds": 599,
+          "expected": {
+            "en": "9 min",
+            "uk": "9 хв",
+            "ru": "9 мин"
+          }
+        },
+        {
+          "seconds": 3599,
+          "expected": {
+            "en": "59 min",
+            "uk": "59 хв",
+            "ru": "59 мин"
+          }
+        },
+        {
+          "seconds": 3600,
+          "expected": {
+            "en": "1 h",
+            "uk": "1 год",
+            "ru": "1 ч"
+          }
+        },
+        {
+          "seconds": 3661,
+          "expected": {
+            "en": "1 h 1 min",
+            "uk": "1 год 1 хв",
+            "ru": "1 ч 1 мин"
+          }
+        },
+        {
+          "seconds": 36000,
+          "expected": {
+            "en": "10 h",
+            "uk": "10 год",
+            "ru": "10 ч"
+          }
+        },
+        {
+          "seconds": 86399,
+          "expected": {
+            "en": "23 h 59 min",
+            "uk": "23 год 59 хв",
+            "ru": "23 ч 59 мин"
+          }
+        }
+      ]
+    },
+    "elapsedTimer": {
+      "android": "formatActiveWorkoutTime",
+      "ios": "ActiveWorkoutView.clock",
+      "note": "Active workout elapsed timer, not localized. Under one hour both are mm:ss. From one hour Android zero-pads the hours (01:00:00), iPhone does not (1:00:00).",
+      "cases": [
+        {
+          "seconds": 0,
+          "expected": "00:00"
+        },
+        {
+          "seconds": 1,
+          "expected": "00:01"
+        },
+        {
+          "seconds": 59,
+          "expected": "00:59"
+        },
+        {
+          "seconds": 60,
+          "expected": "01:00"
+        },
+        {
+          "seconds": 61,
+          "expected": "01:01"
+        },
+        {
+          "seconds": 599,
+          "expected": "09:59"
+        },
+        {
+          "seconds": 3599,
+          "expected": "59:59"
+        },
+        {
+          "seconds": 3600,
+          "android": "01:00:00",
+          "ios": "1:00:00"
+        },
+        {
+          "seconds": 3661,
+          "android": "01:01:01",
+          "ios": "1:01:01"
+        },
+        {
+          "seconds": 36000,
+          "expected": "10:00:00"
+        },
+        {
+          "seconds": 86399,
+          "expected": "23:59:59"
+        }
+      ]
+    },
+    "restCountdown": {
+      "android": "formatRestTime",
+      "ios": "WorkoutRestTimerControls.clock",
+      "note": "Rest countdown m:ss, minutes unbounded, not localized.",
+      "cases": [
+        {
+          "seconds": 0,
+          "expected": "0:00"
+        },
+        {
+          "seconds": 1,
+          "expected": "0:01"
+        },
+        {
+          "seconds": 59,
+          "expected": "0:59"
+        },
+        {
+          "seconds": 60,
+          "expected": "1:00"
+        },
+        {
+          "seconds": 61,
+          "expected": "1:01"
+        },
+        {
+          "seconds": 599,
+          "expected": "9:59"
+        },
+        {
+          "seconds": 3599,
+          "expected": "59:59"
+        },
+        {
+          "seconds": 3600,
+          "expected": "60:00"
+        },
+        {
+          "seconds": 3661,
+          "expected": "61:01"
+        },
+        {
+          "seconds": 36000,
+          "expected": "600:00"
+        },
+        {
+          "seconds": 86399,
+          "expected": "1439:59"
+        }
+      ]
+    },
+    "garminDuration": {
+      "android": "formatGarminDuration",
+      "ios": "garminDuration",
+      "note": "Garmin workout detail durations: m:ss, h:mm:ss from one hour, not localized.",
+      "cases": [
+        {
+          "seconds": 0,
+          "expected": "0:00"
+        },
+        {
+          "seconds": 1,
+          "expected": "0:01"
+        },
+        {
+          "seconds": 59,
+          "expected": "0:59"
+        },
+        {
+          "seconds": 60,
+          "expected": "1:00"
+        },
+        {
+          "seconds": 61,
+          "expected": "1:01"
+        },
+        {
+          "seconds": 599,
+          "expected": "9:59"
+        },
+        {
+          "seconds": 3599,
+          "expected": "59:59"
+        },
+        {
+          "seconds": 3600,
+          "expected": "1:00:00"
+        },
+        {
+          "seconds": 3661,
+          "expected": "1:01:01"
+        },
+        {
+          "seconds": 36000,
+          "expected": "10:00:00"
+        },
+        {
+          "seconds": 86399,
+          "expected": "23:59:59"
+        }
+      ]
+    }
+  },
+  "knownDifferences": [
+    "elapsedTimer from 3600 s: Android pads hours to two digits (01:00:00), iPhone does not (1:00:00).",
+    "iPhone ActiveWorkoutView.compactRestControls shows the rest countdown through the elapsed-timer clock (mm:ss, 01:30) while every other rest surface on both platforms uses m:ss (1:30); restCountdown records the m:ss form."
+  ]
+}

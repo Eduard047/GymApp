@@ -2534,7 +2534,7 @@ private fun friendGhostLine(ghost: FriendGhost): String {
     return formattedStringResource(R.string.friend_ghost_line, ghost.friendName, result, day)
 }
 
-private fun formatRestTime(totalSeconds: Int): String = String.format(
+internal fun formatRestTime(totalSeconds: Int): String = String.format(
     Locale.getDefault(),
     "%d:%02d",
     totalSeconds.coerceAtLeast(0) / 60,

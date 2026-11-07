@@ -1033,7 +1033,7 @@ struct WorkoutRestTimerControls: View {
         }
     }
 
-    private static func clock(_ seconds: Int) -> String {
+    static func clock(_ seconds: Int) -> String {
         String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 }

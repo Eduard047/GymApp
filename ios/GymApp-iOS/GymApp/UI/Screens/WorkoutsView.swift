@@ -2851,7 +2851,7 @@ public struct WorkoutsView: View {
     }
 
     private func compactHistoryDuration(_ seconds: Int) -> String {
-        gymCompactDuration(max(1, seconds), languageCode: languageCode)
+        gymWorkoutDuration(seconds, languageCode: languageCode)
     }
 }
 

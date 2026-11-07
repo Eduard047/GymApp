@@ -744,8 +744,12 @@ internal fun formatWorkoutDuration(totalSeconds: Long): String {
     // One duration format app-wide ("12 min", "1 h 5 min"); never shorter than a minute.
     val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
         ?: java.util.Locale.getDefault()
-    return DateTimeUtils.formatCompactDuration(totalSeconds.coerceAtLeast(60L), locale)
+    return workoutDurationText(totalSeconds, locale)
 }
+
+/** Pure core of [formatWorkoutDuration]: compact duration, never shorter than a minute. */
+internal fun workoutDurationText(totalSeconds: Long, locale: java.util.Locale): String =
+    DateTimeUtils.formatCompactDuration(totalSeconds.coerceAtLeast(60L), locale)
 
 @Composable
 private fun GarminWorkoutHeaderCard(
@@ -2407,7 +2411,7 @@ private fun GarminWorkoutMetrics.calorieGapLabel(): String {
     }
 }
 
-private fun formatGarminDuration(totalSeconds: Long): String {
+internal fun formatGarminDuration(totalSeconds: Long): String {
     val safeSeconds = totalSeconds.coerceAtLeast(0L)
     val hours = safeSeconds / 3_600L
     val minutes = (safeSeconds % 3_600L) / 60L

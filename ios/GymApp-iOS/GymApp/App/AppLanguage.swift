@@ -359,6 +359,15 @@ func gymCompactDuration(
     )
 }
 
+/// Workout list and detail duration: the compact format, never shorter than a minute
+/// (so 0 reads "1 min"), like Android `formatWorkoutDuration`.
+func gymWorkoutDuration(
+    _ seconds: Int,
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    gymCompactDuration(max(1, seconds), languageCode: languageCode)
+}
+
 /// "12.4K kg" / "1 240 kg" — a training volume with the weight unit. `compact`
 /// uses the short "12.4K" notation for tight stat tiles.
 func gymVolumeText(

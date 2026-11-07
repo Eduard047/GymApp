@@ -961,7 +961,7 @@ private struct GarminHeartRateZoneChart: View {
     }
 }
 
-private func garminDuration(_ seconds: Int64) -> String {
+func garminDuration(_ seconds: Int64) -> String {
     let bounded = max(0, seconds)
     if bounded >= 3_600 {
         return String(format: "%lld:%02lld:%02lld", bounded / 3_600, (bounded / 60) % 60, bounded % 60)
@@ -1752,7 +1752,7 @@ struct WorkoutDetailView: View {
     }
 
     private func compactWorkoutDuration(_ seconds: Int, languageCode: String) -> String {
-        gymCompactDuration(max(1, seconds), languageCode: languageCode)
+        gymWorkoutDuration(seconds, languageCode: languageCode)
     }
 
     private func sharedWorkoutURL(_ workout: WorkoutSession) -> URL? {
