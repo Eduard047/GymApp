@@ -1109,6 +1109,12 @@ struct ActiveWorkoutView: View {
                 ))
                 .font(.subheadline)
                 .foregroundStyle(GymTheme.onHeroSecondary)
+                Text(liveWorkoutCoordinator.liveConnectionMode.caption(
+                    pendingCount: liveWorkoutCoordinator.livePendingOperationCount,
+                    languageCode: gymCurrentLanguageCode()
+                ))
+                .font(.footnote)
+                .foregroundStyle(GymTheme.onHeroSecondary)
             }
         }
     }

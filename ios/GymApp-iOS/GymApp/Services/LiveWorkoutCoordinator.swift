@@ -143,6 +143,19 @@ final class LiveWorkoutCoordinator: ObservableObject {
         snapshot?.currentParticipant?.profile.displayName
     }
 
+    /// Read-only status for the live peer caption; mirrors Android's `LiveConnectionMode`.
+    var liveConnectionMode: LiveWorkoutConnectionMode {
+        LiveWorkoutConnectionMode.resolve(
+            realtimeConnected: realtimeConnected,
+            hasRefreshError: lastError != nil
+        )
+    }
+
+    /// Queued live mutations not yet acknowledged by the server.
+    var livePendingOperationCount: Int {
+        sidecar.attachment?.pendingOperations.count ?? 0
+    }
+
     func startMonitoring() {
         guard pollTask == nil, !expectedUserID.isEmpty else { return }
         realtimeInvalidator.start()
@@ -1546,4 +1559,46 @@ final class LiveWorkoutCoordinator: ObservableObject {
     }
 
     private static let invitationReservationDuration: TimeInterval = 7 * 24 * 60 * 60
+}
+
+/// Connection state shown on the live peer panel (Android `LiveConnectionMode` parity).
+enum LiveWorkoutConnectionMode: Equatable, Sendable {
+    case realtime
+    case polling
+    case offline
+
+    /// Connected to realtime -> realtime. Otherwise the poll loop is the fallback; it is
+    /// offline only when the latest refresh or queue flush failed.
+    static func resolve(realtimeConnected: Bool, hasRefreshError: Bool) -> LiveWorkoutConnectionMode {
+        if realtimeConnected { return .realtime }
+        return hasRefreshError ? .offline : .polling
+    }
+
+    /// Wording matches Android `live_workout_active_realtime/polling/offline`.
+    func caption(pendingCount: Int, languageCode: String) -> String {
+        let count = max(0, pendingCount)
+        switch self {
+        case .realtime:
+            return gymText(
+                "Live connection · queued: \(count)",
+                "Зв’язок у реальному часі · у черзі: \(count)",
+                "Связь в реальном времени · в очереди: \(count)",
+                languageCode: languageCode
+            )
+        case .polling:
+            return gymText(
+                "Polling fallback · queued: \(count)",
+                "Резервне опитування · у черзі: \(count)",
+                "Резервный опрос · в очереди: \(count)",
+                languageCode: languageCode
+            )
+        case .offline:
+            return gymText(
+                "Offline · queued safely: \(count)",
+                "Немає мережі · безпечно в черзі: \(count)",
+                "Нет сети · безопасно в очереди: \(count)",
+                languageCode: languageCode
+            )
+        }
+    }
 }

@@ -1886,3 +1886,26 @@ final class LiveWorkoutUndoGateTests: XCTestCase {
         )
     }
 }
+
+final class LiveWorkoutConnectionCaptionTests: XCTestCase {
+    func testConnectedIsLive() {
+        let mode = LiveWorkoutConnectionMode.resolve(realtimeConnected: true, hasRefreshError: true)
+        XCTAssertEqual(mode, .realtime)
+        XCTAssertEqual(mode.caption(pendingCount: 0, languageCode: "en"), "Live connection · queued: 0")
+    }
+
+    func testNotConnectedWithoutErrorIsPolling() {
+        let mode = LiveWorkoutConnectionMode.resolve(realtimeConnected: false, hasRefreshError: false)
+        XCTAssertEqual(mode, .polling)
+        XCTAssertEqual(mode.caption(pendingCount: 2, languageCode: "en"), "Polling fallback · queued: 2")
+    }
+
+    func testOfflineShowsPendingCountAndLocalizes() {
+        let mode = LiveWorkoutConnectionMode.resolve(realtimeConnected: false, hasRefreshError: true)
+        XCTAssertEqual(mode, .offline)
+        XCTAssertEqual(mode.caption(pendingCount: 3, languageCode: "en"), "Offline · queued safely: 3")
+        XCTAssertEqual(mode.caption(pendingCount: 3, languageCode: "uk"), "Немає мережі · безпечно в черзі: 3")
+        XCTAssertEqual(mode.caption(pendingCount: 3, languageCode: "ru"), "Нет сети · безопасно в очереди: 3")
+        XCTAssertEqual(mode.caption(pendingCount: -1, languageCode: "en"), "Offline · queued safely: 0")
+    }
+}
