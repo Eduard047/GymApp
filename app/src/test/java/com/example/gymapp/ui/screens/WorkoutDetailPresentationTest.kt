@@ -92,7 +92,7 @@ class WorkoutDetailPresentationTest {
     @Test
     fun headerMetricPartsKeepAllPartsForNormalWorkout() {
         assertEquals(
-            listOf("3 exercises", "9 sets", "1,200 kg", "45 min"),
+            listOf("3 exercises", "9 sets", "45 min", "1,200 kg"),
             workoutHeaderMetricParts("3 exercises", "9 sets", 1200.0, "1,200 kg", 2700L, "45 min")
         )
     }

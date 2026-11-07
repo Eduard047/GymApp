@@ -715,20 +715,19 @@ private fun WorkoutHeaderCard(
                     }
                 }
             }
+            // iPhone shows the note as the subtitle (no prefix, no line cap) above the metrics line.
+            noteText?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = HeroTone.supporting
+                )
+            }
             Text(
                 text = summaryLine,
                 style = MaterialTheme.typography.bodyMedium,
                 color = HeroTone.supporting
             )
-            noteText?.let {
-                Text(
-                    text = formattedStringResource(R.string.details_note, it),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = HeroTone.supporting,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
             WorkoutEditModeButton(
                 isEditing = isEditing,
                 isActivityOnly = isActivityOnly,
@@ -738,7 +737,7 @@ private fun WorkoutHeaderCard(
     }
 }
 
-/** Header summary parts; volume is omitted when not positive and duration when null or not positive. */
+/** Header summary parts in iPhone order (exercises, sets, duration, volume); duration is omitted when null or not positive and volume when not positive. */
 internal fun workoutHeaderMetricParts(
     exerciseCountLabel: String,
     setCountLabel: String,
@@ -749,8 +748,8 @@ internal fun workoutHeaderMetricParts(
 ): List<String> = buildList {
     add(exerciseCountLabel)
     add(setCountLabel)
-    if (volume > 0.0) add(volumeLabel)
     if (durationSeconds != null && durationSeconds > 0L) add(durationLabel)
+    if (volume > 0.0) add(volumeLabel)
 }
 
 /** Per-exercise summary parts after the set count; volume is omitted when not positive. */
@@ -856,19 +855,24 @@ private fun GarminWorkoutHeaderCard(
                 modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                MetricTile(
-                    label = stringResource(R.string.garmin_metric_duration),
-                    value = metrics.durationSeconds?.let(::formatGarminDuration) ?: "—",
-                    modifier = Modifier.weight(1f),
-                    onHero = true
-                )
-                if (isActivityOnly) {
+                // A tile is shown only when its value exists (no placeholder tiles), like iPhone.
+                metrics.durationSeconds?.let { duration ->
                     MetricTile(
-                        label = stringResource(R.string.garmin_metric_gym_kcal),
-                        value = metrics.gymCalories?.toString() ?: "—",
+                        label = stringResource(R.string.garmin_metric_duration),
+                        value = formatGarminDuration(duration),
                         modifier = Modifier.weight(1f),
                         onHero = true
                     )
+                }
+                if (isActivityOnly) {
+                    metrics.gymCalories?.let { gymCalories ->
+                        MetricTile(
+                            label = stringResource(R.string.garmin_metric_gym_kcal),
+                            value = gymCalories.toString(),
+                            modifier = Modifier.weight(1f),
+                            onHero = true
+                        )
+                    }
                 } else {
                     MetricTile(
                         label = stringResource(R.string.garmin_metric_logged),
