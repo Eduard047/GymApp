@@ -76,11 +76,7 @@ internal fun weightStepPlan(weight: Double?, allowedWeights: List<Double>): Weig
     val nominal = nominalWeightStep(allowedWeights)
     fun side(direction: Int): WeightStepSide {
         if (weight == null) return WeightStepSide(0.0, nominal, canMove = false)
-        val target = try {
-            TrainingTools.stepWeight(weight, direction, allowedWeights)
-        } catch (_: IllegalArgumentException) {
-            weight
-        }
+        val target = TrainingTools.stepWeight(weight, direction, allowedWeights)
         val canMove = target != weight
         val delta = if (canMove) abs(target - weight).roundedToThousandths() else nominal
         return WeightStepSide(target, delta, canMove)

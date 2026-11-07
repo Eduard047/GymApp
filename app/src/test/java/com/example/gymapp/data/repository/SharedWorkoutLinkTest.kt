@@ -223,18 +223,58 @@ class SharedWorkoutLinkTest {
             listOf(SharedWorkoutExercise(null, "Custom", listOf(SharedWorkoutSet(0.0, 10))))
         )
 
-        inbox.offer(plan)
+        assertEquals(SharedWorkoutOfferResult.Accepted, inbox.offer(plan))
         val first = requireNotNull(inbox.pending.value)
         inbox.consume(first.id + 1)
         assertEquals(first, inbox.pending.value)
 
-        inbox.offer(plan)
+        inbox.consume(first.id)
+        assertEquals(null, inbox.pending.value)
+        assertEquals(SharedWorkoutOfferResult.Accepted, inbox.offer(plan))
         val second = requireNotNull(inbox.pending.value)
         assertTrue(second.id > first.id)
         inbox.consume(first.id)
         assertEquals(second, inbox.pending.value)
         inbox.consume(second.id)
         assertEquals(null, inbox.pending.value)
+    }
+
+    @Test
+    fun clearDropsThePendingPreviewSoTheNextLinkIsAccepted() {
+        val inbox = SharedWorkoutInbox()
+        val first = SharedWorkoutPlan(
+            listOf(SharedWorkoutExercise(null, "Custom", listOf(SharedWorkoutSet(0.0, 10))))
+        )
+        val other = SharedWorkoutPlan(
+            listOf(SharedWorkoutExercise(null, "Other", listOf(SharedWorkoutSet(20.0, 5))))
+        )
+        inbox.offer(first)
+        inbox.clear()
+        assertEquals(null, inbox.pending.value)
+        assertEquals(SharedWorkoutOfferResult.Accepted, inbox.offer(other))
+    }
+
+    @Test
+    fun inboxRefusesADifferentPlanWhileAPreviewIsPendingAndAcceptsAnIdenticalOne() {
+        val inbox = SharedWorkoutInbox()
+        val first = SharedWorkoutPlan(
+            listOf(SharedWorkoutExercise(null, "Custom", listOf(SharedWorkoutSet(0.0, 10))))
+        )
+        val other = SharedWorkoutPlan(
+            listOf(SharedWorkoutExercise(null, "Other", listOf(SharedWorkoutSet(20.0, 5))))
+        )
+
+        assertEquals(SharedWorkoutOfferResult.Accepted, inbox.offer(first))
+        val pending = requireNotNull(inbox.pending.value)
+
+        assertEquals(SharedWorkoutOfferResult.Busy, inbox.offer(other))
+        assertEquals(pending, inbox.pending.value)
+
+        assertEquals(SharedWorkoutOfferResult.Duplicate, inbox.offer(first))
+        assertEquals(pending, inbox.pending.value)
+
+        inbox.consume(pending.id)
+        assertEquals(SharedWorkoutOfferResult.Accepted, inbox.offer(other))
     }
 
     @Test

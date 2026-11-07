@@ -1044,6 +1044,18 @@ internal fun GymAppRoot(
         showIntro = false
     }
 
+    // A preview staged for a signed-in account must not survive sign-out or an account switch, or it
+    // would keep refusing every new link as busy. A link opened while signed out is kept for login.
+    var sharedWorkoutIsolationKey by remember { mutableStateOf(uiIsolationKey) }
+    var sharedWorkoutHadSession by remember { mutableStateOf(authState.session != null) }
+    LaunchedEffect(uiIsolationKey) {
+        if (sharedWorkoutIsolationKey != uiIsolationKey && sharedWorkoutHadSession) {
+            sharedWorkoutInbox.clear()
+        }
+        sharedWorkoutIsolationKey = uiIsolationKey
+        sharedWorkoutHadSession = authState.session != null
+    }
+
     val activeWorkoutBlocksSharedImport = stringResource(
         R.string.message_shared_workout_active_workout
     )

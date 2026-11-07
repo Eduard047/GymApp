@@ -708,6 +708,7 @@
     <string name="message_share_workout_failed">Не удалось безопасно подготовить эту тренировку для отправки.</string>
     <string name="message_shared_workout_invalid">Эта ссылка на тренировку некорректна или слишком большая.</string>
     <string name="message_shared_workout_active_workout">Заверши или отмени активную тренировку, прежде чем открывать общий план.</string>
+    <string name="message_shared_workout_preview_busy">Заверши или закрой текущий просмотр общей тренировки, прежде чем открывать другую ссылку.</string>
     <string name="message_shared_workout_open_web_failed">Не удалось открыть веб-версию.</string>
     <string name="message_shared_workout_imported">Общая тренировка открыта как редактируемый черновик. Проверь её перед началом.</string>
     <string name="message_shared_workout_import_failed">Не удалось безопасно добавить эту общую тренировку.</string>

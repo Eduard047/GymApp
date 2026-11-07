@@ -690,6 +690,7 @@
     <string name="message_share_workout_failed">This workout could not be shared safely.</string>
     <string name="message_shared_workout_invalid">This workout link is invalid or too large.</string>
     <string name="message_shared_workout_active_workout">Finish or discard the active workout before opening a shared plan.</string>
+    <string name="message_shared_workout_preview_busy">Finish or close the current shared workout preview before opening another link.</string>
     <string name="message_shared_workout_open_web_failed">The web version could not be opened.</string>
     <string name="message_shared_workout_imported">Shared workout opened as an editable draft. Review it before starting.</string>
     <string name="message_shared_workout_import_failed">This shared workout could not be added safely.</string>

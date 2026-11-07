@@ -13,6 +13,7 @@ import com.example.gymapp.auth.AuthCallbackKind
 import com.example.gymapp.auth.authErrorText
 import com.example.gymapp.data.repository.IncomingSharedWorkoutUrl
 import com.example.gymapp.data.repository.SharedWorkoutLink
+import com.example.gymapp.data.repository.SharedWorkoutOfferResult
 import com.example.gymapp.navigation.GymAppRoot
 import com.example.gymapp.ui.theme.GymAppTheme
 import com.example.gymapp.uiaudit.UiAuditHooks
@@ -103,7 +104,10 @@ class MainActivity : AppCompatActivity() {
                     // Do not retain a potentially large attacker-controlled template URI on the
                     // exported Activity. The bounded immutable plan is handed to the UI instead.
                     intent.data = null
-                    (application as GymApplication).sharedWorkoutInbox.offer(sharedWorkout.plan)
+                    val app = application as GymApplication
+                    if (app.sharedWorkoutInbox.offer(sharedWorkout.plan) == SharedWorkoutOfferResult.Busy) {
+                        app.toastController.post(getString(R.string.message_shared_workout_preview_busy))
+                    }
                     return
                 }
             }
