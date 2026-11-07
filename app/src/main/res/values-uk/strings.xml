@@ -317,6 +317,7 @@
     <string name="auth_error_password_policy">Пароль має містити щонайменше 6 символів і займати не більше 72 байтів у UTF-8.</string>
     <string name="auth_error_weak_password">Новий пароль не відповідає серверним вимогам.</string>
     <string name="auth_error_display_name_characters">В імені дозволені літери, цифри, пробіли, крапка, дефіс і підкреслення.</string>
+    <string name="auth_error_display_name_rules">Ім’я не може містити посилань чи довгих чисел і має містити літеру або цифру.</string>
     <string name="auth_error_callback_invalid">Небезпечне або пошкоджене посилання входу відхилено. Запроси новий лист.</string>
     <string name="auth_error_callback_expired">Цей запит входу не було розпочато на цьому пристрої або він застарів. Запроси новий лист.</string>
     <string name="auth_error_callback_code_invalid">Посилання входу не містить дійсного коду авторизації. Запроси новий лист.</string>

@@ -44,6 +44,75 @@ enum AuthDisplayNameRule {
         value.unicodeScalars.count
     }
 
+    static let minimumScalars = 2
+
+    enum SignUpRejection: Equatable {
+        case length
+        case characters
+        /// Static rules of `public.safe_leaderboard_display_name`: links, 7+ digits,
+        /// `@`, or no letter/digit. The server would reject the profile upsert forever.
+        case serverRules
+    }
+
+    enum SignUpCheck: Equatable {
+        case valid(String)
+        case rejected(SignUpRejection)
+    }
+
+    /// Trims and collapses every whitespace run to one space (mirrors Android
+    /// `normalizeSignUpDisplayName` and the server's `[[:space:]]+` collapse).
+    static func normalized(_ value: String) -> String {
+        var result = String.UnicodeScalarView()
+        var previousWasSpace = false
+        for scalar in value.unicodeScalars {
+            if scalar.properties.isWhitespace {
+                if !previousWasSpace { result.append(" ") }
+                previousWasSpace = true
+            } else {
+                result.append(scalar)
+                previousWasSpace = false
+            }
+        }
+        return String(result).trimmingCharacters(in: CharacterSet(charactersIn: " "))
+    }
+
+    // Static link rule of safe_leaderboard_display_name (supabase/migrations/
+    // 20260711084556_create_leaderboard_public.sql), case-insensitive. The constant
+    // pattern is valid, so the force-try cannot fail.
+    private static let serverLinkPattern = try! NSRegularExpression(
+        pattern: "(https?://|www[.]|discord[.]gg|t[.]me/|[\\p{L}\\p{Nd}_-]+[.](com|net|org|io|gg)(/|\\z))",
+        options: [.caseInsensitive]
+    )
+
+    /// Local sign-up validation (mirrors Android `checkSignUpDisplayName`): the client
+    /// alphabet, the stricter 32 scalar cap and the static server rules. Shared vectors:
+    /// shared/display-name-v1.json.
+    static func checkSignUp(_ raw: String) -> SignUpCheck {
+        let name = normalized(raw)
+        let length = scalarCount(name)
+        guard (minimumScalars ... maximumScalars).contains(length) else {
+            return .rejected(.length)
+        }
+        var asciiDigits = 0
+        var hasLetterOrDigit = false
+        if raw.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) {
+            return .rejected(.characters)
+        }
+        for scalar in name.unicodeScalars {
+            if scalar == " " { continue }
+            guard isAllowed(scalar) else { return .rejected(.characters) }
+            if scalar != "." && scalar != "-" && scalar != "_" { hasLetterOrDigit = true }
+            if ("0" ... "9").contains(scalar) { asciiDigits += 1 }
+        }
+        let range = NSRange(name.startIndex..., in: name)
+        if !hasLetterOrDigit
+            || asciiDigits > 6
+            || serverLinkPattern.firstMatch(in: name, options: [], range: range) != nil {
+            return .rejected(.serverRules)
+        }
+        return .valid(name)
+    }
+
     private static func isAllowed(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.properties.generalCategory {
         case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter,
@@ -628,7 +697,7 @@ public struct AuthView: View {
 
         let submittedEmail = drafts.email
         let submittedPassword = drafts.password
-        let submittedDisplayName = drafts.displayName
+        let submittedDisplayName = AuthDisplayNameRule.normalized(drafts.displayName)
         let submittedMode = mode
         focusedField = nil
         authService.message = nil
@@ -717,8 +786,16 @@ public struct AuthView: View {
                 return gymLocalized("Passwords do not match.")
             }
 
-            let cleanName = drafts.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard (2...AuthDisplayNameRule.maximumScalars).contains(AuthDisplayNameRule.scalarCount(cleanName)) else { return gymLocalized("Display name must be 2–32 characters.") }
+            switch AuthDisplayNameRule.checkSignUp(drafts.displayName) {
+            case .valid:
+                break
+            case .rejected(.length):
+                return gymLocalized("Display name must be 2–32 characters.")
+            case .rejected(.characters):
+                return gymLocalized(AuthServiceError.invalidDisplayName.errorDescription ?? "")
+            case .rejected(.serverRules):
+                return gymLocalized(AuthServiceError.unsafeDisplayName.errorDescription ?? "")
+            }
         }
         return nil
     }

@@ -28,6 +28,9 @@ class AuthUiMessagesTest {
                 R.string.auth_error_password_too_long,
             "Display name can use letters, numbers, spaces, dot, dash and underscore." to
                 R.string.auth_error_display_name_characters,
+            "Display name must be 2-32 characters." to R.string.auth_error_display_name_length,
+            "Name can't contain links or long numbers and needs a letter or digit." to
+                R.string.auth_error_display_name_rules,
             "Enter a valid email address." to R.string.auth_error_email_invalid,
             "Authentication rejected an unsafe or malformed callback. Request a new email." to
                 R.string.auth_error_callback_invalid,

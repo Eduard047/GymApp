@@ -317,6 +317,7 @@
     <string name="auth_error_password_policy">Password must contain at least 6 characters and fit within 72 UTF-8 bytes.</string>
     <string name="auth_error_weak_password">The new password does not meet the server password policy.</string>
     <string name="auth_error_display_name_characters">Display name can use letters, numbers, spaces, dot, dash and underscore.</string>
+    <string name="auth_error_display_name_rules">Name can\'t contain links or long numbers and needs a letter or digit.</string>
     <string name="auth_error_callback_invalid">Authentication rejected an unsafe or malformed link. Request a new email.</string>
     <string name="auth_error_callback_expired">This authentication request was not started on this device or has expired. Request a new email.</string>
     <string name="auth_error_callback_code_invalid">Authentication link did not contain a valid authorization code. Request a new email.</string>

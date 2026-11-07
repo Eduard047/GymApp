@@ -90,7 +90,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.gymapp.R
 import com.example.gymapp.auth.AuthUiState
 import com.example.gymapp.auth.MAX_LOGIN_PASSWORD_UTF8_BYTES
+import com.example.gymapp.auth.SIGN_UP_DISPLAY_NAME_CHARACTERS_ERROR
+import com.example.gymapp.auth.SIGN_UP_DISPLAY_NAME_LENGTH_ERROR
+import com.example.gymapp.auth.SIGN_UP_DISPLAY_NAME_MAX_CODE_POINTS
+import com.example.gymapp.auth.SIGN_UP_DISPLAY_NAME_RULES_ERROR
 import com.example.gymapp.auth.SavedLocalProfile
+import com.example.gymapp.auth.SignUpDisplayNameCheck
+import com.example.gymapp.auth.checkSignUpDisplayName
+import com.example.gymapp.auth.message
 import com.example.gymapp.auth.boundedNewLocalDisplayNameDraft
 import com.example.gymapp.auth.NEW_PASSWORD_POLICY_ERROR
 import com.example.gymapp.auth.newPasswordLengthIsValid
@@ -1290,7 +1297,9 @@ private fun localizedAuthValidationMessage(context: Context, message: String): S
         "Password is too long." -> R.string.auth_error_password_too_long
         "Repeat your email." -> R.string.auth_error_repeat_email
         "Email does not match." -> R.string.auth_error_email_mismatch
-        "Display name must be 2-32 characters." -> R.string.auth_error_display_name_length
+        SIGN_UP_DISPLAY_NAME_LENGTH_ERROR -> R.string.auth_error_display_name_length
+        SIGN_UP_DISPLAY_NAME_CHARACTERS_ERROR -> R.string.auth_error_display_name_characters
+        SIGN_UP_DISPLAY_NAME_RULES_ERROR -> R.string.auth_error_display_name_rules
         NEW_PASSWORD_POLICY_ERROR -> R.string.auth_error_password_minimum
         "Passwords do not match." -> R.string.auth_error_password_mismatch
         "Enter a new password." -> R.string.auth_error_new_password_required
@@ -1316,8 +1325,6 @@ internal fun validateLoginInput(
         else -> null
     }
 }
-
-internal const val SIGN_UP_DISPLAY_NAME_MAX_CODE_POINTS = 32
 
 /**
  * Shared sign-up display-name draft rule (mirrored by iOS `AuthDisplayNameRule`):
@@ -1358,13 +1365,13 @@ internal fun validateSignUpInput(
 ): String? {
     val cleanEmail = normalizeAuthEmail(email)
     val cleanEmailConfirm = normalizeAuthEmail(emailConfirm)
+    val nameRejection = (checkSignUpDisplayName(displayName) as? SignUpDisplayNameCheck.Rejected)?.reason
     return when {
         cleanEmail.isBlank() -> "Enter your email."
         !isValidEmail(cleanEmail) -> "Enter a valid email address."
         cleanEmailConfirm.isBlank() -> "Repeat your email."
         cleanEmail != cleanEmailConfirm -> "Email does not match."
-        displayName.trim().let { it.codePointCount(0, it.length) } !in 2..SIGN_UP_DISPLAY_NAME_MAX_CODE_POINTS ->
-            "Display name must be 2-32 characters."
+        nameRejection != null -> nameRejection.message()
         !newPasswordLengthIsValid(password) -> NEW_PASSWORD_POLICY_ERROR
         password != passwordConfirm -> "Passwords do not match."
         else -> null

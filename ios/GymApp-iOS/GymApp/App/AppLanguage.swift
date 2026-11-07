@@ -425,6 +425,7 @@ func gymSafeEnglishErrorMessage(_ error: Error) -> String {
              .invalidPasswordReauthenticationNonce,
              .passwordReauthenticationRequired,
              .invalidDisplayName,
+             .unsafeDisplayName,
              .duplicateLocalProfile,
              .localProfileNotFound,
              .localProfileLimitReached,

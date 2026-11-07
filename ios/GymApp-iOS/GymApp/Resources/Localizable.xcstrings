@@ -5547,6 +5547,23 @@
         }
       }
     },
+    "Name can't contain links or long numbers and needs a letter or digit." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Имя не может содержать ссылок или длинных чисел и должно содержать букву или цифру."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ім’я не може містити посилань чи довгих чисел і має містити літеру або цифру."
+          }
+        }
+      }
+    },
     "Display name must be 2–32 characters." : {
       "extractionState" : "stale",
       "localizations" : {

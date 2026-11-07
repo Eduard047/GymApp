@@ -44,8 +44,10 @@ internal fun authErrorText(
             R.string.auth_error_weak_password
         message == "Password is too long." ->
             R.string.auth_error_password_too_long
-        message == "Display name can use letters, numbers, spaces, dot, dash and underscore." ->
+        message == SIGN_UP_DISPLAY_NAME_CHARACTERS_ERROR ->
             R.string.auth_error_display_name_characters
+        message == SIGN_UP_DISPLAY_NAME_LENGTH_ERROR -> R.string.auth_error_display_name_length
+        message == SIGN_UP_DISPLAY_NAME_RULES_ERROR -> R.string.auth_error_display_name_rules
         message == "Display name must be 2–32 characters and use letters, numbers, spaces, dot, dash or underscore." ->
             R.string.auth_error_local_profile_contract
         message == "A saved local profile already uses this name. Select it from Saved profiles." ->

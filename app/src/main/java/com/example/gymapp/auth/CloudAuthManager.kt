@@ -820,12 +820,16 @@ class CloudAuthManager internal constructor(
 
     suspend fun signUp(email: String, password: String, displayName: String): AccountSession.Cloud? {
         val cleanEmail = normalizeEmail(email)
-        val cleanName = sanitizeDisplayName(displayName.ifBlank { cleanEmail.substringBefore("@") })
         validateEmail(cleanEmail)
         validateNewPassword(password)
-        if (cleanName.isNotBlank()) {
-            require(cleanName.length in 2..32 && cleanName.all { it.isLetterOrDigit() || it == ' ' || it == '.' || it == '-' || it == '_' }) {
-                "Display name can use letters, numbers, spaces, dot, dash and underscore."
+        // A blank field falls back to the email prefix, filtered to the allowed alphabet.
+        val fallbackName = if (displayName.isBlank()) sanitizeDisplayName(cleanEmail.substringBefore("@")) else null
+        val cleanName = if (fallbackName != null && fallbackName.isBlank()) {
+            ""
+        } else {
+            when (val check = checkSignUpDisplayName(fallbackName ?: displayName)) {
+                is SignUpDisplayNameCheck.Valid -> check.name
+                is SignUpDisplayNameCheck.Rejected -> throw IllegalArgumentException(check.reason.message())
             }
         }
         val authAttempt = beginAuthAttempt()

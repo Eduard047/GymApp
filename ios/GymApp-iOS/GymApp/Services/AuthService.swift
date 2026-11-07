@@ -314,6 +314,7 @@ enum AuthServiceError: LocalizedError {
     case invalidPasswordReauthenticationNonce
     case passwordReauthenticationRequired
     case invalidDisplayName
+    case unsafeDisplayName
     case duplicateLocalProfile
     case localProfileNotFound
     case localProfileLimitReached
@@ -340,6 +341,7 @@ enum AuthServiceError: LocalizedError {
         case .passwordReauthenticationRequired:
             return "A verification code is required to change this password."
         case .invalidDisplayName: return "Display name must be 2–32 characters and use letters, numbers, spaces, dot, dash or underscore."
+        case .unsafeDisplayName: return "Name can't contain links or long numbers and needs a letter or digit."
         case .duplicateLocalProfile: return "A saved profile already uses this name."
         case .localProfileNotFound: return "This saved profile is no longer available."
         case .localProfileLimitReached: return "Remove an unused local profile before creating another one."
@@ -612,7 +614,11 @@ final class AuthService: ObservableObject {
         await perform {
             let cleanEmail = try self.validatedEmail(email)
             try self.validatePassword(password)
-            let cleanName = try self.validatedDisplayName(displayName, fallbackEmail: cleanEmail)
+            let cleanName = try self.validatedDisplayName(
+                displayName,
+                fallbackEmail: cleanEmail,
+                enforceServerRules: true
+            )
             let transaction = try self.reusableAuthTransaction(
                 for: cleanEmail,
                 kind: .signup
@@ -1369,6 +1375,7 @@ final class AuthService: ObservableObject {
              AuthServiceError.invalidPasswordReauthenticationNonce,
              AuthServiceError.passwordReauthenticationRequired,
              AuthServiceError.invalidDisplayName,
+             AuthServiceError.unsafeDisplayName,
              AuthServiceError.duplicateLocalProfile,
              AuthServiceError.localProfileNotFound,
              AuthServiceError.localProfileLimitReached,
@@ -1615,7 +1622,24 @@ final class AuthService: ObservableObject {
         }
     }
 
-    private func validatedDisplayName(_ value: String, fallbackEmail: String) throws -> String {
+    /// `enforceServerRules` is for cloud sign-up: the name becomes the public profile name,
+    /// so the static rules of the server's display-name trigger apply as well.
+    private func validatedDisplayName(
+        _ value: String,
+        fallbackEmail: String,
+        enforceServerRules: Bool = false
+    ) throws -> String {
+        if enforceServerRules {
+            let trimmed = AuthDisplayNameRule.normalized(value)
+            let candidate = trimmed.isEmpty
+                ? String(fallbackEmail.split(separator: "@").first ?? "Athlete")
+                : trimmed
+            switch AuthDisplayNameRule.checkSignUp(candidate) {
+            case .valid(let name): return name
+            case .rejected(.serverRules): throw AuthServiceError.unsafeDisplayName
+            case .rejected: throw AuthServiceError.invalidDisplayName
+            }
+        }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         let candidate: String
         if trimmed.isEmpty {

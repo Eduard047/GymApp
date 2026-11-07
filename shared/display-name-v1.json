@@ -1,0 +1,321 @@
+{
+  "version": 1,
+  "description": "Sign-up display-name golden cases run by Android SignUpDisplayNameGoldenTest and iOS SignUpDisplayNameGoldenTests, and checked against a JS mirror of the server static rules by tests/display-name-contract.test.mjs. cases: input is the raw submitted name; normalized is the trimmed, whitespace-collapsed name the client sends as display_name (null = the client rejects it and sends nothing). reason of a rejected case is length (outside 2..32 Unicode code points after trim and collapse; the server accepts 2..40, the client keeps the stricter 32), characters (anything but letters, digits, space, dot, dash, underscore, or any control character) or server (the static public.safe_leaderboard_display_name rules: 7 or more ASCII digits, link or domain patterns such as www., discord.gg, t.me/ and name.com/.net/.org/.io/.gg, an @, or no letter or digit). Every accepted name must also pass the server rules, so the profile upsert trigger cannot reject it. The blocked-terms table is dynamic and is not covered. draftCases: what the live sign-up field keeps while typing (letters, digits, space, dot, dash, underscore; whitespace runs collapse to one space; clamp to 32 code points).",
+  "minCodePoints": 2,
+  "maxCodePoints": 32,
+  "cases": [
+    {
+      "id": "plain-ascii",
+      "input": "Ed",
+      "normalized": "Ed"
+    },
+    {
+      "id": "ascii-with-digits",
+      "input": "Bob 123456",
+      "normalized": "Bob 123456"
+    },
+    {
+      "id": "six-digits-in-two-groups",
+      "input": "Bob 123 456",
+      "normalized": "Bob 123 456"
+    },
+    {
+      "id": "seven-digits",
+      "input": "Bob 1234567",
+      "normalized": null,
+      "reason": "server"
+    },
+    {
+      "id": "seven-digits-in-groups",
+      "input": "Bob 123 4567",
+      "normalized": null,
+      "reason": "server"
+    },
+    {
+      "id": "dot-dash-underscore",
+      "input": "Ed.Fit-1_x",
+      "normalized": "Ed.Fit-1_x"
+    },
+    {
+      "id": "dotted-name",
+      "input": "Bob.Smith",
+      "normalized": "Bob.Smith"
+    },
+    {
+      "id": "not-a-link-tld-prefix",
+      "input": "my.company",
+      "normalized": "my.company"
+    },
+    {
+      "id": "domain-com",
+      "input": "my.com",
+      "normalized": null,
+      "reason": "server"
+    },
+    {
+      "id": "domain-io-uppercase",
+      "input": "A.IO",
+      "normalized": null,
+      "reason": "server"
+    },
+    {
+      "id": "domain-gg",
+      "input": "discord.gg",
+      "normalized": null,
+      "reason": "server"
+    },
+    {
+      "id": "www-prefix",
+      "input": "www.x",
+      "normalized": null,
+      "reason": "server"
+    },
+    {
+      "id": "www-inside-word",
+      "input": "awww.x",
+      "normalized": null,
+      "reason": "server"
+    },
+    {
+      "id": "telegram-link",
+      "input": "t.me/x",
+      "normalized": null,
+      "reason": "characters"
+    },
+    {
+      "id": "http-link",
+      "input": "http://x",
+      "normalized": null,
+      "reason": "characters"
+    },
+    {
+      "id": "only-dots",
+      "input": "..",
+      "normalized": null,
+      "reason": "server"
+    },
+    {
+      "id": "only-dash-underscore",
+      "input": "-_-",
+      "normalized": null,
+      "reason": "server"
+    },
+    {
+      "id": "only-spaces-dots",
+      "input": ". .",
+      "normalized": null,
+      "reason": "server"
+    },
+    {
+      "id": "symbols-around-letter",
+      "input": "-a-",
+      "normalized": "-a-"
+    },
+    {
+      "id": "at-sign",
+      "input": "Bob@x",
+      "normalized": null,
+      "reason": "characters"
+    },
+    {
+      "id": "zero-width-space",
+      "input": "a\u200bb",
+      "normalized": null,
+      "reason": "characters"
+    },
+    {
+      "id": "byte-order-mark",
+      "input": "a\ufeffb",
+      "normalized": null,
+      "reason": "characters"
+    },
+    {
+      "id": "tab-control",
+      "input": "a\tb",
+      "normalized": null,
+      "reason": "characters"
+    },
+    {
+      "id": "newline-control",
+      "input": "a\nb",
+      "normalized": null,
+      "reason": "characters"
+    },
+    {
+      "id": "ukrainian",
+      "input": "Олена",
+      "normalized": "Олена"
+    },
+    {
+      "id": "ukrainian-apostrophe-letter",
+      "input": "Д\u02bcюк",
+      "normalized": "Д\u02bcюк"
+    },
+    {
+      "id": "ukrainian-yi-and-ge",
+      "input": "Їжак Ґанок",
+      "normalized": "Їжак Ґанок"
+    },
+    {
+      "id": "russian-yo",
+      "input": "Ёжик",
+      "normalized": "Ёжик"
+    },
+    {
+      "id": "russian-yo-lowercase",
+      "input": "Алёна",
+      "normalized": "Алёна"
+    },
+    {
+      "id": "trim-and-collapse",
+      "input": "  Bob   Smith  ",
+      "normalized": "Bob Smith"
+    },
+    {
+      "id": "double-space",
+      "input": "Bob  Smith",
+      "normalized": "Bob Smith"
+    },
+    {
+      "id": "nbsp-collapses",
+      "input": "Bob\u00a0\u00a0Smith",
+      "normalized": "Bob Smith"
+    },
+    {
+      "id": "empty",
+      "input": "",
+      "normalized": null,
+      "reason": "length"
+    },
+    {
+      "id": "spaces-only",
+      "input": "   ",
+      "normalized": null,
+      "reason": "length"
+    },
+    {
+      "id": "one-char",
+      "input": "E",
+      "normalized": null,
+      "reason": "length"
+    },
+    {
+      "id": "two-chars",
+      "input": "Ed",
+      "normalized": "Ed"
+    },
+    {
+      "id": "two-chars-after-trim",
+      "input": "  Ed  ",
+      "normalized": "Ed"
+    },
+    {
+      "id": "one-char-after-trim",
+      "input": "  E  ",
+      "normalized": null,
+      "reason": "length"
+    },
+    {
+      "id": "thirty-two-chars",
+      "input": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "normalized": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "id": "thirty-three-chars",
+      "input": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "normalized": null,
+      "reason": "length"
+    },
+    {
+      "id": "thirty-two-cyrillic",
+      "input": "ЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯ",
+      "normalized": "ЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯ"
+    },
+    {
+      "id": "thirty-three-cyrillic",
+      "input": "ЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯЯ",
+      "normalized": null,
+      "reason": "length"
+    },
+    {
+      "id": "two-supplementary-letters",
+      "input": "\ud842\udf9f\ud842\udf9f",
+      "normalized": "\ud842\udf9f\ud842\udf9f"
+    },
+    {
+      "id": "one-supplementary-letter",
+      "input": "\ud835\udc00",
+      "normalized": null,
+      "reason": "length"
+    },
+    {
+      "id": "thirty-two-supplementary-letters",
+      "input": "\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00",
+      "normalized": "\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00"
+    },
+    {
+      "id": "thirty-three-supplementary-letters",
+      "input": "\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00",
+      "normalized": null,
+      "reason": "length"
+    },
+    {
+      "id": "supplementary-letter-in-name",
+      "input": "Ed \ud842\udf9f",
+      "normalized": "Ed \ud842\udf9f"
+    },
+    {
+      "id": "emoji",
+      "input": "Ed \ud83d\ude00",
+      "normalized": null,
+      "reason": "characters"
+    }
+  ],
+  "draftCases": [
+    {
+      "id": "at-sign-stripped",
+      "input": "Bob@x",
+      "draft": "Bobx"
+    },
+    {
+      "id": "slash-stripped",
+      "input": "t.me/x",
+      "draft": "t.mex"
+    },
+    {
+      "id": "symbols-stripped",
+      "input": "Ed !@#/\\<>Fit",
+      "draft": "Ed Fit"
+    },
+    {
+      "id": "whitespace-collapsed",
+      "input": "a  \t \n b   c",
+      "draft": "a b c"
+    },
+    {
+      "id": "edge-spaces-kept-single",
+      "input": "  Bob  ",
+      "draft": " Bob "
+    },
+    {
+      "id": "clamped-to-32",
+      "input": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "draft": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "id": "supplementary-kept-and-clamped",
+      "input": "\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00",
+      "draft": "\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00\ud835\udc00"
+    },
+    {
+      "id": "emoji-stripped",
+      "input": "Ed \ud83d\ude00",
+      "draft": "Ed "
+    },
+    {
+      "id": "zero-width-stripped",
+      "input": "a\u200bb",
+      "draft": "ab"
+    }
+  ]
+}
