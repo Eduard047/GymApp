@@ -2967,7 +2967,8 @@ private fun ExerciseHistoryBottomSheetContent(
                     val timeText = systemTimeFormatter.format(Date(sessionGroup.sessionDate))
                     ExerciseHistorySessionCard(
                         sessionGroup = sessionGroup,
-                        timeText = timeText
+                        timeText = timeText,
+                        locale = locale
                     )
                 }
             }
@@ -3008,9 +3009,9 @@ private fun HistoryStat(
 @Composable
 private fun ExerciseHistorySessionCard(
     sessionGroup: ExerciseHistorySessionGroup,
-    timeText: String
+    timeText: String,
+    locale: Locale
 ) {
-    val locale = Locale.getDefault()
     val totalVolume = sessionGroup.sets.sumOf { it.weight * it.reps }
     val maxWeight = sessionGroup.sets.maxOfOrNull { it.weight } ?: 0.0
 
@@ -3051,7 +3052,7 @@ private fun ExerciseHistorySessionCard(
                     modifier = Modifier.weight(1f)
                 )
                 Text(
-                    text = formattedStringResource(R.string.exercise_history_volume_inline, NumberFormat.getIntegerInstance(locale).format(totalVolume)),
+                    text = formattedStringResource(R.string.exercise_history_volume_inline, formatHistoryVolume(totalVolume, locale)),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
@@ -3093,7 +3094,7 @@ private fun ExerciseHistorySessionCard(
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(
-                        text = formatWeightShort(set.weight),
+                        text = formatProgressWeight(set.weight, locale),
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -3108,10 +3109,9 @@ private fun ExerciseHistorySessionCard(
     }
 }
 
-private fun formatWeightShort(weight: Double): String {
-    return if (weight % 1.0 == 0.0) {
-        weight.toInt().toString()
-    } else {
-        String.format(Locale.getDefault(), "%.1f", weight)
-    }
-}
+/** Session volume with 0-1 fraction digits in the app language, same rule as the history stats tile. */
+internal fun formatHistoryVolume(volume: Double, locale: Locale): String =
+    NumberFormat.getNumberInstance(locale).apply {
+        minimumFractionDigits = 0
+        maximumFractionDigits = 1
+    }.format(volume)
