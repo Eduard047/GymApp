@@ -58,7 +58,7 @@ class LanguageManager(
         }
     }
 
-    private companion object {
+    internal companion object {
         const val PREFS_NAME = "gym_settings"
         const val KEY_LANGUAGE = "language_tag"
     }

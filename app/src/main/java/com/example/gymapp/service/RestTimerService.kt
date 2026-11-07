@@ -33,8 +33,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import com.example.gymapp.util.safeGetString
+import com.example.gymapp.util.withAppLanguage
 
 class RestTimerService : Service() {
+    override fun attachBaseContext(newBase: Context) {
+        // The running notification and channels use the in-app language, not the system one (API < 33).
+        super.attachBaseContext(newBase.withAppLanguage())
+    }
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var countdownJob: Job? = null
     private var remainingSeconds: Int = 0
@@ -332,7 +338,8 @@ class RestTimerService : Service() {
             }
         }
 
-        private fun buildFinishedNotification(context: Context): Notification {
+        private fun buildFinishedNotification(baseContext: Context): Notification {
+            val context = baseContext.withAppLanguage()
             val language = context.resources.configuration.locales[0]?.language
             val exerciseLabel = restFinishedExerciseLabel(storedFinishedExercise(context)) { rawName ->
                 BuiltInExerciseCatalog.displayName(rawName, language)

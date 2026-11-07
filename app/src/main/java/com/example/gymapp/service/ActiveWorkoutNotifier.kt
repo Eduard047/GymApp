@@ -24,6 +24,7 @@ import com.example.gymapp.data.repository.RecordActiveWorkoutSetResult
 import com.example.gymapp.data.repository.WorkoutRecommendationEngine
 import com.example.gymapp.gymApplication
 import com.example.gymapp.util.restTimerAccountKey
+import com.example.gymapp.util.withAppLanguage
 import java.text.NumberFormat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -76,7 +77,9 @@ internal object ActiveWorkoutNotifier {
     private const val PREFERENCES_NAME = "active_workout_notification"
     private const val KEY_PERMISSION_REQUESTED = "permission_requested"
 
-    fun show(context: Context, content: ActiveWorkoutNotificationContent) {
+    fun show(baseContext: Context, content: ActiveWorkoutNotificationContent) {
+        // Strings and exercise names follow the in-app language, not the system one (API < 33).
+        val context = baseContext.withAppLanguage()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
