@@ -275,9 +275,13 @@ internal fun authCallbackKind(purpose: String?): AuthCallbackKind {
 internal fun isExpectedAuthState(
     receivedStates: List<String>,
     expectedState: String?,
-    pendingIsFresh: Boolean
+    pendingIsFresh: Boolean,
+    hasActiveSession: Boolean
 ): Boolean {
-    return receivedStates.size == 1 &&
+    // Like iOS, an auth callback is only accepted while signed out; it must never
+    // replace an active cloud or local session.
+    return !hasActiveSession &&
+        receivedStates.size == 1 &&
         receivedStates.single().matches(Regex("^[A-Za-z0-9_-]{32}$")) &&
         expectedState != null &&
         pendingIsFresh &&
@@ -1278,7 +1282,8 @@ class CloudAuthManager internal constructor(
             isExpectedAuthState(
                 receivedStates = stateValues,
                 expectedState = transaction?.state,
-                pendingIsFresh = transaction?.isFresh() == true
+                pendingIsFresh = transaction?.isFresh() == true,
+                hasActiveSession = synchronized(authStateLock) { _authState.value.session != null }
             )
         ) {
             "This authentication request was not started on this device or has expired. Request a new email."
