@@ -72,7 +72,7 @@ internal fun CloudSyncConflictDialog(
                 )
                 Button(
                     onClick = onKeepDeviceVersion,
-                    enabled = !resolving,
+                    enabled = !resolving && !backingUp,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 52.dp)
@@ -92,7 +92,7 @@ internal fun CloudSyncConflictDialog(
                     )
                     OutlinedButton(
                         onClick = onUseCloudVersion,
-                        enabled = !resolving,
+                        enabled = !resolving && !backingUp,
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 52.dp),

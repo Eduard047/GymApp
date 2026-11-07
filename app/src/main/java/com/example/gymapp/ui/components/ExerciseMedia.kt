@@ -28,6 +28,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -83,6 +84,7 @@ fun ExerciseMediaPreview(
     var showSheet by remember(exerciseId, ownerKey) { mutableStateOf(false) }
     var revision by remember(exerciseId, ownerKey) { mutableIntStateOf(0) }
     val context = LocalContext.current
+    val mediaRevision by ExerciseMediaStore.mediaRevision.collectAsState()
     val preview by produceState(
         initialValue = ExerciseMediaPreviewState(
             bitmap = null,
@@ -93,6 +95,7 @@ fun ExerciseMediaPreview(
         exerciseName,
         ownerKey,
         revision,
+        mediaRevision,
         width,
         height
     ) {
@@ -216,6 +219,7 @@ private fun ExerciseMediaSheet(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val mediaRevision by ExerciseMediaStore.mediaRevision.collectAsState()
     var revision by remember(exerciseId, ownerKey) { mutableIntStateOf(0) }
     var error by remember(exerciseId, ownerKey) { mutableStateOf(false) }
     val frames by produceState(
@@ -223,7 +227,8 @@ private fun ExerciseMediaSheet(
         exerciseId,
         exerciseName,
         ownerKey,
-        revision
+        revision,
+        mediaRevision
     ) {
         value = withContext(Dispatchers.IO) {
             val custom = runCatching {

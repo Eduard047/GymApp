@@ -17,6 +17,10 @@ import java.security.MessageDigest
 import kotlin.math.min
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 
 /** What the media sheet offers for a custom photo; null means there is no custom photo. */
@@ -106,6 +110,18 @@ object ExerciseMediaStore {
     // bitmaps in a small process cache avoids retaining account-owned custom media after logout.
     private val bundledBitmapCache = object : LruCache<String, Bitmap>(BundledBitmapCacheBytes) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+    }
+
+    private val mutableMediaRevision = MutableStateFlow(0)
+
+    /**
+     * Bumped after custom photos were moved to new exercise ids (cloud replace). Photo loaders
+     * include it in their keys so they reload instead of showing a pre-remap miss forever.
+     */
+    val mediaRevision: StateFlow<Int> = mutableMediaRevision.asStateFlow()
+
+    internal fun notifyMediaRemapped() {
+        mutableMediaRevision.value += 1
     }
 
     fun bundledFramePaths(exerciseName: String): List<String> {
@@ -260,25 +276,28 @@ object ExerciseMediaStore {
         }
         val result = replace()
         if (holders.isNotEmpty()) {
-            try {
-                val newIds = LinkedHashMap<String, Long>()
-                loadExercises().sortedBy { it.id }.forEach { exercise ->
-                    newIds.putIfAbsent(exerciseMediaIdentityKey(exercise.name), exercise.id)
-                }
-                val plan = planPhotoRemap(holders, newIds)
-                if (!plan.isEmpty) {
-                    withContext(Dispatchers.IO) {
-                        applyPhotoRemap(
-                            directory = customFile(context, ownerKey, 0L).parentFile
-                                ?: return@withContext,
-                            plan = plan
-                        )
+            // The replace is committed: finish the remap even when the caller is cancelled
+            // (sign-out, account switch), or photos would stay attached to dead ids.
+            withContext(NonCancellable) {
+                try {
+                    val newIds = LinkedHashMap<String, Long>()
+                    loadExercises().sortedBy { it.id }.forEach { exercise ->
+                        newIds.putIfAbsent(exerciseMediaIdentityKey(exercise.name), exercise.id)
                     }
+                    val plan = planPhotoRemap(holders, newIds)
+                    if (!plan.isEmpty) {
+                        withContext(Dispatchers.IO) {
+                            applyPhotoRemap(
+                                directory = customFile(context, ownerKey, 0L).parentFile
+                                    ?: return@withContext,
+                                plan = plan
+                            )
+                        }
+                        notifyMediaRemapped()
+                    }
+                } catch (_: Throwable) {
+                    // Photos are a best-effort extra; the already-applied replace must still succeed.
                 }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Throwable) {
-                // Photos are a best-effort extra; the already-applied replace must still succeed.
             }
         }
         return result

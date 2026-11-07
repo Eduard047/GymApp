@@ -278,6 +278,27 @@ class SharedWorkoutLinkTest {
     }
 
     @Test
+    fun consumingAtApprovalFreesTheInboxEvenIfTheApprovedPlanIsNeverApplied() {
+        val inbox = SharedWorkoutInbox()
+        val first = SharedWorkoutPlan(
+            listOf(SharedWorkoutExercise(null, "Custom", listOf(SharedWorkoutSet(0.0, 10))))
+        )
+        val other = SharedWorkoutPlan(
+            listOf(SharedWorkoutExercise(null, "Other", listOf(SharedWorkoutSet(20.0, 5))))
+        )
+        assertEquals(SharedWorkoutOfferResult.Accepted, inbox.offer(first))
+        val pending = requireNotNull(inbox.pending.value)
+
+        // Approval consumes the item and hands the plan to the UI; the approval is single-use.
+        assertTrue(inbox.consume(pending.id))
+        assertFalse(inbox.consume(pending.id))
+        assertEquals(null, inbox.pending.value)
+
+        // Even if the approved plan is dropped without being applied, later links are not busy.
+        assertEquals(SharedWorkoutOfferResult.Accepted, inbox.offer(other))
+    }
+
+    @Test
     fun sessionLinkSortsRowsAndExcludesPrivateAndGarminMetadata() {
         val privateNote = "account@example.test Garmin HR=188 calories=900 receipt=private"
         val details = WorkoutSessionDetails(

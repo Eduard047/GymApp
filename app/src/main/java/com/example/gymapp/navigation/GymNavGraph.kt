@@ -8,6 +8,7 @@ import android.os.Build
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
@@ -108,6 +109,7 @@ import com.example.gymapp.gymApplication
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.LiveWorkoutDraftSendReceipt
 import com.example.gymapp.data.repository.LiveWorkoutSidecarStore
+import com.example.gymapp.data.repository.PendingSharedWorkout
 import com.example.gymapp.data.repository.SharedWorkoutInbox
 import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.data.repository.SharedWorkoutPlan
@@ -957,10 +959,12 @@ internal fun GymAppRoot(
     var cloudSyncConflictNoticeVersion by key(uiIsolationKey) {
         remember { mutableStateOf(0) }
     }
-    var approvedSharedWorkoutId by key(uiIsolationKey) {
+    var approvedSharedWorkout by key(uiIsolationKey) {
         // Consent must never survive process death: SharedWorkoutInbox is process-local and its
-        // generation counter restarts, so restoring an old numeric id could approve a new link.
-        remember { mutableStateOf<Long?>(null) }
+        // generation counter restarts, so a restored approval could apply an old or new link.
+        // The inbox item is consumed at the moment of approval, so a plan that is never applied
+        // (user backs out, navigation fails) can no longer keep every later link "busy".
+        remember { mutableStateOf<PendingSharedWorkout?>(null) }
     }
     var profileFocusRequest by key(uiIsolationKey) {
         remember { mutableStateOf<ProfileFocusRequest?>(null) }
@@ -2199,22 +2203,63 @@ internal fun GymAppRoot(
     }
 
     var cloudConflictBackupInProgress by key(uiIsolationKey) { mutableStateOf(false) }
-    var cloudConflictBackupJson by key(uiIsolationKey) { mutableStateOf<String?>(null) }
     val cloudConflictBackupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
-        val json = cloudConflictBackupJson
-        cloudConflictBackupJson = null
-        if (uri == null || json == null) {
+        if (uri == null) {
             cloudConflictBackupInProgress = false
         } else {
+            // The backup is exported here, not held across the picker: the activity can be
+            // recreated while the picker is open, which would leave an empty document behind.
+            val conflict = cloudSyncConflict
+            val session = cloudSession
+            cloudConflictBackupInProgress = true
             coroutineScope.launch {
-                val saved = withContext(Dispatchers.IO) {
-                    writeCloudSyncConflictBackup(json) {
-                        applicationContext.contentResolver.openOutputStream(uri, "wt")
+                var saved = false
+                try {
+                    saved = runCatching {
+                        check(
+                            conflict != null && session != null &&
+                                conflict.userId == session.userId &&
+                                conflict.sessionGeneration == session.sessionGeneration &&
+                                isSameCloudSessionGeneration(
+                                    session,
+                                    authManager.authState.value.session
+                                )
+                        )
+                        // Same manual-backup JSON as the Account sheet export, of this phone only.
+                        val json = repository.exportBackupJson(
+                            includeDiagnostics = false,
+                            owner = BackupOwner(
+                                accountId = session.userId,
+                                userId = session.userId,
+                                email = session.email,
+                                remote = true
+                            )
+                        )
+                        withContext(Dispatchers.IO) {
+                            writeCloudSyncConflictBackup(json) {
+                                applicationContext.contentResolver.openOutputStream(uri, "wt")
+                            }
+                        }
+                    }.getOrElse { throwable ->
+                        if (throwable is CancellationException) throw throwable
+                        false
+                    }
+                } finally {
+                    cloudConflictBackupInProgress = false
+                    if (!saved) {
+                        // Never leave an empty file the user could mistake for a real backup.
+                        withContext(NonCancellable + Dispatchers.IO) {
+                            runCatching {
+                                DocumentsContract.deleteDocument(
+                                    applicationContext.contentResolver,
+                                    uri
+                                )
+                            }
+                        }
                     }
                 }
-                cloudConflictBackupInProgress = false
                 authManager.setMessage(
                     LocalizedText(
                         if (saved) R.string.cloud_sync_conflict_backup_saved
@@ -2233,28 +2278,7 @@ internal fun GymAppRoot(
             conflict.sessionGeneration != session.sessionGeneration
         ) return@backup
         cloudConflictBackupInProgress = true
-        coroutineScope.launch {
-            // Same manual-backup JSON as the Account sheet export, of this phone's data only.
-            runCatching {
-                check(isSameCloudSessionGeneration(session, authManager.authState.value.session))
-                repository.exportBackupJson(
-                    includeDiagnostics = false,
-                    owner = BackupOwner(
-                        accountId = session.userId,
-                        userId = session.userId,
-                        email = session.email,
-                        remote = true
-                    )
-                )
-            }.onSuccess { json ->
-                cloudConflictBackupJson = json
-                cloudConflictBackupLauncher.launch(CLOUD_SYNC_CONFLICT_BACKUP_FILE_NAME)
-            }.onFailure { throwable ->
-                if (throwable is CancellationException) throw throwable
-                cloudConflictBackupInProgress = false
-                authManager.setMessage(LocalizedText(R.string.backup_export_failed))
-            }
-        }
+        cloudConflictBackupLauncher.launch(CLOUD_SYNC_CONFLICT_BACKUP_FILE_NAME)
     }
 
     val resolveCloudSyncConflict: (Boolean) -> Unit = resolve@{ useCloudVersion ->
@@ -3343,9 +3367,7 @@ internal fun GymAppRoot(
                             }
                             val liveWorkoutNoticeText = liveWorkoutState.notice?.asString()
                             val liveWorkoutErrorText = liveWorkoutState.error?.asString()
-                            val approvedSharedWorkout = pendingSharedWorkout?.takeIf {
-                                it.id == approvedSharedWorkoutId
-                            }
+                            val approvedPlan = approvedSharedWorkout
                             val acceptedSocialWorkout = friendsState?.acceptedWorkout
                             val selectedLiveWorkoutFriend = liveWorkoutDraftTarget?.let { target ->
                                 friendsState?.dashboard?.friends
@@ -3461,11 +3483,14 @@ internal fun GymAppRoot(
                                 liveWorkoutViewModel?.clearMessages()
                             }
 
-                            LaunchedEffect(approvedSharedWorkout?.id) {
-                                val pending = approvedSharedWorkout ?: return@LaunchedEffect
+                            DisposableEffect(Unit) {
+                                // Leaving Add Workout without applying drops the approval.
+                                onDispose { approvedSharedWorkout = null }
+                            }
+                            LaunchedEffect(approvedPlan?.id) {
+                                val pending = approvedPlan ?: return@LaunchedEffect
                                 val applied = viewModel.applySharedWorkoutPlan(pending.plan)
-                                sharedWorkoutInbox.consume(pending.id)
-                                approvedSharedWorkoutId = null
+                                approvedSharedWorkout = null
                                 toastController.show(
                                     if (applied) {
                                         sharedWorkoutImported
@@ -5148,8 +5173,7 @@ internal fun GymAppRoot(
                 ?.takeIf {
                     authState.session != null &&
                         !authState.needsPasswordUpdate &&
-                        activeWorkout == null &&
-                        approvedSharedWorkoutId != it.id
+                        activeWorkout == null
                 }
                 ?.let { pending ->
                     SharedWorkoutPreviewDialog(
@@ -5157,10 +5181,12 @@ internal fun GymAppRoot(
                         exerciseCount = pending.plan.exerciseCount,
                         setCount = pending.plan.setCount,
                         onOpenInApp = {
-                            approvedSharedWorkoutId = pending.id
-                            setLiveWorkoutDraftTarget(null)
-                            navController.navigate(AppDestination.AddWorkout.route) {
-                                launchSingleTop = true
+                            if (sharedWorkoutInbox.consume(pending.id)) {
+                                approvedSharedWorkout = pending
+                                setLiveWorkoutDraftTarget(null)
+                                navController.navigate(AppDestination.AddWorkout.route) {
+                                    launchSingleTop = true
+                                }
                             }
                         },
                         onOpenOnWeb = {

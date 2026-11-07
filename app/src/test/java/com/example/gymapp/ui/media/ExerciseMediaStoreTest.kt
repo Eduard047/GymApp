@@ -247,4 +247,11 @@ class ExerciseMediaStoreTest {
             directory.deleteRecursively()
         }
     }
+
+    @Test
+    fun mediaRevisionAdvancesWhenPhotosAreRemapped() {
+        val before = ExerciseMediaStore.mediaRevision.value
+        ExerciseMediaStore.notifyMediaRemapped()
+        assertEquals(before + 1, ExerciseMediaStore.mediaRevision.value)
+    }
 }
