@@ -250,8 +250,15 @@ object BuiltInExerciseCatalog {
         definition: BuiltInExerciseDefinition?
     ): List<ExerciseSearchTermConcept> {
         definition ?: return emptyList()
+        return searchMuscleTermConceptsForIds(definition.muscleIds)
+    }
+
+    /** Same concepts as [searchMuscleTermConceptsForDefinition], for an arbitrary (effective) muscle-id set. */
+    fun searchMuscleTermConceptsForIds(
+        muscleIds: Iterable<String>
+    ): List<ExerciseSearchTermConcept> {
         ensureSearchVocabularyIsValid()
-        return definition.muscleIds.asSequence()
+        return muscleIds.asSequence()
             .mapNotNull { muscleId ->
                 ExerciseSearchVocabulary.muscleTermsById[muscleId]
                     ?.take(MAX_SEARCH_TERMS_PER_ENTRY)

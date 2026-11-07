@@ -100,6 +100,7 @@ import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.catalogContributionsForExercise
+import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.data.repository.ExerciseLoadDirection
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.data.repository.WorkoutDataLimits
@@ -779,7 +780,8 @@ private fun semanticExerciseSearchMatch(
 
 internal fun exerciseSearchMatch(
     exerciseName: String,
-    query: String
+    query: String,
+    effectiveMuscleIds: Set<String>? = null
 ): ExerciseSearchMatch? {
     if (query.length > EXERCISE_SEARCH_QUERY_MAX_CHARS) return null
     val rawQuery = query.trim()
@@ -847,9 +849,13 @@ internal fun exerciseSearchMatch(
         aliasCandidates = generatedAliasCandidates
     )?.let { return it }
 
-    if (definition == null) return null
+    // Same order as iPhone: the user's mapping (or the caller's effective muscles), then the catalog
+    // definition, then the default name-based contributions (custom exercises).
+    val muscleIds = effectiveMuscleIds?.takeIf { it.isNotEmpty() }
+        ?: definition?.muscleIds
+        ?: defaultContributionsForExercise(exerciseName).map { it.muscleId }.distinct()
     val muscleConcepts = BuiltInExerciseCatalog
-        .searchMuscleTermConceptsForDefinition(definition)
+        .searchMuscleTermConceptsForIds(muscleIds)
         .mapNotNull { concept ->
             exerciseSearchCandidates(ExerciseSearchSource.Muscle, concept.terms)
                 .takeIf { candidates -> candidates.isNotEmpty() }
@@ -895,7 +901,7 @@ internal fun filterAndSortExercises(
         val muscleIds = muscleIdsByExerciseName[exercise.name].orEmpty()
         val matchesBody = bodyFilter == ExerciseBodyFilter.All ||
             muscleIds.any(bodyFilter.muscleIds::contains)
-        val searchMatch = exerciseSearchMatch(exercise.name, query)
+        val searchMatch = exerciseSearchMatch(exercise.name, query, muscleIds)
         if (
             searchMatch != null &&
             matchesBody &&
@@ -1181,7 +1187,7 @@ fun ExerciseListScreen(
                 var menuExpanded by remember(exercise.id) { mutableStateOf(false) }
                 val isBuiltIn = BuiltInExerciseCatalog.definitionForName(exercise.name) != null
                 val displayExerciseName = localizedExerciseName(exercise.name)
-                val searchMatchReason = exerciseSearchMatch(exercise.name, searchQuery)?.reason
+                val searchMatchReason = exerciseSearchMatch(exercise.name, searchQuery, musclesByExercise[exercise.name])?.reason
                 val fullWidthTitle = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
                 val titleContent: @Composable (Modifier) -> Unit = { titleModifier ->
                     Column(

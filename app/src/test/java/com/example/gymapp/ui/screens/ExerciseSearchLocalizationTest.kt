@@ -463,4 +463,41 @@ class ExerciseSearchLocalizationTest {
             newExerciseErrorFor(IllegalArgumentException("Exercise name is outside the supported length."))
         )
     }
+
+    @Test
+    fun customExerciseIsFoundByWordsOfItsManuallyMappedMuscles() {
+        val chest = setOf("chest")
+        listOf("chest", "грудь", "груди", "грудні").forEach { query ->
+            assertTrue(query, exerciseSearchMatch("Zorg Thing", query, chest) != null)
+            assertNull(query, exerciseSearchMatch("Zorg Thing", query))
+        }
+        assertNull(exerciseSearchMatch("Zorg Thing", "бицепс", chest))
+        assertNull(exerciseSearchMatch("Zorg Thing", "biceps", chest))
+
+        val ranked = filterAndSortExercises(
+            exercises = listOf(ExerciseEntity(id = 1, name = "Zorg Thing")),
+            exerciseWorkoutCounts = emptyMap(),
+            muscleIdsByExerciseName = mapOf("Zorg Thing" to chest),
+            query = "chest",
+            bodyFilter = ExerciseBodyFilter.All,
+            muscleFilter = null,
+            sortMode = ExerciseSortMode.Name,
+            favoritesOnly = false,
+            languageTag = "en"
+        )
+        assertEquals(listOf(1L), ranked.map { it.id })
+    }
+
+    @Test
+    fun remappedBuiltInIsSearchedByNewMusclesNotTheCatalogOnes() {
+        val biceps = setOf("biceps")
+        assertTrue(exerciseSearchMatch("Bench Press", "biceps", biceps) != null)
+        assertTrue(exerciseSearchMatch("Bench Press", "бицепс", biceps) != null)
+        assertNull(exerciseSearchMatch("Bench Press", "biceps"))
+        assertNull(exerciseSearchMatch("Bench Press", "chest", biceps))
+        assertNull(exerciseSearchMatch("Bench Press", "грудь", biceps))
+        // Without a mapping the catalog muscles still apply, and name matches are unaffected.
+        assertTrue(exerciseSearchMatch("Bench Press", "chest") != null)
+        assertTrue(exerciseSearchMatch("Bench Press", "bench", biceps) != null)
+    }
 }

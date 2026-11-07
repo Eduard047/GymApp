@@ -243,7 +243,7 @@ internal fun ExerciseCatalogSelector(
                         }
                     } else {
                         items(visibleExercises, key = { it.id }) { exercise ->
-                            val searchMatchReason = exerciseSearchMatch(exercise.name, query)?.reason
+                            val searchMatchReason = exerciseSearchMatch(exercise.name, query, exerciseMuscleIds[exercise.name])?.reason
                             // Same solid hairline row as the Exercises list: primary text, no blue capsule.
                             Surface(
                                 onClick = {
