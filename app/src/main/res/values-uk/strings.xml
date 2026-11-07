@@ -1733,4 +1733,6 @@
     <string name="message_workout_details_failed">Не вдалося зберегти дані тренування</string>
     <string name="message_exercise_removed">Вправу видалено</string>
     <string name="message_remove_exercise_failed">Не вдалося видалити вправу. Онови тренування та спробуй ще раз.</string>
+    <string name="workout_detail_best_set_label">Найкращий</string>
+    <string name="workout_detail_best_set_a11y">найкращий підхід</string>
 </resources>

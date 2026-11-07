@@ -335,10 +335,29 @@ struct GymRecordBadge: View {
     }
 }
 
+/// Neutral tonal "Best" capsule on the strongest set of a past workout; same size as `GymRecordBadge`.
+struct GymBestSetBadge: View {
+    var body: some View {
+        Label(
+            gymText("Best", "Найкращий", "Лучший", languageCode: gymCurrentLanguageCode()),
+            systemImage: "star.fill"
+        )
+        .font(.caption2.weight(.bold))
+        .foregroundStyle(GymTheme.textSecondary)
+        .lineLimit(1)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(GymTheme.textSecondary.opacity(0.12)))
+        .fixedSize()
+        .accessibilityHidden(true)
+    }
+}
+
 /// Checkmark + "weight × reps" (+ record badge): the completed-set summary.
 struct GymCompletedSetSummary: View {
     let summary: String
     var isPersonalRecord = false
+    var isBestSet = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -353,6 +372,8 @@ struct GymCompletedSetSummary: View {
                 .lineLimit(1)
             if isPersonalRecord {
                 GymRecordBadge()
+            } else if isBestSet {
+                GymBestSetBadge()
             }
         }
     }
@@ -362,11 +383,12 @@ struct GymCompletedSetSummary: View {
 struct GymCompletedSetRow: View {
     let summary: String
     var isPersonalRecord = false
+    var isBestSet = false
     let accessibilityLabelText: String
 
     var body: some View {
         HStack(spacing: 8) {
-            GymCompletedSetSummary(summary: summary, isPersonalRecord: isPersonalRecord)
+            GymCompletedSetSummary(summary: summary, isPersonalRecord: isPersonalRecord, isBestSet: isBestSet)
                 .layoutPriority(1)
             Spacer(minLength: 8)
         }
@@ -399,6 +421,7 @@ struct GymExpandableSetRow<Trailing: View, Editor: View>: View {
     let position: Int
     let summary: String
     var isPersonalRecord = false
+    var isBestSet = false
     let isExpanded: Bool
     let accessibilityLabelText: String
     let accessibilityHintText: String
@@ -418,6 +441,8 @@ struct GymExpandableSetRow<Trailing: View, Editor: View>: View {
                     .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
                 if isPersonalRecord {
                     GymRecordBadge()
+                } else if isBestSet {
+                    GymBestSetBadge()
                 }
                 Spacer(minLength: 8)
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")

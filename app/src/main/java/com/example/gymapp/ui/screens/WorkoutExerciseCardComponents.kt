@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -981,7 +982,8 @@ internal fun RecordedSetRow(
     modifier: Modifier = Modifier,
     actions: List<SetRowAction> = emptyList(),
     inlineAction: (@Composable () -> Unit)? = null,
-    trailing: (@Composable () -> Unit)? = null
+    trailing: (@Composable () -> Unit)? = null,
+    isBestSet: Boolean = false
 ) {
     val canAct = actions.isNotEmpty()
     val haptics = rememberGymHaptics()
@@ -1043,6 +1045,8 @@ internal fun RecordedSetRow(
                         )
                         if (isPersonalRecord) {
                             PersonalRecordBadge()
+                        } else if (isBestSet) {
+                            BestSetBadge()
                         }
                     }
                     inlineAction?.invoke()
@@ -1582,6 +1586,34 @@ internal fun PersonalRecordBadge() {
             )
             Text(
                 text = stringResource(R.string.active_workout_personal_record),
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+/** Neutral tonal "Best" tag for the strongest set of a past workout; same size as [PersonalRecordBadge]. */
+@Composable
+internal fun BestSetBadge() {
+    val tone = MaterialTheme.colorScheme.onSurfaceVariant
+    Surface(
+        shape = RoundedCornerShape(percent = 50),
+        color = tone.copy(alpha = 0.12f),
+        contentColor = tone
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Star,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp)
+            )
+            Text(
+                text = stringResource(R.string.workout_detail_best_set_label),
                 style = MaterialTheme.typography.labelSmall,
                 maxLines = 1
             )

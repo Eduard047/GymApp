@@ -17,6 +17,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import com.example.gymapp.data.entity.WorkoutExerciseWithDetails
+import com.example.gymapp.data.repository.BestSetCandidate
+import com.example.gymapp.data.repository.BestSetSelection
 import com.example.gymapp.data.repository.VoiceWorkoutDraftParser
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.normalizedWorkoutNote
@@ -2080,6 +2082,12 @@ private fun SavedWorkoutExerciseCard(
             }
     }
     val sets = exerciseDetails.sets.sortedBy { it.orderIndex }
+    val bestSetIndex = remember(sets, personalRecordSetIds) {
+        BestSetSelection.bestIndex(
+            sets.map { BestSetCandidate(it.weight, it.reps, it.id in personalRecordSetIds) }
+        )
+    }
+    val bestSetCd = stringResource(R.string.workout_detail_best_set_a11y)
     val setCount = sets.size
     val repCount = sets.sumOf { it.reps }
     val setCountLabel = formattedPluralStringResource(R.plurals.saved_workout_set_count, setCount, setCount)
@@ -2186,6 +2194,7 @@ private fun SavedWorkoutExerciseCard(
                     val repsText = setEntry.reps.toString()
                     val summary = rememberSetSummary(weightText, repsText)
                     val isRecord = setEntry.id in personalRecordSetIds
+                    val isBestSet = !isRecord && index == bestSetIndex
                     if (controls.showSetActions) {
                         EditableSetRow(
                             number = number,
@@ -2194,7 +2203,7 @@ private fun SavedWorkoutExerciseCard(
                                 R.string.active_workout_set_upcoming_cd,
                                 number,
                                 summary
-                            ),
+                            ) + if (isBestSet) ", $bestSetCd" else "",
                             editHint = stringResource(R.string.active_workout_set_upcoming_hint),
                             deleteLabel = deleteSetLabel,
                             deleteActionLabel = formattedStringResource(
@@ -2210,6 +2219,8 @@ private fun SavedWorkoutExerciseCard(
                             onDelete = { onDeleteSet(setEntry) },
                             summaryBadge = if (isRecord) {
                                 { PersonalRecordBadge() }
+                            } else if (isBestSet) {
+                                { BestSetBadge() }
                             } else {
                                 null
                             }
@@ -2242,8 +2253,9 @@ private fun SavedWorkoutExerciseCard(
                                 },
                                 number,
                                 summary
-                            ),
-                            isPersonalRecord = isRecord
+                            ) + if (isBestSet) ", $bestSetCd" else "",
+                            isPersonalRecord = isRecord,
+                            isBestSet = isBestSet
                         )
                     }
                 }

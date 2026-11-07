@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "description": "Which set of a saved exercise is tagged Best in the past-workout detail. expectedBestIndex is the zero-based index into sets, or null when no set is tagged. Run by Android BestSetSelectionTest and iOS BestSetSelectionTests.",
+  "cases": [
+    { "id": "single-set", "sets": [ { "weight": 100, "reps": 5, "isPR": false } ], "expectedBestIndex": null },
+    { "id": "no-sets", "sets": [], "expectedBestIndex": null },
+    { "id": "highest-estimate-wins", "sets": [ { "weight": 60, "reps": 10, "isPR": false }, { "weight": 80, "reps": 5, "isPR": false }, { "weight": 70, "reps": 8, "isPR": false } ], "expectedBestIndex": 1 },
+    { "id": "later-set-wins", "sets": [ { "weight": 60, "reps": 8, "isPR": false }, { "weight": 62.5, "reps": 8, "isPR": false } ], "expectedBestIndex": 1 },
+    { "id": "heavier-set-same-reps-wins", "sets": [ { "weight": 90, "reps": 3, "isPR": false }, { "weight": 99, "reps": 3, "isPR": false }, { "weight": 90, "reps": 3, "isPR": false } ], "expectedBestIndex": 1 },
+    { "id": "equal-estimate-heavier-weight-wins", "sets": [ { "weight": 80, "reps": 15, "isPR": false }, { "weight": 120, "reps": 0, "isPR": false }, { "weight": 100, "reps": 6, "isPR": false } ], "expectedBestIndex": 2 },
+    { "id": "identical-sets-earlier-wins", "sets": [ { "weight": 50, "reps": 10, "isPR": false }, { "weight": 50, "reps": 10, "isPR": false }, { "weight": 50, "reps": 10, "isPR": false } ], "expectedBestIndex": 0 },
+    { "id": "equal-estimate-45x20-vs-50x15-heavier-wins", "sets": [ { "weight": 45, "reps": 20, "isPR": false }, { "weight": 50, "reps": 15, "isPR": false } ], "expectedBestIndex": 1 },
+    { "id": "pr-on-best-set-hides-tag", "sets": [ { "weight": 60, "reps": 10, "isPR": false }, { "weight": 100, "reps": 5, "isPR": true } ], "expectedBestIndex": null },
+    { "id": "pr-on-other-set-keeps-tag", "sets": [ { "weight": 100, "reps": 5, "isPR": false }, { "weight": 60, "reps": 10, "isPR": true } ], "expectedBestIndex": 0 },
+    { "id": "zero-kg-sets-ignored-when-weighted-sets-exist", "sets": [ { "weight": 0, "reps": 40, "isPR": false }, { "weight": 20, "reps": 8, "isPR": false }, { "weight": 25, "reps": 8, "isPR": false } ], "expectedBestIndex": 2 },
+    { "id": "all-zero-kg-most-reps-wins", "sets": [ { "weight": 0, "reps": 12, "isPR": false }, { "weight": 0, "reps": 15, "isPR": false }, { "weight": 0, "reps": 10, "isPR": false } ], "expectedBestIndex": 1 },
+    { "id": "all-zero-kg-tie-earlier-wins", "sets": [ { "weight": 0, "reps": 12, "isPR": false }, { "weight": 0, "reps": 12, "isPR": false } ], "expectedBestIndex": 0 },
+    { "id": "all-zero-kg-pr-flag-hides-tag", "sets": [ { "weight": 0, "reps": 12, "isPR": true }, { "weight": 0, "reps": 8, "isPR": false } ], "expectedBestIndex": null },
+    { "id": "zero-kg-set-still-counts-as-completed", "sets": [ { "weight": 0, "reps": 10, "isPR": false }, { "weight": 30, "reps": 10, "isPR": false } ], "expectedBestIndex": 1 },
+    { "id": "sets-without-reps-do-not-count", "sets": [ { "weight": 100, "reps": 5, "isPR": false }, { "weight": 110, "reps": 0, "isPR": false } ], "expectedBestIndex": null },
+    { "id": "sets-without-reps-are-skipped", "sets": [ { "weight": 200, "reps": 0, "isPR": false }, { "weight": 70, "reps": 6, "isPR": false }, { "weight": 75, "reps": 6, "isPR": false } ], "expectedBestIndex": 2 }
+  ]
+}

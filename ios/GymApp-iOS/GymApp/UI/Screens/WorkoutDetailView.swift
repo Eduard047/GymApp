@@ -2173,6 +2173,15 @@ struct WorkoutDetailView: View {
         let isCollapsed = collapsedExerciseIDs.contains(block.id)
         let summaryText = exerciseSummaryText(summary)
         let sets = visibleSets(block)
+        let bestSetIndex = BestSetSelection.bestIndex(
+            of: sets.map {
+                BestSetCandidate(
+                    weight: $0.weight,
+                    reps: $0.reps,
+                    isPersonalRecord: personalRecordLabels[$0.id] != nil
+                )
+            }
+        )
         let canRemoveExercise = workoutDetailCanRemoveExercise(
             isEditing: isEditing,
             exerciseCount: workout.exercises.count,
@@ -2233,7 +2242,8 @@ struct WorkoutDetailView: View {
                                 exerciseName: name,
                                 set: set,
                                 position: index,
-                                prLabels: personalRecordLabels[set.id] ?? []
+                                prLabels: personalRecordLabels[set.id] ?? [],
+                                isBestSet: index == bestSetIndex
                             )
                             if index < sets.count - 1 {
                                 Divider().overlay(GymTheme.outlineSoft)
@@ -2281,20 +2291,25 @@ struct WorkoutDetailView: View {
         exerciseName: String,
         set: WorkoutSet,
         position: Int,
-        prLabels: [String]
+        prLabels: [String],
+        isBestSet: Bool = false
     ) -> some View {
         let languageCode = gymCurrentLanguageCode()
         let summary = gymSetWeightRepsSummary(weight: set.weight, reps: set.reps)
         let isRecord = !prLabels.isEmpty
+        let showsBestSet = isBestSet && !isRecord
         let recordSuffix = isRecord
             ? ", " + prLabels.map { gymLocalized($0, languageCode: languageCode) }.joined(separator: ", ")
-            : ""
+            : showsBestSet
+                ? ", " + gymText("best set", "найкращий підхід", "лучший подход", languageCode: languageCode)
+                : ""
         if isEditing {
             let isExpanded = expandedSetIDs.contains(set.id)
             GymExpandableSetRow(
                 position: position,
                 summary: summary,
                 isPersonalRecord: isRecord,
+                isBestSet: showsBestSet,
                 isExpanded: isExpanded,
                 accessibilityLabelText: gymText(
                     "Set \(position + 1), \(summary)",
@@ -2372,6 +2387,7 @@ struct WorkoutDetailView: View {
             GymCompletedSetRow(
                 summary: summary,
                 isPersonalRecord: isRecord,
+                isBestSet: showsBestSet,
                 accessibilityLabelText: gymText(
                     "Set \(position + 1), \(summary)",
                     "Підхід \(position + 1), \(summary)",

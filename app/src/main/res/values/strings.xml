@@ -1687,4 +1687,6 @@
     <string name="message_workout_details_failed">Could not save the workout details</string>
     <string name="message_exercise_removed">Exercise removed</string>
     <string name="message_remove_exercise_failed">Could not remove the exercise. Refresh the workout and try again.</string>
+    <string name="workout_detail_best_set_label">Best</string>
+    <string name="workout_detail_best_set_a11y">best set</string>
 </resources>
