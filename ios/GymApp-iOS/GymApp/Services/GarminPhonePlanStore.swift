@@ -107,6 +107,13 @@ final class GarminPhonePlanStore {
         } catch { return false }
     }
 
+    /// Drops the account's plans but keeps its append-only Latin name table (account switch / sign-out).
+    /// The table is removed only by `clear(account:)`, when the account's local data is removed.
+    @discardableResult
+    func clearPlans(account: String) -> Bool {
+        retain(account: account, devices: [])
+    }
+
     @discardableResult
     func retain(account: String, devices: [String]) -> Bool {
         lock.lock()

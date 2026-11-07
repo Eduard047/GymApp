@@ -19,7 +19,8 @@
     "An empty result becomes fallbackName.",
     "Collisions are resolved case-insensitively against: the ASCII names of all exercises, every latin name already in the table, names already assigned in this pass, and any string the built-in catalog recognises. A colliding name gets the suffix ' 2', ' 3', ... (the base is cut so the whole name fits maxNameLength). New names are processed in Unicode code point order of the raw name.",
     "A raw name that already has a table entry keeps that entry's latin name forever (append-only). Only transliterated names get table entries; built-in and ASCII names are deterministic.",
-    "Inverse lookup for a name echoed by the watch: exact latin match in the table, else the single current non-built-in non-ASCII exercise whose plain transliteration equals the name, else null (the caller keeps its existing lookup, so old Cyrillic names still match exactly)."
+    "An ASCII name that equals (case-insensitively) the latin name of a table row whose raw exercise still exists is sent under an alias row (raw = the ASCII name, latin = the name plus ' 2', ' 3', ...), so the watch never gets two identical names.",
+    "Inverse lookup for a name echoed by the watch: the table row with that latin name (its raw name, also when that exercise was renamed or deleted, so the original exercise is recreated; null only when an exercise is literally named like the latin name), else the single current exercise the catalog resolves to the built-in whose English name equals it, else the single current non-built-in non-ASCII exercise whose plain transliteration equals the name, else null (the caller keeps its existing lookup, so old Cyrillic names still match exactly)."
   ],
   "builtIns": [
     { "nameEn": "Deadlift", "names": ["Станова тяга", "Deadlift"] },
@@ -146,6 +147,25 @@
       "existing": [{ "latin": "Prysid", "raw": "Присід" }],
       "expected": { "Присід нове": "Prysid nove" },
       "newEntries": [{ "latin": "Prysid nove", "raw": "Присід нове" }]
+    },
+    {
+      "id": "ascii-name-equal-to-a-live-table-latin-gets-an-alias-row",
+      "names": ["Жим", "Zhym"],
+      "existing": [{ "latin": "Zhym", "raw": "Жим" }],
+      "expected": { "Жим": "Zhym", "Zhym": "Zhym 2" },
+      "newEntries": [{ "latin": "Zhym 2", "raw": "Zhym" }]
+    },
+    {
+      "id": "existing-alias-row-is-kept-forever",
+      "names": ["Жим", "Zhym"],
+      "existing": [{ "latin": "Zhym", "raw": "Жим" }, { "latin": "Zhym 2", "raw": "Zhym" }],
+      "expected": { "Жим": "Zhym", "Zhym": "Zhym 2" }, "newEntries": []
+    },
+    {
+      "id": "ascii-name-equal-to-a-dead-table-latin-stays-unchanged",
+      "names": ["Zhym"],
+      "existing": [{ "latin": "Zhym", "raw": "Жим" }],
+      "expected": { "Zhym": "Zhym" }, "newEntries": []
     }
   ],
   "invertCases": [
@@ -190,6 +210,48 @@
       "table": [],
       "currentNames": ["Присед"],
       "expected": null
+    },
+    {
+      "id": "built-in-english-name-maps-to-the-stored-ukrainian-exercise",
+      "latin": "Deadlift",
+      "table": [],
+      "currentNames": ["Станова тяга", "Присед"],
+      "expected": "Станова тяга"
+    },
+    {
+      "id": "built-in-english-name-maps-to-the-stored-alias-exercise",
+      "latin": "Push Up",
+      "table": [],
+      "currentNames": ["Push-Up", "Присед"],
+      "expected": "Push-Up"
+    },
+    {
+      "id": "built-in-english-name-with-two-matching-exercises-is-refused",
+      "latin": "Deadlift",
+      "table": [],
+      "currentNames": ["Станова тяга", "Deadlift"],
+      "expected": null
+    },
+    {
+      "id": "table-row-of-a-removed-exercise-recreates-the-original-name",
+      "latin": "Prysid",
+      "table": [{ "latin": "Prysid", "raw": "Присід" }],
+      "currentNames": ["Присід нове"],
+      "expected": "Присід"
+    },
+    {
+      "id": "table-row-of-a-removed-exercise-yields-to-an-exercise-with-that-exact-name",
+      "latin": "Zhym",
+      "table": [{ "latin": "Zhym", "raw": "Жим" }],
+      "currentNames": ["Zhym"],
+      "expected": null
+    },
+    {
+      "id": "table-row-wins-over-the-plain-inversion-of-another-exercise",
+      "latin": "Tyaga",
+      "table": [{ "latin": "Tyaga", "raw": "Тяга" }],
+      "currentNames": ["Тяґа"],
+      "expected": "Тяга"
     }
   ]
 }

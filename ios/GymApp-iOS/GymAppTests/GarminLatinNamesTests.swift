@@ -88,6 +88,72 @@ final class GarminLatinNamesTests: XCTestCase {
         XCTAssertEqual(russian.newEntries.count, 1)
     }
 
+    @MainActor
+    func testWatchBuiltInEnglishNameImportsIntoTheStoredUkrainianExercise() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try WorkoutStore(accountStorageKey: "latin-import", directoryURL: directory)
+        let stored = try store.addExercise(name: "Станова тяга")
+        let before = store.exercises.count
+        let translated = GarminLatinNames.translateWatchNames(
+            [NamedWorkoutSetDraft(exerciseName: "Deadlift", weight: 100, reps: 5)],
+            table: [],
+            currentNames: store.exercises.map(\.name)
+        )
+        XCTAssertEqual(translated.first?.exerciseName, "Станова тяга")
+        let workout = try XCTUnwrap(try store.createWorkout(
+            date: Date(timeIntervalSince1970: 1_760_000_000), namedSets: translated
+        ))
+        XCTAssertEqual(workout.exercises.first?.exerciseID, stored.id)
+        XCTAssertEqual(store.exercises.count, before)
+    }
+
+    func testTranslateWatchNamesRecreatesTheRowsRawNameWhenItsExerciseIsGone() {
+        let table = [GarminLatinEntry(latin: "Prysid", raw: "Присід")]
+        let translated = GarminLatinNames.translateWatchNames(
+            [NamedWorkoutSetDraft(exerciseName: "Prysid", weight: 60, reps: 8)],
+            table: table,
+            currentNames: ["Присід нове"]
+        )
+        XCTAssertEqual(translated.first?.exerciseName, "Присід")
+    }
+
+    func testAsciiNameEqualToALiveLatinGetsAnAliasAndBothInvertToTheirOwnExercise() throws {
+        let names = ["Жим", "Zhym"]
+        let first = GarminLatinNames.assign(names: ["Жим"], existing: [])
+        XCTAssertEqual(first.latin(for: "Жим"), "Zhym")
+        let second = GarminLatinNames.assign(names: names, existing: first.newEntries)
+        XCTAssertEqual(second.latin(for: "Zhym"), "Zhym 2")
+        XCTAssertEqual(second.newEntries, [GarminLatinEntry(latin: "Zhym 2", raw: "Zhym")])
+        let table = first.newEntries + second.newEntries
+        XCTAssertEqual(GarminLatinNames.invert("Zhym", table: table, currentNames: names), "Жим")
+        XCTAssertEqual(GarminLatinNames.invert("Zhym 2", table: table, currentNames: names), "Zhym")
+        XCTAssertEqual(GarminLatinNames.assign(names: names, existing: table).latin(for: "Zhym"), "Zhym 2")
+    }
+
+    func testClearPlansKeepsTheLatinTableAndClearRemovesIt() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = GarminPhonePlanStore(root: root)
+        _ = try XCTUnwrap(store.assignLatinNames(account: "a", names: ["Присед"], currentExerciseNames: ["Присед"]))
+        let binding = GarminPhoneBinding(account: String(repeating: "a", count: 64),
+            device: "11111111-2222-3333-4444-555555555555", pairingGeneration: String(repeating: "b", count: 64))
+        try store.save(
+            GarminPhonePlanDelivery(version: 1, binding: binding, syncID: "plan-delivery-test-001", revision: 1,
+                language: "en", sets: [.init(exerciseName: "Prysed", weight: 50, reps: 5)],
+                exercises: ["Prysed"], acknowledged: false),
+            account: "a"
+        )
+        XCTAssertNotNil(try store.load(account: "a", binding: binding))
+        // Account switch / sign-out: plans go, the append-only table stays.
+        XCTAssertTrue(store.clearPlans(account: "a"))
+        XCTAssertNil(try store.load(account: "a", binding: binding))
+        XCTAssertEqual(try store.loadLatinNames(account: "a"), [GarminLatinEntry(latin: "Prysed", raw: "Присед")])
+        // Local data removal drops everything.
+        XCTAssertTrue(store.clear(account: "a"))
+        XCTAssertTrue(try store.loadLatinNames(account: "a").isEmpty)
+    }
+
     func testTableIsPrunedOnlyAboveTheCapAndOnlyForDeletedExercises() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

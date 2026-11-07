@@ -2084,7 +2084,8 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             clearPendingDeviceSelection(storageKey: previousStorageKey)
             if previousStorageKey != session?.storageKey {
                 workoutTransferStore.clear(account: previousStorageKey)
-                planStore.clear(account: previousStorageKey)
+                // The Latin name table outlives an account switch; clearLocalData removes it.
+                planStore.clearPlans(account: previousStorageKey)
             }
         }
         pendingDeviceSelection = nil
@@ -2352,9 +2353,11 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             do {
                 if var cached = try planStore.load(account: account, binding: binding) {
                     // Older deliveries may hold Cyrillic names: convert (idempotent for ASCII) before comparing.
+                    // Stored names are already watch names when ASCII: only legacy non-ASCII ones are assigned.
                     guard let assignment = latinAssignment(
-                              account: account, exerciseNames: exerciseNames, names: cached.sets.map(\.exerciseName)),
-                          let watchSets = GarminLatinNames.watchPlan(cached.sets, assignment: assignment),
+                              account: account, exerciseNames: exerciseNames,
+                              names: cached.sets.map(\.exerciseName).filter { !GarminLatinNames.isAscii($0) }),
+                          let watchSets = GarminLatinNames.watchPlan(cached.sets, assignment: assignment, keepingAscii: true),
                           let catalog = GarminPhoneSyncProtocol.exerciseCatalog(
                               plan: watchSets,
                               candidates: GarminLatinNames.watchCatalog(exerciseNames, assignment: assignment)
@@ -2401,13 +2404,13 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         let language = garminWatchLanguageTag
         var transitionExercises = transition?.exercises
         if let staged = transitionExercises, !lite, !staged.isEmpty, let account = activeStorageKey {
-            guard let assignment = latinAssignment(account: account, exerciseNames: exerciseNames, names: staged) else {
+            guard let assignment = latinAssignment(account: account, exerciseNames: exerciseNames, names: staged.filter { !GarminLatinNames.isAscii($0) }) else {
                 syncInFlight.removeValue(forKey: deviceID)
                 publishStatus("Cannot prepare English Garmin exercise names.", isError: true)
                 return
             }
             transitionExercises = GarminPhoneSyncProtocol.boundedExerciseCatalog(
-                GarminLatinNames.watchCatalog(staged, assignment: assignment)
+                GarminLatinNames.watchCatalog(staged, assignment: assignment, keepingAscii: true)
             )
         }
         guard let payload = GarminPhoneSyncProtocol.syncPayload(

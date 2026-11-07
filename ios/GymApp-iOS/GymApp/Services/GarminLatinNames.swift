@@ -154,7 +154,10 @@ enum GarminLatinNames {
 
     /// Assigns a Latin name to every name in `names`. `existing` is the persisted append-only table:
     /// a raw name already in it keeps its Latin name; its Latin names stay reserved even when the raw
-    /// exercise is gone. Only transliterated names produce `newEntries`.
+    /// exercise is gone. Transliterated names produce `newEntries`; so does an ASCII name that equals
+    /// the Latin name of a live row (its exercise is still in `names`): it is sent under an alias row
+    /// (raw = the ASCII name, latin = "Name 2") so the watch never sees two identical names and the
+    /// import maps each back to its own exercise.
     static func assign(
         names: [String],
         existing: [GarminLatinEntry],
@@ -170,23 +173,25 @@ enum GarminLatinNames {
         var reserved = Set<String>()
         for entry in existing { reserved.insert(entry.latin.lowercased()) }
         for name in trimmed where isAscii(name) { reserved.insert(name.lowercased()) }
+        var liveLatin = Set<String>()
+        for entry in existing where seenNames.contains(entry.raw) { liveLatin.insert(entry.latin.lowercased()) }
 
         var result: [String: String] = [:]
         var pending: [String] = []
         for raw in trimmed {
             if let builtIn = builtIns.nameEn(for: raw) {
                 result[raw] = builtIn
-            } else if isAscii(raw) {
-                result[raw] = raw
             } else if let known = existingByRaw[raw] {
                 result[raw] = known
+            } else if isAscii(raw), !liveLatin.contains(raw.lowercased()) {
+                result[raw] = raw
             } else {
                 pending.append(raw)
             }
         }
         var added: [GarminLatinEntry] = []
         for raw in pending.sorted(by: codePointOrder) {
-            let base = transliterate(raw)
+            let base = isAscii(raw) ? raw : transliterate(raw)
             var candidate = base
             var number = 2
             while reserved.contains(candidate.lowercased()) || builtIns.isReservedLatin(candidate) {
@@ -204,45 +209,64 @@ enum GarminLatinNames {
 
     /// The stored exercise name a watch-echoed `latin` name stands for, or nil to keep the caller's
     /// existing lookup unchanged (that is how old Cyrillic names still match exactly).
+    /// Order: a table row (its exercise, or - when that exercise was renamed or deleted - the row's raw
+    /// name so the original exercise is recreated, unless an exercise is literally named `latin`);
+    /// the single current exercise the catalog resolves to the built-in named `latin`; the single
+    /// non-built-in non-ASCII exercise whose plain transliteration equals `latin`.
     static func invert(
         _ latin: String,
         table entries: [GarminLatinEntry],
         currentNames: [String],
         builtIns: GarminBuiltInNames = CatalogGarminBuiltInNames()
     ) -> String? {
-        if let hit = entries.first(where: { $0.latin == latin }) { return hit.raw }
         var seenNames = Set<String>()
-        var matches: [String] = []
+        var current: [String] = []
         for name in currentNames {
             let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard seenNames.insert(value).inserted else { continue }
-            if !isAscii(value), builtIns.nameEn(for: value) == nil, transliterate(value) == latin {
-                matches.append(value)
-            }
+            if seenNames.insert(value).inserted { current.append(value) }
+        }
+        if let row = entries.first(where: { $0.latin == latin }) {
+            return seenNames.contains(row.raw) || !seenNames.contains(latin) ? row.raw : nil
+        }
+        let builtInMatches = current.filter { builtIns.nameEn(for: $0) == latin }
+        if builtInMatches.count == 1 { return builtInMatches[0] }
+        let matches = current.filter {
+            !isAscii($0) && builtIns.nameEn(for: $0) == nil && transliterate($0) == latin
         }
         return matches.count == 1 ? matches[0] : nil
     }
 
     /// Raw name to the watch name for every plan set; nil when any name has no assignment or is not ASCII.
+    /// `keepingAscii` is for names that were already converted (a stored delivery): an ASCII name is
+    /// the watch name itself and must not be re-assigned (it could equal a table row's Latin name).
     static func watchPlan(
         _ plan: [NamedWorkoutSetDraft],
-        assignment: GarminLatinAssignment
+        assignment: GarminLatinAssignment,
+        keepingAscii: Bool = false
     ) -> [NamedWorkoutSetDraft]? {
         var result: [NamedWorkoutSetDraft] = []
         result.reserveCapacity(plan.count)
         for set in plan {
-            guard let latin = assignment.latin(for: set.exerciseName), isAscii(latin) else { return nil }
+            let latin = keepingAscii && isAscii(set.exerciseName)
+                ? set.exerciseName
+                : assignment.latin(for: set.exerciseName)
+            guard let latin, isAscii(latin) else { return nil }
             result.append(NamedWorkoutSetDraft(exerciseName: latin, weight: set.weight, reps: set.reps))
         }
         return result
     }
 
     /// Raw catalog names to distinct watch names, in input order.
-    static func watchCatalog(_ names: [String], assignment: GarminLatinAssignment) -> [String] {
+    static func watchCatalog(
+        _ names: [String],
+        assignment: GarminLatinAssignment,
+        keepingAscii: Bool = false
+    ) -> [String] {
         var seen = Set<String>()
         var result: [String] = []
         for name in names {
-            guard let latin = assignment.latin(for: name), seen.insert(latin).inserted else { continue }
+            let mapped = keepingAscii && isAscii(name) ? name : assignment.latin(for: name)
+            guard let latin = mapped, seen.insert(latin).inserted else { continue }
             result.append(latin)
         }
         return result
@@ -253,16 +277,15 @@ enum GarminLatinNames {
         plan.allSatisfy { isAscii($0.exerciseName) } && catalog.allSatisfy { isAscii($0) }
     }
 
-    /// Maps names echoed by the watch back to stored exercise names: table hit whose exercise still
-    /// exists, else the single unambiguous inversion, else the name unchanged so the existing exact
-    /// lookup still matches old Cyrillic names.
+    /// Maps names echoed by the watch back to stored exercise names (see `invert`): a table row, the
+    /// single exercise the catalog resolves to a built-in English name, the single unambiguous
+    /// inversion, else the name unchanged so the existing exact lookup still matches old Cyrillic names.
     static func translateWatchNames(
         _ sets: [NamedWorkoutSetDraft],
         table entries: [GarminLatinEntry],
         currentNames: [String],
         builtIns: GarminBuiltInNames = CatalogGarminBuiltInNames()
     ) -> [NamedWorkoutSetDraft] {
-        let current = Set(currentNames)
         var translatedByName: [String: String] = [:]
         return sets.map { set in
             let name = set.exerciseName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -270,12 +293,8 @@ enum GarminLatinNames {
             if let cached = translatedByName[name] {
                 translated = cached
             } else {
-                if let tableRaw = entries.first(where: { $0.latin == name })?.raw, current.contains(tableRaw) {
-                    translated = tableRaw
-                } else {
-                    translated = invert(name, table: [], currentNames: currentNames, builtIns: builtIns)
-                        ?? set.exerciseName
-                }
+                translated = invert(name, table: entries, currentNames: currentNames, builtIns: builtIns)
+                    ?? set.exerciseName
                 translatedByName[name] = translated
             }
             return translated == set.exerciseName

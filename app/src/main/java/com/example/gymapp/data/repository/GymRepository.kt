@@ -3717,25 +3717,22 @@ class GymRepository(
         }
 
     /**
-     * Maps names echoed by the watch back to stored exercise names: table hit whose exercise still
-     * exists, else the single unambiguous inversion, else the name unchanged so the existing exact
-     * lookup still matches old Cyrillic names.
+     * Maps names echoed by the watch back to stored exercise names (see [GarminLatinNames.invert]):
+     * a table row, the single exercise the catalog resolves to a built-in English name, the single
+     * unambiguous inversion, else the name unchanged so the existing exact lookup still matches.
      */
     private suspend fun translateGarminWatchNames(
         sets: List<NamedWorkoutSetDraft>
     ): List<NamedWorkoutSetDraft> {
         val exerciseNames = exerciseDao.getExercisesSnapshot().map { it.name }
-        val current = exerciseNames.toHashSet()
         val translatedByName = HashMap<String, String>()
         return sets.map { set ->
             val name = set.exerciseName.trim()
             val translated = translatedByName.getOrPut(name) {
-                val tableRaw = garminLatinNameDao.getRawForLatin(name)
-                if (tableRaw != null && tableRaw in current) {
-                    tableRaw
-                } else {
-                    GarminLatinNames.invert(name, emptyList(), exerciseNames) ?: set.exerciseName
-                }
+                val table = listOfNotNull(
+                    garminLatinNameDao.getRawForLatin(name)?.let { GarminLatinEntry(latin = name, raw = it) }
+                )
+                GarminLatinNames.invert(name, table, exerciseNames) ?: set.exerciseName
             }
             if (translated == set.exerciseName) set else set.copy(exerciseName = translated)
         }

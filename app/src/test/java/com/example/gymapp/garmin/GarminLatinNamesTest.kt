@@ -119,10 +119,10 @@ class GarminLatinNamesTest {
         for (raw in exercises) {
             val latin = assignment.latinFor(raw)!!
             assertTrue(GarminLatinNames.isAscii(latin))
-            // What the import does: table hit, else unambiguous inversion; built-in/ASCII keep their name
-            // and are matched by the existing lookup (catalog key / exact name).
+            // What the import does: table hit, else the single built-in / transliteration match; ASCII names
+            // keep their name and are matched by the existing exact lookup.
             val restored = GarminLatinNames.invert(latin, table, exercises) ?: latin
-            if (raw == "Станова тяга") assertEquals("Deadlift", restored) else assertEquals(raw, restored)
+            assertEquals(raw, restored)
         }
         // Without the table (other platform) the unambiguous inversion still finds the exercise.
         assertEquals(
@@ -131,6 +131,34 @@ class GarminLatinNamesTest {
         )
         // An old queued workout with the Cyrillic name is left to the exact lookup.
         assertNull(GarminLatinNames.invert("Присед", table, exercises))
+    }
+
+    @Test
+    fun realCatalogInvertsTheEnglishBuiltInNameToTheStoredUkrainianExercise() {
+        assertEquals("Станова тяга", GarminLatinNames.invert("Deadlift", emptyList(), listOf("Станова тяга", "Присед")))
+        assertEquals("Push-Up", GarminLatinNames.invert("Push Up", emptyList(), listOf("Push-Up")))
+        assertNull(GarminLatinNames.invert("Deadlift", emptyList(), listOf("Станова тяга", "Deadlift")))
+    }
+
+    @Test
+    fun asciiNameEqualToALiveLatinGetsAnAliasAndBothInvertToTheirOwnExercise() {
+        val names = listOf("Жим", "Zhym")
+        val first = GarminLatinNames.assign(listOf("Жим"), emptyList(), builtIns)
+        assertEquals("Zhym", first.latinFor("Жим"))
+        val second = GarminLatinNames.assign(names, first.newEntries, builtIns)
+        assertEquals("Zhym 2", second.latinFor("Zhym"))
+        assertEquals(listOf(GarminLatinEntry("Zhym 2", "Zhym")), second.newEntries)
+        val table = first.newEntries + second.newEntries
+        assertEquals("Жим", GarminLatinNames.invert("Zhym", table, names, builtIns))
+        assertEquals("Zhym", GarminLatinNames.invert("Zhym 2", table, names, builtIns))
+        // Append-only: a later pass keeps the alias.
+        assertEquals("Zhym 2", GarminLatinNames.assign(names, table, builtIns).latinFor("Zhym"))
+    }
+
+    @Test
+    fun tableRowOfARenamedExerciseFallsBackToTheRowsRawName() {
+        val table = listOf(GarminLatinEntry("Prysid", "Присід"))
+        assertEquals("Присід", GarminLatinNames.invert("Prysid", table, listOf("Присід нове"), builtIns))
     }
 
     private fun JSONArray.strings(): List<String> = List(length()) { getString(it) }

@@ -133,7 +133,10 @@ internal object GarminLatinNames {
     /**
      * Assigns a Latin name to every name in [names]. [existing] is the persisted append-only table:
      * a raw name already in it keeps its Latin name; its Latin names stay reserved even when the raw
-     * exercise is gone. Only transliterated names produce [GarminLatinAssignment.newEntries].
+     * exercise is gone. Transliterated names produce [GarminLatinAssignment.newEntries]; so does an
+     * ASCII name that equals the Latin name of a live row (its exercise is still in [names]): it is
+     * sent under an alias row (raw = the ASCII name, latin = "Name 2") so the watch never sees two
+     * identical names and the import maps each back to its own exercise.
      */
     fun assign(
         names: Collection<String>,
@@ -145,6 +148,9 @@ internal object GarminLatinNames {
         val reserved = HashSet<String>()
         existing.forEach { reserved += it.latin.lowercase() }
         trimmed.filter { isAscii(it) }.forEach { reserved += it.lowercase() }
+        val liveLatin = HashSet<String>()
+        val trimmedSet = trimmed.toHashSet()
+        existing.filter { it.raw in trimmedSet }.forEach { liveLatin += it.latin.lowercase() }
 
         val result = LinkedHashMap<String, String>()
         val pending = mutableListOf<String>()
@@ -152,14 +158,14 @@ internal object GarminLatinNames {
             val builtIn = builtIns.nameEnFor(raw)
             when {
                 builtIn != null -> result[raw] = builtIn
-                isAscii(raw) -> result[raw] = raw
                 existingByRaw.containsKey(raw) -> result[raw] = existingByRaw.getValue(raw)
+                isAscii(raw) && raw.lowercase() !in liveLatin -> result[raw] = raw
                 else -> pending += raw
             }
         }
         val added = mutableListOf<GarminLatinEntry>()
         for (raw in pending.sortedWith(CODE_POINT_ORDER)) {
-            val base = transliterate(raw)
+            val base = if (isAscii(raw)) raw else transliterate(raw)
             var candidate = base
             var number = 2
             while (candidate.lowercase() in reserved || builtIns.isReservedLatin(candidate)) {
@@ -177,6 +183,10 @@ internal object GarminLatinNames {
     /**
      * The stored exercise name a watch-echoed [latin] name stands for, or null to keep the caller's
      * existing lookup unchanged (that is how old Cyrillic names still match exactly).
+     * Order: a table row (its exercise, or - when that exercise was renamed or deleted - the row's raw
+     * name so the original exercise is recreated, unless an exercise is literally named [latin]);
+     * the single current exercise the catalog resolves to the built-in named [latin]; the single
+     * non-built-in non-ASCII exercise whose plain transliteration equals [latin].
      */
     fun invert(
         latin: String,
@@ -184,12 +194,13 @@ internal object GarminLatinNames {
         currentNames: Collection<String>,
         builtIns: GarminBuiltInNames = CatalogGarminBuiltInNames
     ): String? {
-        table.firstOrNull { it.latin == latin }?.let { return it.raw }
-        return currentNames.asSequence()
-            .map(String::trim)
-            .distinct()
+        val current = currentNames.map(String::trim).distinct()
+        table.firstOrNull { it.latin == latin }?.let { row ->
+            return if (row.raw in current || latin !in current) row.raw else null
+        }
+        current.filter { builtIns.nameEnFor(it) == latin }.singleOrNull()?.let { return it }
+        return current
             .filter { !isAscii(it) && builtIns.nameEnFor(it) == null && transliterate(it) == latin }
-            .toList()
             .singleOrNull()
     }
 
