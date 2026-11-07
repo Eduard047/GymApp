@@ -1276,7 +1276,8 @@ internal fun validatedGarminExerciseCatalog(
  * Builds the bounded watch picker catalog for free-order workouts.
  *
  * Planned names are retained first so every target remains selectable. Valid catalog extras are
- * then appended in stable order until either the count or UTF-8 message budget is exhausted.
+ * then appended in stable order until either the count or UTF-8 message budget is exhausted;
+ * invalid extras are skipped.
  */
 internal fun mergedGarminExerciseCatalogForFreeOrder(
     plan: List<NamedWorkoutSetDraft>,
@@ -1305,12 +1306,16 @@ internal fun mergedGarminExerciseCatalogForFreeOrder(
     }
     for (rawName in exercises) {
         if (merged.size >= maximumCount) break
-        require(rawName.length <= WorkoutDataLimits.MAX_EXERCISE_NAME_LENGTH * 2)
+        // Picker extras are optional: an invalid library name is skipped instead of failing the
+        // whole sync, matching iPhone. Planned names above stay strict.
+        if (rawName.length > WorkoutDataLimits.MAX_EXERCISE_NAME_LENGTH * 2) continue
         val name = rawName.trim()
-        require(
-            WorkoutDataLimits.isValidExerciseName(name) &&
-                name.codePointCount(0, name.length) <= MAX_GARMIN_EXERCISE_NAME_LENGTH
-        )
+        if (
+            !WorkoutDataLimits.isValidExerciseName(name) ||
+            name.codePointCount(0, name.length) > MAX_GARMIN_EXERCISE_NAME_LENGTH
+        ) {
+            continue
+        }
         if (name !in seen) {
             val nameBytes = name.toByteArray(Charsets.UTF_8).size
             if (totalNameBytes + nameBytes <= MAX_GARMIN_TOTAL_NAME_BYTES) {

@@ -1602,6 +1602,42 @@ class GarminSyncSecurityTest {
     }
 
     @Test
+    fun freeOrderCatalogSkipsInvalidExtrasButRejectsInvalidPlanNames() {
+        val plan = listOf(NamedWorkoutSetDraft("Squat", 100.0, 5))
+
+        assertEquals(
+            listOf("Squat", "Deadlift", "Pull Up"),
+            mergedGarminExerciseCatalogForFreeOrder(
+                plan = plan,
+                exercises = listOf("Deadlift", "   ", "A".repeat(161), "Bad\u0007Name", "Pull Up"),
+                maximumCount = 60
+            )
+        )
+        assertEquals(
+            listOf("Squat"),
+            mergedGarminExerciseCatalogForFreeOrder(
+                plan = plan,
+                exercises = listOf("", "x".repeat(1000)),
+                maximumCount = 60
+            )
+        )
+        assertNull(
+            mergedGarminExerciseCatalogForFreeOrder(
+                plan = listOf(NamedWorkoutSetDraft("A".repeat(161), 100.0, 5)),
+                exercises = listOf("Deadlift"),
+                maximumCount = 60
+            )
+        )
+        assertNull(
+            mergedGarminExerciseCatalogForFreeOrder(
+                plan = listOf(NamedWorkoutSetDraft("", 100.0, 5)),
+                exercises = listOf("Deadlift"),
+                maximumCount = 60
+            )
+        )
+    }
+
+    @Test
     fun firstSecurePairingRequiresExactlyOneConnectedTransportDevice() {
         assertNull(selectGarminDeviceTarget(emptyList(), listOf("11"), trustedBinding = null))
         assertNull(selectGarminDeviceTarget(listOf("11", "22"), emptyList(), trustedBinding = null))
