@@ -100,6 +100,18 @@ extension WorkoutEditorExerciseDraft {
         return true
     }
 
+    /// Copies the weight and reps of set `id` onto every other set (ids and
+    /// order stay); false for an unknown id or when there is nothing to apply to.
+    @discardableResult
+    mutating func applySetToAll(id: UUID) -> Bool {
+        guard sets.count > 1, let source = sets.first(where: { $0.id == id }) else { return false }
+        for index in sets.indices where sets[index].id != id {
+            sets[index].weight = source.weight
+            sets[index].reps = source.reps
+        }
+        return true
+    }
+
     /// Removes a set; deleting the last remaining one resets it to a fresh default
     /// set (as Android does), so an exercise never ends up with zero sets.
     mutating func removeSet(id: UUID) {
@@ -194,6 +206,8 @@ struct WorkoutSetDraftRow: View {
     let canCopyPrevious: Bool
     let onCopyPrevious: () -> Void
     let onDuplicate: () -> Void
+    /// nil hides the chip (an exercise with a single set has nothing to apply to).
+    var onApplyToAll: (() -> Void)?
     let onDelete: () -> Void
     /// True after a failed start/save: invalid values then get an error border
     /// (and lose it as soon as they are corrected).
@@ -274,6 +288,20 @@ struct WorkoutSetDraftRow: View {
             accessibilityLabel: Text("Copy set"),
             action: onDuplicate
         )
+
+        if let onApplyToAll {
+            let title = gymText(
+                "Apply to all sets",
+                "Застосувати до всіх підходів",
+                "Применить ко всем подходам",
+                languageCode: gymCurrentLanguageCode()
+            )
+            chip(
+                title: Text(title),
+                accessibilityLabel: Text(title),
+                action: onApplyToAll
+            )
+        }
     }
 
     private func chip(
@@ -429,6 +457,7 @@ struct WorkoutDraftExerciseCard: View {
                                     canCopyPrevious: index > 0,
                                     onCopyPrevious: { copyPrevious(into: item.id) },
                                     onDuplicate: { duplicate(item.id) },
+                                    onApplyToAll: draft.sets.count > 1 ? { applyToAll(item.id) } : nil,
                                     onDelete: { delete(item.id) },
                                     highlightsInvalid: highlightsInvalid
                                 )
@@ -496,6 +525,10 @@ struct WorkoutDraftExerciseCard: View {
     private func duplicate(_ id: UUID) {
         guard draft.sets.contains(where: { $0.id == id }) else { return }
         if !draft.duplicateSet(id: id) { onLimitReached?(WorkoutEditorLimits.setLimitMessage()) }
+    }
+
+    private func applyToAll(_ id: UUID) {
+        draft.applySetToAll(id: id)
     }
 
     private func delete(_ id: UUID) {

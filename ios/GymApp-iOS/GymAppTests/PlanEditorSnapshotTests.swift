@@ -370,4 +370,50 @@ final class PlanEditorSnapshotTests: XCTestCase {
         two.removeSet(id: UUID())
         XCTAssertEqual(two.sets.count, 1)
     }
+
+    func testApplySetToAllCopiesWeightAndRepsKeepingIdsAndOrder() {
+        var draft = WorkoutEditorExerciseDraft(
+            exerciseID: UUID(),
+            sets: [
+                WorkoutEditorSetDraft(weight: 40, reps: 12),
+                WorkoutEditorSetDraft(weight: 60, reps: 8),
+                WorkoutEditorSetDraft(weight: 70, reps: 5)
+            ]
+        )
+        let ids = draft.sets.map(\.id)
+        XCTAssertTrue(draft.applySetToAll(id: ids[1]))
+        XCTAssertEqual(draft.sets.map(\.id), ids)
+        XCTAssertEqual(draft.sets.map(\.weight), [60, 60, 60])
+        XCTAssertEqual(draft.sets.map(\.reps), [8, 8, 8])
+
+        let before = draft
+        XCTAssertFalse(draft.applySetToAll(id: UUID()))
+        XCTAssertEqual(draft, before)
+
+        var single = WorkoutEditorExerciseDraft(
+            exerciseID: UUID(),
+            sets: [WorkoutEditorSetDraft(weight: 20, reps: 9)]
+        )
+        XCTAssertFalse(single.applySetToAll(id: single.sets[0].id))
+        XCTAssertEqual(single.sets[0].weight, 20)
+    }
+
+    func testPendingExerciseRemovalRestoresAtOldIndexUnlessReAdded() {
+        let a = WorkoutEditorExerciseDraft(exerciseID: UUID())
+        let b = WorkoutEditorExerciseDraft(exerciseID: UUID())
+        let c = WorkoutEditorExerciseDraft(exerciseID: UUID())
+        let removal = PendingExerciseRemoval(draft: b, index: 1)
+
+        XCTAssertEqual(removal.restoring(into: [a, c])?.map(\.id), [a.id, b.id, c.id])
+        // Index past the end clamps to the end.
+        XCTAssertEqual(
+            PendingExerciseRemoval(draft: b, index: 5).restoring(into: [a])?.map(\.id),
+            [a.id, b.id]
+        )
+        // The same exercise was added again meanwhile: nothing to restore.
+        let readded = WorkoutEditorExerciseDraft(exerciseID: b.exerciseID)
+        XCTAssertNil(removal.restoring(into: [a, readded, c]))
+        // A new removal is a distinct pending undo.
+        XCTAssertNotEqual(removal.id, PendingExerciseRemoval(draft: b, index: 1).id)
+    }
 }

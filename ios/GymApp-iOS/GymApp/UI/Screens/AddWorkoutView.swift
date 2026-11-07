@@ -181,6 +181,8 @@ struct AddWorkoutView: View {
     @State private var replacementRequest: SmartReplacementRequest?
     @State private var statusMessage: String?
     @State private var statusIsError = false
+    /// The last removed exercise, restorable for a few seconds; view-lifetime only.
+    @State private var pendingExerciseRemoval: PendingExerciseRemoval?
     @State private var isSaving = false
     @State private var showingShareChooser = false
     @State private var sharingPlan: SharedWorkoutPlan?
@@ -613,6 +615,19 @@ struct AddWorkoutView: View {
 #if DEBUG
             presentUIAuditRouteIfRequested()
 #endif
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if pendingExerciseRemoval != nil {
+                exerciseUndoBar
+            }
+        }
+        // Keyed by the removal, so a new removal restarts the 5 s window and
+        // leaving the editor cancels it (the pending undo is discarded with the view).
+        .task(id: pendingExerciseRemoval?.id) {
+            guard let removal = pendingExerciseRemoval else { return }
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled, pendingExerciseRemoval?.id == removal.id else { return }
+            pendingExerciseRemoval = nil
         }
         .task {
             guard !rejectsInitialState else {
@@ -1068,6 +1083,9 @@ struct AddWorkoutView: View {
                         allowedWeights: exercise.machineLoadProfile?.allowedWeightsKg ?? [],
                         onShowSimilar: { showAlternatives(for: item.id) },
                         onDeleteExercise: {
+                            if let index = drafts.firstIndex(where: { $0.id == item.id }) {
+                                pendingExerciseRemoval = PendingExerciseRemoval(draft: drafts[index], index: index)
+                            }
                             smartGeneratedDraftIDs.remove(item.id)
                             latestSmartPlan = nil
                             drafts.removeAll { $0.id == item.id }
@@ -2394,6 +2412,58 @@ struct AddWorkoutView: View {
         statusIsError = error
     }
 
+    private var exerciseUndoBar: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "trash")
+                .foregroundStyle(GymTheme.error)
+                .accessibilityHidden(true)
+            Text(gymText(
+                "Exercise removed",
+                "Вправу видалено",
+                "Упражнение удалено",
+                languageCode: gymCurrentLanguageCode()
+            ))
+            .font(.subheadline.weight(.semibold))
+            Spacer(minLength: 8)
+            Button(
+                gymText("Undo", "Скасувати", "Отменить", languageCode: gymCurrentLanguageCode()),
+                action: undoExerciseRemoval
+            )
+            .font(.headline)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .gymGlassBackground(.bar, material: .regularMaterial, edge: .top)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func undoExerciseRemoval() {
+        guard let removal = pendingExerciseRemoval else { return }
+        pendingExerciseRemoval = nil
+        guard let restored = removal.restoring(into: drafts) else { return }
+        drafts = restored
+        latestSmartPlan = nil
+    }
+
+}
+
+/// An exercise just removed from the plan editor, kept briefly so Undo can put
+/// it back where it was.
+struct PendingExerciseRemoval: Equatable {
+    let id = UUID()
+    let draft: WorkoutEditorExerciseDraft
+    let index: Int
+
+    /// The drafts with the exercise back at its old index (clamped), or nil
+    /// when the same exercise was added meanwhile or the exercise cap is reached.
+    func restoring(into drafts: [WorkoutEditorExerciseDraft]) -> [WorkoutEditorExerciseDraft]? {
+        guard drafts.count < WorkoutEditorLimits.maxExercises,
+              !drafts.contains(where: { $0.exerciseID == draft.exerciseID || $0.id == draft.id })
+        else { return nil }
+        var result = drafts
+        result.insert(draft, at: min(max(index, 0), result.count))
+        return result
+    }
 }
 
 struct PlanEditorSnapshot: Codable, Equatable {
