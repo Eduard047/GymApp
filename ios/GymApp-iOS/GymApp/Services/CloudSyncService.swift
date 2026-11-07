@@ -24,6 +24,21 @@ enum CloudSyncError: LocalizedError {
         case .requestFailed(let message): return message
         }
     }
+
+    /// True when the profile upsert was refused by the server's display-name trigger
+    /// (`enforce_profile_public_fields` -> `safe_leaderboard_display_name`, SQLSTATE 23514
+    /// "Display name violates the leaderboard safety policy."). The refusal is deterministic,
+    /// so it is shown as `AuthServiceError.unsafeDisplayName` and never retried.
+    var isDisplayNameSafetyRejection: Bool {
+        guard case .postgRESTFailure(_, let code, let message) = self else { return false }
+        return Self.isDisplayNameSafetyRejection(code: code, message: message)
+    }
+
+    static func isDisplayNameSafetyRejection(code: String?, message: String?) -> Bool {
+        guard code == "23514", let message else { return false }
+        let lowered = message.lowercased()
+        return lowered.contains("leaderboard safety policy") && lowered.contains("display name")
+    }
 }
 
 enum CloudSyncOperation: String, CaseIterable, Sendable {

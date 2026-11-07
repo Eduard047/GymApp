@@ -22,6 +22,17 @@ internal fun SignUpDisplayNameRejection.message(): String = when (this) {
     SignUpDisplayNameRejection.SERVER_RULES -> SIGN_UP_DISPLAY_NAME_RULES_ERROR
 }
 
+/**
+ * True when the profile upsert was refused by the server's display-name trigger
+ * (enforce_profile_public_fields -> safe_leaderboard_display_name raises SQLSTATE 23514
+ * "Display name violates the leaderboard safety policy."). The failure is deterministic: a
+ * retry with the same name is refused again, so callers surface [SIGN_UP_DISPLAY_NAME_RULES_ERROR].
+ */
+internal fun isDisplayNameSafetyRejection(errorCode: String?, providerMessage: String?): Boolean =
+    errorCode == "23514" &&
+        providerMessage?.contains("leaderboard safety policy", ignoreCase = true) == true &&
+        providerMessage.contains("display name", ignoreCase = true)
+
 // Static rules of public.safe_leaderboard_display_name (supabase/migrations/
 // 20260711084556_create_leaderboard_public.sql), applied to the already trimmed and
 // collapsed name. The dynamic leaderboard_blocked_terms table cannot be mirrored.

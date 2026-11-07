@@ -202,13 +202,44 @@ func gymLocalized(_ english: String, locale: Locale) -> String {
     )
 }
 
+/// True when the phone's own clock setting is 24-hour (Settings > General >
+/// Date & Time, or the region default). The in-app language never decides this.
+func gymSystemUses24Hour(locale: Locale = .autoupdatingCurrent) -> Bool {
+    let pattern = DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: locale) ?? "HH"
+    return !pattern.contains("a")
+}
+
+/// The in-app language locale with the hour cycle forced to the system's
+/// 12/24-hour setting: words follow the app language, the clock follows the phone.
+func gymTimeLocale(
+    languageCode: String = gymCurrentLanguageCode(),
+    uses24Hour: Bool = gymSystemUses24Hour()
+) -> Locale {
+    let base = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+    var components = Locale.Components(locale: base)
+    components.hourCycle = uses24Hour ? .zeroToTwentyThree : .oneToTwelve
+    return Locale(components: components)
+}
+
+/// The one time-of-day format ("18:30" or "6:30 PM"); `.standard` adds seconds.
+func gymFormattedTimeOfDay(
+    _ value: Date,
+    time: Date.FormatStyle.TimeStyle = .shortened,
+    languageCode: String = gymCurrentLanguageCode(),
+    uses24Hour: Bool = gymSystemUses24Hour()
+) -> String {
+    let locale = gymTimeLocale(languageCode: languageCode, uses24Hour: uses24Hour)
+    return value.formatted(Date.FormatStyle(date: .omitted, time: time, locale: locale))
+}
+
 func gymFormattedDate(
     _ value: Date,
     date: Date.FormatStyle.DateStyle,
     time: Date.FormatStyle.TimeStyle,
-    languageCode: String = gymCurrentLanguageCode()
+    languageCode: String = gymCurrentLanguageCode(),
+    uses24Hour: Bool = gymSystemUses24Hour()
 ) -> String {
-    let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+    let locale = gymTimeLocale(languageCode: languageCode, uses24Hour: uses24Hour)
     var style = Date.FormatStyle(date: date, time: time, locale: locale)
     if date != .omitted {
         style = style.weekday(date == .long ? .wide : .abbreviated)
@@ -220,13 +251,15 @@ func gymFormattedTimestamp(
     _ value: Date,
     date: Date.FormatStyle.DateStyle,
     time: Date.FormatStyle.TimeStyle,
-    languageCode: String = gymCurrentLanguageCode()
+    languageCode: String = gymCurrentLanguageCode(),
+    uses24Hour: Bool = gymSystemUses24Hour()
 ) -> String {
     gymFormattedDateWithoutWeekday(
         value,
         date: date,
         time: time,
-        languageCode: languageCode
+        languageCode: languageCode,
+        uses24Hour: uses24Hour
     )
 }
 
@@ -234,9 +267,10 @@ func gymFormattedDateWithoutWeekday(
     _ value: Date,
     date: Date.FormatStyle.DateStyle,
     time: Date.FormatStyle.TimeStyle,
-    languageCode: String = gymCurrentLanguageCode()
+    languageCode: String = gymCurrentLanguageCode(),
+    uses24Hour: Bool = gymSystemUses24Hour()
 ) -> String {
-    let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+    let locale = gymTimeLocale(languageCode: languageCode, uses24Hour: uses24Hour)
     return value.formatted(Date.FormatStyle(date: date, time: time, locale: locale))
 }
 
@@ -321,10 +355,10 @@ func gymShortDateTime(
     _ value: Date,
     calendar: Calendar = .current,
     now: Date = Date(),
-    languageCode: String = gymCurrentLanguageCode()
+    languageCode: String = gymCurrentLanguageCode(),
+    uses24Hour: Bool = gymSystemUses24Hour()
 ) -> String {
-    let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
-    let time = value.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: locale))
+    let time = gymFormattedTimeOfDay(value, languageCode: languageCode, uses24Hour: uses24Hour)
     return "\(gymShortDate(value, calendar: calendar, now: now, languageCode: languageCode)), \(time)"
 }
 
@@ -455,6 +489,9 @@ func gymSafeEnglishErrorMessage(_ error: Error) -> String {
             return cloudError.errorDescription ?? gymGenericErrorMessage
         case .postgRESTFailure,
              .requestFailed:
+            if cloudError.isDisplayNameSafetyRejection {
+                return AuthServiceError.unsafeDisplayName.errorDescription ?? gymGenericErrorMessage
+            }
             return gymGenericErrorMessage
         }
     }

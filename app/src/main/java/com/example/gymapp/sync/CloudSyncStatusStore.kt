@@ -30,6 +30,7 @@ private val CLOUD_SYNC_ERROR_REASONS = setOf(
     R.string.cloud_sync_load_failed,
     R.string.cloud_sync_conflict,
     R.string.cloud_sync_save_failed,
+    R.string.auth_error_display_name_rules,
     R.string.cloud_sync_account_changed,
     R.string.cloud_sync_baseline_failed,
     R.string.cloud_sync_round_trip_failed,
