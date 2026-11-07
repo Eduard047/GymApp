@@ -179,6 +179,7 @@ struct FriendsView: View {
     @State private var readOnlyLiveRoomID: String?
     @State private var showsAddFriend = false
     @State private var privacyExpanded = false
+    @ScaledMetric(relativeTo: .headline) private var rankBadgeSize: CGFloat = 26
 
     init(
         appState: AppState,
@@ -981,9 +982,12 @@ struct FriendsView: View {
         HStack(spacing: 10) {
             Text("\(place)")
                 .font(.headline.monospacedDigit())
-                .frame(width: 26, height: 26)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .padding(.horizontal, place >= 10 ? 6 : 0)
+                .frame(minWidth: rankBadgeSize, minHeight: rankBadgeSize)
                 .background(place <= 3 ? GymTheme.primary.opacity(0.16) : GymTheme.surfaceVariant)
-                .clipShape(Circle())
+                .clipShape(Capsule())
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(item.displayName).font(.headline)
