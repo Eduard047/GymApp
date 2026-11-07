@@ -149,6 +149,55 @@ func socialRecordMetricLabels(
     )
 }
 
+/// What the Friends screen should say about a failed social request.
+enum SocialErrorKind: Equatable {
+    case sessionEnded
+    case connection
+    case other
+}
+
+/// Decides which copy a failed social request gets. The cloud session ending
+/// wins, then connectivity failures (like Android's `auth_error_connection`),
+/// and anything else keeps its screen-specific fallback copy.
+@MainActor
+func socialErrorKind(for error: Error, sessionEnded: Bool) -> SocialErrorKind {
+    if sessionEnded { return .sessionEnded }
+    if AppState.isTransientCloudError(error) { return .connection }
+    return .other
+}
+
+/// Coalesces Friends refreshes: a forced refresh requested while one is
+/// running is remembered and runs once after it, however many arrive.
+struct SocialRefreshCoalescer: Equatable {
+    private(set) var isRunning = false
+    private(set) var hasPendingForced = false
+
+    /// Returns true when the caller should run a refresh now.
+    mutating func begin(force: Bool) -> Bool {
+        if isRunning {
+            if force { hasPendingForced = true }
+            return false
+        }
+        isRunning = true
+        return true
+    }
+
+    /// Returns true when another refresh must run before finishing.
+    mutating func finish() -> Bool {
+        if hasPendingForced {
+            hasPendingForced = false
+            return true
+        }
+        isRunning = false
+        return false
+    }
+
+    mutating func reset() {
+        isRunning = false
+        hasPendingForced = false
+    }
+}
+
 @MainActor
 struct FriendsView: View {
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
@@ -170,6 +219,7 @@ struct FriendsView: View {
     @State private var friendCode = ""
     @State private var errorMessage: String?
     @State private var isLoading = false
+    @State private var refreshCoalescer = SocialRefreshCoalescer()
     @State private var activeActionID: String?
     @State private var privacyDraft: SocialPrivacy?
     @State private var privacyIsDirty = false
@@ -1197,15 +1247,25 @@ struct FriendsView: View {
     }
 
     private func refreshAll(force: Bool = false) async {
-        guard isCloudAccount, !isLoading else { return }
+        guard isCloudAccount, refreshCoalescer.begin(force: force) else { return }
         isLoading = true
+        defer {
+            refreshCoalescer.reset()
+            isLoading = false
+        }
+        repeat {
+            await refreshAllOnce()
+        } while refreshCoalescer.finish() && isCloudAccount && !Task.isCancelled
+    }
+
+    private func refreshAllOnce() async {
         errorMessage = nil
-        defer { isLoading = false }
         do {
             let dashboard = try await appState.refreshSocialDashboard()
             if !privacyIsDirty { privacyDraft = dashboard.currentUser.privacy }
         } catch {
             errorMessage = socialError(
+                error,
                 t("Could not refresh Friends. Try again.", "Не вдалося оновити друзів. Спробуй ще раз.", "Не удалось обновить друзей. Попробуй ещё раз.")
             )
         }
@@ -1214,6 +1274,7 @@ struct FriendsView: View {
         } catch {
             if appState.socialWorkoutInbox == nil {
                 errorMessage = socialError(
+                    error,
                     t("Could not load workout invitations.", "Не вдалося завантажити запрошення на тренування.", "Не удалось загрузить приглашения на тренировку.")
                 )
             }
@@ -1576,16 +1637,24 @@ struct FriendsView: View {
             try await action()
         } catch {
             errorMessage = socialError(
+                error,
                 t("This action could not be completed safely. Refresh and try again.", "Не вдалося безпечно виконати дію. Онови дані й спробуй ще раз.", "Не удалось безопасно выполнить действие. Обнови данные и попробуй ещё раз.")
             )
         }
     }
 
-    private func socialError(_ fallback: String) -> String {
-        if auth.session?.cloud == nil {
+    private func socialError(_ error: Error, _ fallback: String) -> String {
+        switch socialErrorKind(for: error, sessionEnded: auth.session?.cloud == nil) {
+        case .sessionEnded:
             return t("Your cloud session ended. Sign in again.", "Хмарна сесія завершилася. Увійди знову.", "Облачная сессия завершилась. Войди снова.")
+        case .connection:
+            return gymLocalized(
+                "Cloud request failed. Check your connection and try again.",
+                languageCode: languageCode
+            )
+        case .other:
+            return fallback
         }
-        return fallback
     }
 
     private func localizedExerciseName(_ rawName: String) -> String {
