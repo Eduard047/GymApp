@@ -4,7 +4,11 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -53,6 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.auth.RankedSocialProfile
 import com.example.gymapp.auth.SocialBlockedProfile
 import com.example.gymapp.auth.SocialDashboard
 import com.example.gymapp.auth.SocialFriend
@@ -65,7 +70,7 @@ import com.example.gymapp.auth.LiveInboxRoom
 import com.example.gymapp.auth.LiveWorkoutSnapshot
 import com.example.gymapp.auth.formatSocialFriendCode
 import com.example.gymapp.auth.hasAnotherBoundedPage
-import com.example.gymapp.auth.rankedSocialFriends
+import com.example.gymapp.auth.rankedSocialProfiles
 import com.example.gymapp.push.PushNavigationTarget
 import com.example.gymapp.push.SocialPushType
 import com.example.gymapp.ui.components.gymSwitchColors
@@ -352,11 +357,13 @@ internal fun FriendsScreen(
             return@LazyColumn
         }
 
-        val rankedFriends = rankedSocialFriends(dashboard.friends)
+        val rankedProfiles = rankedSocialProfiles(dashboard.self, dashboard.friends)
+        val unrankedFriends = dashboard.friends.filter { !it.statsAvailable }
         item {
             TrainingCircleCard(
                 dashboard = dashboard,
-                rankedFriends = rankedFriends,
+                rankedProfiles = rankedProfiles,
+                unrankedFriends = unrankedFriends,
                 isLoading = uiState.isDashboardLoading || uiState.isInboxLoading,
                 onRefresh = onRefresh,
                 onOpenFriend = onOpenFriend
@@ -803,7 +810,8 @@ private fun RefreshSocialCard(isLoading: Boolean, pendingInvites: Int, onRefresh
 @Composable
 private fun TrainingCircleCard(
     dashboard: SocialDashboard,
-    rankedFriends: List<SocialFriend>,
+    rankedProfiles: List<RankedSocialProfile>,
+    unrankedFriends: List<SocialFriend>,
     isLoading: Boolean,
     onRefresh: () -> Unit,
     onOpenFriend: (SocialFriend) -> Unit
@@ -838,82 +846,155 @@ private fun TrainingCircleCard(
                 }
             }
 
-            Text(dashboard.self.displayName, style = MaterialTheme.typography.titleMedium)
-            Text(
-                text = if (dashboard.self.statsAvailable) {
-                    formattedStringResource(
+            if (dashboard.self.statsAvailable) {
+                Text(
+                    text = formattedStringResource(
                         R.string.friend_stats_summary,
                         dashboard.self.xp ?: 0,
                         dashboard.self.level ?: 1,
                         dashboard.self.workouts ?: 0
-                    )
-                } else {
-                    stringResource(R.string.friend_stats_private)
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            if (rankedFriends.isEmpty()) {
+            if (dashboard.friends.isEmpty()) {
                 Text(
                     text = stringResource(R.string.friends_empty_supporting),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            } else {
-                rankedFriends.forEachIndexed { index, friend ->
-                    if (index > 0) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    }
-                    TextButton(
-                        onClick = { onOpenFriend(friend) },
-                        modifier = Modifier.fillMaxWidth()
+            }
+            rankedProfiles.forEachIndexed { index, profile ->
+                if (index > 0) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
+                RankedProfileRow(
+                    place = index + 1,
+                    profile = profile,
+                    onOpenFriend = onOpenFriend
+                )
+            }
+            unrankedFriends.forEachIndexed { index, friend ->
+                if (index > 0 || rankedProfiles.isNotEmpty()) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
+                TextButton(
+                    onClick = { onOpenFriend(friend) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "#${index + 1}",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.primary
+                                text = friend.displayName,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = friend.displayName,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = if (friend.statsAvailable) {
-                                        formattedStringResource(
-                                            R.string.friend_stats_summary,
-                                            friend.xp ?: 0,
-                                            friend.level ?: 1,
-                                            friend.workouts ?: 0
-                                        )
-                                    } else {
-                                        stringResource(R.string.friend_stats_private)
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
                             Text(
-                                text = stringResource(R.string.friend_open_short),
-                                style = MaterialTheme.typography.labelMedium
+                                text = stringResource(R.string.friend_stats_private),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
+                        Text(
+                            text = stringResource(R.string.friend_open_short),
+                            style = MaterialTheme.typography.labelMedium
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun RankedProfileRow(
+    place: Int,
+    profile: RankedSocialProfile,
+    onOpenFriend: (SocialFriend) -> Unit
+) {
+    val content: @Composable () -> Unit = {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "#$place",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = profile.displayName,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (profile.isCurrentUser) {
+                        Text(
+                            text = stringResource(R.string.live_workout_lane_you),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .background(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                                    CircleShape
+                                )
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = formattedStringResource(
+                        R.string.friend_stats_summary,
+                        profile.xp,
+                        profile.level,
+                        profile.workouts
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (profile.friend != null) {
+                Text(
+                    text = stringResource(R.string.friend_open_short),
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        }
+    }
+    val friend = profile.friend
+    if (friend != null) {
+        TextButton(onClick = { onOpenFriend(friend) }, modifier = Modifier.fillMaxWidth()) { content() }
+    } else {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                    RoundedCornerShape(12.dp)
+                )
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) { content() }
     }
 }
 

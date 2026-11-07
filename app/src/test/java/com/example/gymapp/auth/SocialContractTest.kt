@@ -869,6 +869,81 @@ class SocialContractTest {
         .put("shareRecentWorkouts", true)
         .put("shareRecords", true)
 
+    @Test
+    fun rankedProfilesPlaceSelfBetweenFriendsByXp() {
+        val ranked = rankedSocialProfiles(
+            rankSelf(xp = 500),
+            listOf(rankFriend('1', "Zed", xp = 900), rankFriend('2', "Amy", xp = 100))
+        )
+
+        assertEquals(listOf(profileId('1'), profileId('0'), profileId('2')), ranked.map { it.profileId })
+        assertEquals(listOf(false, true, false), ranked.map { it.isCurrentUser })
+        assertNull(ranked[1].friend)
+    }
+
+    @Test
+    fun rankedProfilesBreakXpTiesByWorkoutsThenNameThenId() {
+        val ranked = rankedSocialProfiles(
+            rankSelf(xp = 500, workouts = 5, name = "Mid"),
+            listOf(
+                rankFriend('1', "Few", xp = 500, workouts = 2),
+                rankFriend('2', "Many", xp = 500, workouts = 9),
+                rankFriend('4', "mid", xp = 500, workouts = 5),
+                rankFriend('3', "mid", xp = 500, workouts = 5)
+            )
+        )
+
+        assertEquals(
+            listOf(profileId('2'), profileId('0'), profileId('3'), profileId('4'), profileId('1')),
+            ranked.map { it.profileId }
+        )
+    }
+
+    @Test
+    fun rankedProfilesExcludeSelfAndFriendsWithoutAvailableStats() {
+        val hiddenSelf = rankSelf(xp = 500).copy(
+            xp = null, level = null, workouts = null, statsAvailable = false, progressUpdatedAt = null
+        )
+        val hiddenFriend = rankFriend('2', "Private", xp = 0).copy(
+            xp = null, level = null, workouts = null, statsAvailable = false, progressUpdatedAt = null
+        )
+
+        val ranked = rankedSocialProfiles(hiddenSelf, listOf(rankFriend('1', "Pal", xp = 10), hiddenFriend))
+
+        assertEquals(listOf(profileId('1')), ranked.map { it.profileId })
+    }
+
+    private fun rankSelf(xp: Int, workouts: Int = 5, name: String = "Me") = SocialSelfProfile(
+        profileId = profileId('0'),
+        friendCode = profileId('0'),
+        displayName = name,
+        xp = xp,
+        level = 3,
+        workouts = workouts,
+        statsAvailable = true,
+        progressUpdatedAt = "2026-01-01T00:00:00Z",
+        privacy = SocialPrivacy(
+            allowRequests = true,
+            shareProgress = true,
+            shareRecentWorkouts = false,
+            shareRecords = false
+        ),
+        settingsRevision = 1
+    )
+
+    private fun rankFriend(id: Char, name: String, xp: Int, workouts: Int = 5) = SocialFriend(
+        friendshipId = friendshipId(id),
+        profileId = profileId(id),
+        displayName = name,
+        xp = xp,
+        level = 2,
+        workouts = workouts,
+        progressShared = true,
+        statsAvailable = true,
+        progressUpdatedAt = "2026-01-01T00:00:00Z",
+        friendshipRevision = 1
+    )
+
     private fun profileId(character: Char): String = "p_${character.toString().repeat(32)}"
     private fun friendshipId(character: Char): String = "f_${character.toString().repeat(32)}"
     private fun inviteId(character: Char): String = "wi_${character.toString().repeat(32)}"

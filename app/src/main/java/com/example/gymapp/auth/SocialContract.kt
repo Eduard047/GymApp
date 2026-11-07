@@ -326,6 +326,51 @@ internal fun rankedSocialFriends(friends: List<SocialFriend>): List<SocialFriend
             .thenBy { it.profileId }
     )
 
+/** One leaderboard row: the signed-in user or a friend whose stats are available. */
+internal data class RankedSocialProfile(
+    val profileId: String,
+    val displayName: String,
+    val xp: Int,
+    val level: Int,
+    val workouts: Int,
+    val isCurrentUser: Boolean,
+    val friend: SocialFriend?
+)
+
+/**
+ * Ranks the signed-in user together with friends, like iPhone: only profiles with available
+ * stats take part (XP desc, workouts desc, case-insensitive name, then id).
+ */
+internal fun rankedSocialProfiles(
+    self: SocialSelfProfile,
+    friends: List<SocialFriend>
+): List<RankedSocialProfile> {
+    val profiles = buildList {
+        val xp = self.xp
+        val level = self.level
+        val workouts = self.workouts
+        if (self.statsAvailable && xp != null && level != null && workouts != null) {
+            add(RankedSocialProfile(self.profileId, self.displayName, xp, level, workouts, true, null))
+        }
+        friends.forEach { friend ->
+            val xp = friend.xp
+            val level = friend.level
+            val workouts = friend.workouts
+            if (friend.statsAvailable && xp != null && level != null && workouts != null) {
+                add(RankedSocialProfile(friend.profileId, friend.displayName, xp, level, workouts, false, friend))
+            }
+        }
+    }
+    val collator = java.text.Collator.getInstance(java.util.Locale.getDefault())
+        .apply { strength = java.text.Collator.SECONDARY }
+    return profiles.sortedWith(
+        compareByDescending<RankedSocialProfile> { it.xp }
+            .thenByDescending { it.workouts }
+            .thenComparator { a, b -> collator.compare(a.displayName, b.displayName) }
+            .thenBy { it.profileId }
+    )
+}
+
 internal fun parseSocialDashboard(raw: String): SocialDashboard {
     val root = socialRoot(
         raw,
