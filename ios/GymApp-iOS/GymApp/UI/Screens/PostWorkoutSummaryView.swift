@@ -172,6 +172,7 @@ struct PostWorkoutSummaryView: View {
 
     var body: some View {
         let rewards = postWorkoutRewards
+        let personalRecords = personalRecords
         return GymBackground {
             if let workout = store.workout(id: workoutID) {
                 ScrollView {
@@ -183,7 +184,7 @@ struct PostWorkoutSummaryView: View {
                             musclesPanel
                         }
                         if !personalRecords.isEmpty {
-                            personalRecordsPanel
+                            personalRecordsPanel(personalRecords)
                         }
                         if !rewards.completedMissions.isEmpty {
                             missionsPanel(rewards.completedMissions)
@@ -253,49 +254,27 @@ struct PostWorkoutSummaryView: View {
         .sorted { $0.load > $1.load }
     }
 
-    /// Groups the session's PRs one row per exercise under the same rules as the
-    /// live record badge (`LivePersonalRecords`): an exercise's first session is
-    /// never a record, a 0 kg value is never a record, and matching the previous
-    /// best is not a record.
-    private var personalRecords: [SummaryPersonalRecord] {
+    /// One PR row per exercise (blocks of the same exercise are merged, like Android) under
+    /// the same rules as the live record badge (`LivePersonalRecords`); see
+    /// `postWorkoutPersonalRecords`.
+    private var personalRecords: [PostWorkoutPersonalRecord] {
         guard let workout = store.workout(id: workoutID),
               let current = sessionSummary else { return [] }
-        return workout.exercises.compactMap { block -> SummaryPersonalRecord? in
-            guard let exercise = store.exercise(id: block.exerciseID), !block.sets.isEmpty else {
-                return nil
+        return postWorkoutPersonalRecords(
+            blocks: workout.exercises,
+            previousHistory: { exerciseID in
+                postWorkoutPreviousHistory(
+                    store.exerciseHistory(exerciseID: exerciseID),
+                    current: current
+                )
+            },
+            title: { exerciseID in
+                store.exercise(id: exerciseID).map { gymExerciseName($0) }
             }
-            let previous = postWorkoutPreviousHistory(
-                store.exerciseHistory(exerciseID: block.exerciseID),
-                current: current
-            )
-            guard let previousMaxWeight = previous.map(\.weight).max(),
-                  let previousEstimatedMax = previous.map(\.estimatedOneRepMax).max() else {
-                return nil
-            }
-
-            var weightRecord: Double?
-            if let bestWeight = block.sets.max(by: { $0.weight < $1.weight }),
-               bestWeight.weight > previousMaxWeight, bestWeight.weight > 0 {
-                weightRecord = bestWeight.weight
-            }
-            var oneRepMaxRecord: Double?
-            if let bestEstimated = block.sets.max(by: {
-                $0.estimatedOneRepMax < $1.estimatedOneRepMax
-            }), bestEstimated.estimatedOneRepMax > previousEstimatedMax + 1e-9, bestEstimated.estimatedOneRepMax > 0 {
-                oneRepMaxRecord = bestEstimated.estimatedOneRepMax
-            }
-
-            guard weightRecord != nil || oneRepMaxRecord != nil else { return nil }
-            return SummaryPersonalRecord(
-                exerciseID: exercise.id,
-                title: gymExerciseName(exercise),
-                weight: weightRecord,
-                estimatedOneRepMax: oneRepMaxRecord
-            )
-        }
+        )
     }
 
-    private func recordDetail(_ record: SummaryPersonalRecord) -> String {
+    private func recordDetail(_ record: PostWorkoutPersonalRecord) -> String {
         var parts: [String] = []
         if let weight = record.weight {
             parts.append(
@@ -662,7 +641,7 @@ struct PostWorkoutSummaryView: View {
     }
 
     @ViewBuilder
-    private var personalRecordsPanel: some View {
+    private func personalRecordsPanel(_ personalRecords: [PostWorkoutPersonalRecord]) -> some View {
         GymPanel(highlighted: !personalRecords.isEmpty) {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
@@ -799,12 +778,60 @@ struct PostWorkoutSummaryView: View {
     }
 }
 
-private struct SummaryPersonalRecord: Identifiable {
-    let id = UUID()
+/// One "new best" row of the post-workout summary. The id is the exercise id, so it
+/// is stable across renders.
+struct PostWorkoutPersonalRecord: Identifiable, Equatable {
+    var id: UUID { exerciseID }
     let exerciseID: UUID
     let title: String
     let weight: Double?
     let estimatedOneRepMax: Double?
+}
+
+/// Records set by one session, one row per exercise in first-appearance order: the
+/// blocks of an exercise are merged, a row carries a weight only when the heaviest set
+/// beat the previous best weight and an estimated 1RM only when the best estimate beat
+/// the previous best estimate. An exercise without earlier history never has a record,
+/// a 0 value is never a record. Mirrors Android's `buildPostWorkoutPersonalRecords`.
+func postWorkoutPersonalRecords(
+    blocks: [WorkoutExercise],
+    previousHistory: (UUID) -> [ExerciseHistoryEntry],
+    title: (UUID) -> String?
+) -> [PostWorkoutPersonalRecord] {
+    var order: [UUID] = []
+    var setsByExercise: [UUID: [WorkoutSet]] = [:]
+    for block in blocks where !block.sets.isEmpty {
+        if setsByExercise[block.exerciseID] == nil { order.append(block.exerciseID) }
+        setsByExercise[block.exerciseID, default: []].append(contentsOf: block.sets)
+    }
+    return order.compactMap { exerciseID -> PostWorkoutPersonalRecord? in
+        guard let sets = setsByExercise[exerciseID], let name = title(exerciseID) else { return nil }
+        let previous = previousHistory(exerciseID)
+        guard let previousMaxWeight = previous.map(\.weight).max(),
+              let previousEstimatedMax = previous.map(\.estimatedOneRepMax).max() else {
+            return nil
+        }
+
+        var weightRecord: Double?
+        if let bestWeight = sets.max(by: { $0.weight < $1.weight }),
+           bestWeight.weight > previousMaxWeight, bestWeight.weight > 0 {
+            weightRecord = bestWeight.weight
+        }
+        var oneRepMaxRecord: Double?
+        if let bestEstimated = sets.max(by: { $0.estimatedOneRepMax < $1.estimatedOneRepMax }),
+           bestEstimated.estimatedOneRepMax > previousEstimatedMax + 1e-9,
+           bestEstimated.estimatedOneRepMax > 0 {
+            oneRepMaxRecord = bestEstimated.estimatedOneRepMax
+        }
+
+        guard weightRecord != nil || oneRepMaxRecord != nil else { return nil }
+        return PostWorkoutPersonalRecord(
+            exerciseID: exerciseID,
+            title: name,
+            weight: weightRecord,
+            estimatedOneRepMax: oneRepMaxRecord
+        )
+    }
 }
 
 private struct WorkoutFeedbackButtonStyle: ButtonStyle {
