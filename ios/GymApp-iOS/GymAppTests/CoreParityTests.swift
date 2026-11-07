@@ -10517,7 +10517,7 @@ final class CoreParityTests: XCTestCase {
                 _ = try await auth.validCloudSession()
                 XCTFail("A failed refresh must not return a usable refreshed session.")
             } catch {
-                // Expected; only terminal 400/401 responses clear the session.
+                // Expected; only a rejected refresh token clears the session.
             }
 
             XCTAssertEqual(auth.session?.cloud, expired)
@@ -10531,6 +10531,103 @@ final class CoreParityTests: XCTestCase {
             AuthURLProtocolStub.handler = nil
             urlSession.invalidateAndCancel()
         }
+    }
+
+    func testRefreshTerminalRuleMatchesSharedCases() throws {
+        let cases = try refreshTerminalCases()
+        XCTAssertFalse(cases.isEmpty)
+        for item in cases {
+            let name = try XCTUnwrap(item["name"] as? String)
+            let status = try XCTUnwrap(item["status"] as? Int)
+            let expected = try XCTUnwrap(item["terminal"] as? Bool)
+            XCTAssertEqual(
+                AuthService.isTerminalRefreshFailure(
+                    status: status,
+                    code: item["errorCode"] as? String,
+                    message: item["message"] as? String
+                ),
+                expected,
+                name
+            )
+            var body: [String: Any] = [:]
+            if let code = item["errorCode"] as? String { body["error_code"] = code }
+            if let message = item["message"] as? String { body["message"] = message }
+            XCTAssertEqual(
+                AuthService.isTerminalRefreshFailure(
+                    status: status,
+                    code: AuthService.authErrorCode(in: body),
+                    message: AuthService.authErrorMessage(in: body)
+                ),
+                expected,
+                "\(name) parsed from body"
+            )
+        }
+    }
+
+    func testRefreshResponsesSignOutOrKeepSessionPerSharedRule() async throws {
+        for item in try refreshTerminalCases() {
+            let name = try XCTUnwrap(item["name"] as? String)
+            let status = try XCTUnwrap(item["status"] as? Int)
+            let terminal = try XCTUnwrap(item["terminal"] as? Bool)
+            var body: [String: Any] = [:]
+            if let code = item["errorCode"] as? String { body["error_code"] = code }
+            if let message = item["message"] as? String { body["message"] = message }
+            let json = String(
+                decoding: try JSONSerialization.data(withJSONObject: body),
+                as: UTF8.self
+            )
+
+            let keychain = InMemoryKeychainStore()
+            let defaults = temporaryDefaults(named: "refresh-shared-\(name)")
+            var expired = cloudSession(userID: "shared-refresh-user")
+            expired.expiresAt = Date(timeIntervalSince1970: 0)
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [AuthURLProtocolStub.self]
+            let urlSession = URLSession(configuration: configuration)
+            let auth = AuthService(keychain: keychain, urlSession: urlSession, defaults: defaults)
+            try auth.installSessionForTesting(.cloud(expired))
+            AuthURLProtocolStub.handler = { request in
+                try AuthURLProtocolStub.response(for: request, statusCode: status, json: json)
+            }
+
+            do {
+                _ = try await auth.validCloudSession()
+                XCTFail("\(name): a rejected refresh must not return a session.")
+            } catch AuthServiceError.sessionExpired {
+                XCTAssertTrue(terminal, "\(name): kept-session case signed out")
+            } catch {
+                XCTAssertFalse(terminal, "\(name): terminal case did not sign out: \(error)")
+            }
+
+            if terminal {
+                XCTAssertNil(auth.session, name)
+                XCTAssertNil(try keychain.read(account: "current-session"), name)
+            } else {
+                XCTAssertEqual(auth.session?.cloud, expired, name)
+                XCTAssertEqual(
+                    AuthService(keychain: keychain, urlSession: urlSession, defaults: defaults)
+                        .session?.cloud,
+                    expired,
+                    name
+                )
+            }
+
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+    }
+
+    private func refreshTerminalCases() throws -> [[String: Any]] {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("shared/auth-refresh-terminal-v1.json")
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+        )
+        return try XCTUnwrap(object["cases"] as? [[String: Any]])
     }
 
     func testLateTerminalRefreshCannotClearReplacementSession() async throws {

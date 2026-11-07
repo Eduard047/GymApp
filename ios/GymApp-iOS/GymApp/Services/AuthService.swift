@@ -985,17 +985,28 @@ final class AuthService: ObservableObject {
         refreshToken: String
     ) async throws -> CloudAccountSession {
         let object: [String: Any]
+        var rejection: (status: Int, body: [String: Any])?
         do {
             object = try await requestJSON(
                 path: "/auth/v1/token?grant_type=refresh_token",
                 method: "POST",
-                body: ["refresh_token": refreshToken]
+                body: ["refresh_token": refreshToken],
+                onErrorResponse: { status, body in rejection = (status, body) }
             )
-        } catch AuthServiceError.requestFailed(let status, _)
-                    where status == 400 || status == 401 {
-            // A rejected refresh token is terminal for this exact session. Check
-            // revision and owner before clearing so a late response cannot remove
-            // a replacement account that signed in while refresh was in flight.
+        } catch let error as AuthServiceError {
+            // Same rule as Android's isTerminalRefreshFailure: only a rejected
+            // refresh token is terminal. Rate limits, 5xx and other 4xx keep the
+            // stored session so the next attempt can retry.
+            guard let rejection,
+                  Self.isTerminalRefreshFailure(
+                    status: rejection.status,
+                    code: Self.authErrorCode(in: rejection.body),
+                    message: Self.authErrorMessage(in: rejection.body)
+                  ) else {
+                throw error
+            }
+            // Check revision and owner before clearing so a late response cannot
+            // remove a replacement account that signed in while refresh was in flight.
             guard sessionRevision == expectedRevision,
                   session?.cloud == cloud else {
                 throw AuthServiceError.sessionChanged
@@ -1463,7 +1474,8 @@ final class AuthService: ObservableObject {
         headers: [String: String] = [:],
         body: [String: Any]? = nil,
         beforeRequest: (() throws -> Void)? = nil,
-        onRequestDispositionChange: ((AccountDeletionRequestDisposition) -> Void)? = nil
+        onRequestDispositionChange: ((AccountDeletionRequestDisposition) -> Void)? = nil,
+        onErrorResponse: ((Int, [String: Any]) -> Void)? = nil
     ) async throws -> [String: Any] {
         guard let url = URL(string: path, relativeTo: GymAppConfiguration.supabaseURL) else {
             throw AuthServiceError.malformedResponse
@@ -1504,6 +1516,7 @@ final class AuthService: ObservableObject {
             if (400 ..< 500).contains(status) {
                 onRequestDispositionChange?(.definitivelyRejected)
             }
+            onErrorResponse?(status, [:])
             throw AuthServiceError.requestFailed(
                 status: status,
                 message: "Authentication failed (HTTP \(status))."
@@ -1516,6 +1529,7 @@ final class AuthService: ObservableObject {
             if (400 ..< 500).contains(http.statusCode) {
                 onRequestDispositionChange?(.definitivelyRejected)
             }
+            onErrorResponse?(http.statusCode, object)
             if let typedError = Self.typedAuthError(
                 status: http.statusCode,
                 object: object
@@ -1695,6 +1709,52 @@ final class AuthService: ObservableObject {
         return raw?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? raw!
             : "Cloud request failed. Check your connection and try again."
+    }
+
+    /// Mirrors Android's `isTerminalRefreshFailure` (shared/auth-refresh-terminal-v1.json).
+    static func isTerminalRefreshFailure(status: Int, code: String?, message: String?) -> Bool {
+        if status == 401 { return true }
+        let normalizedCode = (code ?? "").lowercased()
+        if ["bad_jwt", "refresh_token_already_used",
+            "refresh_token_not_found", "invalid_refresh_token",
+            "session_not_found"].contains(normalizedCode) {
+            return true
+        }
+        let normalizedMessage = (message ?? "").lowercased()
+        return normalizedMessage.contains("invalid refresh token")
+            || normalizedMessage.contains("refresh token not found")
+            || normalizedMessage.contains("refresh token already used")
+    }
+
+    /// Same field order as Android's `parseSupabaseError`.
+    static func authErrorCode(in object: [String: Any]) -> String? {
+        func nonBlank(_ value: Any?) -> String? {
+            guard let text = value as? String,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return text
+        }
+        if let nested = object["error"] as? [String: Any], let code = nonBlank(nested["code"]) {
+            return code
+        }
+        if let code = nonBlank(object["error_code"]) ?? nonBlank(object["code"]) { return code }
+        if let text = object["error"] as? String,
+           text.range(of: "^[a-z][a-z0-9_]{0,63}$", options: .regularExpression) != nil {
+            return text
+        }
+        return nil
+    }
+
+    static func authErrorMessage(in object: [String: Any]) -> String? {
+        func nonBlank(_ value: Any?) -> String? {
+            guard let text = value as? String,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return text
+        }
+        if let nested = object["error"] as? [String: Any], let text = nonBlank(nested["message"]) {
+            return text
+        }
+        return nonBlank(object["msg"]) ?? nonBlank(object["message"])
+            ?? nonBlank(object["error_description"]) ?? nonBlank(object["error"])
     }
 
     private static func typedAuthError(

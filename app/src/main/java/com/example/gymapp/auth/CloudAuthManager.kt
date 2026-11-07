@@ -512,7 +512,8 @@ internal fun isTerminalRefreshFailure(
             "bad_jwt",
             "refresh_token_already_used",
             "refresh_token_not_found",
-            "invalid_refresh_token"
+            "invalid_refresh_token",
+            "session_not_found"
         ) ||
         normalizedMessage.contains("invalid refresh token") ||
         normalizedMessage.contains("refresh token not found") ||

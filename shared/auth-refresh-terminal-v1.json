@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "description": "Which Supabase refresh-token responses end the session. Terminal: sign out. Non-terminal: keep the stored session and retry later. Run by Android (isTerminalRefreshFailure) and iOS (AuthService.isTerminalRefreshFailure).",
+  "cases": [
+    { "name": "401 without body", "status": 401, "errorCode": null, "message": null, "terminal": true },
+    { "name": "401 with unrelated code", "status": 401, "errorCode": "validation_failed", "message": null, "terminal": true },
+    { "name": "400 refresh_token_not_found", "status": 400, "errorCode": "refresh_token_not_found", "message": "Invalid Refresh Token: Refresh Token Not Found", "terminal": true },
+    { "name": "400 refresh_token_already_used", "status": 400, "errorCode": "refresh_token_already_used", "message": null, "terminal": true },
+    { "name": "400 invalid_refresh_token", "status": 400, "errorCode": "invalid_refresh_token", "message": null, "terminal": true },
+    { "name": "400 bad_jwt", "status": 400, "errorCode": "bad_jwt", "message": null, "terminal": true },
+    { "name": "400 code is case-insensitive", "status": 400, "errorCode": "REFRESH_TOKEN_NOT_FOUND", "message": null, "terminal": true },
+    { "name": "400 message only: invalid refresh token", "status": 400, "errorCode": null, "message": "Invalid Refresh Token: Already Used", "terminal": true },
+    { "name": "400 message only: refresh token not found", "status": 400, "errorCode": null, "message": "Refresh Token Not Found", "terminal": true },
+    { "name": "400 message only: refresh token already used", "status": 400, "errorCode": null, "message": "Refresh token already used", "terminal": true },
+    { "name": "400 validation_failed", "status": 400, "errorCode": "validation_failed", "message": "Unable to validate request", "terminal": false },
+    { "name": "400 without code or message", "status": 400, "errorCode": null, "message": null, "terminal": false },
+    { "name": "400 session_not_found", "status": 400, "errorCode": "session_not_found", "message": null, "terminal": true },
+    { "name": "400 invalid_grant", "status": 400, "errorCode": "invalid_grant", "message": null, "terminal": false },
+    { "name": "403 forbidden", "status": 403, "errorCode": null, "message": null, "terminal": false },
+    { "name": "429 rate limited", "status": 429, "errorCode": "over_request_rate_limit", "message": "try later", "terminal": false },
+    { "name": "500 server error", "status": 500, "errorCode": null, "message": null, "terminal": false },
+    { "name": "503 unavailable", "status": 503, "errorCode": null, "message": "temporarily unavailable", "terminal": false }
+  ]
+}

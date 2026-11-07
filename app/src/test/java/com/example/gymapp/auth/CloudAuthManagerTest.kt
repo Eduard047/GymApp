@@ -244,6 +244,26 @@ class CloudAuthManagerTest {
     }
 
     @Test
+    fun terminalRefreshRuleMatchesSharedCases() {
+        val direct = java.io.File("shared/auth-refresh-terminal-v1.json")
+        val file = if (direct.isFile) direct else java.io.File("../shared/auth-refresh-terminal-v1.json")
+        check(file.isFile) { "Refresh terminal contract was not found." }
+        val cases = org.json.JSONObject(file.readText()).getJSONArray("cases")
+        assertTrue(cases.length() > 0)
+        val mismatches = mutableListOf<String>()
+        for (index in 0 until cases.length()) {
+            val case = cases.getJSONObject(index)
+            val actual = isTerminalRefreshFailure(
+                responseCode = case.getInt("status"),
+                errorCode = if (case.isNull("errorCode")) null else case.getString("errorCode"),
+                providerMessage = if (case.isNull("message")) null else case.getString("message")
+            )
+            if (actual != case.getBoolean("terminal")) mismatches += case.getString("name")
+        }
+        assertEquals(emptyList<String>(), mismatches)
+    }
+
+    @Test
     fun resendReusesOnlyTheFreshSignupTransactionForTheSameEmail() {
         val now = 1_750_000_000_000L
         val existing = PendingAuthTransaction(
