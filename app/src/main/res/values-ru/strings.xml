@@ -1055,6 +1055,7 @@
     <string name="progress_recent_sessions_subtitle">Список обновляется для выбранного месяца и упражнения.</string>
     <string name="progress_chart_max_weight">Тренд максимального веса</string>
     <string name="progress_chart_volume">Объём по тренировкам</string>
+    <string name="progress_chart_a11y_range">Первая тренировка %1$s, последняя %2$s, лучшая %3$s</string>
     <string name="progress_visual_trends_title">Визуальные тренды</string>
     <string name="progress_visual_trends_subtitle">Последние %1$s в выбранном месяце.</string>
     <string name="progress_stat_sessions">Тренировки</string>

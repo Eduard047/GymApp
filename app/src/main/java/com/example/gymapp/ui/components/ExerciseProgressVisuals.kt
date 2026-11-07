@@ -20,6 +20,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
@@ -28,6 +30,8 @@ import com.example.gymapp.ui.viewmodel.ExerciseProgressSpotlightUiModel
 import com.example.gymapp.ui.viewmodel.ExerciseTrendChartPointUiModel
 import com.example.gymapp.ui.viewmodel.ExerciseTrendChartUiModel
 import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.formatVolumeTotal
+import com.example.gymapp.util.formatWeightDisplay
 import com.example.gymapp.util.formattedPluralStringResource
 
 @Composable
@@ -147,14 +151,28 @@ fun ExerciseTrendChartsCard(
                     title = stringResource(R.string.progress_chart_max_weight),
                     summary = chart.weightTrendLabel
                 ) {
-                    WeightTrendChart(points = chart.points)
+                    WeightTrendChart(
+                        points = chart.points,
+                        description = trendChartDescription(
+                            title = stringResource(R.string.progress_chart_max_weight),
+                            trend = chart.weightTrendLabel,
+                            range = trendChartRangeSummary(chart.points, ExerciseTrendChartPointUiModel::maxWeight, ::formatWeightDisplay)
+                        )
+                    )
                 }
 
                 ChartSection(
                     title = stringResource(R.string.progress_chart_volume),
                     summary = chart.volumeTrendLabel
                 ) {
-                    VolumeTrendChart(points = chart.points)
+                    VolumeTrendChart(
+                        points = chart.points,
+                        description = trendChartDescription(
+                            title = stringResource(R.string.progress_chart_volume),
+                            trend = chart.volumeTrendLabel,
+                            range = trendChartRangeSummary(chart.points, ExerciseTrendChartPointUiModel::totalVolume, ::formatVolumeTotal)
+                        )
+                    )
                 }
 
                 Row(
@@ -201,7 +219,7 @@ private fun ChartSection(
 }
 
 @Composable
-private fun WeightTrendChart(points: List<ExerciseTrendChartPointUiModel>) {
+private fun WeightTrendChart(points: List<ExerciseTrendChartPointUiModel>, description: String) {
     val lineColor = accentMarkColor()
     val fillColor = lineColor.copy(alpha = 0.12f)
     val guideColor = MaterialTheme.colorScheme.outlineVariant
@@ -211,6 +229,7 @@ private fun WeightTrendChart(points: List<ExerciseTrendChartPointUiModel>) {
         modifier = Modifier
             .fillMaxWidth()
             .height(180.dp)
+            .semantics { contentDescription = description }
     ) {
         if (points.isEmpty()) return@Canvas
 
@@ -269,7 +288,7 @@ private fun WeightTrendChart(points: List<ExerciseTrendChartPointUiModel>) {
 }
 
 @Composable
-private fun VolumeTrendChart(points: List<ExerciseTrendChartPointUiModel>) {
+private fun VolumeTrendChart(points: List<ExerciseTrendChartPointUiModel>, description: String) {
     val barColor = MaterialTheme.colorScheme.secondary
     val latestBarColor = MaterialTheme.colorScheme.tertiary
     val guideColor = MaterialTheme.colorScheme.outlineVariant
@@ -278,6 +297,7 @@ private fun VolumeTrendChart(points: List<ExerciseTrendChartPointUiModel>) {
         modifier = Modifier
             .fillMaxWidth()
             .height(180.dp)
+            .semantics { contentDescription = description }
     ) {
         if (points.isEmpty()) return@Canvas
 
@@ -327,3 +347,38 @@ private fun ChartLabels(points: List<ExerciseTrendChartPointUiModel>) {
         }
     }
 }
+
+/** First, latest and best value of a trend series, or null when there are no points. */
+internal data class TrendChartRange(val first: Double, val latest: Double, val best: Double)
+
+internal fun trendChartRange(
+    points: List<ExerciseTrendChartPointUiModel>,
+    value: (ExerciseTrendChartPointUiModel) -> Double
+): TrendChartRange? {
+    if (points.isEmpty()) return null
+    val values = points.map(value)
+    return TrendChartRange(first = values.first(), latest = values.last(), best = values.max())
+}
+
+/** "First session 60 kg, latest 70 kg, best 72.5 kg" for TalkBack; null when there is no data. */
+@Composable
+private fun trendChartRangeSummary(
+    points: List<ExerciseTrendChartPointUiModel>,
+    value: (ExerciseTrendChartPointUiModel) -> Double,
+    format: (Double) -> String
+): String? {
+    val range = trendChartRange(points, value) ?: return null
+    return formattedStringResource(
+        R.string.progress_chart_a11y_range,
+        formattedStringResource(R.string.today_history_volume_kg, format(range.first)),
+        formattedStringResource(R.string.today_history_volume_kg, format(range.latest)),
+        formattedStringResource(R.string.today_history_volume_kg, format(range.best))
+    )
+}
+
+/** Chart title, trend and range joined into one TalkBack sentence list; blank parts are skipped. */
+internal fun trendChartDescription(title: String, trend: String, range: String?): String =
+    listOf(title, trend, range.orEmpty())
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+        .joinToString(". ")

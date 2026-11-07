@@ -1023,6 +1023,7 @@
     <string name="progress_recent_sessions_subtitle">This list changes with the selected month and exercise.</string>
     <string name="progress_chart_max_weight">Max Weight Trend</string>
     <string name="progress_chart_volume">Volume by Session</string>
+    <string name="progress_chart_a11y_range">First session %1$s, latest %2$s, best %3$s</string>
     <string name="progress_visual_trends_title">Visual Trends</string>
     <string name="progress_visual_trends_subtitle">Last %1$s in the selected month.</string>
     <string name="progress_stat_sessions">Sessions</string>
