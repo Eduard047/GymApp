@@ -160,8 +160,17 @@ private func gymRussianDynamicFallback(_ english: String) -> String {
     if rawErrorRules.contains(where: { english.hasPrefix($0.0) && english.hasSuffix($0.1) }) {
         return "Что-то пошло не так. Попробуй ещё раз."
     }
+    if english.hasPrefix(gymSelectedGarminWatchPrefix), english.hasSuffix("."),
+       english.count > gymSelectedGarminWatchPrefix.count + 1 {
+        let name = english.dropFirst(gymSelectedGarminWatchPrefix.count).dropLast()
+        return "Выбраны часы Garmin: \(name)."
+    }
     return english
 }
+
+/// English source of GarminCloudService.lastMessage after a watch is selected. The stored
+/// message stays language-independent; the view-side `gymLocalized` resolves it per language.
+let gymSelectedGarminWatchPrefix = "Selected Garmin watch: "
 
 private func gymUkrainianDynamicFallback(_ english: String, bundle _: Bundle) -> String {
     func value(between prefix: String, and suffix: String) -> String? {
@@ -191,6 +200,9 @@ private func gymUkrainianDynamicFallback(_ english: String, bundle _: Bundle) ->
     ]
     if rawErrorRules.contains(where: { value(between: $0.0, and: $0.1) != nil }) {
         return "Щось пішло не так. Спробуй ще раз."
+    }
+    if let name = value(between: gymSelectedGarminWatchPrefix, and: "."), !name.isEmpty {
+        return "Вибрано годинник Garmin: \(name)."
     }
     return english
 }

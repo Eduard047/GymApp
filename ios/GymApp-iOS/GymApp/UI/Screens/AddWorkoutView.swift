@@ -2356,11 +2356,10 @@ struct AddWorkoutView: View {
                           try currentGarminSyncKey(deviceID: binding.deviceID) == submission.key else {
                         throw AuthServiceError.sessionChanged
                     }
+                    // Keep the English source; GymStatusBanner localizes it at render time.
                     show(
-                        gymLocalized(
-                            garminCloud.lastMessage
-                                ?? "Plan queued. Open GymApp on the Garmin watch and choose CLOUD / SYNC."
-                        ),
+                        garminCloud.lastMessage
+                            ?? "Plan queued. Open GymApp on the Garmin watch and choose CLOUD / SYNC.",
                         error: false
                     )
                 } catch {

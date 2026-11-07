@@ -726,12 +726,8 @@ final class GarminCloudService: ObservableObject {
             try bindingStore.clearPendingRevocation(for: identity.canonicalUserID)
         }
         selectedDevice = binding
-        lastMessage = gymText(
-            "Selected Garmin watch: \(device.displayName).",
-            "Вибрано годинник Garmin: \(device.displayName).",
-            "Выбраны часы Garmin: \(device.displayName).",
-            languageCode: gymCurrentLanguageCode()
-        )
+        // English source; `gymLocalized` resolves it per language when rendered.
+        lastMessage = "\(gymSelectedGarminWatchPrefix)\(device.displayName)."
     }
 
     /// Removes any outcome-unknown raw creation credential before the owning

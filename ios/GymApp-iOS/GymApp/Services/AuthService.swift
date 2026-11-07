@@ -504,10 +504,9 @@ final class AuthService: ObservableObject {
             }
             if cleanupFailed {
                 self.session = nil
-                self.message = gymLocalized(
-                    gymSafeEnglishErrorMessage(
-                        AuthServiceError.secureSessionCleanupPending
-                    )
+                // Stored as the English source key; views resolve it per language at render time.
+                self.message = gymSafeEnglishErrorMessage(
+                    AuthServiceError.secureSessionCleanupPending
                 )
             } else {
                 defaults.removeObject(forKey: Self.pendingSecureDeletionKey)

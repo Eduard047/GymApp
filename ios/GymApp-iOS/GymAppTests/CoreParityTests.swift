@@ -1337,6 +1337,31 @@ final class CoreParityTests: XCTestCase {
         )
     }
 
+    func testStoredPublishedMessagesAreLanguageIndependentAndResolveAtRenderTime() {
+        // AuthService.message after an incomplete secure sign-out is the English source key.
+        let authStored = gymSafeEnglishErrorMessage(AuthServiceError.secureSessionCleanupPending)
+        XCTAssertEqual(authStored, AuthServiceError.secureSessionCleanupPending.errorDescription)
+        XCTAssertEqual(gymLocalized(authStored, languageCode: "en"), authStored)
+        let authUK = gymLocalized(authStored, languageCode: "uk")
+        let authRU = gymLocalized(authStored, languageCode: "ru")
+        XCTAssertNotEqual(authUK, authStored)
+        XCTAssertNotEqual(authRU, authStored)
+        XCTAssertNotEqual(authUK, authRU)
+
+        // GarminCloudService.lastMessage after selecting a watch is the English source with the
+        // watch name; the same stored value renders in each language.
+        let garminStored = "\(gymSelectedGarminWatchPrefix)fenix 6."
+        XCTAssertEqual(garminStored, "Selected Garmin watch: fenix 6.")
+        XCTAssertEqual(gymLocalized(garminStored, languageCode: "en"), garminStored)
+        XCTAssertEqual(gymLocalized(garminStored, languageCode: "uk"), "Вибрано годинник Garmin: fenix 6.")
+        XCTAssertEqual(gymLocalized(garminStored, languageCode: "ru"), "Выбраны часы Garmin: fenix 6.")
+
+        // Queued-plan message is an existing catalog key.
+        let queued = "Plan queued. Open GymApp on the Garmin watch and choose CLOUD / SYNC."
+        XCTAssertNotEqual(gymLocalized(queued, languageCode: "uk"), queued)
+        XCTAssertNotEqual(gymLocalized(queued, languageCode: "ru"), queued)
+    }
+
     func testFirstRunLanguageUsesSupportedSystemLocaleWithoutOverridingSavedChoice() {
         XCTAssertEqual(
             AppLanguage.firstRunDefault(preferredLanguages: ["uk-UA", "en-US"]),
