@@ -45,14 +45,16 @@ class RestTimerController internal constructor(
     )
 
     private val accountSwitchTracker = RestTimerAccountSwitchTracker()
-    @Volatile private var boundDatabaseName: String? = null
+    /** The bound account key and its database name, swapped together so readers never see a mixed pair. */
+    @Volatile private var boundAccount: Pair<String, String>? = null
     val remainingSeconds: StateFlow<Int> = RestTimerState.remainingSeconds
     internal val exerciseRestDeadlineMillis = exerciseTimers.deadlines
     internal val activeWorkoutTimerSnapshot = activeWorkoutTimer.snapshot
 
     internal fun switchAccount(session: com.example.gymapp.auth.AccountSession?) {
         val accountKey = restTimerAccountKey(session)
-        boundDatabaseName = if (accountKey != null) session?.databaseName() else null
+        val databaseName = session?.databaseName()
+        boundAccount = if (accountKey != null && databaseName != null) accountKey to databaseName else null
         if (accountSwitchTracker.bind(accountKey)) {
             // The foreground countdown is process-global. Clear it synchronously before
             // exposing the next account so stale timer state cannot cross that boundary.
@@ -158,8 +160,9 @@ class RestTimerController internal constructor(
      * account, or an unusable key). Disk I/O: call off the main thread.
      */
     internal fun customRestSeconds(accountKey: String, identityKey: String): Int? {
-        val databaseName = boundDatabaseName ?: return null
-        if (!accountSwitchTracker.isBoundTo(accountKey)) return null
+        val bound = boundAccount ?: return null
+        if (bound.first != accountKey || !accountSwitchTracker.isBoundTo(accountKey)) return null
+        val databaseName = bound.second
         return runCatching { readExerciseRestSeconds(databaseName, identityKey) }.getOrNull()
     }
 
