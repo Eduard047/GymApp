@@ -45,7 +45,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
-import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMediaPreview
@@ -109,12 +108,7 @@ fun ExerciseProgressScreen(
         title = selectedDisplayExerciseName ?: uiState.spotlight.title,
         subtitle = spotlightSubtitle
     )
-    val selectedMuscleIntensities = remember(uiState.selectedExerciseName) {
-        uiState.selectedExerciseName
-            ?.let { defaultContributionsForExercise(it) }
-            .orEmpty()
-            .associate { contribution -> contribution.muscleId to contribution.weight.toFloat() }
-    }
+    val selectedMuscleIntensities = uiState.selectedMuscleIntensities
 
     val sessionGroups = remember(uiState.history) {
         uiState.history

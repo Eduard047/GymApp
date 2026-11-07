@@ -10,8 +10,8 @@ import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.GymRepository
-import com.example.gymapp.data.repository.defaultContributionsForExercise
-import com.example.gymapp.data.repository.normalizedExerciseName
+import com.example.gymapp.data.repository.MuscleContribution
+import com.example.gymapp.data.repository.muscleContributionsForExercise
 import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.RussianText
@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.text.NumberFormat
 import java.time.ZoneId
 import java.util.Locale
 import kotlin.math.absoluteValue
@@ -83,6 +84,8 @@ data class ExerciseProgressUiState(
     val frequentExerciseIds: List<Long> = emptyList(),
     val exerciseWorkoutCounts: Map<Long, Int> = emptyMap(),
     val exerciseMuscleIds: Map<String, Set<String>> = emptyMap(),
+    /** Muscle id to weight for the selected exercise: the manual mapping when set, else the default. */
+    val selectedMuscleIntensities: Map<String, Float> = emptyMap(),
     val selectedExerciseId: Long? = null,
     val selectedExerciseName: String? = null,
     val history: List<ExerciseHistoryEntry> = emptyList(),
@@ -97,8 +100,35 @@ private data class ExerciseProgressCatalog(
     val exercises: List<ExerciseEntity>,
     val frequentExerciseIds: List<Long>,
     val workoutCounts: Map<Long, Int>,
-    val muscleIdsByName: Map<String, Set<String>>
+    val muscleIdsByName: Map<String, Set<String>>,
+    val manualMappings: Map<String, List<MuscleContribution>>
 )
+
+/**
+ * Muscles loaded by [exerciseName] with their weights, matching iOS
+ * `MuscleMappingEngine.contributions(for:manualMappings:)`: a non-empty manual mapping wins as-is
+ * (its stored weights), otherwise the catalog/name-guess default.
+ */
+internal fun progressMuscleIntensities(
+    exerciseName: String?,
+    manualMappings: Map<String, List<MuscleContribution>>
+): Map<String, Float> {
+    if (exerciseName == null) return emptyMap()
+    return muscleContributionsForExercise(exerciseName, manualMappings)
+        .associate { it.muscleId to it.weight.toFloat() }
+}
+
+/** Month offsets are 0 (current) or negative; the next month never goes into the future. */
+internal fun nextProgressMonthOffset(current: Int): Int = (current + 1).coerceAtMost(0)
+
+/** "100 kg" / "102.5 kg": 0-1 fraction digits in the app locale, like iOS. */
+internal fun formatProgressWeightLabel(weight: Double, locale: Locale, unit: String): String {
+    val number = NumberFormat.getNumberInstance(locale).apply {
+        minimumFractionDigits = 0
+        maximumFractionDigits = 1
+    }.format(weight)
+    return "$number $unit"
+}
 
 internal fun progressFrequentExerciseIds(
     history: List<ExerciseHistoryEntry>,
@@ -171,10 +201,10 @@ class ExerciseProgressViewModel(
                 frequency.workoutCount
             },
             muscleIdsByName = exerciseList.associate { exercise ->
-                val contributions = manualMappings[exercise.name.normalizedExerciseName()]
-                    ?: defaultContributionsForExercise(exercise.name)
+                val contributions = muscleContributionsForExercise(exercise.name, manualMappings)
                 exercise.name to contributions.mapTo(linkedSetOf()) { it.muscleId }
-            }
+            },
+            manualMappings = manualMappings
         )
     }
 
@@ -219,6 +249,7 @@ class ExerciseProgressViewModel(
             frequentExerciseIds = catalog.frequentExerciseIds,
             exerciseWorkoutCounts = catalog.workoutCounts,
             exerciseMuscleIds = catalog.muscleIdsByName,
+            selectedMuscleIntensities = progressMuscleIntensities(selectedExerciseName, catalog.manualMappings),
             selectedExerciseId = selectedId,
             selectedExerciseName = selectedExerciseName,
             history = history,
@@ -267,7 +298,7 @@ class ExerciseProgressViewModel(
     }
 
     fun nextMonth() {
-        monthOffset.update { it + 1 }
+        monthOffset.update(::nextProgressMonthOffset)
     }
 
     fun currentMonth() {
@@ -385,7 +416,7 @@ class ExerciseProgressViewModel(
         if (delta.absoluteValue < 0.05) {
             return t(en = "Holding steady", uk = "Стабільно")
         }
-        val prefix = if (delta > 0) "+" else "-"
+        val prefix = if (delta > 0) "+" else "\u2212"
         return when {
             isUkrainian -> "$prefix${formatTrendValue(delta.absoluteValue)} $unit відносно першої сесії"
             isRussian -> "$prefix${formatTrendValue(delta.absoluteValue)} $unit относительно первой сессии"
@@ -401,7 +432,7 @@ class ExerciseProgressViewModel(
         if (delta.absoluteValue < 0.05) {
             return t(en = "Flat vs previous", uk = "Без змін від попередньої")
         }
-        val prefix = if (delta > 0) "+" else "-"
+        val prefix = if (delta > 0) "+" else "\u2212"
         return when {
             isUkrainian -> "$prefix${formatTrendValue(delta.absoluteValue)} $unit відносно попередньої"
             isRussian -> "$prefix${formatTrendValue(delta.absoluteValue)} $unit относительно предыдущей"
@@ -417,11 +448,10 @@ class ExerciseProgressViewModel(
         }
     }
 
-    private fun formatWeight(weight: Double): String = String.format(
-        locale,
-        "%.1f %s",
-        weight,
-        if (isUkrainian || isRussian) "кг" else "kg"
+    private fun formatWeight(weight: Double): String = formatProgressWeightLabel(
+        weight = weight,
+        locale = locale,
+        unit = if (isUkrainian || isRussian) "кг" else "kg"
     )
 
     private fun t(en: String, uk: String): String = when (locale.language.lowercase(Locale.ROOT)) {
