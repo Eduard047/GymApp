@@ -72,7 +72,12 @@ class PersonalRecordHistoryGoldenTest {
     private fun history(sessions: JSONArray): List<ExerciseHistoryEntry> =
         sessions.objects().flatMap { session ->
             val sessionId = session.getLong("id")
-            session.getJSONArray("sets").objects().mapIndexed { index, set ->
+            val sets = session.getJSONArray("sets").objects()
+            var blockStart = 0
+            var blockIndex = 0
+            sets.mapIndexed { index, set ->
+                val block = set.optInt("block", 0)
+                if (block != blockIndex) { blockIndex = block; blockStart = index }
                 ExerciseHistoryEntry(
                     setId = sessionId * 1_000 + index,
                     sessionId = sessionId,
@@ -81,7 +86,8 @@ class PersonalRecordHistoryGoldenTest {
                     exerciseName = "Exercise",
                     weight = set.getDouble("weight"),
                     reps = set.getInt("reps"),
-                    setOrderIndex = index
+                    setOrderIndex = index - blockStart,
+                    blockOrderIndex = block
                 )
             }
         }

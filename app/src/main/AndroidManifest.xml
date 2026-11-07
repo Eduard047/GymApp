@@ -31,6 +31,18 @@
             android:name="firebase_messaging_notification_delegation_enabled"
             android:value="false" />
 
+        <!-- Launcher shortcut trampoline. The launcher starts shortcut targets with NEW_TASK|CLEAR_TASK,
+             which would destroy a live MainActivity (and the unsaved workout plan). It has its own
+             task affinity so that CLEAR_TASK only ever clears this transient task, and it forwards
+             to MainActivity with SINGLE_TOP|CLEAR_TOP so a running instance gets onNewIntent. -->
+        <activity
+            android:name=".StartWorkoutShortcutActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.GymApp.Trampoline" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

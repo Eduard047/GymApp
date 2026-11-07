@@ -41,4 +41,26 @@ final class StartWorkoutShortcutTests: XCTestCase {
         S.consume()
         XCTAssertNil(S.pendingSince)
     }
+
+    @MainActor
+    func testColdLaunchItemHandledTwiceStashesOneRequest() throws {
+        S.consume()
+        let item = UIApplicationShortcutItem(type: S.itemType, localizedTitle: "x")
+        S.handleConnection(shortcutItem: nil)
+        XCTAssertNil(S.pendingSince)
+        XCTAssertTrue(S.handle(item)) // application(_:configurationForConnecting:)
+        let first = try XCTUnwrap(S.pendingSince)
+        XCTAssertTrue(S.handle(item)) // scene(_:willConnectTo:options:)
+        S.handleConnection(shortcutItem: item)
+        XCTAssertEqual(S.pendingSince, first)
+        S.consume()
+        XCTAssertNil(S.pendingSince)
+    }
+
+    func testDuplicateWindow() {
+        XCTAssertFalse(S.isDuplicate(pendingAge: nil))
+        XCTAssertTrue(S.isDuplicate(pendingAge: 0.05))
+        XCTAssertTrue(S.isDuplicate(pendingAge: S.pendingTimeout))
+        XCTAssertFalse(S.isDuplicate(pendingAge: S.pendingTimeout + 0.1))
+    }
 }

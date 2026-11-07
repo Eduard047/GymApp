@@ -49,5 +49,7 @@ data class ExerciseHistoryEntry(
     val exerciseName: String,
     val weight: Double,
     val reps: Int,
-    val setOrderIndex: Int
+    val setOrderIndex: Int,
+    /** Position of the set's exercise block in its workout; [setOrderIndex] restarts per block. */
+    val blockOrderIndex: Int = 0
 )

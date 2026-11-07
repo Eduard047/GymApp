@@ -32,18 +32,26 @@ internal fun isStartWorkoutShortcutAction(action: String?): Boolean =
 internal fun shouldRequestStartWorkoutShortcut(action: String?, restoredInstance: Boolean): Boolean =
     isStartWorkoutShortcutAction(action) && !restoredInstance
 
-internal enum class StartWorkoutShortcutRoute { OpenApp, OpenActiveWorkout, OpenWorkoutEditor }
+internal enum class StartWorkoutShortcutRoute {
+    OpenApp,
+    OpenActiveWorkout,
+    ResumeRetainedEditor,
+    OpenWorkoutEditor
+}
 
 /**
  * Where the shortcut leads: signed out -> just the app; active draft -> the active workout;
+ * an unsaved plan in the retained editor -> reopen it as-is (same as the Today resume path);
  * otherwise the screen the Today "Start workout" button opens (never auto-creates a workout).
  */
 internal fun startWorkoutShortcutRoute(
     hasSession: Boolean,
-    hasActiveWorkout: Boolean
+    hasActiveWorkout: Boolean,
+    hasRetainedDraft: Boolean = false
 ): StartWorkoutShortcutRoute = when {
     !hasSession -> StartWorkoutShortcutRoute.OpenApp
     hasActiveWorkout -> StartWorkoutShortcutRoute.OpenActiveWorkout
+    hasRetainedDraft -> StartWorkoutShortcutRoute.ResumeRetainedEditor
     else -> StartWorkoutShortcutRoute.OpenWorkoutEditor
 }
 

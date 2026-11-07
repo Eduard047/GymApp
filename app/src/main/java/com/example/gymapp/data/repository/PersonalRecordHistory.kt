@@ -24,7 +24,8 @@ const val MAX_PERSONAL_RECORD_HISTORY = 50
  * ([LivePersonalRecords.evaluate] / [LivePersonalRecords.advanced]): the first session only sets
  * the baseline (it never holds a record, even when every set is 0 kg), a 0 kg set is never a
  * record, a tie is not a record, and each set is compared with the best of everything logged
- * before it (earlier sessions and earlier sets of its own session). Same shared fixture as iOS:
+ * before it (earlier sessions and earlier sets of its own session, walked block by block like
+ * the stored workout's record chips: block index, then set index). Same shared fixture as iOS:
  * shared/pr-history-v1.json.
  *
  * Returns at most [limit] events, newest first.
@@ -42,7 +43,9 @@ fun personalRecordHistory(
     for (session in sessions) {
         val isBaseline = best == null
         var running = best ?: PersonalRecordBaseline(bestWeight = 0.0, bestEstimatedOneRepMax = 0.0)
-        for (set in session.sortedWith(compareBy<ExerciseHistoryEntry> { it.setOrderIndex }.thenBy { it.setId })) {
+        for (set in session.sortedWith(
+            compareBy<ExerciseHistoryEntry> { it.blockOrderIndex }.thenBy { it.setOrderIndex }.thenBy { it.setId }
+        )) {
             if (!isBaseline && set.weight > 0.0) {
                 val result = LivePersonalRecords.evaluate(set.weight, set.reps, running)
                 if (result.isRecord) {

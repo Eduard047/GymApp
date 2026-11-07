@@ -1508,11 +1508,28 @@ internal fun GymAppRoot(
     }
     val pendingStartShortcut by activeWorkoutOpenInbox.startShortcutPending
         .collectAsStateWithLifecycle()
-    LaunchedEffect(pendingStartShortcut, activeWorkout != null, authState.session != null) {
+    val rootAddWorkoutDraftState = rootAddWorkoutViewModel?.uiState
+        ?.collectAsStateWithLifecycle()
+        ?.value
+    // Same predicate the Today screen uses in resumeRetainedWorkoutEditor.
+    val shortcutHasRetainedDraft = shouldResumeRetainedWorkoutDraft(
+        hasEditorDraft = rootAddWorkoutDraftState != null &&
+            (rootAddWorkoutDraftState.isDirty ||
+                rootAddWorkoutDraftState.exerciseDrafts.isNotEmpty() ||
+                rootAddWorkoutDraftState.note.isNotBlank()),
+        hasLiveTarget = hasSavedLiveWorkoutDraftTarget
+    )
+    LaunchedEffect(
+        pendingStartShortcut,
+        activeWorkout != null,
+        authState.session != null,
+        shortcutHasRetainedDraft
+    ) {
         val requestId = pendingStartShortcut ?: return@LaunchedEffect
         val route = com.example.gymapp.service.startWorkoutShortcutRoute(
             hasSession = authState.session != null,
-            hasActiveWorkout = activeWorkout != null
+            hasActiveWorkout = activeWorkout != null,
+            hasRetainedDraft = shortcutHasRetainedDraft
         )
         when (route) {
             com.example.gymapp.service.StartWorkoutShortcutRoute.OpenApp -> {
@@ -1523,6 +1540,15 @@ internal fun GymAppRoot(
             com.example.gymapp.service.StartWorkoutShortcutRoute.OpenActiveWorkout -> {
                 runCatching {
                     navController.navigate(AppDestination.ActiveWorkout.route) {
+                        launchSingleTop = true
+                    }
+                }
+                activeWorkoutOpenInbox.consumeStartShortcut(requestId)
+            }
+            com.example.gymapp.service.StartWorkoutShortcutRoute.ResumeRetainedEditor -> {
+                // In-progress plan: reopen the editor untouched (never reset or re-prepared).
+                runCatching {
+                    navController.navigate(AppDestination.AddWorkout.route) {
                         launchSingleTop = true
                     }
                 }

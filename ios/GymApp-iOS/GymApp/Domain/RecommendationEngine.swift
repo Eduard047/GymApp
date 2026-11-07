@@ -1778,7 +1778,8 @@ public enum RecommendationEngine {
                 exerciseCatalogKey: entry.exerciseCatalogKey,
                 weight: replacement,
                 reps: entry.reps,
-                setOrderIndex: entry.setOrderIndex
+                setOrderIndex: entry.setOrderIndex,
+                blockOrderIndex: entry.blockOrderIndex
             )
         }
     }

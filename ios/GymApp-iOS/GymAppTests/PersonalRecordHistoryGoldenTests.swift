@@ -82,7 +82,11 @@ final class PersonalRecordHistoryGoldenTests: XCTestCase {
             let sessionID = try XCTUnwrap(session["id"] as? Int)
             let date = try XCTUnwrap((session["date"] as? NSNumber)?.doubleValue)
             let sets = try XCTUnwrap(session["sets"] as? [[String: Any]])
+            var blockStart = 0
+            var blockIndex = 0
             for (index, set) in sets.enumerated() {
+                let block = (set["block"] as? Int) ?? 0
+                if block != blockIndex { blockIndex = block; blockStart = index }
                 entries.append(
                     ExerciseHistoryEntry(
                         setID: sessionUUID(sessionID * 1_000 + index),
@@ -92,7 +96,8 @@ final class PersonalRecordHistoryGoldenTests: XCTestCase {
                         exerciseName: "Exercise",
                         weight: try XCTUnwrap((set["weight"] as? NSNumber)?.doubleValue),
                         reps: try XCTUnwrap(set["reps"] as? Int),
-                        setOrderIndex: index
+                        setOrderIndex: index - blockStart,
+                        blockOrderIndex: block
                     )
                 )
             }

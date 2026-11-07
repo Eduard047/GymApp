@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "rules": "Replay one exercise's sessions oldest first (date, then id). The first session is the baseline and never holds a record, even when all its sets are 0 kg. Afterwards each set (in set order) is compared with the best weight and best Epley estimate (weight * (1 + reps / 30)) logged before it, including earlier sets of its own session. 0 kg sets are never records and do not move the best. A weight record needs strictly more weight; an e1RM record needs an estimate above the best by more than 1e-9. A set that beats both is reported as kind weight. Expected events are newest first (later sets first inside a session); set is the zero-based set order inside the session. The list is capped at limit (default 50).",
+  "rules": "Replay one exercise's sessions oldest first (date, then id). The first session is the baseline and never holds a record, even when all its sets are 0 kg. Afterwards each set (in set order) is compared with the best weight and best Epley estimate (weight * (1 + reps / 30)) logged before it, including earlier sets of its own session. 0 kg sets are never records and do not move the best. A weight record needs strictly more weight; an e1RM record needs an estimate above the best by more than 1e-9. A set that beats both is reported as kind weight. Expected events are newest first (later sets first inside a session); set is the zero-based set order inside the session. The list is capped at limit (default 50). Sets may carry an optional zero-based block (the exercise block inside the workout, default 0); set is then the index inside its block, and a session's sets replay block by block (block, then set), not by set index alone.",
   "limit": 50,
   "cases": [
     {
@@ -462,6 +462,52 @@
         {
           "session": 2,
           "set": 0,
+          "weight": 110,
+          "reps": 5,
+          "kind": "weight"
+        }
+      ]
+    },
+    {
+      "id": "repeated-exercise-blocks",
+      "description": "An exercise appearing in two blocks of one workout replays block by block: 110x5 in block 1 is the only record, 105x5 in block 2 is not",
+      "sessions": [
+        {
+          "id": 1,
+          "date": 1700000000000,
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 5
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "date": 1700086400000,
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 5,
+              "block": 0
+            },
+            {
+              "weight": 110,
+              "reps": 5,
+              "block": 0
+            },
+            {
+              "weight": 105,
+              "reps": 5,
+              "block": 1
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "session": 2,
+          "set": 1,
           "weight": 110,
           "reps": 5,
           "kind": "weight"

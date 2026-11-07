@@ -268,6 +268,8 @@ public struct ExerciseHistoryEntry: Codable, Identifiable, Hashable, Sendable {
     public let weight: Double
     public let reps: Int
     public let setOrderIndex: Int
+    /// Position of the set's exercise block in its workout; `setOrderIndex` restarts per block.
+    public let blockOrderIndex: Int
 
     public init(
         setID: UUID,
@@ -278,7 +280,8 @@ public struct ExerciseHistoryEntry: Codable, Identifiable, Hashable, Sendable {
         exerciseCatalogKey: String? = nil,
         weight: Double,
         reps: Int,
-        setOrderIndex: Int
+        setOrderIndex: Int,
+        blockOrderIndex: Int = 0
     ) {
         self.setID = setID
         self.workoutID = workoutID
@@ -292,6 +295,7 @@ public struct ExerciseHistoryEntry: Codable, Identifiable, Hashable, Sendable {
         self.weight = weight
         self.reps = reps
         self.setOrderIndex = setOrderIndex
+        self.blockOrderIndex = blockOrderIndex
     }
 
     public var volume: Double {

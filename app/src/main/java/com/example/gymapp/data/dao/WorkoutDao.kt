@@ -223,7 +223,8 @@ interface WorkoutDao {
             e.name AS exerciseName,
             se.weight AS weight,
             se.reps AS reps,
-            se.orderIndex AS setOrderIndex
+            se.orderIndex AS setOrderIndex,
+            we.orderIndex AS blockOrderIndex
         FROM set_entries se
         INNER JOIN workout_exercises we ON we.id = se.workoutExerciseId
         INNER JOIN workout_sessions ws ON ws.id = we.sessionId
@@ -244,7 +245,8 @@ interface WorkoutDao {
             e.name AS exerciseName,
             se.weight AS weight,
             se.reps AS reps,
-            se.orderIndex AS setOrderIndex
+            se.orderIndex AS setOrderIndex,
+            we.orderIndex AS blockOrderIndex
         FROM set_entries se
         INNER JOIN workout_exercises we ON we.id = se.workoutExerciseId
         INNER JOIN workout_sessions ws ON ws.id = we.sessionId
@@ -270,7 +272,8 @@ interface WorkoutDao {
             e.name AS exerciseName,
             se.weight AS weight,
             se.reps AS reps,
-            se.orderIndex AS setOrderIndex
+            se.orderIndex AS setOrderIndex,
+            we.orderIndex AS blockOrderIndex
         FROM set_entries se
         INNER JOIN workout_exercises we ON we.id = se.workoutExerciseId
         INNER JOIN workout_sessions ws ON ws.id = we.sessionId

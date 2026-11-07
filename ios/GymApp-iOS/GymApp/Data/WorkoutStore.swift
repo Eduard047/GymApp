@@ -5308,7 +5308,7 @@ public final class WorkoutStore: ObservableObject {
         for workout in workouts {
             guard (startDate == nil || workout.date >= startDate!),
                   (endDate == nil || workout.date <= endDate!) else { continue }
-            for block in workout.exercises {
+            for (blockIndex, block) in workout.exercises.enumerated() {
                 guard exerciseID == nil || block.exerciseID == exerciseID,
                       let exercise = exercisesByID[block.exerciseID] else { continue }
                 for (index, set) in block.sets.enumerated() {
@@ -5322,7 +5322,8 @@ public final class WorkoutStore: ObservableObject {
                             exerciseCatalogKey: exercise.catalogKey,
                             weight: set.weight,
                             reps: set.reps,
-                            setOrderIndex: index
+                            setOrderIndex: index,
+                            blockOrderIndex: blockIndex
                         )
                     )
                 }

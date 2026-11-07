@@ -22,7 +22,8 @@ struct PersonalRecordHistoryEvent: Identifiable, Equatable, Sendable {
 /// (`LivePersonalRecords.evaluate` / `advanced`): the first session only sets the
 /// baseline (it never holds a record, even when every set is 0 kg), a 0 kg set is
 /// never a record, a tie is not a record, and each set is compared with the best of
-/// everything logged before it (earlier sessions and earlier sets of its own session).
+/// everything logged before it (earlier sessions and earlier sets of its own session, walked
+/// block by block like the stored workout's record chips: block index, then set index).
 /// Same shared fixture as Android: shared/pr-history-v1.json.
 enum PersonalRecordHistory {
     /// The most records the progress screen ever lists.
@@ -44,6 +45,7 @@ enum PersonalRecordHistory {
             let isBaseline = best == nil
             var running = best ?? PersonalRecordBaseline(bestWeight: 0, bestEstimatedOneRepMax: 0)
             let sets = session.sorted { left, right in
+                if left.blockOrderIndex != right.blockOrderIndex { return left.blockOrderIndex < right.blockOrderIndex }
                 if left.setOrderIndex != right.setOrderIndex { return left.setOrderIndex < right.setOrderIndex }
                 return left.setID.uuidString < right.setID.uuidString
             }

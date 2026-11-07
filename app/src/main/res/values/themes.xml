@@ -13,4 +13,7 @@
     <style name="Theme.GymApp.Launch" parent="Theme.GymApp">
         <item name="android:windowBackground">@drawable/launch_window_background</item>
     </style>
+
+    <!-- Invisible trampoline for the launcher shortcut (finishes in onCreate). -->
+    <style name="Theme.GymApp.Trampoline" parent="@android:style/Theme.NoDisplay" />
 </resources>

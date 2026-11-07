@@ -31,6 +31,31 @@ class StartWorkoutShortcutTest {
     }
 
     @Test
+    fun retainedDraftIsResumedNotReset() {
+        assertEquals(
+            StartWorkoutShortcutRoute.ResumeRetainedEditor,
+            startWorkoutShortcutRoute(hasSession = true, hasActiveWorkout = false, hasRetainedDraft = true)
+        )
+        assertEquals(
+            StartWorkoutShortcutRoute.OpenActiveWorkout,
+            startWorkoutShortcutRoute(hasSession = true, hasActiveWorkout = true, hasRetainedDraft = true)
+        )
+        assertEquals(
+            StartWorkoutShortcutRoute.OpenApp,
+            startWorkoutShortcutRoute(hasSession = false, hasActiveWorkout = false, hasRetainedDraft = true)
+        )
+    }
+
+    @Test
+    fun trampolineForwardsWithoutClearingTheTask() {
+        val flags = com.example.gymapp.forwardedStartWorkoutShortcutFlags()
+        assertTrue(flags and android.content.Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+        assertTrue(flags and android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP != 0)
+        assertTrue(flags and android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP != 0)
+        assertEquals(0, flags and android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+    }
+
+    @Test
     fun shortcutInboxIsIndependentOfNotificationInbox() {
         val inbox = ActiveWorkoutOpenInbox()
         inbox.requestStartShortcut()

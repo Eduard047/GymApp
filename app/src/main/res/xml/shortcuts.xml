@@ -8,7 +8,7 @@
         android:shortcutLongLabel="@string/shortcut_start_workout_long">
         <intent
             android:action="com.setforge.gymapp.action.START_WORKOUT_SHORTCUT"
-            android:targetClass="com.example.gymapp.MainActivity"
+            android:targetClass="com.example.gymapp.StartWorkoutShortcutActivity"
             android:targetPackage="@string/shortcut_target_package" />
     </shortcut>
 </shortcuts>
