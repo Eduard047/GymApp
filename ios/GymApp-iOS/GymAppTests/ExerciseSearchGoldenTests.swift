@@ -23,8 +23,7 @@ final class ExerciseSearchGoldenTests: XCTestCase {
             let expected = try XCTUnwrap(item["tokens"] as? [String])
             let actual = ExerciseFilterEngine.boundedSearchTokens(
                 query,
-                maximumCharacters: 256,
-                fallbackToRawTokensWhenEmpty: true
+                maximumCharacters: 256
             )
             XCTAssertEqual(actual, expected, id)
         }

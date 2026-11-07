@@ -32,10 +32,7 @@ class ExerciseSearchGoldenTest {
             val case = cases.getJSONObject(index)
             val expectedArray = case.getJSONArray("tokens")
             val expected = List(expectedArray.length()) { expectedArray.getString(it) }
-            val actual = exerciseSearchTokens(
-                case.getString("query"),
-                keepConnectorsWhenOnlyConnectors = true
-            )
+            val actual = exerciseSearchTokens(case.getString("query"))
             if (actual != expected) {
                 mismatches += "${case.getString("id")}: expected $expected but was $actual"
             }

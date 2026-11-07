@@ -290,10 +290,7 @@ private data class ExerciseSearchTokenEvidence(
     val mode: ExerciseSearchTokenMatchMode
 )
 
-internal fun exerciseSearchTokens(
-    value: String,
-    keepConnectorsWhenOnlyConnectors: Boolean = false
-): List<String> {
+internal fun exerciseSearchTokens(value: String): List<String> {
     val normalized = Normalizer.normalize(value, Normalizer.Form.NFC)
         .lowercase(Locale.ROOT)
         .replace('ё', 'е')
@@ -327,17 +324,17 @@ internal fun exerciseSearchTokens(
         index += Character.charCount(codePoint)
     }
     finishToken()
-    // A query made only of connectors ("a", "в", "on") searches by those words as prefixes.
-    return if (tokens.isEmpty() && keepConnectorsWhenOnlyConnectors) rawTokens else tokens
+    // Text made only of connectors ("a", "в", "on", a custom exercise named "V") keeps its raw
+    // tokens, for queries and name terms alike, so it stays searchable.
+    return if (tokens.isEmpty()) rawTokens else tokens
 }
 
 private fun exerciseSearchPhrase(
     value: String,
-    maxChars: Int,
-    keepConnectorsWhenOnlyConnectors: Boolean = false
+    maxChars: Int
 ): ExerciseSearchPhrase? {
     if (value.isBlank() || value.length > maxChars) return null
-    val tokens = exerciseSearchTokens(value, keepConnectorsWhenOnlyConnectors)
+    val tokens = exerciseSearchTokens(value)
     if (
         tokens.isEmpty() ||
         tokens.size > EXERCISE_SEARCH_QUERY_MAX_TOKENS
@@ -789,8 +786,7 @@ internal fun exerciseSearchMatch(
     if (rawQuery.isEmpty()) return ExerciseSearchMatch(relevance = 0, reason = null)
     val queryPhrase = exerciseSearchPhrase(
         rawQuery,
-        EXERCISE_SEARCH_QUERY_MAX_CHARS,
-        keepConnectorsWhenOnlyConnectors = true
+        EXERCISE_SEARCH_QUERY_MAX_CHARS
     ) ?: return null
     val definition = BuiltInExerciseCatalog.definitionForSearchName(exerciseName)
     val canonicalValues = if (definition == null) {
@@ -2903,8 +2899,15 @@ internal fun wrapPdfText(
         var rest = word
         while (rest.isNotEmpty() && measure(rest) > maxWidth) {
             // At least one character per chunk, so a glyph wider than the line can't loop forever.
-            var end = (rest.length - 1).coerceAtLeast(1)
-            while (end > 1 && measure(rest.substring(0, end)) > maxWidth) end--
+            // Never cut inside a surrogate pair: a leading pair is taken whole.
+            val firstChunkMin = Character.charCount(rest.codePointAt(0))
+            var end = (rest.length - 1).coerceAtLeast(firstChunkMin)
+            while (end > firstChunkMin && measure(rest.substring(0, end)) > maxWidth) end--
+            if (end > firstChunkMin && end < rest.length &&
+                Character.isHighSurrogate(rest[end - 1]) && Character.isLowSurrogate(rest[end])
+            ) {
+                end--
+            }
             chunks += rest.substring(0, end)
             rest = rest.substring(end)
         }

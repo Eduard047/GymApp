@@ -177,7 +177,7 @@ class ExerciseSearchLocalizationTest {
             com.example.gymapp.data.catalog.BuiltInExerciseCatalog.displayName(definition.nameEn, "ru")
         ) + definition.legacyAliases +
             com.example.gymapp.data.catalog.BuiltInExerciseCatalog.searchAliasesForDefinition(definition)
-        return terms.flatMap { term -> exerciseSearchTokens(term, keepConnectorsWhenOnlyConnectors = true) }
+        return terms.flatMap { term -> exerciseSearchTokens(term) }
     }
 
     @Test

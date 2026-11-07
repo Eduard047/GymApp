@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "Exercise search normalization shared by Android (exerciseSearchTokens / transliterateExerciseSearchToken) and iOS (ExerciseFilterEngine.boundedSearchTokens / transliterated). Connector words and their transliterations are always dropped, whatever the token count; a query made only of connectors keeps its raw tokens.",
+  "description": "Exercise search normalization shared by Android (exerciseSearchTokens / transliterateExerciseSearchToken) and iOS (ExerciseFilterEngine.boundedSearchTokens / transliterated). Connector words and their transliterations are always dropped, whatever the token count; text made only of connectors (a query, or a catalog/custom exercise name term such as a custom exercise named V) keeps its raw tokens. The same rule applies to queries and name terms, so one case list covers both.",
   "transliteration": [
     { "id": "ukr-ye", "input": "європа", "expected": "yevropa" },
     { "id": "ukr-yi", "input": "їжак", "expected": "yizhak" },
@@ -35,6 +35,10 @@
     { "id": "uppercase", "query": "Підтягування З Широким", "tokens": ["підтягування", "широким"] },
     { "id": "yo-folds-to-ye", "query": "Ёлка", "tokens": ["елка"] },
     { "id": "punctuation-splits", "query": "жим-лежа, (штанга)", "tokens": ["жим", "лежа", "штанга"] },
+    { "id": "name-term-single-translit-connector-v", "query": "V", "tokens": ["v"] },
+    { "id": "name-term-single-translit-connector-y", "query": "Y", "tokens": ["y"] },
+    { "id": "query-single-translit-connector-y", "query": "y", "tokens": ["y"] },
+    { "id": "query-translit-connector-with-word", "query": "y raise", "tokens": ["raise"] },
     { "id": "ukr-letters-kept", "query": "європа їжак йога", "tokens": ["європа", "їжак", "йога"] }
   ]
 }

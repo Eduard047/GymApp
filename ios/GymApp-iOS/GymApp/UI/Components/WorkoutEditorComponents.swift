@@ -1635,8 +1635,7 @@ enum ExerciseFilterEngine {
         guard !trimmed.isEmpty else { return .empty }
         guard let tokens = boundedSearchTokens(
             trimmed,
-            maximumCharacters: maximumSearchQueryCharacters,
-            fallbackToRawTokensWhenEmpty: true
+            maximumCharacters: maximumSearchQueryCharacters
         ), !tokens.isEmpty else { return .invalid }
         return .value(
             SearchQuery(
@@ -1651,8 +1650,7 @@ enum ExerciseFilterEngine {
     /// generated vocabulary term, or custom exercise name.
     static func boundedSearchTokens(
         _ value: String,
-        maximumCharacters: Int,
-        fallbackToRawTokensWhenEmpty: Bool = false
+        maximumCharacters: Int
     ) -> [String]? {
         let prefix = value.prefix(maximumCharacters + 1)
         guard prefix.count <= maximumCharacters else { return nil }
@@ -1684,8 +1682,9 @@ enum ExerciseFilterEngine {
             !ExerciseSearchVocabulary.connectorTokens.contains(token) &&
                 !transliteratedConnectorTokens.contains(transliterated(token))
         }
-        // A query made only of connector words ("a", "в") still searches by prefix.
-        if tokens.isEmpty && fallbackToRawTokensWhenEmpty {
+        // Text made only of connector words ("a", "в", a custom exercise named "V") keeps its raw
+        // tokens, for queries and name terms alike, so it stays searchable.
+        if tokens.isEmpty {
             tokens = rawTokens
         }
         guard tokens.count <= maximumSearchQueryTokens else { return nil }

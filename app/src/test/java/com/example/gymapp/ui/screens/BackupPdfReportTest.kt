@@ -46,6 +46,21 @@ class BackupPdfReportTest {
     }
 
     @Test
+    fun longEmojiWordIsNeverSplitInsideSurrogatePair() {
+        val word = "\uD83D\uDCAA".repeat(10) + "a" + "\uD83C\uDFCB\uFE0F".repeat(6)
+        // Measure counts each surrogate char as 6, so a pair is 12 wide; 30 fits two pairs.
+        listOf(30f, 37f, 12f, 8f).forEach { width ->
+            val lines = wrapPdfText(word, width, measure)
+            assertEquals(word, lines.joinToString(""))
+            lines.forEach { line ->
+                assertTrue("lone low surrogate at start of '$line'", !line.first().isLowSurrogate())
+                assertTrue("lone high surrogate at end of '$line'", !line.last().isHighSurrogate())
+                if (width >= 12f) assertTrue("'$line' too wide", measure(line) <= width)
+            }
+        }
+    }
+
+    @Test
     fun shortAndEmptyTextStayOnOneLine() {
         assertEquals(listOf("abc"), wrapPdfText("abc", 100f, measure))
         assertEquals(listOf(""), wrapPdfText("", 100f, measure))
