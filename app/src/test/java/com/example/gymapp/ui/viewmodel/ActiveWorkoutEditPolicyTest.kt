@@ -8,6 +8,7 @@ import com.example.gymapp.data.entity.ActiveWorkoutExerciseWithDetails
 import com.example.gymapp.data.entity.ActiveWorkoutSetEntity
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.repository.AddActiveWorkoutExerciseResult
+import com.example.gymapp.data.repository.AddActiveWorkoutSetResult
 import com.example.gymapp.data.repository.DeleteActiveWorkoutSetResult
 import com.example.gymapp.data.repository.MoveActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.RemoveActiveWorkoutExerciseResult
@@ -93,6 +94,23 @@ class ActiveWorkoutEditPolicyTest {
         assertEquals(
             ActiveWorkoutEditBlock.LastExercise,
             activeWorkoutExerciseRemovalBlock(workout(listOf(false)), "e0", false, false)
+        )
+    }
+
+    @Test
+    fun addSetResultsMapToMessagesAndFrozenLivePlanIsRefused() {
+        assertNull(activeWorkoutAddSetOutcomeMessage(AddActiveWorkoutSetResult.Added(2L, "s")))
+        assertEquals(
+            R.string.training_adaptation_live_blocked,
+            activeWorkoutAddSetOutcomeMessage(AddActiveWorkoutSetResult.LivePlanFrozen)
+        )
+        assertEquals(
+            R.string.active_workout_set_limit_reached,
+            activeWorkoutAddSetOutcomeMessage(AddActiveWorkoutSetResult.LimitReached)
+        )
+        assertEquals(
+            R.string.active_workout_changed,
+            activeWorkoutAddSetOutcomeMessage(AddActiveWorkoutSetResult.Stale)
         )
     }
 

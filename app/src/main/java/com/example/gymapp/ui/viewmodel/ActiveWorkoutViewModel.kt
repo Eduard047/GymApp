@@ -330,6 +330,13 @@ internal fun activeWorkoutMoveExerciseOutcomeMessage(result: MoveActiveWorkoutEx
     else -> R.string.active_workout_changed
 }
 
+internal fun activeWorkoutAddSetOutcomeMessage(result: AddActiveWorkoutSetResult): Int? = when (result) {
+    is AddActiveWorkoutSetResult.Added -> null
+    AddActiveWorkoutSetResult.LimitReached -> R.string.active_workout_set_limit_reached
+    AddActiveWorkoutSetResult.LivePlanFrozen -> R.string.training_adaptation_live_blocked
+    else -> R.string.active_workout_changed
+}
+
 internal fun activeWorkoutDeleteSetOutcomeMessage(result: DeleteActiveWorkoutSetResult): Int? = when (result) {
     is DeleteActiveWorkoutSetResult.Deleted -> null
     DeleteActiveWorkoutSetResult.Missing -> R.string.active_workout_missing
@@ -1440,13 +1447,12 @@ class ActiveWorkoutViewModel(
                         },
                         messageSetId = null
                     )
-                    AddActiveWorkoutSetResult.LimitReached -> it.copy(
-                        isRecordingAll = false,
-                        message = LocalizedText(R.string.active_workout_set_limit_reached)
-                    )
                     else -> it.copy(
                         isRecordingAll = false,
-                        message = LocalizedText(R.string.active_workout_changed)
+                        message = LocalizedText(
+                            outcome?.repositoryResult?.let(::activeWorkoutAddSetOutcomeMessage)
+                                ?: R.string.active_workout_changed
+                        )
                     )
                 }
             }

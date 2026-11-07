@@ -122,6 +122,7 @@ sealed interface AddActiveWorkoutSetResult {
     data object Stale : AddActiveWorkoutSetResult
     data object TargetChanged : AddActiveWorkoutSetResult
     data object LimitReached : AddActiveWorkoutSetResult
+    data object LivePlanFrozen : AddActiveWorkoutSetResult
 }
 
 sealed interface UndoActiveWorkoutSetResult {
@@ -2527,6 +2528,9 @@ class GymRepository(
             requireValidStoredActiveWorkout(details)
             if (details.activeWorkout.revision != expectedRevision) {
                 return@withTransaction AddActiveWorkoutSetResult.Stale
+            }
+            if (activeWorkoutPlanIsLiveFrozen(details.activeWorkout.startedAt)) {
+                return@withTransaction AddActiveWorkoutSetResult.LivePlanFrozen
             }
             val target = details.exercises.firstOrNull {
                 it.activeWorkoutExercise.id == exerciseId
