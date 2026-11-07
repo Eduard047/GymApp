@@ -80,7 +80,10 @@ class AuthUiMessagesTest {
             java.net.UnknownHostException("Unable to resolve host \"example.invalid\""),
             java.net.SocketTimeoutException("timeout"),
             java.net.ConnectException("Failed to connect"),
-            java.io.IOException("generic")
+            java.net.NoRouteToHostException("no route"),
+            java.net.SocketException("reset"),
+            javax.net.ssl.SSLException("tls"),
+            java.io.InterruptedIOException("timeout")
         )
         val fallbacks = listOf(
             R.string.auth_message_login_failed,
@@ -96,6 +99,14 @@ class AuthUiMessagesTest {
                     authErrorText(failure, fallback).resourceId
                 )
             }
+        }
+    }
+
+    @Test
+    fun localIoFailuresKeepTheCallerFallback() {
+        val fallback = R.string.local_profile_delete_failed
+        listOf(java.io.IOException("disk full"), java.io.FileNotFoundException("missing")).forEach {
+            assertEquals(fallback, authErrorText(it, fallback).resourceId)
         }
     }
 

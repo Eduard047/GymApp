@@ -3,7 +3,13 @@ package com.example.gymapp.auth
 import androidx.annotation.StringRes
 import com.example.gymapp.R
 import com.example.gymapp.util.LocalizedText
-import java.io.IOException
+import java.io.InterruptedIOException
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import javax.net.ssl.SSLException
 
 internal fun requiresEmailConfirmation(error: Throwable): Boolean {
     return error.message in setOf(
@@ -76,14 +82,25 @@ internal fun authErrorText(
     return LocalizedText(resource)
 }
 
-/** True when the failure (or a bounded-depth cause) is a transport IOException such as offline/DNS/timeout. */
+/**
+ * True when the failure (or a bounded-depth cause) is a network transport failure such as
+ * offline/DNS/timeout/TLS. Plain IOException (e.g. local disk or file errors) is deliberately excluded.
+ */
 private fun Throwable.isNetworkFailure(): Boolean {
     var current: Throwable? = this
     var depth = 0
     while (current != null && depth < 8) {
-        if (current is IOException) return true
+        if (current.isTransportFailure()) return true
         current = current.cause?.takeIf { it !== current }
         depth++
     }
     return false
 }
+
+private fun Throwable.isTransportFailure(): Boolean = this is UnknownHostException ||
+    this is ConnectException ||
+    this is SocketTimeoutException ||
+    this is NoRouteToHostException ||
+    this is SSLException ||
+    this is SocketException ||
+    this is InterruptedIOException
