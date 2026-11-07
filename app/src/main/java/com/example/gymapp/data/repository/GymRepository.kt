@@ -20,7 +20,11 @@ import com.example.gymapp.data.entity.ExerciseWeightOptionEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.LastLoggedSet
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
+import com.example.gymapp.data.entity.GarminLatinNameEntity
 import com.example.gymapp.data.entity.GarminWorkoutReceiptEntity
+import com.example.gymapp.garmin.GarminLatinAssignment
+import com.example.gymapp.garmin.GarminLatinEntry
+import com.example.gymapp.garmin.GarminLatinNames
 import com.example.gymapp.data.entity.GarminWorkoutProvenanceEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.entity.WorkoutExerciseEntity
@@ -447,6 +451,7 @@ class GymRepository(
     private val setDao = database.setDao()
     private val muscleMappingDao = database.muscleMappingDao()
     private val garminWorkoutReceiptDao = database.garminWorkoutReceiptDao()
+    private val garminLatinNameDao = database.garminLatinNameDao()
     private val activityOnlyWorkoutDao = database.activityOnlyWorkoutDao()
     private val activeWorkoutDao = database.activeWorkoutDao()
     private val workoutPlanDraftDao = database.workoutPlanDraftDao()
@@ -3680,6 +3685,62 @@ class GymRepository(
      * use a bounded 90-day receipt horizon so they do not become permanently unusable; replay
      * protection for those legacy messages intentionally ends when that horizon expires.
      */
+    /**
+     * Assigns the ASCII names the Garmin watch shows for [names] plus every stored exercise and
+     * appends the new table rows in one transaction, so a name is never sent before it is stored.
+     * Returns null when the append-only table is full of names that still belong to exercises.
+     */
+    internal suspend fun assignGarminLatinNames(names: Collection<String>): GarminLatinAssignment? =
+        database.withTransaction {
+            val exerciseNames = exerciseDao.getExercisesSnapshot().map { it.name }
+            val stored = garminLatinNameDao.getAll()
+            val assignment = GarminLatinNames.assign(
+                names = exerciseNames + names,
+                existing = stored.map { GarminLatinEntry(latin = it.latin, raw = it.raw) }
+            )
+            if (assignment.newEntries.isEmpty()) return@withTransaction assignment
+            val capacity = WorkoutDataLimits.MAX_EXERCISES * 2
+            val overflow = stored.size + assignment.newEntries.size - capacity
+            if (overflow > 0) {
+                val current = exerciseNames.toHashSet()
+                val removable = stored.filter { it.raw !in current }.take(overflow)
+                if (removable.size < overflow) return@withTransaction null
+                garminLatinNameDao.deleteByLatin(removable.map { it.latin })
+            }
+            val now = currentTimeMillis()
+            garminLatinNameDao.insertAll(
+                assignment.newEntries.map {
+                    GarminLatinNameEntity(latin = it.latin, raw = it.raw, createdAt = now)
+                }
+            )
+            assignment
+        }
+
+    /**
+     * Maps names echoed by the watch back to stored exercise names: table hit whose exercise still
+     * exists, else the single unambiguous inversion, else the name unchanged so the existing exact
+     * lookup still matches old Cyrillic names.
+     */
+    private suspend fun translateGarminWatchNames(
+        sets: List<NamedWorkoutSetDraft>
+    ): List<NamedWorkoutSetDraft> {
+        val exerciseNames = exerciseDao.getExercisesSnapshot().map { it.name }
+        val current = exerciseNames.toHashSet()
+        val translatedByName = HashMap<String, String>()
+        return sets.map { set ->
+            val name = set.exerciseName.trim()
+            val translated = translatedByName.getOrPut(name) {
+                val tableRaw = garminLatinNameDao.getRawForLatin(name)
+                if (tableRaw != null && tableRaw in current) {
+                    tableRaw
+                } else {
+                    GarminLatinNames.invert(name, emptyList(), exerciseNames) ?: set.exerciseName
+                }
+            }
+            if (translated == set.exerciseName) set else set.copy(exerciseName = translated)
+        }
+    }
+
     suspend fun applyGarminCreateWorkout(
         ownerBinding: String,
         deviceBinding: String,
@@ -3861,7 +3922,8 @@ class GymRepository(
                 createWorkoutSessionFromNamedSets(
                     date = date,
                     note = note,
-                    sets = sets,
+                    // Digest and receipt handling above used the watch's names; translate only now.
+                    sets = translateGarminWatchNames(sets),
                     durationSeconds = durationSeconds
                 ) ?: return@withTransaction GarminWorkoutApplyResult.Rejected
             }

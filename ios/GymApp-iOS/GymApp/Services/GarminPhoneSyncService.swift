@@ -122,8 +122,15 @@ enum GarminPhoneSyncProtocol {
         resetWorkout: Bool,
         repairPairing: Bool = false,
         plan: [NamedWorkoutSetDraft] = [],
-        bindingOnly: Bool = false
+        bindingOnly: Bool = false,
+        requireAsciiNames: Bool = true
     ) -> [String: Any]? {
+        // Garmin shows English text only: a non-ASCII name is never sent (convert to Latin first).
+        // Stored deliveries are re-validated with the check off because older ones may hold Cyrillic.
+        guard !requireAsciiNames ||
+                GarminLatinNames.areWatchNamesAscii(plan: plan, catalog: exercises) else {
+            return nil
+        }
         // A lite watch gets the binding fields only: empty plan arrays and no
         // exercise catalog, so the payload it must deserialize stays tiny.
         let exercises = bindingOnly ? [] : exercises
@@ -1985,15 +1992,21 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         let sets = plan.exercises.flatMap { exercise in
             exercise.sets.map { NamedWorkoutSetDraft(exerciseName: exercise.name, weight: $0.weight, reps: $0.reps) }
         }
-        guard let catalog = GarminPhoneSyncProtocol.exerciseCatalog(plan: sets, candidates: store.exercises.map(\.name)) else {
+        let exerciseNames = store.exercises.map(\.name)
+        guard let assignment = latinAssignment(account: account, exerciseNames: exerciseNames, names: sets.map(\.exerciseName)),
+              let watchSets = GarminLatinNames.watchPlan(sets, assignment: assignment),
+              let catalog = GarminPhoneSyncProtocol.exerciseCatalog(
+                  plan: watchSets,
+                  candidates: GarminLatinNames.watchCatalog(exerciseNames, assignment: assignment)
+              ) else {
             throw GarminCloudError.invalidPlan
         }
         let language = normalizedLanguage(gymCurrentLanguageCode(defaults: defaults))
         let previous = try planStore.load(account: account, binding: binding)
-        if previous?.matchesContent(binding: binding, language: language, sets: sets, exercises: catalog) != true {
+        if previous?.matchesContent(binding: binding, language: garminWatchLanguageTag, sets: watchSets, exercises: catalog) != true {
             let delivery = GarminPhonePlanDelivery(version: 1, binding: binding,
-                syncID: UUID().uuidString.lowercased(), revision: 0, language: language,
-                sets: sets, exercises: catalog, acknowledged: false)
+                syncID: UUID().uuidString.lowercased(), revision: 0, language: garminWatchLanguageTag,
+                sets: watchSets, exercises: catalog, acknowledged: false)
             try planStore.save(delivery, account: account)
             cancelSyncAttempt(deviceID: id)
         }
@@ -2277,10 +2290,24 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         guard syncInFlight[deviceID] == nil else { return }
         let attemptID = UUID()
         syncInFlight[deviceID] = attemptID
-        let currentLanguage = normalizedLanguage(gymCurrentLanguageCode(defaults: defaults))
-        let currentExercises = GarminPhoneSyncProtocol.boundedExerciseCatalog(
-            store.exercises.map(\.name)
-        )
+        let currentLanguage = garminWatchLanguageTag
+        let exerciseNames = store.exercises.map(\.name)
+        let lite = isLiteWatch(deviceBinding: binding.device)
+        let currentExercises: [String]
+        if lite {
+            // A free-workout-only watch holds no catalog: skip the name table entirely.
+            currentExercises = []
+        } else {
+            guard let account = activeStorageKey,
+                  let namesAssignment = latinAssignment(account: account, exerciseNames: exerciseNames, names: []) else {
+                syncInFlight.removeValue(forKey: deviceID)
+                publishStatus("Cannot prepare English Garmin exercise names.", isError: true)
+                return
+            }
+            currentExercises = GarminPhoneSyncProtocol.boundedExerciseCatalog(
+                GarminLatinNames.watchCatalog(exerciseNames, assignment: namesAssignment)
+            )
+        }
 
         let transition: GarminPhonePendingAuthTransition?
         if isBindingConfirmed(binding) {
@@ -2320,14 +2347,23 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             transition = pending
         }
 
-        let lite = isLiteWatch(deviceBinding: binding.device)
         var delivery: GarminPhonePlanDelivery?
         if transition == nil, !lite, let account = activeStorageKey {
             do {
-                if let cached = try planStore.load(account: account, binding: binding) {
-                    guard let catalog = GarminPhoneSyncProtocol.exerciseCatalog(
-                        plan: cached.sets, candidates: store.exercises.map(\.name)
-                    ) else { throw GarminCloudError.invalidPlan }
+                if var cached = try planStore.load(account: account, binding: binding) {
+                    // Older deliveries may hold Cyrillic names: convert (idempotent for ASCII) before comparing.
+                    guard let assignment = latinAssignment(
+                              account: account, exerciseNames: exerciseNames, names: cached.sets.map(\.exerciseName)),
+                          let watchSets = GarminLatinNames.watchPlan(cached.sets, assignment: assignment),
+                          let catalog = GarminPhoneSyncProtocol.exerciseCatalog(
+                              plan: watchSets,
+                              candidates: GarminLatinNames.watchCatalog(exerciseNames, assignment: assignment)
+                          ) else { throw GarminCloudError.invalidPlan }
+                    if watchSets != cached.sets {
+                        cached = GarminPhonePlanDelivery(version: cached.version, binding: cached.binding,
+                            syncID: cached.syncID, revision: cached.revision, language: cached.language,
+                            sets: watchSets, exercises: cached.exercises, acknowledged: cached.acknowledged)
+                    }
                     let lastRevision = (defaults.object(forKey: deviceSyncRevisionKey(deviceBinding: binding.device)) as? NSNumber)?.int64Value ?? 0
                     if cached.revision == 0 || cached.revision < lastRevision ||
                         !cached.matchesContent(binding: binding, language: currentLanguage, sets: cached.sets, exercises: catalog) {
@@ -2360,13 +2396,26 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             }
             revision = next
         }
-        let language = transition?.language ?? delivery?.language ?? currentLanguage
+        // The watch always gets English: a transition staged before the Latin names existed still
+        // lists Cyrillic names, so convert them (idempotent for ASCII) and ignore its stored language.
+        let language = garminWatchLanguageTag
+        var transitionExercises = transition?.exercises
+        if let staged = transitionExercises, !lite, !staged.isEmpty, let account = activeStorageKey {
+            guard let assignment = latinAssignment(account: account, exerciseNames: exerciseNames, names: staged) else {
+                syncInFlight.removeValue(forKey: deviceID)
+                publishStatus("Cannot prepare English Garmin exercise names.", isError: true)
+                return
+            }
+            transitionExercises = GarminPhoneSyncProtocol.boundedExerciseCatalog(
+                GarminLatinNames.watchCatalog(staged, assignment: assignment)
+            )
+        }
         guard let payload = GarminPhoneSyncProtocol.syncPayload(
             binding: binding,
             syncID: syncID,
             revision: revision,
             language: language,
-            exercises: transition?.exercises ?? delivery?.exercises ?? currentExercises,
+            exercises: transitionExercises ?? delivery?.exercises ?? currentExercises,
             resetWorkout: transition?.handshake == .reset,
             repairPairing: transition?.handshake == .repair,
             plan: delivery?.sets ?? [],
@@ -2468,7 +2517,8 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                 sourceDeviceBinding: sourceDevice) {
                 // The watch refused this plan: stop waiting, keep it undelivered and do not resend.
                 cancelSyncAttempt(deviceID: app.device.uuid as UUID)
-                let message = GarminPhoneSyncProtocol.planTooLargeMessage(languageCode: delivery.language)
+                let message = GarminPhoneSyncProtocol.planTooLargeMessage(
+                    languageCode: normalizedLanguage(gymCurrentLanguageCode(defaults: defaults)))
                 planDeliveryMessages[binding.device] = message
                 publishStatus(message, isError: true)
                 return
@@ -2485,7 +2535,8 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             try planStore.save(delivery, account: account)
             cancelSyncAttempt(deviceID: app.device.uuid as UUID)
             let message = gymText("Plan received by the watch.", "Годинник отримав план.",
-                "Часы получили план.", languageCode: delivery.language)
+                "Часы получили план.",
+                languageCode: normalizedLanguage(gymCurrentLanguageCode(defaults: defaults)))
             planDeliveryMessages[binding.device] = message
             publishStatus(message, isError: false)
         } catch {
@@ -2568,16 +2619,25 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             publishStatus("The Garmin sync revision could not be stored safely.", isError: true)
             return
         }
-        let exercises = handshake == .reset
-            ? []
-            : GarminPhoneSyncProtocol.boundedExerciseCatalog(
-                store.exercises.map(\.name)
+        let exercises: [String]
+        if handshake == .reset {
+            exercises = []
+        } else {
+            let exerciseNames = store.exercises.map(\.name)
+            guard let account = activeStorageKey,
+                  let assignment = latinAssignment(account: account, exerciseNames: exerciseNames, names: []) else {
+                publishStatus("Cannot prepare English Garmin exercise names.", isError: true)
+                return
+            }
+            exercises = GarminPhoneSyncProtocol.boundedExerciseCatalog(
+                GarminLatinNames.watchCatalog(exerciseNames, assignment: assignment)
             )
+        }
         let pending = GarminPhonePendingAuthTransition(
             binding: binding,
             syncID: UUID().uuidString.lowercased(),
             revision: revision,
-            language: normalizedLanguage(gymCurrentLanguageCode(defaults: defaults)),
+            language: garminWatchLanguageTag,
             exercises: exercises,
             handshake: handshake
         )
@@ -2669,7 +2729,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                 return false
             }
             if existing.state == .pending {
-                guard matchingWorkout(command, in: store) else {
+                guard matchingWorkout(command, in: store, sets: translatedWatchSets(command.sets, store: store)) else {
                     ledger.records.removeAll { $0.requestID == command.requestID }
                     guard saveReceiptLedger(ledger, key: receiptKey) else {
                         sendNack(for: rawMessage, reason: .rejected, binding: binding, to: app)
@@ -2727,7 +2787,8 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                 created = try store.createWorkout(
                     date: workoutDate,
                     note: note,
-                    namedSets: command.sets,
+                    // Digest and receipt handling above used the watch's names; translate only now.
+                    namedSets: translatedWatchSets(command.sets, store: store),
                     durationSeconds: command.durationSeconds.map(Int.init)
                 )
             }
@@ -2818,6 +2879,30 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                 }
             }
         }
+    }
+
+    /// Latin names for `names` plus every stored exercise; the new table rows are written before any
+    /// send. Nil when they cannot be stored safely or the table is full of live names.
+    private func latinAssignment(
+        account: String,
+        exerciseNames: [String],
+        names: [String]
+    ) -> GarminLatinAssignment? {
+        try? planStore.assignLatinNames(
+            account: account, names: names, currentExerciseNames: exerciseNames
+        )
+    }
+
+    /// Maps the watch's English names back to stored exercise names (import only).
+    private func translatedWatchSets(
+        _ sets: [NamedWorkoutSetDraft],
+        store: WorkoutStore
+    ) -> [NamedWorkoutSetDraft] {
+        guard let account = activeStorageKey else { return sets }
+        let table = (try? planStore.loadLatinNames(account: account)) ?? []
+        return GarminLatinNames.translateWatchNames(
+            sets, table: table, currentNames: store.exercises.map(\.name)
+        )
     }
 
     private func readyWorkoutStore() -> WorkoutStore? {
@@ -3039,18 +3124,20 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
 
     private func matchingWorkout(
         _ command: GarminPhoneWorkoutCommand,
-        in store: WorkoutStore
+        in store: WorkoutStore,
+        sets: [NamedWorkoutSetDraft]
     ) -> Bool {
-        Self.matchesPersistedWorkout(command, in: store)
+        Self.matchesPersistedWorkout(command, in: store, sets: sets)
     }
 
     static func matchesPersistedWorkout(
         _ command: GarminPhoneWorkoutCommand,
-        in store: WorkoutStore
+        in store: WorkoutStore,
+        sets: [NamedWorkoutSetDraft]? = nil
     ) -> Bool {
         let expectedDate = TimeInterval(command.startedAtSeconds)
         let names = Dictionary(uniqueKeysWithValues: store.exercises.map { ($0.id, $0.name) })
-        let expectedSets = canonicalGroupedSets(command.sets)
+        let expectedSets = canonicalGroupedSets(sets ?? command.sets)
         return store.workouts.contains { workout in
             guard abs(workout.date.timeIntervalSince1970 - expectedDate) < 1 else {
                 return false

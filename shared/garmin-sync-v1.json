@@ -1,6 +1,7 @@
 {
   "version": 1,
-  "description": "Phone to watch Garmin sync message. Each case runs through the real Android and iOS builders and must produce expected plus that platform's extras, key for key.",
+  "description": "Phone to watch Garmin sync message. Each case runs through the real Android and iOS builders and must produce expected plus that platform's extras, key for key. input.language is the app UI language and is ignored: the watch always gets language en and Latin exercise names. The runner first converts input plan and exerciseCandidates names to Latin with the shared conversion in garmin-latin-names-v1.json (no stored table), then calls the builder; rejectCases feed non-ASCII names straight to the builder, which must refuse them.",
+  "watchLanguage": "en",
   "watchMaximumKeys": 15,
   "binding": {
     "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -33,12 +34,12 @@
         "deviceBinding": "123456789",
         "pairingGeneration": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "syncRevision": 1800000000123,
-        "language": "ru",
+        "language": "en",
         "resetWorkout": false,
-        "planNames": ["Жим лёжа", "Жим лёжа", "Присед"],
+        "planNames": ["Zhym lyozha", "Zhym lyozha", "Prysed"],
         "planWeights": [21.25, 22.5, 100],
         "planReps": [8, 6, 5],
-        "exercises": ["Жим лёжа", "Присед", "Тяга штанги", "Румынская тяга"]
+        "exercises": ["Zhym lyozha", "Prysed", "Tyaga shtangy", "Rumynskaya tyaga"]
       },
       "platformExtras": { "android": {}, "ios": { "bindingSource": "phone" } }
     },
@@ -65,12 +66,12 @@
         "deviceBinding": "123456789",
         "pairingGeneration": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "syncRevision": 1800000000124,
-        "language": "uk",
+        "language": "en",
         "resetWorkout": false,
-        "planNames": ["Станова тяга", "Станова тяга"],
+        "planNames": ["Deadlift", "Deadlift"],
         "planWeights": [0, 62.5],
         "planReps": [12, 1],
-        "exercises": ["Станова тяга"]
+        "exercises": ["Deadlift"]
       },
       "platformExtras": { "android": {}, "ios": { "bindingSource": "phone" } }
     },
@@ -122,7 +123,7 @@
         "deviceBinding": "123456789",
         "pairingGeneration": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "syncRevision": 1800000000126,
-        "language": "uk",
+        "language": "en",
         "resetWorkout": true,
         "planNames": [],
         "planWeights": [],
@@ -150,7 +151,7 @@
         "deviceBinding": "123456789",
         "pairingGeneration": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "syncRevision": 1800000000127,
-        "language": "ru",
+        "language": "en",
         "repairPairing": true,
         "planNames": [],
         "planWeights": [],
@@ -159,6 +160,22 @@
       "platformExtras": {
         "android": { "resetWorkout": false },
         "ios": { "bindingSource": "phone" }
+      }
+    }
+  ],
+  "rejectCases": [
+    {
+      "id": "non-ascii-plan-name-is-never-sent",
+      "input": {
+        "plan": [{ "exerciseName": "Присед", "weight": 100, "reps": 5 }],
+        "exerciseCandidates": []
+      }
+    },
+    {
+      "id": "non-ascii-catalog-name-is-never-sent",
+      "input": {
+        "plan": [{ "exerciseName": "Squat", "weight": 100, "reps": 5 }],
+        "exerciseCandidates": ["Тяга штанги"]
       }
     }
   ],

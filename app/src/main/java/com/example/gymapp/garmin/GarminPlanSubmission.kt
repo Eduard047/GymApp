@@ -140,6 +140,8 @@ internal fun garminPlanSubmissionFingerprint(key: GarminPlanSubmissionKey): Stri
         exercises = key.exerciseCatalog,
         maximumCount = MAX_GARMIN_WORKOUT_SETS
     ) ?: return null
+    // Garmin shows English text only: a non-ASCII name is never sent (convert before building).
+    if (!areGarminWatchNamesAscii(plan, catalog)) return null
     if (
         !isWithinProjectedGarminDurableWorkoutBudget(
             plan = plan,

@@ -640,7 +640,7 @@ class GarminSyncManager(
             accountBinding = account.binding,
             authTransitionKey = account.authTransitionKey,
             trustedDeviceBinding = trustedDeviceBinding(account),
-            languageTag = language.tag,
+            languageTag = GARMIN_WATCH_LANGUAGE_TAG,
             orderedPlan = plan,
             exerciseCatalog = freeOrderCatalog
         ) ?: run {
@@ -1333,10 +1333,16 @@ class GarminSyncManager(
         ) {
             return@withLock null
         }
-        val plan = cachedPlan(account, exhaustedBinding.device)
+        val rawPlan = cachedPlan(account, exhaustedBinding.device)
+        val watchView = latinWatchView(account, rawPlan, exercises) ?: run {
+            lastPlanSyncStatus = "Cannot prepare English Garmin exercise names"
+            return@withLock null
+        }
+        if (!isStillActive(account)) return@withLock null
+        val plan = watchView.plan
         val safeCatalog = mergedGarminExerciseCatalogWithinDurableBudget(
             plan = plan,
-            exercises = exercises,
+            exercises = watchView.catalog,
             accountBinding = account.binding,
             deviceBinding = exhaustedBinding.device,
             // The pending generation is a bounded 64-character token. Gate the
@@ -1430,15 +1436,22 @@ class GarminSyncManager(
             // A free-workout-only watch holds no plan: skip the catalog and plan work entirely.
             val lite = liteWatches.isLite(deviceBinding)
             val plan = cachedPlan(account, deviceBinding)
+            var watchPlan = emptyList<NamedWorkoutSetDraft>()
             val safeCatalog = if (lite) {
                 emptyList()
             } else {
                 val repository = application.repositoryFor(account.session)
                 val exercises = repository.getExerciseNamesForSync(limit = MAX_WATCH_EXERCISES)
                 if (!isStillActive(account)) return@withLock
+                val watchView = latinWatchView(account, plan, exercises) ?: run {
+                    lastPlanSyncStatus = "Cannot prepare English Garmin exercise names"
+                    return@withLock
+                }
+                if (!isStillActive(account)) return@withLock
+                watchPlan = watchView.plan
                 mergedGarminExerciseCatalogWithinDurableBudget(
-                    plan = plan,
-                    exercises = exercises,
+                    plan = watchPlan,
+                    exercises = watchView.catalog,
                     accountBinding = account.binding,
                     deviceBinding = deviceBinding,
                     // Gate before activePairingGeneration can allocate local state.
@@ -1464,14 +1477,14 @@ class GarminSyncManager(
             val syncId = newGarminMessageId()
             val basePayload = if (lite) {
                 garminBindingOnlySyncPayload(
-                    language = application.languageManager.currentLanguage().tag,
+                    language = GARMIN_WATCH_LANGUAGE_TAG,
                     syncId = syncId,
                     repairPairing = repairPairing
                 )
             } else {
                 syncPayload(
                     exercises = safeCatalog,
-                    plan = plan,
+                    plan = watchPlan,
                     syncId = syncId,
                     resetWorkout = false,
                     repairPairing = repairPairing
@@ -1517,13 +1530,38 @@ class GarminSyncManager(
         }
     }
 
+    private class GarminWatchView(
+        val plan: List<NamedWorkoutSetDraft>,
+        val catalog: List<String>
+    )
+
+    /**
+     * The plan and exercise catalog as the watch must see them: English/ASCII names only. The
+     * latin<->raw table rows are committed (one Room transaction) before anything is sent.
+     */
+    private suspend fun latinWatchView(
+        account: GarminAccountContext,
+        plan: List<NamedWorkoutSetDraft>,
+        catalog: List<String>
+    ): GarminWatchView? {
+        val assignment = runCatching {
+            application.repositoryFor(account.session)
+                .assignGarminLatinNames(plan.map { it.exerciseName } + catalog)
+        }.onFailure { Log.i(TAG, "Cannot assign English Garmin exercise names", it) }
+            .getOrNull() ?: return null
+        val latinPlan = plan.map { set ->
+            set.copy(exerciseName = assignment.latinFor(set.exerciseName) ?: return null)
+        }
+        val latinCatalog = catalog.mapNotNull { assignment.latinFor(it) }.distinct()
+        return GarminWatchView(latinPlan, latinCatalog)
+    }
+
     private fun syncPayload(
         exercises: List<String>,
         plan: List<NamedWorkoutSetDraft>,
         syncId: String? = null,
         resetWorkout: Boolean = false,
-        repairPairing: Boolean = false,
-        language: AppLanguage = application.languageManager.currentLanguage()
+        repairPairing: Boolean = false
     ): Map<String, Any> {
         val compactPlan = checkNotNull(validatedGarminPlanOrNull(plan)) {
             "Garmin plan is outside supported limits."
@@ -1535,11 +1573,14 @@ class GarminSyncManager(
                 maximumCount = MAX_WATCH_EXERCISES
             )
         ) { "Garmin exercise catalog exceeds the message budget." }
+        check(areGarminWatchNamesAscii(compactPlan, compactExercises)) {
+            "Garmin watch names must be English/ASCII."
+        }
 
         val payload = mutableMapOf<String, Any>(
             "type" to "sync",
             "resetWorkout" to resetWorkout,
-            "language" to language.tag,
+            "language" to GARMIN_WATCH_LANGUAGE_TAG,
             "planNames" to compactPlan.map { it.exerciseName },
             "planWeights" to compactPlan.map { it.weight },
             "planReps" to compactPlan.map { it.reps }
@@ -1695,15 +1736,23 @@ class GarminSyncManager(
                 lastPlanSyncStatus = "Account changed before Garmin sync"
                 return false
             }
+            val watchView = latinWatchView(account, planToCache, exerciseCatalog) ?: run {
+                lastPlanSyncStatus = "Cannot prepare English Garmin exercise names"
+                return false
+            }
+            if (!isStillActive(account)) {
+                lastPlanSyncStatus = "Account changed before Garmin sync"
+                return false
+            }
             val submissionKey = GarminPlanSubmissionKey(
                 accountBinding = binding.account,
                 authTransitionKey = account.authTransitionKey,
                 deviceBinding = binding.device,
                 pairingGeneration = binding.pairingGeneration,
                 includePairingGeneration = supportsGeneration,
-                languageTag = language.tag,
-                orderedPlan = planToCache,
-                exerciseCatalog = exerciseCatalog
+                languageTag = GARMIN_WATCH_LANGUAGE_TAG,
+                orderedPlan = watchView.plan,
+                exerciseCatalog = watchView.catalog
             )
             val prepared = prepareExactPlanSubmission(submissionKey) ?: run {
                 lastPlanSyncStatus = "Cannot persist Garmin plan submission"
@@ -1757,7 +1806,7 @@ class GarminSyncManager(
         val syncId = newGarminMessageId()
         val revision = allocateSyncRevision(binding) ?: return false
         val payload = boundGarminSyncPayload(
-            garminBindingOnlySyncPayload(language = language.tag, syncId = syncId),
+            garminBindingOnlySyncPayload(language = GARMIN_WATCH_LANGUAGE_TAG, syncId = syncId),
             binding,
             revision,
             includePairingGeneration = supportsGeneration

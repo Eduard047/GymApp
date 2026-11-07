@@ -665,6 +665,41 @@ class GymDatabaseRoomMigrationTest {
     }
 
     @Test
+    fun migrationSeventeenToEighteenAddsGarminLatinNameTableAndKeepsExercises() {
+        migrationHelper.createDatabase(GARMIN_LATIN_NAMES_TEST_DATABASE, 17).apply {
+            execSQL("INSERT INTO exercises(id, name, isFavorite) VALUES (5, 'Присед', 1)")
+            close()
+        }
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            GARMIN_LATIN_NAMES_TEST_DATABASE,
+            18,
+            true,
+            *GymDatabase.REGISTERED_MIGRATIONS
+        )
+        try {
+            migrated.query("SELECT name, isFavorite FROM exercises WHERE id = 5").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Присед", cursor.getString(0))
+                assertEquals(1, cursor.getInt(1))
+            }
+            migrated.query("SELECT COUNT(*) FROM garmin_latin_names").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+            migrated.execSQL(
+                "INSERT INTO garmin_latin_names(latin, raw, createdAt) VALUES ('Prysed', 'Присед', 1)"
+            )
+            migrated.query("SELECT raw FROM garmin_latin_names WHERE latin = 'Prysed'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Присед", cursor.getString(0))
+            }
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
     fun migrationElevenToFourteenMatchesV229UpgradeAndPreservesHistory() {
         migrationHelper.createDatabase(V229_TO_ACTIVE_WORKOUT_TEST_DATABASE, 11).apply {
             execSQL(
@@ -737,6 +772,7 @@ class GymDatabaseRoomMigrationTest {
         const val DURATION_DRAFT_TEST_DATABASE = "room-migration-14-to-15"
         const val ACTIVITY_SIDECAR_TEST_DATABASE = "room-migration-15-to-16"
         const val ACTIVITY_BASELINE_TEST_DATABASE = "room-migration-16-to-17"
+        const val GARMIN_LATIN_NAMES_TEST_DATABASE = "room-migration-17-to-18"
         const val V229_TO_ACTIVE_WORKOUT_TEST_DATABASE = "room-migration-11-to-14"
     }
 }

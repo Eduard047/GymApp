@@ -1612,6 +1612,22 @@
         }
       }
     },
+    "Cannot prepare English Garmin exercise names." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось подготовить английские названия упражнений для Garmin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося підготувати англійські назви вправ для Garmin."
+          }
+        }
+      }
+    },
     "The Garmin sync payload is outside the supported limits." : {
       "localizations" : {
         "ru" : {

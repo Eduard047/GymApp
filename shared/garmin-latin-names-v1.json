@@ -1,0 +1,195 @@
+{
+  "version": 1,
+  "description": "Garmin watches receive only English/Latin exercise names. The phone converts every outgoing name to Latin, keeps an append-only per-account table of latin<->raw, and translates names echoed by the watch back to the stored exercise. Android (GarminLatinNames.kt) and iOS must reproduce these tables and cases exactly.",
+  "maxNameLength": 160,
+  "fallbackName": "Exercise",
+  "watchLanguage": "en",
+  "transliteration": {
+    "а": "a", "б": "b", "в": "v", "г": "g", "ґ": "g", "д": "d", "е": "e", "ё": "yo", "є": "ye",
+    "ж": "zh", "з": "z", "и": "y", "і": "i", "ї": "yi", "й": "y", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u", "ф": "f", "х": "kh",
+    "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch", "ы": "y", "э": "e", "ю": "yu", "я": "ya"
+  },
+  "droppedCharacters": ["ъ", "ь", "ʼ", "’", "'"],
+  "rules": [
+    "A built-in exercise (the catalog recognises the raw name) is sent as its English catalog name.",
+    "A name made only of printable ASCII (0x20..0x7E) is sent unchanged.",
+    "Any other name is transliterated per code point: NFC first, table letters (an uppercase letter gives a capitalised group such as Zh or Shch), dropped characters removed, other characters NFD-stripped to ASCII, anything still non-ASCII removed; then whitespace is collapsed and trimmed and the result is cut to maxNameLength.",
+    "If the raw name has uppercase letters and no lowercase letters, each space-separated word of the result becomes Capitalised.",
+    "An empty result becomes fallbackName.",
+    "Collisions are resolved case-insensitively against: the ASCII names of all exercises, every latin name already in the table, names already assigned in this pass, and any string the built-in catalog recognises. A colliding name gets the suffix ' 2', ' 3', ... (the base is cut so the whole name fits maxNameLength). New names are processed in Unicode code point order of the raw name.",
+    "A raw name that already has a table entry keeps that entry's latin name forever (append-only). Only transliterated names get table entries; built-in and ASCII names are deterministic.",
+    "Inverse lookup for a name echoed by the watch: exact latin match in the table, else the single current non-built-in non-ASCII exercise whose plain transliteration equals the name, else null (the caller keeps its existing lookup, so old Cyrillic names still match exactly)."
+  ],
+  "builtIns": [
+    { "nameEn": "Deadlift", "names": ["Станова тяга", "Deadlift"] },
+    { "nameEn": "Push Up", "names": ["Віджимання від підлоги", "Push Up", "Push-Up"] },
+    { "nameEn": "Dips", "names": ["Віджимання на брусах", "Dips"] }
+  ],
+  "assignCases": [
+    {
+      "id": "built-in-ukrainian-name-becomes-english",
+      "names": ["Станова тяга"], "existing": [],
+      "expected": { "Станова тяга": "Deadlift" }, "newEntries": []
+    },
+    {
+      "id": "built-in-alias-becomes-canonical-english",
+      "names": ["Push-Up"], "existing": [],
+      "expected": { "Push-Up": "Push Up" }, "newEntries": []
+    },
+    {
+      "id": "ascii-custom-name-unchanged",
+      "names": ["My Cable Row"], "existing": [],
+      "expected": { "My Cable Row": "My Cable Row" }, "newEntries": []
+    },
+    {
+      "id": "custom-cyrillic-is-transliterated",
+      "names": ["Жим лёжа", "Присед", "Тяга штанги", "Румынская тяга"], "existing": [],
+      "expected": {
+        "Жим лёжа": "Zhym lyozha",
+        "Присед": "Prysed",
+        "Тяга штанги": "Tyaga shtangy",
+        "Румынская тяга": "Rumynskaya tyaga"
+      },
+      "newEntries": [
+        { "latin": "Zhym lyozha", "raw": "Жим лёжа" },
+        { "latin": "Prysed", "raw": "Присед" },
+        { "latin": "Rumynskaya tyaga", "raw": "Румынская тяга" },
+        { "latin": "Tyaga shtangy", "raw": "Тяга штанги" }
+      ]
+    },
+    {
+      "id": "russian-display-name-is-custom-not-built-in",
+      "names": ["Становая тяга"], "existing": [],
+      "expected": { "Становая тяга": "Stanovaya tyaga" },
+      "newEntries": [{ "latin": "Stanovaya tyaga", "raw": "Становая тяга" }]
+    },
+    {
+      "id": "yo-ge-apostrophes-and-iotated-letters",
+      "names": ["Ґанок", "Об’єм", "Їжак", "Ёлка", "Пʼятка"], "existing": [],
+      "expected": {
+        "Ґанок": "Ganok",
+        "Об’єм": "Obyem",
+        "Їжак": "Yizhak",
+        "Ёлка": "Yolka",
+        "Пʼятка": "Pyatka"
+      },
+      "newEntries": [
+        { "latin": "Yolka", "raw": "Ёлка" },
+        { "latin": "Yizhak", "raw": "Їжак" },
+        { "latin": "Obyem", "raw": "Об’єм" },
+        { "latin": "Pyatka", "raw": "Пʼятка" },
+        { "latin": "Ganok", "raw": "Ґанок" }
+      ]
+    },
+    {
+      "id": "all-uppercase-becomes-title-case",
+      "names": ["ЖИМ ЛЁЖА", "ЩУКА"], "existing": [],
+      "expected": { "ЖИМ ЛЁЖА": "Zhym Lyozha", "ЩУКА": "Shchuka" },
+      "newEntries": [
+        { "latin": "Zhym Lyozha", "raw": "ЖИМ ЛЁЖА" },
+        { "latin": "Shchuka", "raw": "ЩУКА" }
+      ]
+    },
+    {
+      "id": "accents-are-stripped-to-ascii",
+      "names": ["Café Curl"], "existing": [],
+      "expected": { "Café Curl": "Cafe Curl" },
+      "newEntries": [{ "latin": "Cafe Curl", "raw": "Café Curl" }]
+    },
+    {
+      "id": "empty-result-becomes-exercise",
+      "names": ["ъь"], "existing": [],
+      "expected": { "ъь": "Exercise" },
+      "newEntries": [{ "latin": "Exercise", "raw": "ъь" }]
+    },
+    {
+      "id": "two-names-with-the-same-latin-get-a-numeric-suffix",
+      "names": ["Тяґа", "Тяга"], "existing": [],
+      "expected": { "Тяга": "Tyaga", "Тяґа": "Tyaga 2" },
+      "newEntries": [
+        { "latin": "Tyaga", "raw": "Тяга" },
+        { "latin": "Tyaga 2", "raw": "Тяґа" }
+      ]
+    },
+    {
+      "id": "existing-ascii-custom-name-reserves-the-latin-form",
+      "names": ["Prysed", "Присед"], "existing": [],
+      "expected": { "Prysed": "Prysed", "Присед": "Prysed 2" },
+      "newEntries": [{ "latin": "Prysed 2", "raw": "Присед" }]
+    },
+    {
+      "id": "built-in-name-and-alias-collisions-get-a-suffix",
+      "names": ["Діпс", "Пуш-Уп"], "existing": [],
+      "expected": { "Діпс": "Dips 2", "Пуш-Уп": "Push-Up 2" },
+      "newEntries": [
+        { "latin": "Dips 2", "raw": "Діпс" },
+        { "latin": "Push-Up 2", "raw": "Пуш-Уп" }
+      ]
+    },
+    {
+      "id": "existing-table-entry-is-kept-forever",
+      "names": ["Присед"],
+      "existing": [{ "latin": "Pryseed", "raw": "Присед" }],
+      "expected": { "Присед": "Pryseed" }, "newEntries": []
+    },
+    {
+      "id": "existing-table-latin-is-reserved-for-new-names",
+      "names": ["Тяга"],
+      "existing": [{ "latin": "Tyaga", "raw": "Старе" }],
+      "expected": { "Тяга": "Tyaga 2" },
+      "newEntries": [{ "latin": "Tyaga 2", "raw": "Тяга" }]
+    },
+    {
+      "id": "renamed-exercise-gets-its-own-entry-and-the-old-one-stays",
+      "names": ["Присід нове"],
+      "existing": [{ "latin": "Prysid", "raw": "Присід" }],
+      "expected": { "Присід нове": "Prysid nove" },
+      "newEntries": [{ "latin": "Prysid nove", "raw": "Присід нове" }]
+    }
+  ],
+  "invertCases": [
+    {
+      "id": "table-hit",
+      "latin": "Tyaga 2",
+      "table": [{ "latin": "Tyaga 2", "raw": "Тяґа" }],
+      "currentNames": ["Тяга", "Тяґа"],
+      "expected": "Тяґа"
+    },
+    {
+      "id": "unambiguous-inversion-without-table",
+      "latin": "Zhym lyozha",
+      "table": [],
+      "currentNames": ["Жим лёжа", "Присед"],
+      "expected": "Жим лёжа"
+    },
+    {
+      "id": "ambiguous-inversion-is-refused",
+      "latin": "Tyaga",
+      "table": [],
+      "currentNames": ["Тяга", "Тяґа"],
+      "expected": null
+    },
+    {
+      "id": "old-cyrillic-name-is-left-to-the-exact-lookup",
+      "latin": "Жим лёжа",
+      "table": [],
+      "currentNames": ["Жим лёжа"],
+      "expected": null
+    },
+    {
+      "id": "built-in-exercises-are-never-inverted",
+      "latin": "Stanova tyaga",
+      "table": [],
+      "currentNames": ["Станова тяга"],
+      "expected": null
+    },
+    {
+      "id": "unknown-name",
+      "latin": "Deadlift",
+      "table": [],
+      "currentNames": ["Присед"],
+      "expected": null
+    }
+  ]
+}

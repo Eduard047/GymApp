@@ -9,6 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.gymapp.data.dao.ActiveWorkoutDao
 import com.example.gymapp.data.dao.ActivityOnlyWorkoutDao
 import com.example.gymapp.data.dao.ExerciseDao
+import com.example.gymapp.data.dao.GarminLatinNameDao
 import com.example.gymapp.data.dao.ExerciseLoadProfileDao
 import com.example.gymapp.data.dao.AppMetadataDao
 import com.example.gymapp.data.dao.GarminWorkoutReceiptDao
@@ -27,6 +28,7 @@ import com.example.gymapp.data.entity.ExerciseLoadProfileEntity
 import com.example.gymapp.data.entity.ExerciseWeightOptionEntity
 import com.example.gymapp.data.entity.AppMetadataEntity
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
+import com.example.gymapp.data.entity.GarminLatinNameEntity
 import com.example.gymapp.data.entity.GarminWorkoutReceiptEntity
 import com.example.gymapp.data.entity.GarminWorkoutProvenanceEntity
 import com.example.gymapp.data.entity.SetEntryEntity
@@ -53,9 +55,10 @@ import java.util.concurrent.ConcurrentHashMap
         ActiveWorkoutEntity::class,
         ActiveWorkoutExerciseEntity::class,
         ActiveWorkoutSetEntity::class,
-        WorkoutPlanDraftEntity::class
+        WorkoutPlanDraftEntity::class,
+        GarminLatinNameEntity::class
     ],
-    version = 17,
+    version = 18,
     exportSchema = true
 )
 abstract class GymDatabase : RoomDatabase() {
@@ -66,6 +69,7 @@ abstract class GymDatabase : RoomDatabase() {
     abstract fun setDao(): SetDao
     abstract fun muscleMappingDao(): MuscleMappingDao
     abstract fun garminWorkoutReceiptDao(): GarminWorkoutReceiptDao
+    abstract fun garminLatinNameDao(): GarminLatinNameDao
     abstract fun activityOnlyWorkoutDao(): ActivityOnlyWorkoutDao
     abstract fun activeWorkoutDao(): ActiveWorkoutDao
     abstract fun workoutPlanDraftDao(): WorkoutPlanDraftDao
@@ -572,6 +576,25 @@ abstract class GymDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS garmin_latin_names (
+                        latin TEXT NOT NULL,
+                        raw TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        PRIMARY KEY(latin)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_garmin_latin_names_raw " +
+                        "ON garmin_latin_names (raw)"
+                )
+            }
+        }
+
         internal val REGISTERED_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -588,7 +611,8 @@ abstract class GymDatabase : RoomDatabase() {
             MIGRATION_13_14,
             MIGRATION_14_15,
             MIGRATION_15_16,
-            MIGRATION_16_17
+            MIGRATION_16_17,
+            MIGRATION_17_18
         )
 
         fun getInstance(context: Context, databaseName: String = "gym_database"): GymDatabase {

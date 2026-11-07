@@ -28,10 +28,18 @@ class GarminSyncGoldenTest {
             val id = case.getString("id")
             val input = case.getJSONObject("input")
             val revision = input.getLong("syncRevision")
-            val language = input.getString("language")
-            val plan = input.getJSONArray("plan").objects().map {
+            // The app UI language is irrelevant: the watch always gets "en" and Latin names.
+            val language = GARMIN_WATCH_LANGUAGE_TAG
+            val rawPlan = input.getJSONArray("plan").objects().map {
                 NamedWorkoutSetDraft(it.getString("exerciseName"), it.getDouble("weight"), it.getInt("reps"))
             }
+            val rawCandidates = input.getJSONArray("exerciseCandidates").strings()
+            val latin = GarminLatinNames.assign(
+                rawPlan.map { it.exerciseName } + rawCandidates,
+                existing = emptyList()
+            )
+            val plan = rawPlan.map { it.copy(exerciseName = checkNotNull(latin.latinFor(it.exerciseName))) }
+            val candidates = rawCandidates.map { checkNotNull(latin.latinFor(it)) }
 
             val actual: Map<String, Any> = if (input.getBoolean("bindingOnly")) {
                 checkNotNull(
@@ -57,7 +65,7 @@ class GarminSyncGoldenTest {
                     includePairingGeneration = true,
                     languageTag = language,
                     orderedPlan = plan,
-                    exerciseCatalog = input.getJSONArray("exerciseCandidates").strings()
+                    exerciseCatalog = candidates
                 )
                 val prepared = checkNotNull(
                     prepareGarminPlanSubmission(
@@ -76,6 +84,36 @@ class GarminSyncGoldenTest {
             assertEquals("$id", expected, normalize(actual))
             assertTrue("$id syncRevision stays a Long", actual["syncRevision"] is Long)
             assertTrue("$id fits the watch key cap", actual.size <= root.getInt("watchMaximumKeys"))
+        }
+    }
+
+    @Test
+    fun nonAsciiNamesAreRejectedByThePlanBuilder() {
+        val root = contract()
+        val binding = root.getJSONObject("binding")
+        val rejectCases = root.getJSONArray("rejectCases")
+        assertTrue(rejectCases.length() >= 2)
+        for (index in 0 until rejectCases.length()) {
+            val case = rejectCases.getJSONObject(index)
+            val input = case.getJSONObject("input")
+            val key = GarminPlanSubmissionKey(
+                accountBinding = binding.getString("account"),
+                authTransitionKey = "c".repeat(64),
+                deviceBinding = binding.getString("device"),
+                pairingGeneration = binding.getString("pairingGeneration"),
+                includePairingGeneration = true,
+                languageTag = GARMIN_WATCH_LANGUAGE_TAG,
+                orderedPlan = input.getJSONArray("plan").objects().map {
+                    NamedWorkoutSetDraft(it.getString("exerciseName"), it.getDouble("weight"), it.getInt("reps"))
+                },
+                exerciseCatalog = input.getJSONArray("exerciseCandidates").strings()
+            )
+            assertEquals(case.getString("id"), null, garminPlanSubmissionFingerprint(key))
+            assertEquals(
+                case.getString("id"),
+                null,
+                prepareGarminPlanSubmission(key, null, null, 1_800_000_000_000L) { root.getString("syncId") }
+            )
         }
     }
 

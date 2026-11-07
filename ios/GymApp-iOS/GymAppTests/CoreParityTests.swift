@@ -18046,7 +18046,8 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(postBindingSyncSent)
         let firstOrdinary = transport.sent[2].message
         XCTAssertEqual(firstOrdinary["resetWorkout"] as? Bool, false)
-        XCTAssertEqual(firstOrdinary["language"] as? String, "ru")
+        // The watch always gets English, whatever the app language is.
+        XCTAssertEqual(firstOrdinary["language"] as? String, "en")
         XCTAssertFalse((firstOrdinary["exercises"] as? [String] ?? []).isEmpty)
 
         let beforeReconnect = transport.sent.count
@@ -18443,7 +18444,7 @@ final class CoreParityTests: XCTestCase {
         let planSent = await waitUntil { transport.sent.count == 2 }
         XCTAssertTrue(planSent)
         let delivery = try XCTUnwrap(transport.sent.last)
-        XCTAssertEqual(delivery.message["planNames"] as? [String], ["Жим штанги", "Жим штанги", "Тяга блока"])
+        XCTAssertEqual(delivery.message["planNames"] as? [String], ["Zhym shtangy", "Zhym shtangy", "Tyaga bloka"])
         XCTAssertEqual(delivery.message["planWeights"] as? [Double], [52.5, 55, 40])
         XCTAssertEqual(delivery.message["planReps"] as? [Int], [9, 8, 12])
         XCTAssertGreaterThan(try XCTUnwrap(delivery.message["syncRevision"] as? Int64),
@@ -18470,13 +18471,67 @@ final class CoreParityTests: XCTestCase {
         service.deviceStatusChanged(device, status: .connected)
         let reconnectSent = await waitUntil { transport.sent.count == 4 }
         XCTAssertTrue(reconnectSent)
-        XCTAssertEqual(transport.sent.last?.message["planNames"] as? [String], ["Жим штанги", "Жим штанги", "Тяга блока"])
+        XCTAssertEqual(transport.sent.last?.message["planNames"] as? [String], ["Zhym shtangy", "Zhym shtangy", "Tyaga bloka"])
         let anotherGeneration = GarminPhoneBinding(account: binding.account, device: binding.device,
             pairingGeneration: String(repeating: "c", count: 64))
         XCTAssertNil(try freshStore.load(account: account.storageKey, binding: anotherGeneration))
         XCTAssertNil(try freshStore.load(account: "another-account", binding: binding))
         service.clearLocalData(storageKey: account.storageKey)
         XCTAssertNil(try freshStore.load(account: account.storageKey, binding: binding))
+    }
+
+    func testGarminCyrillicCustomExerciseRoundTripsThroughLatinWatchNames() async throws {
+        let defaults = temporaryDefaults(named: "garmin-latin-round-trip")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let account = AppAccountSession.local(id: "00000000-0000-4000-8000-000000000212", displayName: "Latin test")
+        try auth.installSessionForTesting(account)
+        let store = try WorkoutStore(accountStorageKey: account.storageKey,
+            directoryURL: try temporaryDirectory(named: "latin-round-trip-workouts"))
+        let custom = try store.addExercise(name: "Жим лёжа")
+        let transport = FakeGarminPhoneConnectIQTransport()
+        let id = UUID(uuidString: "11111111-2222-3333-4444-555555555556")!
+        let device = try XCTUnwrap(IQDevice(id: id, modelName: "Forerunner 55", friendlyName: "Latin watch"))
+        transport.selectionResponse = [device]
+        transport.statuses[id] = .notConnected
+        let service = GarminPhoneSyncService(auth: auth, defaults: defaults, connectIQ: transport,
+            planStore: GarminPhonePlanStore(root: try temporaryDirectory(named: "latin-round-trip-plans")))
+        service.bind(workoutStore: store)
+        service.selectDevices()
+        XCTAssertTrue(service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!))
+        let plan = GarminWorkoutPlan(source: "gymapp-ios", version: 1, title: "Latin",
+            createdAt: "2026-09-08T10:00:00.000Z", startedAt: "2026-09-08T10:00:00.000Z", note: "",
+            exercises: [.init(name: "Жим лёжа", sets: [.init(weight: 80, reps: 8, orderIndex: 0)])])
+        try service.queuePlan(plan, deviceID: id.uuidString)
+        transport.statuses[id] = .connected
+        service.deviceStatusChanged(device, status: .connected)
+        let handshakeSent = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(handshakeSent)
+        let handshake = try XCTUnwrap(transport.sent.first)
+        XCTAssertEqual(handshake.message["language"] as? String, "en")
+        service.receivedMessage(syncAcknowledgement(for: handshake.message), from: handshake.app)
+        let planSent = await waitUntil { transport.sent.count == 2 }
+        XCTAssertTrue(planSent)
+        let delivery = try XCTUnwrap(transport.sent.last)
+        XCTAssertEqual(delivery.message["language"] as? String, "en")
+        XCTAssertEqual(delivery.message["planNames"] as? [String], ["Zhym lyozha"])
+        XCTAssertEqual(delivery.message["exercises"] as? [String], ["Zhym lyozha"])
+
+        // The watch echoes the Latin name; the import must land on the same Cyrillic exercise.
+        let workout: [String: Any] = [
+            "type": "create_workout",
+            "bindingVersion": 2,
+            "accountBinding": try XCTUnwrap(delivery.message["accountBinding"] as? String),
+            "deviceBinding": try XCTUnwrap(delivery.message["deviceBinding"] as? String),
+            "pairingGeneration": try XCTUnwrap(delivery.message["pairingGeneration"] as? String),
+            "requestId": "latin-round-trip-1234567890",
+            "startedAtSeconds": Int(Date().timeIntervalSince1970) - 60,
+            "sets": [["exerciseName": "Zhym lyozha", "weight": 80.0, "reps": 8]]
+        ]
+        service.receivedMessage(workout, from: delivery.app)
+        let imported = await waitUntil { !store.workouts.isEmpty }
+        XCTAssertTrue(imported)
+        XCTAssertEqual(store.workouts.first?.exercises.map(\.exerciseID), [custom.id])
+        XCTAssertEqual(store.exercises.map(\.name), ["Жим лёжа"])
     }
 
     func testGarminLiteWatchMarkersBindingOnlyPayloadAndNonLiteUnchanged() throws {

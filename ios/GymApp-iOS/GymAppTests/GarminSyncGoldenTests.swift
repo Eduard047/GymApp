@@ -27,13 +27,17 @@ final class GarminSyncGoldenTests: XCTestCase {
                     reps: (set["reps"] as? NSNumber)?.intValue ?? 0
                 )
             }
-            let candidates = try XCTUnwrap(input["exerciseCandidates"] as? [String])
+            let rawCandidates = try XCTUnwrap(input["exerciseCandidates"] as? [String])
             let bindingOnly = try XCTUnwrap(input["bindingOnly"] as? Bool)
+            // Convert names to Latin first with an empty table (as the app does), then build the payload.
+            let assignment = GarminLatinNames.assign(names: plan.map(\.exerciseName) + rawCandidates, existing: [])
+            let watchPlan = try XCTUnwrap(GarminLatinNames.watchPlan(plan, assignment: assignment), "\(id) latin plan")
+            let candidates = GarminLatinNames.watchCatalog(rawCandidates, assignment: assignment)
             // The iPhone merges the planned names with the picker catalog before building the payload.
             let catalog = bindingOnly
                 ? []
                 : try XCTUnwrap(
-                    GarminPhoneSyncProtocol.exerciseCatalog(plan: plan, candidates: candidates),
+                    GarminPhoneSyncProtocol.exerciseCatalog(plan: watchPlan, candidates: candidates),
                     "\(id) catalog"
                 )
             let payload = try XCTUnwrap(
@@ -41,11 +45,12 @@ final class GarminSyncGoldenTests: XCTestCase {
                     binding: binding,
                     syncID: syncID,
                     revision: try XCTUnwrap((input["syncRevision"] as? NSNumber)?.int64Value),
-                    language: try XCTUnwrap(input["language"] as? String),
+                    // input.language is the app UI language and is ignored: the watch always gets "en".
+                    language: garminWatchLanguageTag,
                     exercises: catalog,
                     resetWorkout: try XCTUnwrap(input["resetWorkout"] as? Bool),
                     repairPairing: try XCTUnwrap(input["repairPairing"] as? Bool),
-                    plan: plan,
+                    plan: watchPlan,
                     bindingOnly: bindingOnly
                 ),
                 "\(id) payload"
@@ -61,6 +66,42 @@ final class GarminSyncGoldenTests: XCTestCase {
             )
             XCTAssertTrue(payload["syncRevision"] is Int64, "\(id) syncRevision stays Int64")
             XCTAssertLessThanOrEqual(payload.count, cap, "\(id) fits the watch key cap")
+        }
+    }
+
+    func testNonAsciiNamesAreNeverSent() throws {
+        let root = try contract()
+        let bindingJSON = try XCTUnwrap(root["binding"] as? [String: String])
+        let binding = GarminPhoneBinding(
+            account: try XCTUnwrap(bindingJSON["account"]),
+            device: try XCTUnwrap(bindingJSON["device"]),
+            pairingGeneration: try XCTUnwrap(bindingJSON["pairingGeneration"])
+        )
+        let syncID = try XCTUnwrap(root["syncId"] as? String)
+        let rejectCases = try XCTUnwrap(root["rejectCases"] as? [[String: Any]])
+        XCTAssertGreaterThanOrEqual(rejectCases.count, 2)
+        for item in rejectCases {
+            let id = try XCTUnwrap(item["id"] as? String)
+            let input = try XCTUnwrap(item["input"] as? [String: Any])
+            let plan = try XCTUnwrap(input["plan"] as? [[String: Any]]).map { set in
+                NamedWorkoutSetDraft(
+                    exerciseName: set["exerciseName"] as? String ?? "",
+                    weight: (set["weight"] as? NSNumber)?.doubleValue ?? -1,
+                    reps: (set["reps"] as? NSNumber)?.intValue ?? 0
+                )
+            }
+            let candidates = try XCTUnwrap(input["exerciseCandidates"] as? [String])
+            // Raw names go straight to the builder: it must refuse them.
+            let catalog = try XCTUnwrap(
+                GarminPhoneSyncProtocol.exerciseCatalog(plan: plan, candidates: candidates), id
+            )
+            XCTAssertNil(
+                GarminPhoneSyncProtocol.syncPayload(
+                    binding: binding, syncID: syncID, revision: 1_800_000_000_123,
+                    language: garminWatchLanguageTag, exercises: catalog, resetWorkout: false, plan: plan
+                ),
+                id
+            )
         }
     }
 

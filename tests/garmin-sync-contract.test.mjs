@@ -53,11 +53,24 @@ for (const item of contract.cases) {
         assert.ok(compactPhoneKeys.has(key), `${platform} key ${key} is not in the compact watch allowlist`);
       }
       assert.equal(payload.type, "sync");
+      assert.equal(payload.language, contract.watchLanguage, "the watch always gets language en");
+      for (const name of [...payload.planNames, ...(payload.exercises ?? [])]) {
+        assert.match(name, /^[\x20-\x7E]+$/, `watch name "${name}" must be printable ASCII`);
+      }
       assert.equal(payload.planNames.length, payload.planWeights.length);
       assert.equal(payload.planNames.length, payload.planReps.length);
     });
   }
 }
+
+test("reject cases feed non-ASCII names to the builders", () => {
+  assert.equal(contract.watchLanguage, "en");
+  assert.ok(contract.rejectCases.length >= 2);
+  for (const item of contract.rejectCases) {
+    const names = [...item.input.plan.map((set) => set.exerciseName), ...item.input.exerciseCandidates];
+    assert.ok(names.some((name) => /[^\x20-\x7E]/.test(name)), `${item.id} needs a non-ASCII name`);
+  }
+});
 
 test("every key in any expected payload is watch-allowed", () => {
   const all = new Set(contract.cases.flatMap((c) => Object.keys(c.expected)));
