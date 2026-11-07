@@ -19,4 +19,19 @@ enum ActiveWorkoutDeepLink {
               components.fragment == nil else { return false }
         return true
     }
+
+    /// How long a tap waits for the active draft to load (cold launch) before it is dropped.
+    static let pendingOpenTimeout: TimeInterval = 4
+
+    enum PendingOpenAction: Equatable {
+        case none, open, wait, drop
+    }
+
+    /// Decision for a pending Live Activity open request: open as soon as the draft
+    /// exists, keep waiting while it has not loaded, drop it once the wait timed out.
+    static func pendingOpenAction(requestPending: Bool, hasDraft: Bool, timedOut: Bool) -> PendingOpenAction {
+        guard requestPending else { return .none }
+        if hasDraft { return .open }
+        return timedOut ? .drop : .wait
+    }
 }

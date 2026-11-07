@@ -36,4 +36,14 @@ final class ActiveWorkoutDeepLinkTests: XCTestCase {
             "com.setforge.gymapp.ios://active-workout"
         )
     }
+
+    func testPendingOpenRequestWaitsForDraftThenOpensOrDrops() {
+        typealias D = ActiveWorkoutDeepLink
+        XCTAssertEqual(D.pendingOpenAction(requestPending: false, hasDraft: true, timedOut: false), .none)
+        XCTAssertEqual(D.pendingOpenAction(requestPending: true, hasDraft: false, timedOut: false), .wait)
+        XCTAssertEqual(D.pendingOpenAction(requestPending: true, hasDraft: true, timedOut: false), .open)
+        XCTAssertEqual(D.pendingOpenAction(requestPending: true, hasDraft: true, timedOut: true), .open)
+        XCTAssertEqual(D.pendingOpenAction(requestPending: true, hasDraft: false, timedOut: true), .drop)
+        XCTAssertEqual(D.pendingOpenTimeout, 4)
+    }
 }

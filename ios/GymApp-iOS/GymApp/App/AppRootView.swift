@@ -521,6 +521,7 @@ private struct MainTabShell: View {
     @State private var tutorialIsManualReplay = false
     @State private var tutorialAutomaticPresentationSuppressedForSession = false
     @State private var tutorialTask: Task<Void, Never>?
+    @State private var activeWorkoutOpenTimeoutTask: Task<Void, Never>?
     @State private var tutorialPrimaryActionGlobalFrame: CGRect?
 
     init(appState: AppState, nativePush: NativePushManager) {
@@ -1055,6 +1056,14 @@ private struct MainTabShell: View {
         .onChange(of: appState.activeWorkoutOpenRequest) { _, _ in
             openRequestedActiveWorkoutIfNeeded()
         }
+        .onChange(of: activeWorkoutStore.draft?.id) { _, _ in
+            openRequestedActiveWorkoutIfNeeded()
+        }
+        .onChange(of: appState.activeAccountStorageKey) { _, _ in
+            activeWorkoutOpenTimeoutTask?.cancel()
+            activeWorkoutOpenTimeoutTask = nil
+            appState.consumeActiveWorkoutOpenRequest()
+        }
         .onChange(of: nativePush.pendingRoute?.id) { _, _ in
             if nativePush.pendingRoute != nil {
                 yieldTutorialToExternalNavigation()
@@ -1432,12 +1441,40 @@ private struct MainTabShell: View {
 
     /// Live Activity / Dynamic Island tap: show the active workout if one exists.
     private func openRequestedActiveWorkoutIfNeeded() {
-        guard appState.activeWorkoutOpenRequest != nil else { return }
-        appState.consumeActiveWorkoutOpenRequest()
-        guard activeWorkoutStore.draft != nil else { return }
-        yieldTutorialToExternalNavigation()
-        showsAddWorkout = false
-        showsActiveWorkout = true
+        let action = ActiveWorkoutDeepLink.pendingOpenAction(
+            requestPending: appState.activeWorkoutOpenRequest != nil,
+            hasDraft: activeWorkoutStore.draft != nil,
+            timedOut: false
+        )
+        switch action {
+        case .none, .drop:
+            return
+        case .wait:
+            // Cold launch: the draft is still loading. Keep the request pending and
+            // re-check on the draft change; drop it if no draft shows up in time.
+            guard activeWorkoutOpenTimeoutTask == nil else { return }
+            activeWorkoutOpenTimeoutTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(ActiveWorkoutDeepLink.pendingOpenTimeout * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                activeWorkoutOpenTimeoutTask = nil
+                if ActiveWorkoutDeepLink.pendingOpenAction(
+                    requestPending: appState.activeWorkoutOpenRequest != nil,
+                    hasDraft: activeWorkoutStore.draft != nil,
+                    timedOut: true
+                ) == .drop {
+                    appState.consumeActiveWorkoutOpenRequest()
+                } else {
+                    openRequestedActiveWorkoutIfNeeded()
+                }
+            }
+        case .open:
+            activeWorkoutOpenTimeoutTask?.cancel()
+            activeWorkoutOpenTimeoutTask = nil
+            appState.consumeActiveWorkoutOpenRequest()
+            yieldTutorialToExternalNavigation()
+            showsAddWorkout = false
+            showsActiveWorkout = true
+        }
     }
 
     private func openPendingPushRouteIfNeeded() {
