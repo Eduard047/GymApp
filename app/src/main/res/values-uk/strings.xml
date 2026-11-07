@@ -46,7 +46,7 @@
     <string name="friends_cloud_required_title">Потрібен вхід у хмарний акаунт</string>
     <string name="friends_cloud_required_supporting">Локальні тренування залишаються доступними. Увійди в хмарний акаунт, щоб додавати друзів і надсилати плани.</string>
     <string name="friends_synced_title">Друзі й запрошення</string>
-    <string name="friends_synced_supporting">Оновлює друзів, заявки, приватність і запрошення на тренування.</string>
+    <string name="friends_synced_supporting">Оновлює друзів, запити, приватність і запрошення на тренування.</string>
     <string name="friends_load_failed">Не вдалося завантажити друзів. Спробуй ще раз.</string>
     <string name="friends_refresh_kept_saved">Показуємо останній збережений список. Спробуй ще раз, коли буде зручно.</string>
     <string name="friends_add_eyebrow">ДОДАТИ ДРУГА</string>
@@ -60,15 +60,15 @@
     <string name="friend_code_clipboard_label">Код друга GymApp</string>
     <string name="friend_code_share_message">Додай мене в GymApp за цим кодом друга: %1$s</string>
     <string name="friend_code_invalid">Введи повний код друга GymApp.</string>
-    <string name="friend_request_send">Надіслати заявку</string>
+    <string name="friend_request_send">Надіслати запит</string>
     <string name="friend_request_sending">Надсилання…</string>
-    <string name="friend_request_submitted">Заявку надіслано. Для недоступного коду показується те саме повідомлення.</string>
-    <string name="friend_request_failed">Не вдалося надіслати заявку в друзі.</string>
-    <string name="friend_request_action_failed">Заявка змінилася або недоступна. Онови дані й спробуй ще раз.</string>
-    <string name="friend_request_pending">Заявка очікує відповіді</string>
-    <string name="friends_requests_eyebrow">ЗАЯВКИ</string>
-    <string name="friends_incoming_title">Вхідні заявки в друзі</string>
-    <string name="friends_outgoing_title">Надіслані заявки в друзі</string>
+    <string name="friend_request_submitted">Запит надіслано. Для недоступного коду показується те саме повідомлення.</string>
+    <string name="friend_request_failed">Не вдалося надіслати запит у друзі.</string>
+    <string name="friend_request_action_failed">Запит змінився або недоступний. Онови дані й спробуй ще раз.</string>
+    <string name="friend_request_pending">Запит очікує відповіді</string>
+    <string name="friends_requests_eyebrow">ЗАПИТИ</string>
+    <string name="friends_incoming_title">Вхідні запити в друзі</string>
+    <string name="friends_outgoing_title">Надіслані запити в друзі</string>
     <string name="friends_ranking_eyebrow">ДРУЗІ</string>
     <string name="friends_ranking_title">Прогрес серед друзів</string>
     <string name="friends_ranking_supporting">Спочатку показані друзі з відкритими синхронізованими XP. Це не перевірений загальний рейтинг.</string>
@@ -78,7 +78,7 @@
     <string name="friends_connect_supporting">Скопіюй або надішли його чи додай друга за його приватним кодом.</string>
     <string name="friends_add_action">Додати друга</string>
     <string name="friends_empty_title">Друзів поки немає</string>
-    <string name="friends_empty_supporting">Поділися своїм кодом або надішли заявку за кодом друга.</string>
+    <string name="friends_empty_supporting">Поділися своїм кодом або надішли запит за кодом друга.</string>
     <string name="friend_stats_summary">%1$d XP · рівень %2$d · %3$d тренувань</string>
     <string name="friend_metric_level">Рівень %1$d</string>
     <string name="friend_metric_xp">%1$d XP</string>
@@ -103,7 +103,7 @@
     <string name="friends_privacy_title">Що бачать друзі</string>
     <string name="friends_privacy_supporting">Ці налаштування застосовує сервер. Видалення або блокування друга скасовує доступ.</string>
     <string name="friends_privacy_summary">Обери, що бачать підтверджені друзі.</string>
-    <string name="friends_privacy_allow_requests">Дозволити нові заявки в друзі</string>
+    <string name="friends_privacy_allow_requests">Дозволити нові запити в друзі</string>
     <string name="friends_privacy_share_progress">Показувати XP, рівень і кількість тренувань</string>
     <string name="friends_privacy_share_workouts">Показувати п’ять останніх тренувань</string>
     <string name="friends_privacy_share_workout_details">Показувати вправи, вагу й повтори</string>
@@ -151,14 +151,14 @@
     <string name="friend_record_best_repetitions">Найбільше записаних повторень у підході: %1$d</string>
     <string name="friend_record_meta">У %1$d тренуваннях · востаннє %2$s</string>
     <string name="friend_manage_title">Керування дружбою</string>
-    <string name="friend_manage_supporting">Видалення скасовує доступ друга. Блокування також забороняє нові заявки й запрошення.</string>
+    <string name="friend_manage_supporting">Видалення скасовує доступ друга. Блокування також забороняє нові запити й запрошення.</string>
     <string name="friend_remove_action">Видалити з друзів</string>
     <string name="friend_remove_confirm_title">Видалити цього друга?</string>
     <string name="friend_remove_confirm_supporting">%1$s втратить доступ до активності лише для друзів.</string>
     <string name="friend_remove_failed">Не вдалося видалити друга. Онови дані й повтори.</string>
     <string name="friend_block_action">Заблокувати профіль</string>
     <string name="friend_block_confirm_title">Заблокувати цей профіль?</string>
-    <string name="friend_block_confirm_supporting">%1$s буде видалено з друзів, не зможе надсилати заявки чи запрошення і втратить доступ для друзів.</string>
+    <string name="friend_block_confirm_supporting">%1$s буде видалено з друзів, не зможе надсилати запити чи запрошення і втратить доступ для друзів.</string>
     <string name="friend_block_failed">Не вдалося заблокувати профіль.</string>
 
     <string name="workout_invites_eyebrow">ЗАПРОШЕННЯ НА ТРЕНУВАННЯ</string>
@@ -1488,7 +1488,7 @@
     <string name="push_enable_action">Увімкнути сповіщення</string>
     <string name="push_disable_action">Вимкнути сповіщення</string>
     <string name="push_open_settings">Відкрити налаштування сповіщень</string>
-    <string name="push_friend_request_received_title">Нова заявка в друзі</string>
+    <string name="push_friend_request_received_title">Новий запит у друзі</string>
     <string name="push_friend_request_received_body">Відкрий GymApp, щоб відповісти.</string>
     <string name="push_friend_request_accepted_title">Запит у друзі прийнято</string>
     <string name="push_friend_request_accepted_body">Друг тепер доступний у GymApp.</string>
