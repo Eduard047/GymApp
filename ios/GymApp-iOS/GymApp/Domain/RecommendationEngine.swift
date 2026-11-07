@@ -544,8 +544,11 @@ public enum RecommendationEngine {
             } else {
                 nil
             }
-            let newExerciseReps = appliedEffort == .recovery &&
-                programmingAnalysis?.loadMode == .bodyweight
+            // `.none` must be matched on the unwrapped value: `Optional<ExerciseLoadMode> == .none` means nil.
+            let hasNoExternalLoad = programmingAnalysis.map {
+                $0.loadMode == .bodyweight || $0.loadMode == .none
+            } ?? false
+            let newExerciseReps = appliedEffort == .recovery && hasNoExternalLoad
                 ? max(repRange.lowerBound, defaultRepsTarget - 1)
                 : defaultRepsTarget
             let recommendation = WorkoutRecommendation(
@@ -744,6 +747,7 @@ public enum RecommendationEngine {
                     easedWeight(
                         baseline.weight,
                         multiplier: isFatLossDeficit ? 0.9 : 0.92,
+                        loadMode: loadMode,
                         machineLoadProfile: machineLoadProfile,
                         loadDirection: loadDirection
                     ),
@@ -754,6 +758,7 @@ public enum RecommendationEngine {
                     easedWeight(
                         baseline.weight,
                         multiplier: comebackMultiplier(daysSinceLastSession),
+                        loadMode: loadMode,
                         machineLoadProfile: machineLoadProfile,
                         loadDirection: loadDirection
                     ),
@@ -779,6 +784,7 @@ public enum RecommendationEngine {
                     easedWeight(
                         baseline.weight,
                         multiplier: 0.9,
+                        loadMode: loadMode,
                         machineLoadProfile: machineLoadProfile,
                         loadDirection: loadDirection
                     ),
@@ -1418,10 +1424,13 @@ public enum RecommendationEngine {
     private static func easedWeight(
         _ baseline: Double,
         multiplier: Double,
+        loadMode: ExerciseLoadMode,
         machineLoadProfile: MachineLoadProfile?,
         loadDirection: MachineLoadDirection
     ) -> Double {
-        guard baseline > 0, multiplier.isFinite else { return max(0, baseline) }
+        guard baseline > 0, multiplier.isFinite,
+              loadMode != .bodyweight, loadMode != .none
+        else { return max(0, baseline) }
         let boundedMultiplier = min(0.99, max(0.5, multiplier))
         let desired = loadDirection == .higherIsHarder
             ? baseline * boundedMultiplier

@@ -1,0 +1,616 @@
+{
+ "contractVersion": 1,
+ "nowEpochMillis": 1781524800000,
+ "vectors": [
+  {
+   "name": "hold-6.25kg-snaps-half-away-from-zero",
+   "trainingProfile": {
+    "split": "upperLower",
+    "workoutsPerWeek": 4,
+    "goal": "muscleGain",
+    "calorieMode": "surplus"
+   },
+   "effort": "standard",
+   "exerciseName": "Bench Press",
+   "nowOffsetDays": 0,
+   "history": [
+    {
+     "daysAgo": 4,
+     "setOrder": 0,
+     "weight": 6.25,
+     "reps": 8
+    },
+    {
+     "daysAgo": 4,
+     "setOrder": 1,
+     "weight": 6.25,
+     "reps": 8
+    },
+    {
+     "daysAgo": 4,
+     "setOrder": 2,
+     "weight": 6.25,
+     "reps": 8
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 0,
+     "weight": 6.25,
+     "reps": 8
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 1,
+     "weight": 6.25,
+     "reps": 8
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 2,
+     "weight": 6.25,
+     "reps": 8
+    }
+   ],
+   "expected": {
+    "kind": "holdAndBuild",
+    "targetRir": [
+     2,
+     3
+    ],
+    "sets": [
+     {
+      "weight": 7.5,
+      "reps": 8
+     },
+     {
+      "weight": 7.5,
+      "reps": 8
+     },
+     {
+      "weight": 7.5,
+      "reps": 8
+     },
+     {
+      "weight": 7.5,
+      "reps": 8
+     }
+    ]
+   }
+  },
+  {
+   "name": "progression-from-top-of-range",
+   "trainingProfile": {
+    "split": "upperLower",
+    "workoutsPerWeek": 4,
+    "goal": "muscleGain",
+    "calorieMode": "surplus"
+   },
+   "effort": "standard",
+   "exerciseName": "Bench Press",
+   "nowOffsetDays": 0,
+   "history": [
+    {
+     "daysAgo": 4,
+     "setOrder": 0,
+     "weight": 60,
+     "reps": 8
+    },
+    {
+     "daysAgo": 4,
+     "setOrder": 1,
+     "weight": 60,
+     "reps": 8
+    },
+    {
+     "daysAgo": 4,
+     "setOrder": 2,
+     "weight": 60,
+     "reps": 8
+    },
+    {
+     "daysAgo": 4,
+     "setOrder": 3,
+     "weight": 60,
+     "reps": 8
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 0,
+     "weight": 60,
+     "reps": 8
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 1,
+     "weight": 60,
+     "reps": 8
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 2,
+     "weight": 60,
+     "reps": 8
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 3,
+     "weight": 60,
+     "reps": 8
+    }
+   ],
+   "expected": {
+    "kind": "progressiveOverload",
+    "targetRir": [
+     2,
+     3
+    ],
+    "sets": [
+     {
+      "weight": 62.5,
+      "reps": 6
+     },
+     {
+      "weight": 62.5,
+      "reps": 6
+     },
+     {
+      "weight": 62.5,
+      "reps": 6
+     },
+     {
+      "weight": 62.5,
+      "reps": 6
+     }
+    ]
+   }
+  },
+  {
+   "name": "plateau-three-flat-sessions",
+   "trainingProfile": {
+    "split": "upperLower",
+    "workoutsPerWeek": 4,
+    "goal": "muscleGain",
+    "calorieMode": "surplus"
+   },
+   "effort": "standard",
+   "exerciseName": "Bench Press",
+   "nowOffsetDays": 0,
+   "history": [
+    {
+     "daysAgo": 3,
+     "setOrder": 0,
+     "weight": 60,
+     "reps": 7
+    },
+    {
+     "daysAgo": 3,
+     "setOrder": 1,
+     "weight": 60,
+     "reps": 7
+    },
+    {
+     "daysAgo": 3,
+     "setOrder": 2,
+     "weight": 60,
+     "reps": 7
+    },
+    {
+     "daysAgo": 3,
+     "setOrder": 3,
+     "weight": 60,
+     "reps": 7
+    },
+    {
+     "daysAgo": 10,
+     "setOrder": 0,
+     "weight": 60,
+     "reps": 7
+    },
+    {
+     "daysAgo": 10,
+     "setOrder": 1,
+     "weight": 60,
+     "reps": 7
+    },
+    {
+     "daysAgo": 10,
+     "setOrder": 2,
+     "weight": 60,
+     "reps": 7
+    },
+    {
+     "daysAgo": 10,
+     "setOrder": 3,
+     "weight": 60,
+     "reps": 7
+    },
+    {
+     "daysAgo": 17,
+     "setOrder": 0,
+     "weight": 60,
+     "reps": 7
+    },
+    {
+     "daysAgo": 17,
+     "setOrder": 1,
+     "weight": 60,
+     "reps": 7
+    },
+    {
+     "daysAgo": 17,
+     "setOrder": 2,
+     "weight": 60,
+     "reps": 7
+    },
+    {
+     "daysAgo": 17,
+     "setOrder": 3,
+     "weight": 60,
+     "reps": 7
+    },
+    {
+     "daysAgo": 24,
+     "setOrder": 0,
+     "weight": 60,
+     "reps": 7
+    },
+    {
+     "daysAgo": 24,
+     "setOrder": 1,
+     "weight": 60,
+     "reps": 7
+    },
+    {
+     "daysAgo": 24,
+     "setOrder": 2,
+     "weight": 60,
+     "reps": 7
+    },
+    {
+     "daysAgo": 24,
+     "setOrder": 3,
+     "weight": 60,
+     "reps": 7
+    }
+   ],
+   "expected": {
+    "kind": "plateauBreak",
+    "targetRir": [
+     2,
+     3
+    ],
+    "sets": [
+     {
+      "weight": 60,
+      "reps": 6
+     },
+     {
+      "weight": 60,
+      "reps": 6
+     },
+     {
+      "weight": 60,
+      "reps": 6
+     },
+     {
+      "weight": 60,
+      "reps": 6
+     }
+    ]
+   }
+  },
+  {
+   "name": "first-time-standard",
+   "trainingProfile": {
+    "split": "upperLower",
+    "workoutsPerWeek": 4,
+    "goal": "muscleGain",
+    "calorieMode": "surplus"
+   },
+   "effort": "standard",
+   "exerciseName": "Bench Press",
+   "nowOffsetDays": 0,
+   "history": [],
+   "expected": {
+    "kind": "newExercise",
+    "targetRir": [
+     2,
+     3
+    ],
+    "sets": [
+     {
+      "weight": null,
+      "reps": 8
+     },
+     {
+      "weight": null,
+      "reps": 8
+     },
+     {
+      "weight": null,
+      "reps": 8
+     },
+     {
+      "weight": null,
+      "reps": 8
+     }
+    ]
+   }
+  },
+  {
+   "name": "first-time-none-recovery",
+   "trainingProfile": {
+    "split": "upperLower",
+    "workoutsPerWeek": 4,
+    "goal": "muscleGain",
+    "calorieMode": "surplus"
+   },
+   "effort": "recovery",
+   "exerciseName": "Warm Up",
+   "nowOffsetDays": 0,
+   "history": [],
+   "expected": {
+    "kind": "newExercise",
+    "targetRir": [
+     3,
+     4
+    ],
+    "sets": [
+     {
+      "weight": 0,
+      "reps": 9
+     },
+     {
+      "weight": 0,
+      "reps": 9
+     },
+     {
+      "weight": 0,
+      "reps": 9
+     }
+    ]
+   }
+  },
+  {
+   "name": "weighted-dip-recovery-keeps-weight",
+   "trainingProfile": {
+    "split": "upperLower",
+    "workoutsPerWeek": 4,
+    "goal": "muscleGain",
+    "calorieMode": "surplus"
+   },
+   "effort": "recovery",
+   "exerciseName": "Dips",
+   "nowOffsetDays": 0,
+   "history": [
+    {
+     "daysAgo": 4,
+     "setOrder": 0,
+     "weight": 20,
+     "reps": 8
+    },
+    {
+     "daysAgo": 4,
+     "setOrder": 1,
+     "weight": 20,
+     "reps": 8
+    },
+    {
+     "daysAgo": 4,
+     "setOrder": 2,
+     "weight": 20,
+     "reps": 8
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 0,
+     "weight": 20,
+     "reps": 8
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 1,
+     "weight": 20,
+     "reps": 8
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 2,
+     "weight": 20,
+     "reps": 8
+    }
+   ],
+   "expected": {
+    "kind": "holdAndBuild",
+    "targetRir": [
+     3,
+     4
+    ],
+    "sets": [
+     {
+      "weight": 20,
+      "reps": 7
+     },
+     {
+      "weight": 20,
+      "reps": 7
+     },
+     {
+      "weight": 20,
+      "reps": 7
+     }
+    ]
+   }
+  },
+  {
+   "name": "machine-profile-snap",
+   "trainingProfile": {
+    "split": "upperLower",
+    "workoutsPerWeek": 4,
+    "goal": "muscleGain",
+    "calorieMode": "surplus"
+   },
+   "effort": "standard",
+   "exerciseName": "Plate Loaded Row",
+   "nowOffsetDays": 0,
+   "history": [
+    {
+     "daysAgo": 4,
+     "setOrder": 0,
+     "weight": 37,
+     "reps": 9
+    },
+    {
+     "daysAgo": 4,
+     "setOrder": 1,
+     "weight": 37,
+     "reps": 9
+    },
+    {
+     "daysAgo": 4,
+     "setOrder": 2,
+     "weight": 37,
+     "reps": 9
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 0,
+     "weight": 37,
+     "reps": 9
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 1,
+     "weight": 37,
+     "reps": 9
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 2,
+     "weight": 37,
+     "reps": 9
+    }
+   ],
+   "loadProfile": {
+    "direction": "higherIsHarder",
+    "allowedWeightsKg": [
+     10,
+     20,
+     30,
+     40,
+     50,
+     60
+    ]
+   },
+   "expected": {
+    "kind": "holdAndBuild",
+    "targetRir": [
+     2,
+     3
+    ],
+    "sets": [
+     {
+      "weight": 40,
+      "reps": 10
+     },
+     {
+      "weight": 40,
+      "reps": 10
+     },
+     {
+      "weight": 40,
+      "reps": 10
+     }
+    ]
+   }
+  },
+  {
+   "name": "rep-ceiling-not-earned-holds",
+   "trainingProfile": {
+    "split": "upperLower",
+    "workoutsPerWeek": 4,
+    "goal": "muscleGain",
+    "calorieMode": "surplus"
+   },
+   "effort": "standard",
+   "exerciseName": "Bench Press",
+   "nowOffsetDays": 0,
+   "history": [
+    {
+     "daysAgo": 4,
+     "setOrder": 0,
+     "weight": 40,
+     "reps": 8
+    },
+    {
+     "daysAgo": 4,
+     "setOrder": 1,
+     "weight": 40,
+     "reps": 8
+    },
+    {
+     "daysAgo": 4,
+     "setOrder": 2,
+     "weight": 40,
+     "reps": 8
+    },
+    {
+     "daysAgo": 4,
+     "setOrder": 3,
+     "weight": 40,
+     "reps": 8
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 0,
+     "weight": 40,
+     "reps": 7
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 1,
+     "weight": 40,
+     "reps": 8
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 2,
+     "weight": 40,
+     "reps": 8
+    },
+    {
+     "daysAgo": 11,
+     "setOrder": 3,
+     "weight": 40,
+     "reps": 8
+    }
+   ],
+   "expected": {
+    "kind": "holdAndBuild",
+    "targetRir": [
+     2,
+     3
+    ],
+    "sets": [
+     {
+      "weight": 40,
+      "reps": 8
+     },
+     {
+      "weight": 40,
+      "reps": 8
+     },
+     {
+      "weight": 40,
+      "reps": 8
+     },
+     {
+      "weight": 40,
+      "reps": 8
+     }
+    ]
+   }
+  }
+ ],
+ "_comment": "Per-exercise progression golden vectors. Sessions are grouped by daysAgo; weight/reps only are compared (iOS set ids are random). now = nowEpochMillis, UTC."
+}

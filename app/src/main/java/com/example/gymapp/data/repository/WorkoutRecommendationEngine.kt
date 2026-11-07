@@ -1149,8 +1149,12 @@ object WorkoutRecommendationEngine {
         }
     }
 
-    private fun nearestFallbackGridWeight(weight: Double): Double =
-        (round(weight / 2.5) * 2.5).coerceIn(0.0, WorkoutDataLimits.MAX_WEIGHT)
+    // Half away from zero, matching iPhone `.rounded()` (kotlin.math.round is half-to-even).
+    private fun nearestFallbackGridWeight(weight: Double): Double {
+        val steps = weight / 2.5
+        val rounded = kotlin.math.sign(steps) * kotlin.math.floor(kotlin.math.abs(steps) + 0.5)
+        return (rounded * 2.5).coerceIn(0.0, WorkoutDataLimits.MAX_WEIGHT)
+    }
 
     private fun nearestAllowedWeight(currentWeight: Double, allowedWeights: List<Double>): Double =
         allowedWeights.minWithOrNull(
