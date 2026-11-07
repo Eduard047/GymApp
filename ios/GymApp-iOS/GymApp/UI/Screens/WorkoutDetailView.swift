@@ -2881,7 +2881,7 @@ private struct SavedWorkoutShareChooser: View {
                         if let shareURL {
                             ShareLink(
                                 item: shareURL,
-                                subject: Text("GymApp workout"),
+                                subject: Text(gymLocalized("GymApp workout")),
                                 message: Text(
                                     GarminWorkoutDetailCopy.shareMessage(
                                         languageCode: gymCurrentLanguageCode()
