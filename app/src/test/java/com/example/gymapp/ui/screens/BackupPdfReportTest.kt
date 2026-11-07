@@ -66,4 +66,10 @@ class BackupPdfReportTest {
         assertEquals("60", pdfWeightText(60.0, Locale.forLanguageTag("uk")))
         assertEquals("0", pdfWeightText(Double.NaN, Locale.forLanguageTag("uk")))
     }
+
+    @Test
+    fun aGlyphWiderThanTheLineStillTerminates() {
+        val lines = wrapPdfText("ab W", maxWidth = 5f) { text -> if (text.contains('W')) 100f else text.length.toFloat() }
+        assertEquals(listOf("ab", "W"), lines)
+    }
 }

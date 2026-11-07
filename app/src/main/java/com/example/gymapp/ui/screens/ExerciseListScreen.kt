@@ -2902,7 +2902,8 @@ internal fun wrapPdfText(
         val chunks = mutableListOf<String>()
         var rest = word
         while (rest.isNotEmpty() && measure(rest) > maxWidth) {
-            var end = rest.length - 1
+            // At least one character per chunk, so a glyph wider than the line can't loop forever.
+            var end = (rest.length - 1).coerceAtLeast(1)
             while (end > 1 && measure(rest.substring(0, end)) > maxWidth) end--
             chunks += rest.substring(0, end)
             rest = rest.substring(end)
