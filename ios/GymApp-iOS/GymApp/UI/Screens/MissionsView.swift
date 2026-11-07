@@ -37,8 +37,17 @@ struct MissionsView: View {
 
                     missionPeriodControl
 
-                    ForEach(missions) { mission in
-                        missionCard(mission)
+                    if missions.isEmpty {
+                        GymPanel {
+                            Text(gymText("No missions yet", "Поки що немає місій", "Пока нет миссий", languageCode: languageCode))
+                                .font(.subheadline)
+                                .foregroundStyle(GymTheme.textSecondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    } else {
+                        ForEach(missions) { mission in
+                            missionCard(mission)
+                        }
                     }
 
                     AchievementGallery(achievements: snapshot.achievements)

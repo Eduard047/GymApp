@@ -170,6 +170,7 @@ object RussianText {
         "Month" to "Месяц",
         "Mythic" to "Мифический",
         "No exercise data yet" to "Еще нет данных упражнения",
+        "No trend yet" to "Пока нет тренда",
         "Nova" to "Нова",
         "Obliques" to "Косые мышцы",
         "Omega" to "Омега",

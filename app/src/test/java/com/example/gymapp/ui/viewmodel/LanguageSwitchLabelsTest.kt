@@ -59,6 +59,24 @@ class LanguageSwitchLabelsTest {
     }
 
     @Test
+    fun trendLabelNeedsTwoPointsAndTwoIdenticalPointsHoldSteady() {
+        val en = ExerciseProgressTextBuilder("en", zone)
+        val uk = ExerciseProgressTextBuilder("uk", zone)
+        val ru = ExerciseProgressTextBuilder("ru", zone)
+
+        val single = en.buildTrendChart(points.take(1))
+        assertEquals("No trend yet", single.weightTrendLabel)
+        assertEquals("No trend yet", single.volumeTrendLabel)
+        assertEquals("Тренду ще немає", uk.buildTrendChart(points.take(1)).weightTrendLabel)
+        assertEquals("Пока нет тренда", ru.buildTrendChart(points.take(1)).weightTrendLabel)
+
+        val identical = listOf(points[0], points[0].copy(sessionId = 2, sessionDate = 1_700_600_000_000))
+        val steady = en.buildTrendChart(identical)
+        assertEquals("Holding steady", steady.weightTrendLabel)
+        assertEquals("Holding steady", steady.volumeTrendLabel)
+    }
+
+    @Test
     fun signalPublishesUpdates() {
         val original = AppLanguageSignal.tag.value
         try {

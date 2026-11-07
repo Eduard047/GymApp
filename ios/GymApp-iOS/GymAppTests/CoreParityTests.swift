@@ -9,6 +9,13 @@ import XCTest
 
 @MainActor
 final class CoreParityTests: XCTestCase {
+    func testExerciseProgressTrendNeedsTwoPointsAndIdenticalPointsHoldSteady() {
+        XCTAssertEqual(ExerciseProgressTrend.classify(start: 100, end: 100, pointCount: 1), .none)
+        XCTAssertEqual(ExerciseProgressTrend.classify(start: nil, end: nil, pointCount: 0), .none)
+        XCTAssertEqual(ExerciseProgressTrend.classify(start: 100, end: 100, pointCount: 2), .steady)
+        XCTAssertEqual(ExerciseProgressTrend.classify(start: 100, end: 102.5, pointCount: 2), .change(2.5))
+    }
+
     func testEffectiveGarminDisplayNameFallsBackToLocalizedDefaultAndTrimsTypedName() {
         let fallback = gymLocalized("Garmin watch")
         XCTAssertEqual(GarminWatchName.effectiveGarminDisplayName(""), fallback)

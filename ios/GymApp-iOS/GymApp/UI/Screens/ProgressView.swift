@@ -114,7 +114,7 @@ struct ProgressHubView: View {
                 case .overview:
                     overview
                 case .exercises:
-                    ExerciseProgressView(store: store, showsHeader: false)
+                    ExerciseProgressView(store: store, showsHeader: false, onStartWorkout: onStartWorkout)
                 case .goals:
                     MissionsView(store: store, onOpenRanks: onOpenRanks, embedded: true)
                 }
@@ -468,9 +468,12 @@ struct ExerciseProgressView: View {
     @State private var showingExerciseSelector = false
     private let showsHeader: Bool
 
-    init(store: WorkoutStore, showsHeader: Bool = true) {
+    private let onStartWorkout: () -> Void
+
+    init(store: WorkoutStore, showsHeader: Bool = true, onStartWorkout: @escaping () -> Void = {}) {
         self.store = store
         self.showsHeader = showsHeader
+        self.onStartWorkout = onStartWorkout
     }
 
     private func loggedSessionsText(_ count: Int) -> String {
@@ -512,8 +515,8 @@ struct ExerciseProgressView: View {
                     LazyVStack(spacing: GymTheme.contentSpacing) {
                         if let selectedExercise {
                             muscleBreakdown(for: selectedExercise)
-                            summaryCard(snapshot)
                             if !snapshot.monthHistory.isEmpty {
+                                summaryCard(snapshot)
                                 spotlightCard(for: selectedExercise, snapshot)
                                 ExerciseProgressChartsCard(
                                     points: snapshot.progressPoints,
@@ -912,6 +915,11 @@ struct ExerciseProgressView: View {
                 Label(t("No exercises yet", "Ще немає вправ", "Упражнений ещё нет"), systemImage: "dumbbell")
             } description: {
                 Text(t("Create an exercise and log a workout first.", "Спочатку створи вправу й запиши тренування.", "Сначала создай упражнение и запиши тренировку."))
+            } actions: {
+                Button(action: onStartWorkout) {
+                    Text(t("Start workout", "Почати тренування", "Начать тренировку"))
+                }
+                .buttonStyle(GymPrimaryButtonStyle())
             }
             .frame(maxWidth: .infinity)
         }
@@ -1331,6 +1339,20 @@ private struct ExerciseHistoryGroup: Identifiable {
     var totalVolume: Double { entries.reduce(0) { $0 + $1.volume } }
 }
 
+/// Trend between the first and last chart point. One point has nothing to compare against,
+/// so it is "none" rather than "steady".
+enum ExerciseProgressTrend: Equatable {
+    case none
+    case steady
+    case change(Double)
+
+    static func classify(start: Double?, end: Double?, pointCount: Int) -> ExerciseProgressTrend {
+        guard pointCount >= 2, let start, let end else { return .none }
+        let delta = end - start
+        return abs(delta) < 0.05 ? .steady : .change(delta)
+    }
+}
+
 private struct ExerciseProgressChartsCard: View {
     let points: [ExerciseProgressPoint]
     let languageCode: String
@@ -1498,15 +1520,19 @@ private struct ExerciseProgressChartsCard: View {
     }
 
     private func trendLabel(start: Double?, end: Double?, unit: String) -> String {
-        guard let start, let end else { return t("No trend yet", "Тренду ще немає", "Пока нет тренда") }
-        let delta = end - start
-        if abs(delta) < 0.05 { return t("Holding steady", "Стабільно", "Стабильно") }
-        let prefix = delta > 0 ? "+" : "−"
-        return t(
-            "\(prefix)\(formatNumber(abs(delta))) \(unit) vs first session",
-            "\(prefix)\(formatNumber(abs(delta))) \(unit) до першого тренування",
-            "\(prefix)\(formatNumber(abs(delta))) \(unit) к первой тренировке"
-        )
+        switch ExerciseProgressTrend.classify(start: start, end: end, pointCount: chartPoints.count) {
+        case .none:
+            return t("No trend yet", "Тренду ще немає", "Пока нет тренда")
+        case .steady:
+            return t("Holding steady", "Стабільно", "Стабильно")
+        case let .change(delta):
+            let prefix = delta > 0 ? "+" : "−"
+            return t(
+                "\(prefix)\(formatNumber(abs(delta))) \(unit) vs first session",
+                "\(prefix)\(formatNumber(abs(delta))) \(unit) до першого тренування",
+                "\(prefix)\(formatNumber(abs(delta))) \(unit) к первой тренировке"
+            )
+        }
     }
 
     private func formatWeight(_ value: Double) -> String {

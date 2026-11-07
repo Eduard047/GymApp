@@ -215,6 +215,7 @@ internal fun ProgressHubScreen(
                 onPreviousMonth = onPreviousExerciseMonth,
                 onCurrentMonth = onCurrentExerciseMonth,
                 onNextMonth = onNextExerciseMonth,
+                onStartWorkout = onStartWorkout,
                 modifier = Modifier.fillMaxSize()
             )
 

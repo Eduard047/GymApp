@@ -88,7 +88,8 @@ fun ExerciseProgressScreen(
     onPreviousMonth: () -> Unit,
     onCurrentMonth: () -> Unit,
     onNextMonth: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onStartWorkout: () -> Unit = {}
 ) {
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     val selectedRawExerciseName = uiState.selectedExerciseName
@@ -169,6 +170,8 @@ fun ExerciseProgressScreen(
                     EmptyStatePanel(
                         title = stringResource(R.string.empty_exercises),
                         supporting = stringResource(R.string.chart_no_data),
+                        actionLabel = stringResource(R.string.action_start_workout),
+                        onAction = onStartWorkout,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -181,13 +184,15 @@ fun ExerciseProgressScreen(
                     }
                 }
 
-                item {
-                    ProgressSummaryCard(
-                        uiState = uiState,
-                        sessionCount = sessionGroups.size,
-                        setCount = uiState.history.size,
-                        totalVolume = uiState.history.sumOf { it.weight * it.reps }
-                    )
+                if (sessionGroups.isNotEmpty()) {
+                    item {
+                        ProgressSummaryCard(
+                            uiState = uiState,
+                            sessionCount = sessionGroups.size,
+                            setCount = uiState.history.size,
+                            totalVolume = uiState.history.sumOf { it.weight * it.reps }
+                        )
+                    }
                 }
 
                 if (sessionGroups.isEmpty()) {

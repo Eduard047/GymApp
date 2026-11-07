@@ -262,18 +262,30 @@ internal class ExerciseProgressTextBuilder(
             )
         }
 
+        // A trend needs at least two sessions; one point has nothing to compare against.
+        val hasTrend = visiblePoints.size >= 2
+        val noTrendLabel = t(en = "No trend yet", uk = "Тренду ще немає")
+
         return ExerciseTrendChartUiModel(
             points = chartPoints,
-            weightTrendLabel = trendLabel(
-                start = visiblePoints.first().maxWeight,
-                end = visiblePoints.last().maxWeight,
-                unit = t(en = "kg", uk = "кг")
-            ),
-            volumeTrendLabel = trendLabel(
-                start = visiblePoints.first().totalVolume,
-                end = visiblePoints.last().totalVolume,
-                unit = t(en = "volume", uk = "обсяг")
-            ),
+            weightTrendLabel = if (hasTrend) {
+                trendLabel(
+                    start = visiblePoints.first().maxWeight,
+                    end = visiblePoints.last().maxWeight,
+                    unit = t(en = "kg", uk = "кг")
+                )
+            } else {
+                noTrendLabel
+            },
+            volumeTrendLabel = if (hasTrend) {
+                trendLabel(
+                    start = visiblePoints.first().totalVolume,
+                    end = visiblePoints.last().totalVolume,
+                    unit = t(en = "volume", uk = "обсяг")
+                )
+            } else {
+                noTrendLabel
+            },
             peakWeightLabel = formatWeight(points.maxOfOrNull { it.maxWeight } ?: 0.0),
             averageVolumeLabel = visiblePoints.map { it.totalVolume }.average().roundToInt().toString()
         )
