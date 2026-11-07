@@ -20,4 +20,12 @@ fun parseWeightInputOrNull(input: String): Double? {
     return normalized.toDoubleOrNull()?.takeIf(WorkoutDataLimits::isValidWeight)
 }
 
+/**
+ * Text a weight field should show once editing ends. Blank or unparseable text reverts to the
+ * last valid text (like iPhone's number field), so clearing the field never silently writes 0 kg;
+ * an explicit "0" is valid and stays. With no earlier valid text the input is kept unchanged.
+ */
+fun resolveWeightFieldCommit(text: String, lastValid: String?): String =
+    if (parseWeightInputOrNull(text) != null) text else lastValid ?: text
+
 private const val MAX_WEIGHT_INPUT_LENGTH = 64

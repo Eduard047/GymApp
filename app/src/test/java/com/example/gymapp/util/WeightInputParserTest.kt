@@ -23,4 +23,20 @@ class WeightInputParserTest {
         assertNull(parseWeightInputOrNull((WorkoutDataLimits.MAX_WEIGHT + 0.01).toString()))
         assertNull(parseWeightInputOrNull("1".repeat(65)))
     }
+
+    @Test
+    fun blankOrInvalidFieldRevertsToPreviousValue() {
+        assertEquals("80", resolveWeightFieldCommit("", "80"))
+        assertEquals("80", resolveWeightFieldCommit("   ", "80"))
+        assertEquals("80", resolveWeightFieldCommit("2.5.0", "80"))
+        assertEquals("", resolveWeightFieldCommit("", null))
+    }
+
+    @Test
+    fun explicitZeroAndDecimalsAreKept() {
+        assertEquals("0", resolveWeightFieldCommit("0", "80"))
+        assertEquals("12,5", resolveWeightFieldCommit("12,5", "80"))
+        assertEquals(0.0, parseWeightInputOrNull(resolveWeightFieldCommit("0", "80")))
+        assertEquals(12.5, parseWeightInputOrNull(resolveWeightFieldCommit("12,5", "80")))
+    }
 }

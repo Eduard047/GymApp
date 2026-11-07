@@ -72,6 +72,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import com.example.gymapp.util.parseWeightInputOrNull
+import com.example.gymapp.util.resolveWeightFieldCommit
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -1193,6 +1195,21 @@ internal fun SetWeightField(
     val focusManager = LocalFocusManager.current
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
+    // Last valid weight text: a field left blank or unparseable reverts to it instead of becoming 0 kg.
+    val lastValid = remember { arrayOfNulls<String>(1) }
+    if (parseWeightInputOrNull(value) != null) lastValid[0] = value
+    val currentValue by rememberUpdatedState(value)
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val wasFocused = remember { booleanArrayOf(false) }
+    LaunchedEffect(focused) {
+        if (focused) {
+            wasFocused[0] = true
+        } else if (wasFocused[0]) {
+            wasFocused[0] = false
+            val committed = resolveWeightFieldCommit(currentValue, lastValid[0])
+            if (committed != currentValue) currentOnValueChange(committed)
+        }
+    }
     val primary = MaterialTheme.colorScheme.primary
     val style = TextStyle(
         fontSize = fontSize,
