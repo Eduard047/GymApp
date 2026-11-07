@@ -1,0 +1,899 @@
+{
+  "version": 1,
+  "description": "Shared workout link golden cases. Android (SharedWorkoutLinkTest) and iOS (SharedWorkoutLinkTests) must decode every valid link to `expected` and reject every invalid link. When encodeRoundTrip is true, encoding `expected` must reproduce `link` byte for byte. catalogKey is the key the receiver resolves; sets are [weight, reps].",
+  "cases": [
+    {
+      "id": "builtin-exercise",
+      "description": "Built-in exercise with its portable catalog key",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxLCJlIjpbWyJiZW5jaF9wcmVzcyIsIkJlbmNoIFByZXNzIixbWzgwLDhdLFs4Mi41LDZdXV1dfQ",
+      "valid": true,
+      "encodeRoundTrip": true,
+      "expected": {
+        "exercises": [
+          {
+            "catalogKey": "bench_press",
+            "name": "Bench Press",
+            "sets": [
+              [
+                80,
+                8
+              ],
+              [
+                82.5,
+                6
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "custom-cyrillic-apostrophe",
+      "description": "Custom exercise: Cyrillic name with an apostrophe, no catalog key, zero weight",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxLCJlIjpbWyIiLCLQotGP0LPQsCDQlCfQkNGA0YLQsNC90YzRj9C90LAiLFtbMCwxMl0sWzAsMTBdXV1dfQ",
+      "valid": true,
+      "encodeRoundTrip": true,
+      "expected": {
+        "exercises": [
+          {
+            "catalogKey": null,
+            "name": "Тяга Д'Артаньяна",
+            "sets": [
+              [
+                0,
+                12
+              ],
+              [
+                0,
+                10
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "decimal-weights",
+      "description": "Decimal weights 2.5 and 82.25 survive exactly",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxLCJlIjpbWyJsYXRfcHVsbGRvd24iLCJMYXQgUHVsbGRvd24iLFtbMi41LDE1XSxbODIuMjUsNV1dXV19",
+      "valid": true,
+      "encodeRoundTrip": true,
+      "expected": {
+        "exercises": [
+          {
+            "catalogKey": "lat_pulldown",
+            "name": "Lat Pulldown",
+            "sets": [
+              [
+                2.5,
+                15
+              ],
+              [
+                82.25,
+                5
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "multiple-exercises",
+      "description": "Several exercises in order: built-in and custom",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxLCJlIjpbWyJiZW5jaF9wcmVzcyIsIkJlbmNoIFByZXNzIixbWzgwLDhdLFs4Mi41LDZdXV0sWyJsYXRfcHVsbGRvd24iLCJMYXQgUHVsbGRvd24iLFtbNTAsOF1dXSxbIiIsIk15IEN1c3RvbSIsW1swLDEyXV1dLFsic3F1YXQiLCJTcXVhdCIsW1sxMDAsNV0sWzEwMCw1XSxbMTAwLDVdXV1dfQ",
+      "valid": true,
+      "encodeRoundTrip": true,
+      "expected": {
+        "exercises": [
+          {
+            "catalogKey": "bench_press",
+            "name": "Bench Press",
+            "sets": [
+              [
+                80,
+                8
+              ],
+              [
+                82.5,
+                6
+              ]
+            ]
+          },
+          {
+            "catalogKey": "lat_pulldown",
+            "name": "Lat Pulldown",
+            "sets": [
+              [
+                50,
+                8
+              ]
+            ]
+          },
+          {
+            "catalogKey": null,
+            "name": "My Custom",
+            "sets": [
+              [
+                0,
+                12
+              ]
+            ]
+          },
+          {
+            "catalogKey": "squat",
+            "name": "Squat",
+            "sets": [
+              [
+                100,
+                5
+              ],
+              [
+                100,
+                5
+              ],
+              [
+                100,
+                5
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "max-sets-per-exercise",
+      "description": "One exercise with the maximum 12 sets",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxLCJlIjpbWyIiLCJNYXggU2V0cyBDdXN0b20iLFtbMjAsMTBdLFsyMSwxMF0sWzIyLDEwXSxbMjMsMTBdLFsyNCwxMF0sWzI1LDEwXSxbMjYsMTBdLFsyNywxMF0sWzI4LDEwXSxbMjksMTBdLFszMCwxMF0sWzMxLDEwXV1dXX0",
+      "valid": true,
+      "encodeRoundTrip": true,
+      "expected": {
+        "exercises": [
+          {
+            "catalogKey": null,
+            "name": "Max Sets Custom",
+            "sets": [
+              [
+                20,
+                10
+              ],
+              [
+                21,
+                10
+              ],
+              [
+                22,
+                10
+              ],
+              [
+                23,
+                10
+              ],
+              [
+                24,
+                10
+              ],
+              [
+                25,
+                10
+              ],
+              [
+                26,
+                10
+              ],
+              [
+                27,
+                10
+              ],
+              [
+                28,
+                10
+              ],
+              [
+                29,
+                10
+              ],
+              [
+                30,
+                10
+              ],
+              [
+                31,
+                10
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "max-total-sets",
+      "description": "10 exercises x 12 sets = the 120 total set limit",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxLCJlIjpbWyIiLCJFeGVyY2lzZSAxIixbWzEwLDhdLFsxMSw4XSxbMTIsOF0sWzEzLDhdLFsxNCw4XSxbMTUsOF0sWzE2LDhdLFsxNyw4XSxbMTgsOF0sWzE5LDhdLFsyMCw4XSxbMjEsOF1dXSxbIiIsIkV4ZXJjaXNlIDIiLFtbMTAsOF0sWzExLDhdLFsxMiw4XSxbMTMsOF0sWzE0LDhdLFsxNSw4XSxbMTYsOF0sWzE3LDhdLFsxOCw4XSxbMTksOF0sWzIwLDhdLFsyMSw4XV1dLFsiIiwiRXhlcmNpc2UgMyIsW1sxMCw4XSxbMTEsOF0sWzEyLDhdLFsxMyw4XSxbMTQsOF0sWzE1LDhdLFsxNiw4XSxbMTcsOF0sWzE4LDhdLFsxOSw4XSxbMjAsOF0sWzIxLDhdXV0sWyIiLCJFeGVyY2lzZSA0IixbWzEwLDhdLFsxMSw4XSxbMTIsOF0sWzEzLDhdLFsxNCw4XSxbMTUsOF0sWzE2LDhdLFsxNyw4XSxbMTgsOF0sWzE5LDhdLFsyMCw4XSxbMjEsOF1dXSxbIiIsIkV4ZXJjaXNlIDUiLFtbMTAsOF0sWzExLDhdLFsxMiw4XSxbMTMsOF0sWzE0LDhdLFsxNSw4XSxbMTYsOF0sWzE3LDhdLFsxOCw4XSxbMTksOF0sWzIwLDhdLFsyMSw4XV1dLFsiIiwiRXhlcmNpc2UgNiIsW1sxMCw4XSxbMTEsOF0sWzEyLDhdLFsxMyw4XSxbMTQsOF0sWzE1LDhdLFsxNiw4XSxbMTcsOF0sWzE4LDhdLFsxOSw4XSxbMjAsOF0sWzIxLDhdXV0sWyIiLCJFeGVyY2lzZSA3IixbWzEwLDhdLFsxMSw4XSxbMTIsOF0sWzEzLDhdLFsxNCw4XSxbMTUsOF0sWzE2LDhdLFsxNyw4XSxbMTgsOF0sWzE5LDhdLFsyMCw4XSxbMjEsOF1dXSxbIiIsIkV4ZXJjaXNlIDgiLFtbMTAsOF0sWzExLDhdLFsxMiw4XSxbMTMsOF0sWzE0LDhdLFsxNSw4XSxbMTYsOF0sWzE3LDhdLFsxOCw4XSxbMTksOF0sWzIwLDhdLFsyMSw4XV1dLFsiIiwiRXhlcmNpc2UgOSIsW1sxMCw4XSxbMTEsOF0sWzEyLDhdLFsxMyw4XSxbMTQsOF0sWzE1LDhdLFsxNiw4XSxbMTcsOF0sWzE4LDhdLFsxOSw4XSxbMjAsOF0sWzIxLDhdXV0sWyIiLCJFeGVyY2lzZSAxMCIsW1sxMCw4XSxbMTEsOF0sWzEyLDhdLFsxMyw4XSxbMTQsOF0sWzE1LDhdLFsxNiw4XSxbMTcsOF0sWzE4LDhdLFsxOSw4XSxbMjAsOF0sWzIxLDhdXV1dfQ",
+      "valid": true,
+      "encodeRoundTrip": true,
+      "expected": {
+        "exercises": [
+          {
+            "catalogKey": null,
+            "name": "Exercise 1",
+            "sets": [
+              [
+                10,
+                8
+              ],
+              [
+                11,
+                8
+              ],
+              [
+                12,
+                8
+              ],
+              [
+                13,
+                8
+              ],
+              [
+                14,
+                8
+              ],
+              [
+                15,
+                8
+              ],
+              [
+                16,
+                8
+              ],
+              [
+                17,
+                8
+              ],
+              [
+                18,
+                8
+              ],
+              [
+                19,
+                8
+              ],
+              [
+                20,
+                8
+              ],
+              [
+                21,
+                8
+              ]
+            ]
+          },
+          {
+            "catalogKey": null,
+            "name": "Exercise 2",
+            "sets": [
+              [
+                10,
+                8
+              ],
+              [
+                11,
+                8
+              ],
+              [
+                12,
+                8
+              ],
+              [
+                13,
+                8
+              ],
+              [
+                14,
+                8
+              ],
+              [
+                15,
+                8
+              ],
+              [
+                16,
+                8
+              ],
+              [
+                17,
+                8
+              ],
+              [
+                18,
+                8
+              ],
+              [
+                19,
+                8
+              ],
+              [
+                20,
+                8
+              ],
+              [
+                21,
+                8
+              ]
+            ]
+          },
+          {
+            "catalogKey": null,
+            "name": "Exercise 3",
+            "sets": [
+              [
+                10,
+                8
+              ],
+              [
+                11,
+                8
+              ],
+              [
+                12,
+                8
+              ],
+              [
+                13,
+                8
+              ],
+              [
+                14,
+                8
+              ],
+              [
+                15,
+                8
+              ],
+              [
+                16,
+                8
+              ],
+              [
+                17,
+                8
+              ],
+              [
+                18,
+                8
+              ],
+              [
+                19,
+                8
+              ],
+              [
+                20,
+                8
+              ],
+              [
+                21,
+                8
+              ]
+            ]
+          },
+          {
+            "catalogKey": null,
+            "name": "Exercise 4",
+            "sets": [
+              [
+                10,
+                8
+              ],
+              [
+                11,
+                8
+              ],
+              [
+                12,
+                8
+              ],
+              [
+                13,
+                8
+              ],
+              [
+                14,
+                8
+              ],
+              [
+                15,
+                8
+              ],
+              [
+                16,
+                8
+              ],
+              [
+                17,
+                8
+              ],
+              [
+                18,
+                8
+              ],
+              [
+                19,
+                8
+              ],
+              [
+                20,
+                8
+              ],
+              [
+                21,
+                8
+              ]
+            ]
+          },
+          {
+            "catalogKey": null,
+            "name": "Exercise 5",
+            "sets": [
+              [
+                10,
+                8
+              ],
+              [
+                11,
+                8
+              ],
+              [
+                12,
+                8
+              ],
+              [
+                13,
+                8
+              ],
+              [
+                14,
+                8
+              ],
+              [
+                15,
+                8
+              ],
+              [
+                16,
+                8
+              ],
+              [
+                17,
+                8
+              ],
+              [
+                18,
+                8
+              ],
+              [
+                19,
+                8
+              ],
+              [
+                20,
+                8
+              ],
+              [
+                21,
+                8
+              ]
+            ]
+          },
+          {
+            "catalogKey": null,
+            "name": "Exercise 6",
+            "sets": [
+              [
+                10,
+                8
+              ],
+              [
+                11,
+                8
+              ],
+              [
+                12,
+                8
+              ],
+              [
+                13,
+                8
+              ],
+              [
+                14,
+                8
+              ],
+              [
+                15,
+                8
+              ],
+              [
+                16,
+                8
+              ],
+              [
+                17,
+                8
+              ],
+              [
+                18,
+                8
+              ],
+              [
+                19,
+                8
+              ],
+              [
+                20,
+                8
+              ],
+              [
+                21,
+                8
+              ]
+            ]
+          },
+          {
+            "catalogKey": null,
+            "name": "Exercise 7",
+            "sets": [
+              [
+                10,
+                8
+              ],
+              [
+                11,
+                8
+              ],
+              [
+                12,
+                8
+              ],
+              [
+                13,
+                8
+              ],
+              [
+                14,
+                8
+              ],
+              [
+                15,
+                8
+              ],
+              [
+                16,
+                8
+              ],
+              [
+                17,
+                8
+              ],
+              [
+                18,
+                8
+              ],
+              [
+                19,
+                8
+              ],
+              [
+                20,
+                8
+              ],
+              [
+                21,
+                8
+              ]
+            ]
+          },
+          {
+            "catalogKey": null,
+            "name": "Exercise 8",
+            "sets": [
+              [
+                10,
+                8
+              ],
+              [
+                11,
+                8
+              ],
+              [
+                12,
+                8
+              ],
+              [
+                13,
+                8
+              ],
+              [
+                14,
+                8
+              ],
+              [
+                15,
+                8
+              ],
+              [
+                16,
+                8
+              ],
+              [
+                17,
+                8
+              ],
+              [
+                18,
+                8
+              ],
+              [
+                19,
+                8
+              ],
+              [
+                20,
+                8
+              ],
+              [
+                21,
+                8
+              ]
+            ]
+          },
+          {
+            "catalogKey": null,
+            "name": "Exercise 9",
+            "sets": [
+              [
+                10,
+                8
+              ],
+              [
+                11,
+                8
+              ],
+              [
+                12,
+                8
+              ],
+              [
+                13,
+                8
+              ],
+              [
+                14,
+                8
+              ],
+              [
+                15,
+                8
+              ],
+              [
+                16,
+                8
+              ],
+              [
+                17,
+                8
+              ],
+              [
+                18,
+                8
+              ],
+              [
+                19,
+                8
+              ],
+              [
+                20,
+                8
+              ],
+              [
+                21,
+                8
+              ]
+            ]
+          },
+          {
+            "catalogKey": null,
+            "name": "Exercise 10",
+            "sets": [
+              [
+                10,
+                8
+              ],
+              [
+                11,
+                8
+              ],
+              [
+                12,
+                8
+              ],
+              [
+                13,
+                8
+              ],
+              [
+                14,
+                8
+              ],
+              [
+                15,
+                8
+              ],
+              [
+                16,
+                8
+              ],
+              [
+                17,
+                8
+              ],
+              [
+                18,
+                8
+              ],
+              [
+                19,
+                8
+              ],
+              [
+                20,
+                8
+              ],
+              [
+                21,
+                8
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "max-weight-and-reps",
+      "description": "Boundary values: weight 1000000 and reps 10000",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxLCJlIjpbWyIiLCJCb3VuZGFyeSIsW1sxMDAwMDAwLDEwMDAwXSxbMCwxXV1dXX0",
+      "valid": true,
+      "encodeRoundTrip": true,
+      "expected": {
+        "exercises": [
+          {
+            "catalogKey": null,
+            "name": "Boundary",
+            "sets": [
+              [
+                1000000,
+                10000
+              ],
+              [
+                0,
+                1
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "built-in-resolved-by-name",
+      "description": "Empty catalog key but a built-in name: the receiver resolves bench_press (re-encoding adds the key, so it differs)",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxLCJlIjpbWyIiLCLQltC40Lwg0YjRgtCw0L3Qs9C4INC70LXQttCw0YfQuCIsW1s2MCwxMF1dXV19",
+      "valid": true,
+      "encodeRoundTrip": false,
+      "expected": {
+        "exercises": [
+          {
+            "catalogKey": "bench_press",
+            "name": "Жим штанги лежачи",
+            "sets": [
+              [
+                60,
+                10
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "name-wins-over-wrong-key",
+      "description": "A mismatched catalog key never overrides the reviewed built-in name",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxLCJlIjpbWyJsYXRfcHVsbGRvd24iLCJCZW5jaCBQcmVzcyIsW1s0MCw4XV1dXX0",
+      "valid": true,
+      "encodeRoundTrip": false,
+      "expected": {
+        "exercises": [
+          {
+            "catalogKey": "bench_press",
+            "name": "Bench Press",
+            "sets": [
+              [
+                40,
+                8
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "bad-base64-chars",
+      "description": "Standard-base64 characters and padding are not base64url",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxfQ+/==",
+      "valid": false
+    },
+    {
+      "id": "bad-base64-length",
+      "description": "Encoded length 1 mod 4 cannot be base64",
+      "link": "https://gymapptracker.com/workout/#workout=abcde",
+      "valid": false
+    },
+    {
+      "id": "query-string",
+      "description": "Query string is not allowed",
+      "link": "https://gymapptracker.com/workout/?x=1#workout=eyJ2IjoxLCJlIjpbWyJiZW5jaF9wcmVzcyIsIkJlbmNoIFByZXNzIixbWzgwLDhdLFs4Mi41LDZdXV1dfQ",
+      "valid": false
+    },
+    {
+      "id": "extra-params",
+      "description": "Extra fragment params are not allowed",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxLCJlIjpbWyJiZW5jaF9wcmVzcyIsIkJlbmNoIFByZXNzIixbWzgwLDhdLFs4Mi41LDZdXV1dfQ&utm=1",
+      "valid": false
+    },
+    {
+      "id": "too-many-exercises",
+      "description": "21 exercises exceeds the limit of 20",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxLCJlIjpbWyIiLCJFeGVyY2lzZSAxIixbWzEwLDhdXV0sWyIiLCJFeGVyY2lzZSAyIixbWzEwLDhdXV0sWyIiLCJFeGVyY2lzZSAzIixbWzEwLDhdXV0sWyIiLCJFeGVyY2lzZSA0IixbWzEwLDhdXV0sWyIiLCJFeGVyY2lzZSA1IixbWzEwLDhdXV0sWyIiLCJFeGVyY2lzZSA2IixbWzEwLDhdXV0sWyIiLCJFeGVyY2lzZSA3IixbWzEwLDhdXV0sWyIiLCJFeGVyY2lzZSA4IixbWzEwLDhdXV0sWyIiLCJFeGVyY2lzZSA5IixbWzEwLDhdXV0sWyIiLCJFeGVyY2lzZSAxMCIsW1sxMCw4XV1dLFsiIiwiRXhlcmNpc2UgMTEiLFtbMTAsOF1dXSxbIiIsIkV4ZXJjaXNlIDEyIixbWzEwLDhdXV0sWyIiLCJFeGVyY2lzZSAxMyIsW1sxMCw4XV1dLFsiIiwiRXhlcmNpc2UgMTQiLFtbMTAsOF1dXSxbIiIsIkV4ZXJjaXNlIDE1IixbWzEwLDhdXV0sWyIiLCJFeGVyY2lzZSAxNiIsW1sxMCw4XV1dLFsiIiwiRXhlcmNpc2UgMTciLFtbMTAsOF1dXSxbIiIsIkV4ZXJjaXNlIDE4IixbWzEwLDhdXV0sWyIiLCJFeGVyY2lzZSAxOSIsW1sxMCw4XV1dLFsiIiwiRXhlcmNpc2UgMjAiLFtbMTAsOF1dXSxbIiIsIkV4ZXJjaXNlIDIxIixbWzEwLDhdXV1dfQ",
+      "valid": false
+    },
+    {
+      "id": "reps-zero",
+      "description": "Reps must be at least 1",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxLCJlIjpbWyIiLCJaZXJvIFJlcHMiLFtbMTAsMF1dXV19",
+      "valid": false
+    },
+    {
+      "id": "weight-over-limit",
+      "description": "Weight above 1000000 is rejected",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxLCJlIjpbWyIiLCJUb28gSGVhdnkiLFtbMTAwMDAwMSw1XV1dXX0",
+      "valid": false
+    },
+    {
+      "id": "duplicate-exercise",
+      "description": "The same built-in exercise twice",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxLCJlIjpbWyJiZW5jaF9wcmVzcyIsIkJlbmNoIFByZXNzIixbWzgwLDhdLFs4Mi41LDZdXV0sWyIiLCJiZW5jaCBwcmVzcyIsW1s1MCw1XV1dXX0",
+      "valid": false
+    },
+    {
+      "id": "duplicate-custom-exercise",
+      "description": "The same custom name twice (case-insensitive)",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxLCJlIjpbWyIiLCJNeSBDdXN0b20iLFtbMTAsNV1dXSxbIiIsIm15IGN1c3RvbSIsW1syMCw1XV1dXX0",
+      "valid": false
+    },
+    {
+      "id": "too-many-sets-per-exercise",
+      "description": "13 sets in one exercise exceeds 12",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoxLCJlIjpbWyIiLCJUb28gTWFueSBTZXRzIixbWzEwLDhdLFsxMCw4XSxbMTAsOF0sWzEwLDhdLFsxMCw4XSxbMTAsOF0sWzEwLDhdLFsxMCw4XSxbMTAsOF0sWzEwLDhdLFsxMCw4XSxbMTAsOF0sWzEwLDhdXV1dfQ",
+      "valid": false
+    },
+    {
+      "id": "unsupported-version",
+      "description": "Version 2 payloads are rejected",
+      "link": "https://gymapptracker.com/workout/#workout=eyJ2IjoyLCJlIjpbWyJiZW5jaF9wcmVzcyIsIkJlbmNoIFByZXNzIixbWzgwLDhdLFs4Mi41LDZdXV1dfQ",
+      "valid": false
+    },
+    {
+      "id": "empty-fragment",
+      "description": "Empty payload",
+      "link": "https://gymapptracker.com/workout/#workout=",
+      "valid": false
+    }
+  ]
+}

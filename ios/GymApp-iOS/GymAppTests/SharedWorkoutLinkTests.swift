@@ -360,6 +360,84 @@ final class SharedWorkoutLinkTests: XCTestCase {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
+
+    // MARK: - Shared golden cases (shared/shared-workout-link-v1.json, also run on Android)
+
+    private func goldenCases() throws -> [[String: Any]] {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("shared/shared-workout-link-v1.json")
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+        )
+        return try XCTUnwrap(root["cases"] as? [[String: Any]])
+    }
+
+    private func goldenPlan(_ expected: [String: Any]) throws -> SharedWorkoutPlan {
+        let exercises = try XCTUnwrap(expected["exercises"] as? [[String: Any]])
+        return SharedWorkoutPlan(exercises: try exercises.map { exercise in
+            let sets = try XCTUnwrap(exercise["sets"] as? [[NSNumber]])
+            return SharedWorkoutPlanExercise(
+                catalogKey: exercise["catalogKey"] as? String,
+                name: try XCTUnwrap(exercise["name"] as? String),
+                sets: sets.map {
+                    SharedWorkoutPlanSet(weight: $0[0].doubleValue, repetitions: $0[1].intValue)
+                }
+            )
+        })
+    }
+
+    private func goldenPayloadJSON(_ link: String) throws -> NSDictionary {
+        var base64 = String(try XCTUnwrap(link.components(separatedBy: "#workout=").last))
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        base64 += String(repeating: "=", count: (4 - base64.count % 4) % 4)
+        let data = try XCTUnwrap(Data(base64Encoded: base64))
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? NSDictionary)
+    }
+
+    func testSharedGoldenCasesDecodeAndRejectLikeAndroid() throws {
+        let cases = try goldenCases()
+        XCTAssertGreaterThanOrEqual(cases.count, 10)
+        for golden in cases {
+            let id = try XCTUnwrap(golden["id"] as? String)
+            let link = try XCTUnwrap(golden["link"] as? String)
+            let valid = try XCTUnwrap(golden["valid"] as? Bool)
+            guard let url = URL(string: link) else {
+                XCTAssertFalse(valid, "\(id): URL must be constructible")
+                continue
+            }
+            if !valid {
+                XCTAssertThrowsError(try SharedWorkoutLinkDecoder.decode(url), "\(id) must be rejected")
+                continue
+            }
+            let expected = try goldenPlan(XCTUnwrap(golden["expected"] as? [String: Any]))
+            XCTAssertEqual(try SharedWorkoutLinkDecoder.decode(url), expected, "\(id) must decode to the expected plan")
+        }
+    }
+
+    func testSharedGoldenValidCasesReEncodeToTheSamePayload() throws {
+        var checked = 0
+        for golden in try goldenCases() {
+            guard golden["valid"] as? Bool == true,
+                  golden["encodeRoundTrip"] as? Bool == true else { continue }
+            let id = try XCTUnwrap(golden["id"] as? String)
+            let expected = try goldenPlan(XCTUnwrap(golden["expected"] as? [String: Any]))
+            let encoded = try SharedWorkoutLinkEncoder.makeURL(plan: expected)
+            // Key order is not compared: the PWA writes v,e while this encoder's order is unspecified.
+            XCTAssertEqual(
+                try goldenPayloadJSON(encoded.absoluteString),
+                try goldenPayloadJSON(XCTUnwrap(golden["link"] as? String)),
+                "\(id) must encode the same payload"
+            )
+            XCTAssertEqual(try SharedWorkoutLinkDecoder.decode(encoded), expected, "\(id) must round-trip")
+            checked += 1
+        }
+        XCTAssertGreaterThanOrEqual(checked, 5)
+    }
 }
 
 private final class SharedWorkoutTestKeychain: KeychainStoring {
