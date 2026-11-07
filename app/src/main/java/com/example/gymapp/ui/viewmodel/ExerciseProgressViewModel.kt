@@ -21,9 +21,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -161,10 +163,20 @@ internal fun resolveProgressExerciseSelection(
     history: List<ExerciseHistoryEntry>,
     currentId: Long?,
     userPicked: Boolean
+): Long? = resolveProgressExerciseSelection(exercises, currentId, userPicked) {
+    defaultProgressExerciseId(exercises, history)
+}
+
+/** Same rule with the default computed by the caller (so the history scan can run off the main thread). */
+internal inline fun resolveProgressExerciseSelection(
+    exercises: List<ExerciseEntity>,
+    currentId: Long?,
+    userPicked: Boolean,
+    defaultId: () -> Long?
 ): Long? {
     if (exercises.isEmpty()) return null
     if (userPicked && currentId != null && exercises.any { it.id == currentId }) return currentId
-    return defaultProgressExerciseId(exercises, history)
+    return defaultId()
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -187,9 +199,18 @@ class ExerciseProgressViewModel(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = emptyList()
     )
+    /** One upstream of the whole-history join for this ViewModel; comparison runs off the main thread. */
+    private val allExerciseHistoryFlow = repository.observeAllExerciseHistory()
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
+        .shareIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            replay = 1
+        )
     private val exerciseCatalogFlow = combine(
         exercises,
-        repository.observeAllExerciseHistory(),
+        allExerciseHistoryFlow,
         repository.observeExerciseMuscleMappings()
     ) { exerciseList, history, mappings ->
         val manualMappings = mappings.toManualContributionMap()
@@ -275,15 +296,16 @@ class ExerciseProgressViewModel(
 
     init {
         viewModelScope.launch {
-            combine(exercises, repository.observeAllExerciseHistory()) { list, history ->
-                list to history
-            }.collect { (list, history) ->
+            // The history scan for the default pick runs on Default; the pick itself is resolved on the
+            // collector's thread so a concurrent user selection is never overwritten by a stale value.
+            combine(exercises, allExerciseHistoryFlow) { list, history ->
+                list to defaultProgressExerciseId(list, history)
+            }.flowOn(Dispatchers.Default).collect { (list, defaultId) ->
                 selectedExerciseId.value = resolveProgressExerciseSelection(
                     exercises = list,
-                    history = history,
                     currentId = selectedExerciseId.value,
                     userPicked = userPickedExercise
-                )
+                ) { defaultId }
             }
         }
     }

@@ -55,9 +55,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -747,10 +749,23 @@ class ActiveWorkoutViewModel(
             initialValue = null
         )
 
+    /**
+     * One upstream of the whole-history join for this ViewModel (it is re-run on every write); the
+     * list comparison runs off the main thread and unchanged results are dropped.
+     */
+    private val allExerciseHistoryFlow = repository.observeAllExerciseHistory()
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
+        .shareIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            replay = 1
+        )
+
     private val sourceState = combine(
         details,
         inputs,
-        combine(repository.observeExercises(), repository.observeAllExerciseHistory(), repository.observeExerciseLoadProfiles()) {
+        combine(repository.observeExercises(), allExerciseHistoryFlow, repository.observeExerciseLoadProfiles()) {
             catalog, history, profiles -> Triple(catalog, history, profiles)
         },
         hasLoaded
@@ -764,7 +779,7 @@ class ActiveWorkoutViewModel(
     /** Picker data for "+ Add exercise"; computed only while the screen observes it. */
     val addExerciseCatalog: StateFlow<ActiveWorkoutAddExerciseCatalog> = combine(
         repository.observeExercises(),
-        repository.observeAllExerciseHistory(),
+        allExerciseHistoryFlow,
         repository.observeExerciseMuscleMappings(),
         details
     ) { exercises, history, mappings, workout ->
