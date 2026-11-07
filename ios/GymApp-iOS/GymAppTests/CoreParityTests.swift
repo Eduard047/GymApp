@@ -18558,6 +18558,17 @@ final class CoreParityTests: XCTestCase {
         )
     }
 
+    func testPostWorkoutLevelUpShowsFromToOnlyWhenLevelRises() {
+        XCTAssertNil(postWorkoutLevelUp(previousLevel: 3, currentLevel: 3))
+        XCTAssertNil(postWorkoutLevelUp(previousLevel: 4, currentLevel: 3))
+        let one = postWorkoutLevelUp(previousLevel: 3, currentLevel: 4)
+        XCTAssertEqual(one?.from, 3)
+        XCTAssertEqual(one?.to, 4)
+        let two = postWorkoutLevelUp(previousLevel: 3, currentLevel: 5)
+        XCTAssertEqual(two?.from, 3)
+        XCTAssertEqual(two?.to, 5)
+    }
+
     func testPostWorkoutAttributionExcludesFutureProgressStreakAndRecords() throws {
         let calendar = utcCalendar()
         let firstMonday = try utcDate(year: 2026, month: 8, day: 3, calendar: calendar)

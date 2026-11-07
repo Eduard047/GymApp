@@ -12,8 +12,15 @@ struct PostWorkoutAttribution {
     let sessionsThroughCurrent: [WorkoutSessionSummary]
     let previousSessions: [WorkoutSessionSummary]
     let afterSnapshot: GamificationSnapshot
+    /// Level before this workout's XP; with `afterSnapshot` it drives the level-up pill.
+    let previousLevel: Int
     let weeklyStreakWeeks: Int
     let rewards: PostWorkoutRewardDelta
+}
+
+/// The "Level up! N → M" pill's content: non-nil only when the workout raised the level.
+func postWorkoutLevelUp(previousLevel: Int, currentLevel: Int) -> (from: Int, to: Int)? {
+    currentLevel > previousLevel ? (from: previousLevel, to: currentLevel) : nil
 }
 
 private func isPostWorkoutEarlier(
@@ -84,6 +91,7 @@ func postWorkoutAttribution(
         sessionsThroughCurrent: sessionsThroughCurrent,
         previousSessions: previousSessions,
         afterSnapshot: after,
+        previousLevel: before.progression.level,
         weeklyStreakWeeks: WeeklyStreakCalculator.current(
             sessions: sessionsThroughCurrent,
             targetTrainingDays: targetTrainingDays,
@@ -367,7 +375,11 @@ struct PostWorkoutSummaryView: View {
 
     private func rewardHero(_ workout: WorkoutSession) -> some View {
         let xp = sessionSummary.map(GamificationEngine.xpForSession) ?? 0
-        let progression = gamification.progression
+        let experience = postWorkoutExperience
+        let progression = (experience?.afterSnapshot ?? store.gamificationSnapshot(calendar: calendar)).progression
+        let levelUp = experience.flatMap {
+            postWorkoutLevelUp(previousLevel: $0.previousLevel, currentLevel: progression.level)
+        }
         return GymHeroPanel {
             VStack(alignment: .leading, spacing: 16) {
                 GymAdaptiveStack(rowAlignment: .top, spacing: 12, columnSpacing: 8) {
@@ -430,9 +442,31 @@ struct PostWorkoutSummaryView: View {
                     .font(.caption)
                     .foregroundStyle(GymTheme.onHeroSecondary)
                 }
+
+                if let levelUp {
+                    levelUpPill(from: levelUp.from, to: levelUp.to)
+                }
             }
             .accessibilityElement(children: .combine)
         }
+    }
+
+    /// Flat tonal capsule on the hero, matching Android's `post_workout_level_up` InfoPill.
+    private func levelUpPill(from: Int, to: Int) -> some View {
+        Text(gymText(
+            "Level up! \(from) → \(to)",
+            "Новий рівень! \(from) → \(to)",
+            "Новый уровень! \(from) → \(to)",
+            languageCode: languageCode
+        ))
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(GymTheme.heroAccentText)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7)
+        .background(Capsule().fill(GymTheme.heroAccentText.opacity(0.12)))
+        .overlay { Capsule().strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
+        .accessibilityElement(children: .combine)
     }
 
     /// "Сб, 26 сент. · 4 ч 31 мин" — abbreviated weekday + day + abbreviated
