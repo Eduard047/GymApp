@@ -1636,7 +1636,6 @@ enum ExerciseFilterEngine {
         guard let tokens = boundedSearchTokens(
             trimmed,
             maximumCharacters: maximumSearchQueryCharacters,
-            allowTransliteratedConnectors: true,
             fallbackToRawTokensWhenEmpty: true
         ), !tokens.isEmpty else { return .invalid }
         return .value(
@@ -1650,10 +1649,9 @@ enum ExerciseFilterEngine {
 
     /// Produces a small Unicode-aware token list before matching any user-controlled query,
     /// generated vocabulary term, or custom exercise name.
-    private static func boundedSearchTokens(
+    static func boundedSearchTokens(
         _ value: String,
         maximumCharacters: Int,
-        allowTransliteratedConnectors: Bool = false,
         fallbackToRawTokensWhenEmpty: Bool = false
     ) -> [String]? {
         let prefix = value.prefix(maximumCharacters + 1)
@@ -1680,12 +1678,11 @@ enum ExerciseFilterEngine {
         let rawTokens = separated
             .split(separator: " ")
             .map(String.init)
-        let canDropTransliteratedConnectors =
-            allowTransliteratedConnectors && rawTokens.count >= 3
+        // Same rule as Android exerciseSearchTokens: connector words and their transliterations
+        // are always dropped, whatever the token count (shared/exercise-search-v1.json).
         var tokens = rawTokens.filter { token in
             !ExerciseSearchVocabulary.connectorTokens.contains(token) &&
-                !(canDropTransliteratedConnectors &&
-                    transliteratedConnectorTokens.contains(token))
+                !transliteratedConnectorTokens.contains(transliterated(token))
         }
         // A query made only of connector words ("a", "в") still searches by prefix.
         if tokens.isEmpty && fallbackToRawTokensWhenEmpty {
@@ -1797,7 +1794,7 @@ enum ExerciseFilterEngine {
         return true
     }
 
-    private static func transliterated(_ value: String) -> String {
+    static func transliterated(_ value: String) -> String {
         var result = ""
         for character in value {
             let replacement: String
@@ -1807,10 +1804,13 @@ enum ExerciseFilterEngine {
             case "в": replacement = "v"
             case "г", "ґ": replacement = "g"
             case "д": replacement = "d"
-            case "е", "є", "э": replacement = "e"
+            case "е", "ё", "э": replacement = "e"
+            case "є": replacement = "ye"
             case "ж": replacement = "zh"
             case "з": replacement = "z"
-            case "и", "і", "ї", "й", "ы": replacement = "i"
+            case "и", "і": replacement = "i"
+            case "ї": replacement = "yi"
+            case "й", "ы": replacement = "y"
             case "к": replacement = "k"
             case "л": replacement = "l"
             case "м": replacement = "m"

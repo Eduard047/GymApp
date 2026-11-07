@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "description": "Exercise search normalization shared by Android (exerciseSearchTokens / transliterateExerciseSearchToken) and iOS (ExerciseFilterEngine.boundedSearchTokens / transliterated). Connector words and their transliterations are always dropped, whatever the token count; a query made only of connectors keeps its raw tokens.",
+  "transliteration": [
+    { "id": "ukr-ye", "input": "європа", "expected": "yevropa" },
+    { "id": "ukr-yi", "input": "їжак", "expected": "yizhak" },
+    { "id": "ukr-y-start", "input": "йога", "expected": "yoga" },
+    { "id": "ukr-y-middle", "input": "підйом", "expected": "pidyom" },
+    { "id": "ukr-g", "input": "ґанок", "expected": "ganok" },
+    { "id": "ukr-i", "input": "ліфт", "expected": "lift" },
+    { "id": "rus-yery", "input": "сыр", "expected": "syr" },
+    { "id": "rus-hard-sign", "input": "подъем", "expected": "podem" },
+    { "id": "rus-yo", "input": "ёлка", "expected": "elka" },
+    { "id": "rus-e-reverse", "input": "эхо", "expected": "eho" },
+    { "id": "rus-yu-ya", "input": "юля", "expected": "yulya" },
+    { "id": "rus-shch", "input": "щука", "expected": "shchuka" },
+    { "id": "rus-zh", "input": "жим", "expected": "zhim" },
+    { "id": "rus-soft-sign", "input": "лось", "expected": "los" },
+    { "id": "latin-passthrough", "input": "bench", "expected": "bench" }
+  ],
+  "tokenCases": [
+    { "id": "empty", "query": "", "tokens": [] },
+    { "id": "blank", "query": "   ", "tokens": [] },
+    { "id": "one-token-plain", "query": "жим", "tokens": ["жим"] },
+    { "id": "one-token-connector-ukr", "query": "з", "tokens": ["з"] },
+    { "id": "one-token-connector-rus", "query": "на", "tokens": ["на"] },
+    { "id": "one-token-connector-latin", "query": "with", "tokens": ["with"] },
+    { "id": "two-tokens-all-connectors", "query": "на з", "tokens": ["на", "з"] },
+    { "id": "two-tokens-ukr-connector", "query": "жим на", "tokens": ["жим"] },
+    { "id": "two-tokens-latin-connector", "query": "press with", "tokens": ["press"] },
+    { "id": "two-tokens-latin-transliterated-connector", "query": "y press", "tokens": ["press"] },
+    { "id": "three-tokens-ukr", "query": "жим на лавці", "tokens": ["жим", "лавці"] },
+    { "id": "three-tokens-latin", "query": "bench press with dumbbells", "tokens": ["bench", "press", "dumbbells"] },
+    { "id": "four-tokens-ukr", "query": "жим лежачи з гантелями", "tokens": ["жим", "лежачи", "гантелями"] },
+    { "id": "uppercase", "query": "Підтягування З Широким", "tokens": ["підтягування", "широким"] },
+    { "id": "yo-folds-to-ye", "query": "Ёлка", "tokens": ["елка"] },
+    { "id": "punctuation-splits", "query": "жим-лежа, (штанга)", "tokens": ["жим", "лежа", "штанга"] },
+    { "id": "ukr-letters-kept", "query": "європа їжак йога", "tokens": ["європа", "їжак", "йога"] }
+  ]
+}

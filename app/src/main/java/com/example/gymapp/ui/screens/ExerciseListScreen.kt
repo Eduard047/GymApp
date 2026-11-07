@@ -346,7 +346,7 @@ private fun exerciseSearchPhrase(
     return ExerciseSearchPhrase(tokens)
 }
 
-private fun transliterateExerciseSearchToken(value: String): String {
+internal fun transliterateExerciseSearchToken(value: String): String {
     return buildString(value.length) {
         value.forEach { character ->
             append(
