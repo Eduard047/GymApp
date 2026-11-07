@@ -117,6 +117,8 @@ final class AppState: ObservableObject {
     /// in the background to run an intent.
     let liveActivityController = WorkoutLiveActivityController()
     private var liveActivityDraftSubscription: AnyCancellable?
+    private var liveActivityLanguageSubscription: AnyCancellable?
+    private var liveActivityLanguageCode: String?
     /// The one app-level toast controller. Every transient message goes through
     /// `show(message:isError:)` (or `toasts` directly for an action toast).
     let toasts = GymToastCenter()
@@ -274,6 +276,7 @@ final class AppState: ObservableObject {
         )
         observeStore()
         bindLiveActivityController()
+        observeLiveActivityLanguage()
 
         if openedStore.quarantinedFileURL != nil {
             // Raised while the intro is still on screen, so it stays up longer.
@@ -2889,6 +2892,28 @@ final class AppState: ObservableObject {
         liveActivityDraftSubscription = activeWorkoutStore.$draft
             .sink { [weak self] draft in
                 self?.liveActivityController.sync(draft: draft)
+            }
+    }
+
+    /// The Live Activity's labels are built in the app from the in-app language
+    /// (`@AppStorage("app-language")` -> `UserDefaults`). A language change alone
+    /// does not touch the draft, so re-sync the running activity here. The code
+    /// is compared against the last one seen, so unrelated defaults writes and
+    /// launch cause no extra update.
+    private func observeLiveActivityLanguage() {
+        liveActivityLanguageCode = gymCurrentLanguageCode(defaults: defaults)
+        liveActivityLanguageSubscription = NotificationCenter.default
+            .publisher(for: UserDefaults.didChangeNotification, object: defaults)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let code = gymCurrentLanguageCode(defaults: self.defaults)
+                guard code != self.liveActivityLanguageCode else { return }
+                self.liveActivityLanguageCode = code
+                self.liveActivityController.refreshForLanguageChange(
+                    draft: self.activeWorkoutStore.draft,
+                    languageCode: code
+                )
             }
     }
 

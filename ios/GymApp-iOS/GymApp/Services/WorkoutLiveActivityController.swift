@@ -201,6 +201,24 @@ final class WorkoutLiveActivityController: ObservableObject {
         }
     }
 
+    /// Re-sends the running activity's content after an in-app language change
+    /// so the Lock Screen card's Set / Next / button labels switch right away.
+    /// Updates only an activity this controller already holds: it never starts
+    /// one, never ends one, and does nothing when no activity is running.
+    func refreshForLanguageChange(
+        draft: ActiveWorkoutDraft?,
+        languageCode: String = gymCurrentLanguageCode()
+    ) {
+        guard let activity, let draft else { return }
+        let state = Self.contentState(
+            for: draft,
+            workoutStore: workoutStore,
+            languageCode: languageCode
+        )
+        let content = ActivityContent(state: state, staleDate: nil)
+        Task { await activity.update(content) }
+    }
+
     /// Ends the activity right away (workout finished or discarded). Removes
     /// both the Dynamic Island and the Lock Screen presentation.
     func endImmediately() {

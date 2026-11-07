@@ -202,6 +202,42 @@ final class WorkoutLiveActivityControllerDecisionTests: XCTestCase {
         XCTAssertEqual(requester.requestedAttributes.first?.workoutID, draft.id)
     }
 
+    func testLanguageChangeUpdatesRunningActivityOnceWithoutRestarting() async {
+        let requester = FakeLiveActivityRequester()
+        let handle = requester.nextHandle
+        let controller = WorkoutLiveActivityController(requester: requester)
+        let draft = Fixture.draft(exercises: [
+            Fixture.exercise(name: "Bench Press", sets: [Fixture.set(weight: 60, reps: 8, completed: false)])
+        ])
+        controller.sync(draft: draft)
+        let before = handle.updates.count
+
+        controller.refreshForLanguageChange(draft: draft, languageCode: "uk")
+        await Task.yield()
+        for _ in 0 ..< 20 where handle.updates.count == before { await Task.yield() }
+
+        XCTAssertEqual(requester.requestCount, 1, "A language change must not start another activity")
+        XCTAssertEqual(handle.endCount, 0)
+        XCTAssertEqual(handle.updates.count, before + 1, "Exactly one update")
+        XCTAssertEqual(handle.updates.last?.setLabel, "Підхід")
+        XCTAssertEqual(handle.updates.last?.nextLabel, "Далі:")
+        XCTAssertEqual(handle.updates.last?.resolvedRecordSetButtonTitle, "Записати підхід")
+    }
+
+    func testLanguageChangeWithoutRunningActivityStartsNothing() async {
+        let requester = FakeLiveActivityRequester()
+        let controller = WorkoutLiveActivityController(requester: requester)
+        let draft = Fixture.draft(exercises: [
+            Fixture.exercise(name: "Bench Press", sets: [Fixture.set(weight: 60, reps: 8, completed: false)])
+        ])
+
+        controller.refreshForLanguageChange(draft: draft, languageCode: "ru")
+        await Task.yield()
+
+        XCTAssertEqual(requester.requestCount, 0)
+        XCTAssertTrue(requester.nextHandle.updates.isEmpty)
+    }
+
     func testSyncTwiceUpdatesRatherThanStartingASecondActivity() {
         let requester = FakeLiveActivityRequester()
         let controller = WorkoutLiveActivityController(requester: requester)
