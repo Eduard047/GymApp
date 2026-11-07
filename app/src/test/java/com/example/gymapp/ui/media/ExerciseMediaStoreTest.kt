@@ -22,6 +22,42 @@ class ExerciseMediaStoreTest {
     }
 
     @Test
+    fun orientationTransformMapsAllEightExifOrientations() {
+        val expected = mapOf(
+            1 to (0 to false),
+            2 to (0 to true),
+            3 to (180 to false),
+            4 to (180 to true),
+            5 to (90 to true),
+            6 to (90 to false),
+            7 to (270 to true),
+            8 to (270 to false)
+        )
+        expected.forEach { (orientation, rotationAndMirror) ->
+            val transform = ExerciseMediaStore.orientationTransform(orientation)
+            assertEquals("rotation for $orientation", rotationAndMirror.first, transform.rotationDegrees)
+            assertEquals("mirror for $orientation", rotationAndMirror.second, transform.mirrorHorizontally)
+        }
+    }
+
+    @Test
+    fun orientationTransformTreatsUnknownValuesAsUpright() {
+        listOf(0, 9, -1, 255).forEach {
+            assertTrue(ExerciseMediaStore.orientationTransform(it).isIdentity)
+        }
+    }
+
+    @Test
+    fun orientedSizeSwapsWidthAndHeightOnlyForQuarterTurns() {
+        (listOf(5, 6, 7, 8)).forEach {
+            assertEquals(3_000 to 4_000, ExerciseMediaStore.orientedSize(4_000, 3_000, it))
+        }
+        listOf(1, 2, 3, 4, 0).forEach {
+            assertEquals(4_000 to 3_000, ExerciseMediaStore.orientedSize(4_000, 3_000, it))
+        }
+    }
+
+    @Test
     fun bundledMediaUsesStableCatalogIdentityAcrossSupportedLanguages() {
         assertEquals("bench_press", ExerciseMediaStore.bundledCatalogKey("Bench Press"))
         assertEquals("bench_press", ExerciseMediaStore.bundledCatalogKey("Жим штанги лежачи"))

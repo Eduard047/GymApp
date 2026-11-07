@@ -3,9 +3,12 @@ package com.example.gymapp.ui.media
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import androidx.collection.LruCache
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
@@ -120,11 +123,14 @@ object ExerciseMediaStore {
             "invalid_dimensions"
         }
         val decodeOptions = sampledOptions(bounds, MaxSavedDimension, MaxSavedDimension)
-        val decoded = requireNotNull(
+        val sampled = requireNotNull(
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOptions)
         ) {
             "invalid_image"
         }
+        // BitmapFactory ignores EXIF orientation and the JPEG re-encode below drops the tag,
+        // so portrait camera photos would be saved sideways. Bake the rotation into the pixels.
+        val decoded = applyExifOrientation(sampled, readExifOrientation(bytes))
         val scale = min(1f, MaxSavedDimension.toFloat() / maxOf(decoded.width, decoded.height))
         val scaled = if (scale < 1f) {
             Bitmap.createScaledBitmap(
@@ -181,6 +187,51 @@ object ExerciseMediaStore {
         }
         if (directory.listFiles()?.isNotEmpty() != false) return false
         return directory.delete() && cleared
+    }
+
+    /** Rotation (clockwise degrees) followed by an optional horizontal mirror. */
+    internal data class OrientationTransform(
+        val rotationDegrees: Int,
+        val mirrorHorizontally: Boolean
+    ) {
+        val isIdentity: Boolean get() = rotationDegrees == 0 && !mirrorHorizontally
+        val swapsAxes: Boolean get() = rotationDegrees == 90 || rotationDegrees == 270
+    }
+
+    /** Maps an EXIF orientation value (1..8) to the transform that makes the pixels upright. */
+    internal fun orientationTransform(exifOrientation: Int): OrientationTransform =
+        when (exifOrientation) {
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> OrientationTransform(0, true)
+            ExifInterface.ORIENTATION_ROTATE_180 -> OrientationTransform(180, false)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> OrientationTransform(180, true)
+            ExifInterface.ORIENTATION_TRANSPOSE -> OrientationTransform(90, true)
+            ExifInterface.ORIENTATION_ROTATE_90 -> OrientationTransform(90, false)
+            ExifInterface.ORIENTATION_TRANSVERSE -> OrientationTransform(270, true)
+            ExifInterface.ORIENTATION_ROTATE_270 -> OrientationTransform(270, false)
+            else -> OrientationTransform(0, false)
+        }
+
+    internal fun orientedSize(width: Int, height: Int, exifOrientation: Int): Pair<Int, Int> =
+        if (orientationTransform(exifOrientation).swapsAxes) height to width else width to height
+
+    private fun readExifOrientation(bytes: ByteArray): Int =
+        runCatching {
+            ExifInterface(ByteArrayInputStream(bytes)).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+
+    private fun applyExifOrientation(source: Bitmap, exifOrientation: Int): Bitmap {
+        val transform = orientationTransform(exifOrientation)
+        if (transform.isIdentity) return source
+        val matrix = Matrix().apply {
+            setRotate(transform.rotationDegrees.toFloat())
+            if (transform.mirrorHorizontally) postScale(-1f, 1f)
+        }
+        val oriented = Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
+        if (oriented !== source) source.recycle()
+        return oriented
     }
 
     internal fun calculateInSampleSize(
