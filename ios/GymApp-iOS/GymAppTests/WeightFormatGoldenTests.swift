@@ -32,18 +32,30 @@ final class WeightFormatGoldenTests: XCTestCase {
                     gymVolumeText(value, languageCode: language), "\(expectedVolume)\u{00A0}\(unit)",
                     "\(id) volume \(language)"
                 )
-                // gymWeightText and the weight field also group digits from 1000 on, so they only
-                // match the ungrouped display text below that.
+                // The weight field never groups digits, so it matches the ungrouped display text
+                // for every value. gymWeightText groups from 1000 on, so it only matches below that.
+                XCTAssertEqual(
+                    GymWeightFieldFormat(languageCode: language).format(value), expectedDisplay,
+                    "\(id) field \(language)"
+                )
                 if value < 1000 {
                     XCTAssertEqual(
                         gymWeightText(value, languageCode: language), "\(expectedDisplay) \(unit)",
                         "\(id) weightText \(language)"
                     )
-                    XCTAssertEqual(
-                        GymWeightFieldFormat(languageCode: language).format(value), expectedDisplay,
-                        "\(id) field \(language)"
-                    )
                 }
+            }
+        }
+    }
+
+    func testWeightFieldRoundTripsLargeWeightsInEveryLanguage() {
+        for language in ["en", "uk", "ru"] {
+            let style = GymWeightFieldFormat(languageCode: language)
+            for value in [1000.0, 1250.5, 12345.6] {
+                let text = style.format(value)
+                XCTAssertFalse(text.contains("\u{00A0}") || text.contains(" "), "\(language) \(value) grouped: \(text)")
+                XCTAssertEqual(GymWeightFieldFormat.parse(text), value, "\(language) \(value) via \(text)")
+                XCTAssertEqual(try? style.parseStrategy.parse(text), value, "\(language) \(value) strategy")
             }
         }
     }
