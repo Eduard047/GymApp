@@ -16,6 +16,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -23,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -76,6 +78,36 @@ fun GymModalBottomSheet(
         GymToastSheetHost()
         content()
     }
+}
+
+/** A sheet with unsaved edits must never reach Hidden by gesture, scrim tap or Back. */
+@OptIn(ExperimentalMaterial3Api::class)
+internal fun sheetHideAllowed(target: SheetValue, hasUnsavedChanges: Boolean): Boolean =
+    target != SheetValue.Hidden || !hasUnsavedChanges
+
+/**
+ * Sheet state for a sheet that asks "Discard changes?" before closing. While [hasUnsavedChanges],
+ * any attempt to hide it (swipe down, scrim tap, Back) is vetoed, so "Keep editing" leaves the sheet
+ * visible and interactive instead of hidden-but-composed with its window still eating touches, and
+ * [onHideBlocked] raises the discard dialog. Hiding is allowed again once the edits are gone.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun rememberDiscardGuardedSheetState(
+    hasUnsavedChanges: Boolean,
+    onHideBlocked: () -> Unit,
+    skipPartiallyExpanded: Boolean = false
+): SheetState {
+    val dirty by rememberUpdatedState(hasUnsavedChanges)
+    val blocked by rememberUpdatedState(onHideBlocked)
+    return rememberModalBottomSheetState(
+        skipPartiallyExpanded = skipPartiallyExpanded,
+        confirmValueChange = { target ->
+            val allowed = sheetHideAllowed(target, dirty)
+            if (!allowed) blocked()
+            allowed
+        }
+    )
 }
 
 /** `radii.sheet-top`: 32 dp on both top corners, square at the bottom edge. */

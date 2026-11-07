@@ -1,9 +1,14 @@
 package com.example.gymapp.ui.components
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SheetValue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(ExperimentalMaterial3Api::class)
 class GymModalBottomSheetTest {
     @Test
     fun scrimMatchesDesignTokensPerTheme() {
@@ -16,5 +21,13 @@ class GymModalBottomSheetTest {
         assertEquals(36f, GymSheetHandleWidth.value, 0f)
         assertEquals(5f, GymSheetHandleHeight.value, 0f)
         assertEquals(8f, GymSheetHandleTopPadding.value, 0f)
+    }
+
+    @Test
+    fun dirtySheetNeverHidesButStillExpandsAndCleanSheetHides() {
+        assertFalse(sheetHideAllowed(SheetValue.Hidden, hasUnsavedChanges = true))
+        assertTrue(sheetHideAllowed(SheetValue.Expanded, hasUnsavedChanges = true))
+        assertTrue(sheetHideAllowed(SheetValue.PartiallyExpanded, hasUnsavedChanges = true))
+        assertTrue(sheetHideAllowed(SheetValue.Hidden, hasUnsavedChanges = false))
     }
 }

@@ -49,6 +49,30 @@ private fun trainingProfileAccountKey(stableIdentity: String): String {
         .joinToString(separator = "") { byte -> "%02x".format(byte) }
 }
 
+internal data class TrainingProfileBinding(
+    val accountKey: String?,
+    val profile: TrainingProfile
+)
+
+/** Resolves the state for [nextAccountKey]; a throwing [read] yields defaults, never old values. */
+internal fun resolveProfileBinding(
+    nextAccountKey: String?,
+    read: (String) -> TrainingProfile
+): TrainingProfileBinding = TrainingProfileBinding(
+    accountKey = nextAccountKey,
+    profile = nextAccountKey?.let { key -> readAccountStateOrDefault(TrainingProfile()) { read(key) } }
+        ?: TrainingProfile()
+)
+
+/** Runs [read]; any failure except coroutine cancellation falls back to [default]. */
+internal inline fun <T> readAccountStateOrDefault(default: T, read: () -> T): T = try {
+    read()
+} catch (cancellation: kotlinx.coroutines.CancellationException) {
+    throw cancellation
+} catch (_: Exception) {
+    default
+}
+
 class TrainingProfileManager(
     context: Context
 ) {
@@ -72,8 +96,11 @@ class TrainingProfileManager(
         val nextAccountKey = trainingProfileAccountKey(session)
         synchronized(lock) {
             if (activeAccountKey == nextAccountKey) return
-            activeAccountKey = nextAccountKey
-            _profile.value = nextAccountKey?.let(::readProfile) ?: TrainingProfile()
+            // Read first, assign key and state together: a failing read must never leave the new
+            // key bound to the previous account's values (later writes would save them under it).
+            val binding = resolveProfileBinding(nextAccountKey, ::readProfile)
+            activeAccountKey = binding.accountKey
+            _profile.value = binding.profile
         }
     }
 

@@ -32,6 +32,32 @@ internal data class FirstRunTutorialProgress(
         get() = version > 0 && completion != null
 }
 
+internal data class TrainingGuidanceBinding(
+    val accountKey: String?,
+    val activationDismissed: Boolean,
+    val feedback: Map<Long, WorkoutFeedbackRecord>,
+    val tutorialProgress: FirstRunTutorialProgress
+)
+
+/** Resolves the state for [nextKey]; each throwing read yields its default, never old values. */
+internal fun resolveGuidanceBinding(
+    nextKey: String?,
+    readActivationDismissed: (String) -> Boolean,
+    readFeedback: (String) -> Map<Long, WorkoutFeedbackRecord>,
+    readTutorialProgress: (String) -> FirstRunTutorialProgress
+): TrainingGuidanceBinding = TrainingGuidanceBinding(
+    accountKey = nextKey,
+    activationDismissed = nextKey?.let { key ->
+        readAccountStateOrDefault(false) { readActivationDismissed(key) }
+    } ?: false,
+    feedback = nextKey?.let { key ->
+        readAccountStateOrDefault(emptyMap()) { readFeedback(key) }
+    } ?: emptyMap(),
+    tutorialProgress = nextKey?.let { key ->
+        readAccountStateOrDefault(FirstRunTutorialProgress()) { readTutorialProgress(key) }
+    } ?: FirstRunTutorialProgress()
+)
+
 class TrainingGuidanceManager(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences(
         PREFERENCES_NAME,
@@ -58,13 +84,20 @@ class TrainingGuidanceManager(context: Context) {
         val nextKey = session?.databaseName()?.let(::accountKey)
         synchronized(lock) {
             if (nextKey == activeAccountKey) return
-            activeAccountKey = nextKey
-            _activationDismissed.value = nextKey?.let { key ->
-                preferences.all[scopedKey(key, KEY_ACTIVATION_DISMISSED)] as? Boolean ?: false
-            } ?: false
-            _feedback.value = nextKey?.let(::readFeedback).orEmpty()
-            _tutorialProgress.value = nextKey?.let(::readTutorialProgress)
-                ?: FirstRunTutorialProgress()
+            // Read first, assign key and state together: a failing read must never leave the new
+            // key bound to the previous account's values (later writes would save them under it).
+            val binding = resolveGuidanceBinding(
+                nextKey = nextKey,
+                readActivationDismissed = { key ->
+                    preferences.all[scopedKey(key, KEY_ACTIVATION_DISMISSED)] as? Boolean ?: false
+                },
+                readFeedback = ::readFeedback,
+                readTutorialProgress = ::readTutorialProgress
+            )
+            activeAccountKey = binding.accountKey
+            _activationDismissed.value = binding.activationDismissed
+            _feedback.value = binding.feedback
+            _tutorialProgress.value = binding.tutorialProgress
         }
     }
 

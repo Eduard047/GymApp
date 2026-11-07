@@ -58,6 +58,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.example.gymapp.ui.components.GymModalBottomSheet
+import com.example.gymapp.ui.components.rememberDiscardGuardedSheetState
 import com.example.gymapp.ui.components.GymMotion
 import com.example.gymapp.ui.components.rememberReduceMotion
 import com.example.gymapp.ui.components.GymSheetCloseRow
@@ -1391,15 +1392,21 @@ fun ExerciseListScreen(
 
     val editingExercise = uiState.editingExercise
     if (editingExercise != null) {
+        val renameDirty = isRenameExerciseDirty(editingExercise.name, uiState.editingExerciseName)
         val requestRenameClose = {
-            if (isRenameExerciseDirty(editingExercise.name, uiState.editingExerciseName)) {
+            if (renameDirty) {
                 showRenameDiscardConfirmation = true
             } else {
                 onDismissRenameExercise()
             }
         }
+        val renameSheetState = rememberDiscardGuardedSheetState(
+            hasUnsavedChanges = renameDirty,
+            onHideBlocked = { showRenameDiscardConfirmation = true }
+        )
         GymModalBottomSheet(
             onDismissRequest = requestRenameClose,
+            sheetState = renameSheetState
         ) {
             RenameExerciseBottomSheetContent(
                 exerciseName = uiState.editingExerciseName,
@@ -1468,8 +1475,13 @@ fun ExerciseListScreen(
                 onDismissExerciseLoadProfile()
             }
         }
+        val loadProfileSheetState = rememberDiscardGuardedSheetState(
+            hasUnsavedChanges = uiState.loadEditorIsDirty,
+            onHideBlocked = { showLoadProfileDiscardConfirmation = true }
+        )
         GymModalBottomSheet(
             onDismissRequest = requestLoadProfileClose,
+            sheetState = loadProfileSheetState
         ) {
             ExerciseLoadProfileBottomSheetContent(
                 exerciseName = loadEditorExercise.name,
