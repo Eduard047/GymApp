@@ -83,7 +83,7 @@ struct TrainingProgramView: View {
     private var emptyProgramView: some View {
         GymPanel {
             VStack(alignment: .leading, spacing: 14) {
-                Text(t("Create your training program", "Створи свою програму", "Создайте свою программу"))
+                Text(t("Create your training program", "Створи свою програму", "Создай свою программу"))
                     .font(GymTheme.TypeScale.sectionTitle)
                 Text(t(
                     "Choose the days you train, then prepare a workout for each day in advance.",

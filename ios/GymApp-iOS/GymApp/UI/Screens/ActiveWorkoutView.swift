@@ -1103,8 +1103,8 @@ struct ActiveWorkoutView: View {
                 .foregroundStyle(GymTheme.onHero)
                 Text(gymText(
                     "Live progress · Read only",
-                    "Live-прогрес · Лише перегляд",
-                    "Live-прогресс · Только просмотр",
+                    "Прогрес спільного тренування · Лише перегляд",
+                    "Прогресс совместной тренировки · Только просмотр",
                     languageCode: gymCurrentLanguageCode()
                 ))
                 .font(.subheadline)
@@ -1875,8 +1875,8 @@ struct ActiveWorkoutView: View {
         .accessibilityHint(
             gymText(
                 "Double tap to reuse this weight and reps",
-                "Двічі торкніться, щоб повторити цю вагу й повторення",
-                "Дважды нажмите, чтобы повторить этот вес и повторения",
+                "Двічі торкнись, щоб повторити цю вагу й повторення",
+                "Дважды нажми, чтобы повторить этот вес и повторения",
                 languageCode: gymCurrentLanguageCode()
             )
         )
@@ -2126,8 +2126,8 @@ struct ActiveWorkoutView: View {
             ),
             accessibilityHintText: gymText(
                 "Double tap to edit this set",
-                "Двічі торкніться, щоб редагувати цей підхід",
-                "Дважды нажмите, чтобы редактировать этот подход",
+                "Двічі торкнись, щоб редагувати цей підхід",
+                "Дважды нажми, чтобы редактировать этот подход",
                 languageCode: gymCurrentLanguageCode()
             ),
             onToggle: {

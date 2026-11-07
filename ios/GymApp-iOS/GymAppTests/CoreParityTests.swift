@@ -1264,8 +1264,8 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(AuthCompactCopy.localPlaceholder, "Local")
 
         XCTAssertEqual(gymLocalized("Sign up", languageCode: "uk"), "Зареєструватися")
-        XCTAssertEqual(gymLocalized("Repeat email", languageCode: "ru"), "Повторите email")
-        XCTAssertEqual(gymLocalized("Repeat password", languageCode: "ru"), "Повторите пароль")
+        XCTAssertEqual(gymLocalized("Repeat email", languageCode: "ru"), "Повтори email")
+        XCTAssertEqual(gymLocalized("Repeat password", languageCode: "ru"), "Повтори пароль")
         XCTAssertEqual(gymLocalized("Continue offline", languageCode: "ru"), "Продолжить офлайн")
         XCTAssertEqual(gymLocalized("Privacy Policy", languageCode: "uk"), "Політика конфіденційності")
         XCTAssertEqual(

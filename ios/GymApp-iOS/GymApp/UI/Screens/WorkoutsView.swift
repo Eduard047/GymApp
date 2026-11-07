@@ -2469,8 +2469,8 @@ public struct WorkoutsView: View {
         if forcedVisible, state.tapAction(forcedVisible: true) != .openInvites {
             return gymText(
                 "Finish your current workout before starting a live workout with a friend",
-                "Заверши поточне тренування, перш ніж почати живе тренування з другом",
-                "Заверши текущую тренировку, прежде чем начать живую тренировку с другом",
+                "Заверши поточне тренування, перш ніж почати спільне тренування з другом",
+                "Заверши текущую тренировку, прежде чем начать совместную тренировку с другом",
                 languageCode: languageCode
             )
         }
@@ -2492,15 +2492,15 @@ public struct WorkoutsView: View {
         case .pickFriend:
             return gymText(
                 "Choose a friend to start a live workout together",
-                "Обери друга, щоб почати спільне живе тренування",
-                "Выбери друга, чтобы начать совместную живую тренировку",
+                "Обери друга, щоб почати спільне тренування",
+                "Выбери друга, чтобы начать совместную тренировку",
                 languageCode: languageCode
             )
         case .pendingInvite:
             return gymText(
                 "Opens your pending live workout invitation",
-                "Відкриває запрошення на живе тренування, що очікує",
-                "Открывает ожидающее приглашение на живую тренировку",
+                "Відкриває запрошення на спільне тренування, що очікує",
+                "Открывает ожидающее приглашение на совместную тренировку",
                 languageCode: languageCode
             )
         case .hidden:
@@ -2545,8 +2545,8 @@ public struct WorkoutsView: View {
                         .accessibilityLabel(friend.displayName)
                         .accessibilityHint(gymText(
                             "Starts a live workout with this friend",
-                            "Починає живе тренування з цим другом",
-                            "Начинает живую тренировку с этим другом",
+                            "Починає спільне тренування з цим другом",
+                            "Начинает совместную тренировку с этим другом",
                             languageCode: languageCode
                         ))
                     }
@@ -2631,9 +2631,9 @@ public struct WorkoutsView: View {
                         monthWorkouts.count,
                         englishOne: "session",
                         englishMany: "sessions",
-                        ukrainianOne: "сесія",
-                        ukrainianFew: "сесії",
-                        ukrainianMany: "сесій"
+                        ukrainianOne: "тренування",
+                        ukrainianFew: "тренування",
+                        ukrainianMany: "тренувань"
                     ),
                     systemImage: "list.bullet"
                 )
@@ -2656,8 +2656,8 @@ public struct WorkoutsView: View {
                 } description: {
                     Text(gymText(
                         "Use Add workout when you are ready to log a session.",
-                        "Натисни «Додати тренування», коли будеш готовий записати сесію.",
-                        "Нажми «Добавить тренировку», когда будешь готов записать сессию.",
+                        "Натисни «Додати тренування», коли будеш готовий записати тренування.",
+                        "Нажми «Добавить тренировку», когда будешь готов записать тренировку.",
                         languageCode: languageCode
                     ))
                 } actions: {

@@ -336,7 +336,7 @@ struct ExercisesView: View {
                                 )
                                 : gymText(
                                     "Try another name, body area, or muscle group.",
-                                    "Спробуйте іншу назву, частину тіла або групу м’язів.",
+                                    "Спробуй іншу назву, частину тіла або групу м’язів.",
                                     "Попробуй другое название, часть тела или группу мышц.",
                                     languageCode: gymCurrentLanguageCode()
                                 )

@@ -23,14 +23,14 @@ private struct FinishedLiveWorkoutView: View {
                                   let current = snapshot.currentParticipant,
                                   let peer = snapshot.peerParticipant {
                             GymSegmentedControl(
-                                t("Live workout participants", "Учасники live-тренування", "Участники live-тренировки"),
+                                t("Live workout participants", "Учасники спільного тренування", "Участники совместной тренировки"),
                                 selection: $showsPeer,
                                 options: [
                                     (false, current.profile.displayName),
                                     (true, peer.profile.displayName)
                                 ]
                             )
-                            Text(t("Live progress · Read only", "Live-прогрес · Лише перегляд", "Live-прогресс · Только просмотр"))
+                            Text(t("Live progress · Read only", "Прогрес спільного тренування · Лише перегляд", "Прогресс совместной тренировки · Только просмотр"))
                                 .font(.subheadline)
                                 .foregroundStyle(GymTheme.textSecondary)
                             let participant = showsPeer ? peer : current
@@ -597,7 +597,7 @@ struct FriendsView: View {
         GymPanel(highlighted: liveWorkoutCoordinator.pendingInvitationCount > 0) {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    title: t("Live workouts", "Живі тренування", "Живые тренировки"),
+                    title: t("Live workouts", "Спільні тренування", "Совместные тренировки"),
                     supporting: t(
                         "The plan is frozen for two people. Accepting starts it for both immediately; each person edits only their own sets.",
                         "План зафіксований для двох. Прийняття одразу запускає його для обох; кожен редагує лише свої підходи.",
@@ -614,7 +614,7 @@ struct FriendsView: View {
                 let invitations = liveWorkoutCoordinator.inbox?.invitations ?? []
                 let rooms = liveWorkoutCoordinator.inbox?.rooms ?? []
                 if invitations.isEmpty, rooms.isEmpty {
-                    empty(t("No live workout invitations.", "Немає живих запрошень.", "Нет живых приглашений."))
+                    empty(t("No live workout invitations.", "Немає запрошень на спільні тренування.", "Нет приглашений на совместные тренировки."))
                 }
 
                 ForEach(invitations) { invitation in
@@ -719,7 +719,7 @@ struct FriendsView: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(liveWorkoutRefreshState.isRefreshing)
-                    .accessibilityLabel(t("Refresh live workouts", "Оновити живі тренування", "Обновить живые тренировки"))
+                    .accessibilityLabel(t("Refresh live workouts", "Оновити спільні тренування", "Обновить совместные тренировки"))
                 }
             }
         }
@@ -1230,8 +1230,8 @@ struct FriendsView: View {
         if accept, (!canAcceptWorkoutInvites || appState.pendingSharedWorkout != nil) {
             errorMessage = t(
                 "Finish or close the current workout draft before joining this live room.",
-                "Заверши або закрий поточну чернетку тренування перед приєднанням до живої кімнати.",
-                "Заверши или закрой текущий черновик тренировки перед присоединением к живой комнате."
+                "Заверши або закрий поточну чернетку тренування перед приєднанням до кімнати спільного тренування.",
+                "Заверши или закрой текущий черновик тренировки перед присоединением к комнате совместной тренировки."
             )
             return
         }
@@ -1260,8 +1260,8 @@ struct FriendsView: View {
             case .declined:
                 showStatus(t(
                     "Live invitation declined.",
-                    "Живе запрошення відхилено.",
-                    "Живое приглашение отклонено."
+                    "Запрошення на спільне тренування відхилено.",
+                    "Приглашение на совместную тренировку отклонено."
                 ))
             }
         } catch {
@@ -1834,7 +1834,7 @@ private struct FriendDetailView: View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 10) {
                 GymSectionTitle(
-                    title: t("Train together", "Тренуйтеся разом", "Тренируйтесь вместе"),
+                    title: t("Train together", "Тренуйся разом", "Тренируйся вместе"),
                     supporting: "LIVE"
                 )
                 ViewThatFits(in: .horizontal) {
@@ -1845,8 +1845,8 @@ private struct FriendDetailView: View {
                     Text(
                         t(
                             "Saved workouts are needed only for sending a copy. A live plan can be created now.",
-                            "Збережені тренування потрібні лише для надсилання копії. Живий план можна створити зараз.",
-                            "Сохранённые тренировки нужны только для отправки копии. Live-план можно создать сейчас."
+                            "Збережені тренування потрібні лише для надсилання копії. План спільного тренування можна створити зараз.",
+                            "Сохранённые тренировки нужны только для отправки копии. План совместной тренировки можно создать сейчас."
                         )
                     )
                     .font(.caption)
@@ -2269,8 +2269,8 @@ private struct FriendDetailView: View {
             actionMessage = mode == .live
                 ? t(
                     "Live invitation sent. The workout starts for both of you when your friend joins.",
-                    "Live-запрошення надіслано. Тренування почнеться для вас обох, коли друг приєднається.",
-                    "Live-приглашение отправлено. Тренировка начнётся для вас обоих, когда друг присоединится."
+                    "Запрошення на спільне тренування надіслано. Тренування почнеться для вас обох, коли друг приєднається.",
+                    "Приглашение на совместную тренировку отправлено. Тренировка начнётся для вас обоих, когда друг присоединится."
                 )
                 : t(
                     "Workout copy sent to this friend.",

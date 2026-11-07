@@ -412,8 +412,8 @@ struct PostWorkoutSummaryView: View {
                         .foregroundStyle(GymTheme.heroAccentText)
                     Text(gymText(
                         "Session XP",
-                        "XP сесії",
-                        "XP сессии",
+                        "XP тренування",
+                        "XP тренировки",
                         languageCode: languageCode
                     ))
                     .font(.caption.weight(.semibold))

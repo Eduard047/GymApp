@@ -449,7 +449,7 @@ public extension TrainingGoal {
         case .aestheticFatLoss:
             gymText("Aesthetic Cut", "Естетика / сушка", "Эстетика/сушка", languageCode: gymCurrentLanguageCode())
         case .muscleGain:
-            gymText("Muscle Gain", "Набір мʼязів", "Набор мышц", languageCode: gymCurrentLanguageCode())
+            gymText("Muscle Gain", "Набір м’язів", "Набор мышц", languageCode: gymCurrentLanguageCode())
         case .strength:
             gymText("Strength", "Сила", "Сила", languageCode: gymCurrentLanguageCode())
         case .balanced:

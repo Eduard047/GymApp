@@ -504,8 +504,8 @@ struct AccountSettingsView: View {
                     Label(
                         gymText(
                             "Finish, leave, or cancel the live workout before signing out so queued partner updates are not abandoned.",
-                            "Заверши, покинь або скасуй живе тренування перед виходом, щоб не залишити оновлення для партнера в черзі.",
-                            "Заверши, покинь или отмени живую тренировку перед выходом, чтобы не оставить обновления для партнёра в очереди.",
+                            "Заверши, покинь або скасуй спільне тренування перед виходом, щоб не залишити оновлення для партнера в черзі.",
+                            "Заверши, покинь или отмени совместную тренировку перед выходом, чтобы не оставить обновления для партнёра в очереди.",
                             languageCode: gymCurrentLanguageCode()
                         ),
                         systemImage: "exclamationmark.arrow.triangle.2.circlepath"

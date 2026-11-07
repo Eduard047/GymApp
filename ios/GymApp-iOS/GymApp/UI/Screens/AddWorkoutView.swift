@@ -456,8 +456,8 @@ struct AddWorkoutView: View {
         .navigationTitle(
             gymText(
                 liveInviteRecipient == nil ? "Workout plan" : "Live workout",
-                liveInviteRecipient == nil ? "План тренування" : "Живе тренування",
-                liveInviteRecipient == nil ? "План тренировки" : "Живая тренировка",
+                liveInviteRecipient == nil ? "План тренування" : "Спільне тренування",
+                liveInviteRecipient == nil ? "План тренировки" : "Совместная тренировка",
                 languageCode: gymCurrentLanguageCode()
             )
         )
@@ -629,8 +629,8 @@ struct AddWorkoutView: View {
                     .font(.headline)
                 Text(gymText(
                     "Build the plan here. The primary action sends it only as a frozen live invitation; it does not save or start a solo workout.",
-                    "Склади план тут. Основна дія надішле його лише як зафіксоване живе запрошення — без збереження чи запуску одиночного тренування.",
-                    "Составь план здесь. Основное действие отправит его только как зафиксированное live-приглашение — без сохранения или запуска одиночной тренировки.",
+                    "Склади план тут. Основна дія надішле його лише як зафіксоване запрошення на спільне тренування — без збереження чи запуску одиночного тренування.",
+                    "Составь план здесь. Основное действие отправит его только как зафиксированное приглашение на совместную тренировку — без сохранения или запуска одиночной тренировки.",
                     languageCode: gymCurrentLanguageCode()
                 ))
                 .font(.subheadline)
@@ -1204,8 +1204,8 @@ struct AddWorkoutView: View {
             .disabled(isSaving || drafts.isEmpty || activeWorkoutStore.draft != nil)
             .accessibilityHint(gymText(
                 "Freezes this plan and sends a live invitation without saving or starting a solo workout",
-                "Фіксує цей план і надсилає живе запрошення без збереження чи запуску одиночного тренування",
-                "Фиксирует этот план и отправляет live-приглашение без сохранения или запуска одиночной тренировки",
+                "Фіксує цей план і надсилає запрошення на спільне тренування без збереження чи запуску одиночного тренування",
+                "Фиксирует этот план и отправляет приглашение на совместную тренировку без сохранения или запуска одиночной тренировки",
                 languageCode: gymCurrentLanguageCode()
             ))
         } else {
@@ -1311,8 +1311,8 @@ struct AddWorkoutView: View {
         .accessibilityHint(
             t(
                 "Choose a link, a separate copy, or a live workout with a friend",
-                "Обери посилання, окрему копію або живе тренування з другом",
-                "Выбери ссылку, отдельную копию или живую тренировку с другом"
+                "Обери посилання, окрему копію або спільне тренування з другом",
+                "Выбери ссылку, отдельную копию или совместную тренировку с другом"
             )
         )
 
@@ -1478,8 +1478,8 @@ struct AddWorkoutView: View {
                         Text(
                             t(
                                 "Only the plan is sent before acceptance. In live mode, completed set values and live progress are visible only to the two participants. Notes, Health data and account secrets stay private.",
-                                "До прийняття надсилається лише план. У живому режимі значення виконаних підходів і прогрес бачать лише двоє учасників. Нотатки, дані Health і секрети акаунта залишаються приватними.",
-                                "До принятия отправляется только план. В живом режиме значения выполненных подходов и прогресс видят только двое участников. Заметки, данные Health и секреты аккаунта остаются приватными."
+                                "До прийняття надсилається лише план. У режимі спільного тренування значення виконаних підходів і прогрес бачать лише двоє учасників. Нотатки, дані Health і секрети акаунта залишаються приватними.",
+                                "До принятия отправляется только план. В режиме совместной тренировки значения выполненных подходов и прогресс видят только двое участников. Заметки, данные Health и секреты аккаунта остаются приватными."
                             )
                         )
                         .font(.caption)
@@ -1612,8 +1612,8 @@ struct AddWorkoutView: View {
             if confirmedLiveRoom == true {
                 shareChooserMessage = t(
                     "Live invitation sent. The plan is frozen; your friend joins the lobby before you start.",
-                    "Живе запрошення надіслано. План зафіксовано; друг приєднається до лобі до твого старту.",
-                    "Живое приглашение отправлено. План зафиксирован; друг присоединится к лобби до твоего старта."
+                    "Запрошення на спільне тренування надіслано. План зафіксовано; друг приєднається до лобі до твого старту.",
+                    "Приглашение на совместную тренировку отправлено. План зафиксирован; друг присоединится к лобби до твоего старта."
                 )
             } else if live {
                 shareChooserMessage = t(
@@ -1645,8 +1645,8 @@ struct AddWorkoutView: View {
             show(
                 gymText(
                     "The live invitation cannot be prepared safely. Your draft is kept.",
-                    "Не вдалося безпечно підготувати живе запрошення. Чернетку збережено.",
-                    "Не удалось безопасно подготовить live-приглашение. Черновик сохранён.",
+                    "Не вдалося безпечно підготувати запрошення на спільне тренування. Чернетку збережено.",
+                    "Не удалось безопасно подготовить приглашение на совместную тренировку. Черновик сохранён.",
                     languageCode: gymCurrentLanguageCode()
                 ),
                 error: true
@@ -1657,8 +1657,8 @@ struct AddWorkoutView: View {
             show(
                 gymText(
                     "Finish the current workout before sending this live invitation.",
-                    "Заверши поточне тренування перед надсиланням цього живого запрошення.",
-                    "Заверши текущую тренировку перед отправкой этого live-приглашения.",
+                    "Заверши поточне тренування перед надсиланням цього запрошення на спільне тренування.",
+                    "Заверши текущую тренировку перед отправкой этого приглашения на совместную тренировку.",
                     languageCode: gymCurrentLanguageCode()
                 ),
                 error: true
@@ -1690,8 +1690,8 @@ struct AddWorkoutView: View {
             show(
                 gymText(
                     "The live invitation cannot be prepared safely. Your draft is kept.",
-                    "Не вдалося безпечно підготувати живе запрошення. Чернетку збережено.",
-                    "Не удалось безопасно подготовить live-приглашение. Черновик сохранён.",
+                    "Не вдалося безпечно підготувати запрошення на спільне тренування. Чернетку збережено.",
+                    "Не удалось безопасно подготовить приглашение на совместную тренировку. Черновик сохранён.",
                     languageCode: gymCurrentLanguageCode()
                 ),
                 error: true
@@ -1739,8 +1739,8 @@ struct AddWorkoutView: View {
                     reportStatus(
                         gymText(
                             "The live room was created from the sent plan. Your newer edits were kept; open Friends to enter the room.",
-                            "Live-кімнату створено з надісланого плану. Новіші зміни збережено; відкрий Друзів, щоб увійти до кімнати.",
-                            "Live-комната создана из отправленного плана. Новые изменения сохранены; открой Друзей, чтобы войти в комнату.",
+                            "Кімнату спільного тренування створено з надісланого плану. Новіші зміни збережено; відкрий Друзів, щоб увійти до кімнати.",
+                            "Комната совместной тренировки создана из отправленного плана. Новые изменения сохранены; открой Друзей, чтобы войти в комнату.",
                             languageCode: gymCurrentLanguageCode()
                         ),
                         false
@@ -1751,8 +1751,8 @@ struct AddWorkoutView: View {
                 reportStatus(
                     gymText(
                         "Live invitation sent to \(friend.displayName).",
-                        "Живе запрошення надіслано користувачу \(friend.displayName).",
-                        "Live-приглашение отправлено пользователю \(friend.displayName).",
+                        "Запрошення на спільне тренування надіслано користувачу \(friend.displayName).",
+                        "Приглашение на совместную тренировку отправлено пользователю \(friend.displayName).",
                         languageCode: gymCurrentLanguageCode()
                     ),
                     false
@@ -1764,8 +1764,8 @@ struct AddWorkoutView: View {
                 show(
                     gymText(
                         "The live invitation could not be sent safely. Your draft is kept for retry.",
-                        "Не вдалося безпечно надіслати живе запрошення. Чернетку збережено для повторної спроби.",
-                        "Не удалось безопасно отправить live-приглашение. Черновик сохранён для повторной попытки.",
+                        "Не вдалося безпечно надіслати запрошення на спільне тренування. Чернетку збережено для повторної спроби.",
+                        "Не удалось безопасно отправить приглашение на совместную тренировку. Черновик сохранён для повторной попытки.",
                         languageCode: gymCurrentLanguageCode()
                     ),
                     error: true

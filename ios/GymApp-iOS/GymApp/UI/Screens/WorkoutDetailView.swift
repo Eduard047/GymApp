@@ -219,8 +219,8 @@ enum GarminWorkoutDetailCopy {
         localized(
             languageCode,
             en: "Session overview",
-            uk: "Огляд сесії",
-            ru: "Обзор сессии"
+            uk: "Огляд тренування",
+            ru: "Обзор тренировки"
         )
     }
 
@@ -1829,8 +1829,8 @@ struct WorkoutDetailView: View {
             shareChooserMessage = live
                 ? gymText(
                     "Live invitation sent. Your friend joins before the workout starts for both of you.",
-                    "Live-запрошення надіслано. Друг приєднається до старту тренування для вас обох.",
-                    "Live-приглашение отправлено. Друг присоединится до старта тренировки для вас обоих.",
+                    "Запрошення на спільне тренування надіслано. Друг приєднається до старту тренування для вас обох.",
+                    "Приглашение на совместную тренировку отправлено. Друг присоединится до старта тренировки для вас обоих.",
                     languageCode: gymCurrentLanguageCode()
                 )
                 : gymText(
@@ -2279,8 +2279,8 @@ struct WorkoutDetailView: View {
                 ) + recordSuffix,
                 accessibilityHintText: gymText(
                     "Double tap to edit this set",
-                    "Двічі торкніться, щоб редагувати цей підхід",
-                    "Дважды нажмите, чтобы редактировать этот подход",
+                    "Двічі торкнись, щоб редагувати цей підхід",
+                    "Дважды нажми, чтобы редактировать этот подход",
                     languageCode: languageCode
                 ),
                 onToggle: {

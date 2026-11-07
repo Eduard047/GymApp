@@ -1209,9 +1209,9 @@ struct WorkoutMuscleLoadCard: View {
             muscle.sessionCount,
             englishOne: "session",
             englishMany: "sessions",
-            ukrainianOne: "сесія",
-            ukrainianFew: "сесії",
-            ukrainianMany: "сесій"
+            ukrainianOne: "тренування",
+            ukrainianFew: "тренування",
+            ukrainianMany: "тренувань"
         )
         return "\(sets) • \(sessions)"
     }
@@ -1229,9 +1229,9 @@ struct WorkoutMuscleLoadCard: View {
             contribution.sessionCount,
             englishOne: "session",
             englishMany: "sessions",
-            ukrainianOne: "сесія",
-            ukrainianFew: "сесії",
-            ukrainianMany: "сесій"
+            ukrainianOne: "тренування",
+            ukrainianFew: "тренування",
+            ukrainianMany: "тренувань"
         )
         return gymText(
             "\(compactNumber(contribution.load)) load • \(sets) • \(sessions)",

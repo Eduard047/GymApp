@@ -478,8 +478,8 @@ struct ExerciseProgressView: View {
         return "\(number) " + gymPlural(
             count,
             en: ("logged session", "logged sessions"),
-            uk: ("записана сесія", "записані сесії", "записаних сесій"),
-            ru: ("записанная сессия", "записанные сессии", "записанных сессий"),
+            uk: ("записане тренування", "записані тренування", "записаних тренувань"),
+            ru: ("записанная тренировка", "записанные тренировки", "записанных тренировок"),
             languageCode: languageCode
         )
     }
@@ -723,7 +723,7 @@ struct ExerciseProgressView: View {
                     spacing: 8
                 ) {
                     GymMetricTile(
-                        label: t("Sessions", "Сесії", "Сессии"),
+                        label: t("Sessions", "Тренування", "Тренировки"),
                         value: snapshot.progressPoints.count.formatted(.number.locale(gymAppLocale()))
                     )
                     GymMetricTile(
@@ -960,9 +960,9 @@ struct ExerciseProgressView: View {
             snapshot.progressPoints.count,
             englishOne: "session",
             englishMany: "sessions",
-            ukrainianOne: "сесія",
-            ukrainianFew: "сесії",
-            ukrainianMany: "сесій",
+            ukrainianOne: "тренування",
+            ukrainianFew: "тренування",
+            ukrainianMany: "тренувань",
             languageCode: languageCode
         )
         return gymText(
@@ -1190,8 +1190,8 @@ private struct ProgressExerciseSelectorSheet: View {
                         } else {
                             Text(gymText(
                                 "\(sessionCounts[exercise.id, default: 0]) \(sessionCounts[exercise.id, default: 0] == 1 ? "session" : "sessions")",
-                                "Сесій: \(sessionCounts[exercise.id, default: 0])",
-                                "Сессий: \(sessionCounts[exercise.id, default: 0])",
+                                "Тренувань: \(sessionCounts[exercise.id, default: 0])",
+                                "Тренировок: \(sessionCounts[exercise.id, default: 0])",
                                 languageCode: languageCode
                             ))
                             .font(.caption)
@@ -1218,8 +1218,8 @@ private struct ProgressExerciseSelectorSheet: View {
             .accessibilityLabel(gymExerciseName(exercise))
             .accessibilityValue(gymText(
                 "\(sessionCounts[exercise.id, default: 0]) \(sessionCounts[exercise.id, default: 0] == 1 ? "session" : "sessions")",
-                "Сесій: \(sessionCounts[exercise.id, default: 0])",
-                "Сессий: \(sessionCounts[exercise.id, default: 0])",
+                "Тренувань: \(sessionCounts[exercise.id, default: 0])",
+                "Тренировок: \(sessionCounts[exercise.id, default: 0])",
                 languageCode: languageCode
             ))
             .accessibilityAddTraits(selectedExerciseID == exercise.id ? .isSelected : [])
@@ -1390,14 +1390,14 @@ private struct ExerciseProgressChartsCard: View {
 
             Chart(chartPoints) { point in
                 AreaMark(
-                    x: .value(t("Session", "Сесія", "Сессия"), point.date),
+                    x: .value(t("Session", "Тренування", "Тренировка"), point.date),
                     yStart: .value(t("Baseline", "Основа", "Базовый уровень"), 0),
                     yEnd: .value(t("Max weight", "Максимальна вага", "Максимальный вес"), point.maxWeight)
                 )
                 .foregroundStyle(GymTheme.primary.opacity(0.1))
 
                 LineMark(
-                    x: .value(t("Session", "Сесія", "Сессия"), point.date),
+                    x: .value(t("Session", "Тренування", "Тренировка"), point.date),
                     y: .value(t("Max weight", "Максимальна вага", "Максимальный вес"), point.maxWeight)
                 )
                 .interpolationMethod(.catmullRom)
@@ -1405,7 +1405,7 @@ private struct ExerciseProgressChartsCard: View {
                 .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
 
                 PointMark(
-                    x: .value(t("Session", "Сесія", "Сессия"), point.date),
+                    x: .value(t("Session", "Тренування", "Тренировка"), point.date),
                     y: .value(t("Max weight", "Максимальна вага", "Максимальный вес"), point.maxWeight)
                 )
                 .foregroundStyle(GymTheme.heroAccent)
@@ -1435,7 +1435,7 @@ private struct ExerciseProgressChartsCard: View {
 
     private var volumeChart: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(t("Volume by Session", "Обсяг по сесіях", "Объём по сессиям"))
+            Text(t("Volume by Session", "Обсяг по тренуваннях", "Объём по тренировкам"))
                 .font(.subheadline.weight(.semibold))
             Text(volumeTrendLabel)
                 .font(.caption)
@@ -1443,7 +1443,7 @@ private struct ExerciseProgressChartsCard: View {
 
             Chart(chartPoints) { point in
                 BarMark(
-                    x: .value(t("Session", "Сесія", "Сессия"), point.date),
+                    x: .value(t("Session", "Тренування", "Тренировка"), point.date),
                     y: .value(t("Volume", "Обсяг", "Объём"), point.totalVolume)
                 )
                 .foregroundStyle(
@@ -1476,7 +1476,7 @@ private struct ExerciseProgressChartsCard: View {
             }
             .frame(minHeight: 210)
             .environment(\.locale, locale)
-            .accessibilityLabel(t("Session volume chart", "Графік обсягу сесій", "График объёма по сессиям"))
+            .accessibilityLabel(t("Session volume chart", "Графік обсягу тренувань", "График объёма по тренировкам"))
             .accessibilityValue(volumeTrendLabel)
         }
     }
@@ -1504,8 +1504,8 @@ private struct ExerciseProgressChartsCard: View {
         let prefix = delta > 0 ? "+" : "−"
         return t(
             "\(prefix)\(formatNumber(abs(delta))) \(unit) vs first session",
-            "\(prefix)\(formatNumber(abs(delta))) \(unit) до першої сесії",
-            "\(prefix)\(formatNumber(abs(delta))) \(unit) к первой сессии"
+            "\(prefix)\(formatNumber(abs(delta))) \(unit) до першого тренування",
+            "\(prefix)\(formatNumber(abs(delta))) \(unit) к первой тренировке"
         )
     }
 
@@ -1531,9 +1531,9 @@ private struct ExerciseProgressChartsCard: View {
             chartPoints.count,
             englishOne: "session",
             englishMany: "sessions",
-            ukrainianOne: "сесія",
-            ukrainianFew: "сесії",
-            ukrainianMany: "сесій",
+            ukrainianOne: "тренування",
+            ukrainianFew: "тренування",
+            ukrainianMany: "тренувань",
             languageCode: languageCode
         )
         return gymText(

@@ -835,8 +835,8 @@ private struct MainTabShell: View {
                                 Text(
                                     gymText(
                                         "Live workout invitation",
-                                        "Запрошення на живе тренування",
-                                        "Приглашение на живую тренировку",
+                                        "Запрошення на спільне тренування",
+                                        "Приглашение на совместную тренировку",
                                         languageCode: languageCode
                                     )
                                 )
@@ -1322,8 +1322,8 @@ private struct MainTabShell: View {
             appState.show(
                 message: gymText(
                     "Finish the current action, import, or live workout before showing the tutorial.",
-                    "Заверши поточну дію, імпорт або живе тренування, перш ніж показувати навчання.",
-                    "Заверши текущее действие, импорт или живую тренировку перед показом обучения.",
+                    "Заверши поточну дію, імпорт або спільне тренування, перш ніж показувати навчання.",
+                    "Заверши текущее действие, импорт или совместную тренировку перед показом обучения.",
                     languageCode: languageCode
                 ),
                 isError: false
@@ -1672,8 +1672,8 @@ private struct MainTabShell: View {
             appState.show(
                 message: gymText(
                     "A live workout cannot be discarded silently. Cancel or leave its room from Friends.",
-                    "Живе тренування не можна непомітно відкинути. Скасуй кімнату або вийди з неї у Друзях.",
-                    "Живую тренировку нельзя незаметно удалить. Отмени комнату или выйди из неё в Друзьях.",
+                    "Спільне тренування не можна непомітно відкинути. Скасуй кімнату або вийди з неї у Друзях.",
+                    "Совместную тренировку нельзя незаметно удалить. Отмени комнату или выйди из неё в Друзьях.",
                     languageCode: languageCode
                 ),
                 isError: true
@@ -1952,8 +1952,8 @@ private struct MainTabShell: View {
         appState.show(
             message: gymText(
                 "Finish or discard the current workout, draft, or live room before creating another live workout.",
-                "Заверши або відкинь поточне тренування, чернетку чи живу кімнату перед створенням нового живого тренування.",
-                "Заверши или удали текущую тренировку, черновик или live-комнату перед созданием новой живой тренировки.",
+                "Заверши або відкинь поточне тренування, чернетку чи кімнату спільного тренування перед створенням нового спільного тренування.",
+                "Заверши или удали текущую тренировку, черновик или комнату совместной тренировки перед созданием новой совместной тренировки.",
                 languageCode: languageCode
             ),
             isError: true

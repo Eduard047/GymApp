@@ -121,7 +121,7 @@ struct WorkoutAdaptationSheet: View {
             try activeStore.applyAdaptation(source: request.source, candidate: candidate, isSolo: { !coordinator.planIsFrozenForCurrentDraft })
             dismiss()
         } catch {
-            self.error = t("Workout changed or could not be saved. Close and try again.", "Тренування змінилося або не збереглося. Закрий і повтори.", "Тренировка изменилась или не сохранилась. Закройте и повторите.")
+            self.error = t("Workout changed or could not be saved. Close and try again.", "Тренування змінилося або не збереглося. Закрий і повтори.", "Тренировка изменилась или не сохранилась. Закрой и повтори.")
         }
     }
 }

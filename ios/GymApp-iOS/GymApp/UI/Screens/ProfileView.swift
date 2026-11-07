@@ -465,7 +465,7 @@ struct ProfileView: View {
                     .frame(width: settingsRowIconWidth)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(gymText("Friends & live", "Друзі та live", "Друзья и live", languageCode: languageCode))
+                    Text(gymText("Friends & live", "Друзі та спільні тренування", "Друзья и тренировки", languageCode: languageCode))
                         .font(.body.weight(.semibold))
                         .foregroundStyle(GymTheme.textPrimary)
                         .gymLineLimit(1)
@@ -1121,9 +1121,9 @@ struct ProfileView: View {
             result.importedSessions,
             englishOne: "session",
             englishMany: "sessions",
-            ukrainianOne: "сесію",
-            ukrainianFew: "сесії",
-            ukrainianMany: "сесій"
+            ukrainianOne: "тренування",
+            ukrainianFew: "тренування",
+            ukrainianMany: "тренувань"
         )
         let exercises = gymCount(
             result.addedExercises,

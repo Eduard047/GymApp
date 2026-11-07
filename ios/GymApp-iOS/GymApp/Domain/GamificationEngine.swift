@@ -587,7 +587,7 @@ public enum GamificationEngine {
                 mission(
                     "daily_exercises",
                     cadence: .daily,
-                    title: missionText("Balanced session", "Збалансована сесія", "Сбалансированная сессия"),
+                    title: missionText("Balanced session", "Збалансоване тренування", "Сбалансированная тренировка"),
                     description: missionText(
                         "Train a realistic number of exercises today.",
                         "Виконай реалістичну кількість вправ сьогодні.",
