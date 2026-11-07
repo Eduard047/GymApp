@@ -183,6 +183,8 @@
     <string name="workout_share_link_title">Поділитися посиланням</string>
     <string name="workout_share_link_supporting">Використовує системне меню. Кожен, хто має посилання, може імпортувати план.</string>
     <string name="workout_share_link_action">Відкрити меню посилання</string>
+    <string name="share_workout_subject">Тренування GymApp</string>
+    <string name="share_workout_message">Відкрий цей редагований план тренування у GymApp.</string>
     <string name="workout_share_friend_title">Надіслати приватно другу</string>
     <string name="workout_share_friend_login_required">Увійди в хмарний акаунт, щоб надсилати тренування друзям напряму.</string>
     <string name="workout_share_friend_empty">Ще немає прийнятих друзів. Додай друга у Профілі або скористайся посиланням вище.</string>

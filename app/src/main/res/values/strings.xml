@@ -183,6 +183,8 @@
     <string name="workout_share_link_title">Share link</string>
     <string name="workout_share_link_supporting">Use the existing system share sheet. Anyone with the link can import the plan.</string>
     <string name="workout_share_link_action">Open link share sheet</string>
+    <string name="share_workout_subject">GymApp workout</string>
+    <string name="share_workout_message">Open this editable workout plan in GymApp.</string>
     <string name="workout_share_friend_title">Send privately to a friend</string>
     <string name="workout_share_friend_login_required">Sign in to a cloud account to send workouts directly to friends.</string>
     <string name="workout_share_friend_empty">No accepted friends yet. Add a friend from Profile, or use the link above.</string>

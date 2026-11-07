@@ -201,6 +201,9 @@ internal fun datePickerUtcMillisForWorkout(
     .toInstant()
     .toEpochMilli()
 
+/** Message line plus the link on its own line, like the iPhone share text. */
+internal fun sharedWorkoutShareText(message: String, url: String): String = "$message\n$url"
+
 internal fun shareWorkoutUrl(
     context: Context,
     url: String,
@@ -211,7 +214,11 @@ internal fun shareWorkoutUrl(
         SharedWorkoutLink.MAX_ENCODED_LENGTH)
     val sendIntent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
-        putExtra(Intent.EXTRA_TEXT, url)
+        putExtra(Intent.EXTRA_SUBJECT, context.getString(R.string.share_workout_subject))
+        putExtra(
+            Intent.EXTRA_TEXT,
+            sharedWorkoutShareText(context.getString(R.string.share_workout_message), url)
+        )
     }
     context.startActivity(Intent.createChooser(sendIntent, chooserTitle))
 }
