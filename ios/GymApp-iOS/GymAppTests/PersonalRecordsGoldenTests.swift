@@ -90,6 +90,98 @@ final class PersonalRecordsGoldenTests: XCTestCase {
         }
     }
 
+    /// The "storedCases" of the shared contract: the saved-workout badges, same cases as Android.
+    func testStoredWorkoutGoldenCasesMatchAndroid() throws {
+        let root = try contract()
+        let cases = try XCTUnwrap(root["storedCases"] as? [[String: Any]])
+        XCTAssertGreaterThanOrEqual(cases.count, 6)
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let currentID = UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!
+        let lowerID = UUID(uuidString: "00000000-0000-0000-0000-000000000009")!
+        let higherID = UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!
+
+        for item in cases {
+            let id = try XCTUnwrap(item["id"] as? String)
+            var ids: [String: UUID] = [:]
+            func idOf(_ key: String) -> UUID {
+                if let existing = ids[key] { return existing }
+                let created = UUID()
+                ids[key] = created
+                return created
+            }
+
+            var history: [ExerciseHistoryEntry] = []
+            for (index, entry) in try XCTUnwrap(item["history"] as? [[String: Any]]).enumerated() {
+                let key = try XCTUnwrap(entry["exercise"] as? String)
+                let whenKey = try XCTUnwrap(entry["when"] as? String)
+                let workoutID: UUID
+                let sessionDate: Date
+                switch whenKey {
+                case "earlier": (workoutID, sessionDate) = (UUID(), date.addingTimeInterval(-86_400))
+                case "same-date-lower-id": (workoutID, sessionDate) = (lowerID, date)
+                case "same-date-higher-id": (workoutID, sessionDate) = (higherID, date)
+                case "later": (workoutID, sessionDate) = (UUID(), date.addingTimeInterval(86_400))
+                case "self": (workoutID, sessionDate) = (currentID, date)
+                default: return XCTFail("\(id): unknown when \(whenKey)")
+                }
+                history.append(
+                    ExerciseHistoryEntry(
+                        setID: UUID(),
+                        workoutID: workoutID,
+                        sessionDate: sessionDate,
+                        exerciseID: idOf(key),
+                        exerciseName: key,
+                        weight: try number(entry["weight"]),
+                        reps: try XCTUnwrap(entry["reps"] as? Int),
+                        setOrderIndex: index
+                    )
+                )
+            }
+
+            var blocks: [WorkoutExercise] = []
+            var keys: [String] = []
+            for block in try XCTUnwrap(item["workout"] as? [[String: Any]]) {
+                let key = try XCTUnwrap(block["exercise"] as? String)
+                var sets: [WorkoutSet] = []
+                for set in try XCTUnwrap(block["sets"] as? [[String: Any]]) {
+                    sets.append(
+                        WorkoutSet(
+                            weight: try number(set["weight"]),
+                            reps: try XCTUnwrap(set["reps"] as? Int)
+                        )
+                    )
+                }
+                blocks.append(WorkoutExercise(exerciseID: idOf(key), sets: sets))
+                keys.append(key)
+            }
+
+            let expected = try XCTUnwrap(
+                (item["expected"] as? [String: Any])?["records"] as? [[String: Any]]
+            )
+            XCTAssertEqual(expected.count, blocks.count, "\(id) block count")
+            for (index, want) in expected.enumerated() {
+                let block = blocks[index]
+                let baseline = StoredWorkoutPRBaseline(
+                    history: history.filter { $0.exerciseID == block.exerciseID },
+                    currentWorkoutDate: date,
+                    currentWorkoutID: currentID
+                )
+                // A repeated exercise keeps one running best across its blocks.
+                let labels = baseline.labelsBySetID(
+                    in: blocks.filter { $0.exerciseID == block.exerciseID }
+                )
+                let flags = try XCTUnwrap(want["sets"] as? [Bool])
+                XCTAssertEqual(block.sets.map { labels[$0.id] != nil }, flags, "\(id) block \(index) records")
+                let summary = StoredWorkoutExerciseSummary(
+                    block: block,
+                    personalRecordBaseline: baseline,
+                    sameExerciseBlocks: blocks.filter { $0.exerciseID == block.exerciseID }
+                )
+                XCTAssertEqual(summary.hasPersonalRecord, flags.contains(true), "\(id) block \(index) summary")
+            }
+        }
+    }
+
     private func number(_ value: Any?) throws -> Double {
         try XCTUnwrap((value as? NSNumber)?.doubleValue, "Not a number: \(String(describing: value))")
     }

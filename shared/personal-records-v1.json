@@ -571,5 +571,266 @@
         ]
       }
     }
+  ],
+  "storedDescription": "Saved (past) workout badge cases, run by Android StoredWorkoutPersonalRecordsTest and iOS PersonalRecordsGoldenTests. history entries carry 'when' relative to the viewed workout: earlier (older date), same-date-lower-id and same-date-higher-id (same date, tie-broken by workout id: only lower ids are earlier), later (newer date), self (the viewed workout itself). Only earlier workouts form the baseline. workout lists exercise blocks in order and a repeated exercise key is a second block of the same exercise: the running best carries across its blocks. Every set is compared with the better of the earlier-history best and the sets before it; expected.records is one flag per set per block. Same rules as the live cases: no earlier history means no record, 0 kg is never a record, equal to the best is not a record, weight or estimated one-rep max can each make a record.",
+  "storedCases": [
+    {
+      "id": "stored-first-ever-workout",
+      "description": "The first workout of an exercise has no earlier history, so no set is a record.",
+      "history": [],
+      "workout": [
+        {
+          "exercise": "bench",
+          "sets": [
+            {
+              "weight": 60,
+              "reps": 8
+            },
+            {
+              "weight": 100,
+              "reps": 5
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "exercise": "bench",
+            "sets": [
+              false,
+              false
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "stored-later-and-self-history-ignored",
+      "description": "Newer workouts and the viewed workout itself are not baseline, so without older history there is no record.",
+      "history": [
+        {
+          "exercise": "bench",
+          "when": "later",
+          "weight": 200,
+          "reps": 5
+        },
+        {
+          "exercise": "bench",
+          "when": "self",
+          "weight": 90,
+          "reps": 5
+        }
+      ],
+      "workout": [
+        {
+          "exercise": "bench",
+          "sets": [
+            {
+              "weight": 90,
+              "reps": 5
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "exercise": "bench",
+            "sets": [
+              false
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "stored-same-date-tie-break",
+      "description": "Same date: only the workout with the lower id counts as earlier.",
+      "history": [
+        {
+          "exercise": "bench",
+          "when": "same-date-lower-id",
+          "weight": 100,
+          "reps": 5
+        },
+        {
+          "exercise": "bench",
+          "when": "same-date-higher-id",
+          "weight": 300,
+          "reps": 5
+        }
+      ],
+      "workout": [
+        {
+          "exercise": "bench",
+          "sets": [
+            {
+              "weight": 110,
+              "reps": 3
+            },
+            {
+              "weight": 100,
+              "reps": 5
+            },
+            {
+              "weight": 95,
+              "reps": 5
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "exercise": "bench",
+            "sets": [
+              true,
+              false,
+              false
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "stored-running-best-weight-and-estimate",
+      "description": "Several sets beat the earlier best: each one that beats the running best is a record, by weight or by estimated one-rep max alone.",
+      "history": [
+        {
+          "exercise": "bench",
+          "when": "earlier",
+          "weight": 100,
+          "reps": 5
+        }
+      ],
+      "workout": [
+        {
+          "exercise": "bench",
+          "sets": [
+            {
+              "weight": 105,
+              "reps": 3
+            },
+            {
+              "weight": 110,
+              "reps": 1
+            },
+            {
+              "weight": 105,
+              "reps": 3
+            },
+            {
+              "weight": 80,
+              "reps": 20
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "exercise": "bench",
+            "sets": [
+              true,
+              true,
+              false,
+              true
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "stored-bodyweight-zero-kg",
+      "description": "History with only 0 kg sets still counts as history; a 0 kg set is never a record but a weighted set is.",
+      "history": [
+        {
+          "exercise": "pullup",
+          "when": "earlier",
+          "weight": 0,
+          "reps": 10
+        }
+      ],
+      "workout": [
+        {
+          "exercise": "pullup",
+          "sets": [
+            {
+              "weight": 0,
+              "reps": 30
+            },
+            {
+              "weight": 20,
+              "reps": 5
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "exercise": "pullup",
+            "sets": [
+              false,
+              true
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "stored-repeated-exercise-blocks",
+      "description": "The same exercise in two blocks of one workout: the second block compares with the first block's sets as well as the earlier history.",
+      "history": [
+        {
+          "exercise": "bench",
+          "when": "earlier",
+          "weight": 100,
+          "reps": 5
+        }
+      ],
+      "workout": [
+        {
+          "exercise": "bench",
+          "sets": [
+            {
+              "weight": 110,
+              "reps": 3
+            }
+          ]
+        },
+        {
+          "exercise": "bench",
+          "sets": [
+            {
+              "weight": 110,
+              "reps": 3
+            },
+            {
+              "weight": 120,
+              "reps": 1
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "exercise": "bench",
+            "sets": [
+              true
+            ]
+          },
+          {
+            "exercise": "bench",
+            "sets": [
+              false,
+              true
+            ]
+          }
+        ]
+      }
+    }
   ]
 }

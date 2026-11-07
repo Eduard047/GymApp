@@ -1246,16 +1246,24 @@ struct StoredWorkoutPRBaseline: Equatable {
 
     /// Labels per set id for one exercise block, walking its sets in order.
     func labelsBySetID(in block: WorkoutExercise) -> [UUID: [String]] {
+        labelsBySetID(in: [block])
+    }
+
+    /// Labels per set id for every block of this exercise in one workout, in order. A
+    /// repeated exercise keeps one running best across its blocks, as the live badge does.
+    func labelsBySetID(in blocks: [WorkoutExercise]) -> [UUID: [String]] {
         guard var best = prior else { return [:] }
         var result: [UUID: [String]] = [:]
-        for set in block.sets {
-            guard Self.isEligibleValue(set.weight) else { continue }
-            let evaluation = LivePersonalRecords.evaluate(weight: set.weight, reps: set.reps, against: best)
-            var labels: [String] = []
-            if evaluation.weight { labels.append("Weight PR") }
-            if evaluation.estimatedOneRepMax { labels.append("Estimated 1RM PR") }
-            if !labels.isEmpty { result[set.id] = labels }
-            best = LivePersonalRecords.advanced(best, weight: set.weight, reps: set.reps)
+        for block in blocks {
+            for set in block.sets {
+                guard Self.isEligibleValue(set.weight) else { continue }
+                let evaluation = LivePersonalRecords.evaluate(weight: set.weight, reps: set.reps, against: best)
+                var labels: [String] = []
+                if evaluation.weight { labels.append("Weight PR") }
+                if evaluation.estimatedOneRepMax { labels.append("Estimated 1RM PR") }
+                if !labels.isEmpty { result[set.id] = labels }
+                best = LivePersonalRecords.advanced(best, weight: set.weight, reps: set.reps)
+            }
         }
         return result
     }
@@ -1275,11 +1283,18 @@ struct StoredWorkoutExerciseSummary: Equatable {
     let volume: Double
     let hasPersonalRecord: Bool
 
-    init(block: WorkoutExercise, personalRecordBaseline: StoredWorkoutPRBaseline) {
+    /// `sameExerciseBlocks`: every block of this exercise in the workout, in order (includes
+    /// `block`), so a repeated exercise shares one running best.
+    init(
+        block: WorkoutExercise,
+        personalRecordBaseline: StoredWorkoutPRBaseline,
+        sameExerciseBlocks: [WorkoutExercise]? = nil
+    ) {
         setCount = block.sets.count
         repCount = block.sets.reduce(0) { $0 + $1.reps }
         volume = block.sets.reduce(0) { $0 + $1.volume }
-        hasPersonalRecord = personalRecordBaseline.containsPersonalRecord(in: block)
+        let labels = personalRecordBaseline.labelsBySetID(in: sameExerciseBlocks ?? [block])
+        hasPersonalRecord = block.sets.contains { labels[$0.id] != nil }
     }
 }
 
@@ -2141,11 +2156,13 @@ struct WorkoutDetailView: View {
             currentWorkoutDate: workout.date,
             currentWorkoutID: workout.id
         )
+        let sameExerciseBlocks = workout.exercises.filter { $0.exerciseID == block.exerciseID }
         let summary = StoredWorkoutExerciseSummary(
             block: block,
-            personalRecordBaseline: personalRecordBaseline
+            personalRecordBaseline: personalRecordBaseline,
+            sameExerciseBlocks: sameExerciseBlocks
         )
-        let personalRecordLabels = personalRecordBaseline.labelsBySetID(in: block)
+        let personalRecordLabels = personalRecordBaseline.labelsBySetID(in: sameExerciseBlocks)
         let isCollapsed = collapsedExerciseIDs.contains(block.id)
         let summaryText = exerciseSummaryText(summary)
         let sets = visibleSets(block)
