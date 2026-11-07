@@ -18534,6 +18534,78 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(store.exercises.map(\.name), ["Жим лёжа"])
     }
 
+    func testGarminStoredCyrillicDeliveryIsResentOnceAsLatinAfterUpgrade() async throws {
+        let defaults = temporaryDefaults(named: "garmin-latin-upgrade-resend")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let account = AppAccountSession.local(id: "00000000-0000-4000-8000-000000000213", displayName: "Latin upgrade")
+        try auth.installSessionForTesting(account)
+        let store = try WorkoutStore(accountStorageKey: account.storageKey,
+            directoryURL: try temporaryDirectory(named: "latin-upgrade-workouts"))
+        _ = try store.addExercise(name: "Жим лёжа")
+        let transport = FakeGarminPhoneConnectIQTransport()
+        let id = UUID(uuidString: "11111111-2222-3333-4444-555555555557")!
+        let device = try XCTUnwrap(IQDevice(id: id, modelName: "Forerunner 55", friendlyName: "Upgrade watch"))
+        transport.selectionResponse = [device]
+        transport.statuses[id] = .notConnected
+        let planStore = GarminPhonePlanStore(root: try temporaryDirectory(named: "latin-upgrade-plans"))
+        let service = GarminPhoneSyncService(auth: auth, defaults: defaults, connectIQ: transport, planStore: planStore)
+        service.bind(workoutStore: store)
+        service.selectDevices()
+        XCTAssertTrue(service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!))
+        let plan = GarminWorkoutPlan(source: "gymapp-ios", version: 1, title: "Latin",
+            createdAt: "2026-09-08T10:00:00.000Z", startedAt: "2026-09-08T10:00:00.000Z", note: "",
+            exercises: [.init(name: "Жим лёжа", sets: [.init(weight: 80, reps: 8, orderIndex: 0)])])
+        try service.queuePlan(plan, deviceID: id.uuidString)
+        transport.statuses[id] = .connected
+        service.deviceStatusChanged(device, status: .connected)
+        let handshakeSent = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(handshakeSent)
+        let handshake = try XCTUnwrap(transport.sent.first)
+        service.receivedMessage(syncAcknowledgement(for: handshake.message), from: handshake.app)
+        let planSent = await waitUntil { transport.sent.count == 2 }
+        XCTAssertTrue(planSent)
+        let sent = try XCTUnwrap(transport.sent.last)
+        service.receivedMessage(syncAcknowledgement(for: sent.message), from: sent.app)
+        let binding = GarminPhoneBinding(
+            account: try XCTUnwrap(sent.message["accountBinding"] as? String),
+            device: try XCTUnwrap(sent.message["deviceBinding"] as? String),
+            pairingGeneration: try XCTUnwrap(sent.message["pairingGeneration"] as? String))
+        let acknowledged = try XCTUnwrap(try planStore.load(account: account.storageKey, binding: binding))
+        XCTAssertEqual(acknowledged.sets.map(\.exerciseName), ["Zhym lyozha"])
+
+        // What an older app version left on disk: an acknowledged Cyrillic delivery in the app language.
+        let legacy = GarminPhonePlanDelivery(version: 1, binding: binding, syncID: UUID().uuidString.lowercased(),
+            revision: acknowledged.revision, language: "ru",
+            sets: [NamedWorkoutSetDraft(exerciseName: "Жим лёжа", weight: 80, reps: 8)],
+            exercises: ["Жим лёжа"], acknowledged: true)
+        try planStore.save(legacy, account: account.storageKey)
+        XCTAssertEqual(try planStore.load(account: account.storageKey, binding: binding)?.language, "ru")
+
+        // The watch asks for a sync again after the update: the stored plan must go out once as English/Latin.
+        let before = transport.sent.count
+        let request: [String: Any] = [
+            "type": "request_sync",
+            "bindingVersion": GarminPhoneWorkoutParser.bindingVersion,
+            "requestId": "request-11111111-2222-3333-4444-555555555557",
+            "accountBinding": binding.account,
+            "deviceBinding": binding.device,
+            "pairingGeneration": binding.pairingGeneration,
+            "status": "SYNC REQ"
+        ]
+        service.receivedMessage(request, from: sent.app)
+        let resent = await waitUntil { transport.sent.count == before + 1 }
+        XCTAssertTrue(resent)
+        let resend = try XCTUnwrap(transport.sent.last)
+        XCTAssertEqual(resend.message["language"] as? String, "en")
+        XCTAssertEqual(resend.message["planNames"] as? [String], ["Zhym lyozha"])
+        XCTAssertEqual(resend.message["exercises"] as? [String], ["Zhym lyozha"])
+        XCTAssertGreaterThan((resend.message["syncRevision"] as? NSNumber)?.int64Value ?? 0, legacy.revision)
+        let stored = try XCTUnwrap(try planStore.load(account: account.storageKey, binding: binding))
+        XCTAssertEqual(stored.language, "en")
+        XCTAssertEqual(stored.sets.map(\.exerciseName), ["Zhym lyozha"])
+        XCTAssertFalse(stored.acknowledged)
+    }
+
     func testGarminLiteWatchMarkersBindingOnlyPayloadAndNonLiteUnchanged() throws {
         let binding = GarminPhoneBinding(
             account: String(repeating: "a", count: 64),

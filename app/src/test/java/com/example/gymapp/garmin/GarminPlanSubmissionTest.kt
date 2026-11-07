@@ -425,6 +425,27 @@ class GarminPlanSubmissionTest {
         }
     }
 
+    @Test
+    fun cyrillicPlanSubmittedBeforeTheEnglishOnlyUpdateIsNeverReusedAndTheLatinPlanGetsItsOwnEnvelope() {
+        val cyrillic = zeroPlan.map { it.copy(exerciseName = "Жим лёжа") }
+        val latin = zeroPlan.map { it.copy(exerciseName = "Zhym lyozha") }
+        // The old app-language submission cannot be rebuilt: non-ASCII names are refused outright.
+        assertNull(garminPlanSubmissionFingerprint(key().copy(languageTag = "ru", orderedPlan = cyrillic)))
+        assertNull(garminPlanSubmissionFingerprint(key().copy(orderedPlan = cyrillic)))
+        // The Latin/English plan has a different identity from any earlier-language submission of the same raw plan,
+        // so the next sync request after the update is a fresh delivery rather than an "already sent" one.
+        val english = garminPlanSubmissionFingerprint(key().copy(orderedPlan = latin))
+        assertNotNull(english)
+        assertNotEquals(english, garminPlanSubmissionFingerprint(key().copy(languageTag = "ru", orderedPlan = latin)))
+        assertNotEquals(
+            garminPlanRequestFingerprint(
+                accountBinding = account, authTransitionKey = authTransition, trustedDeviceBinding = device,
+                languageTag = "ru", orderedPlan = zeroPlan, exerciseCatalog = exerciseCatalog
+            ),
+            requestFingerprint()
+        )
+    }
+
     private fun key() = GarminPlanSubmissionKey(
         accountBinding = account,
         authTransitionKey = authTransition,
