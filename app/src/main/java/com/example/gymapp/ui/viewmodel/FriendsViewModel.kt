@@ -200,8 +200,16 @@ internal data class FriendsUiState(
     val inboxRefreshGeneration: Long = 0L,
     val actionsInFlight: Set<String> = emptySet(),
     val error: LocalizedText? = null,
-    val notice: LocalizedText? = null
+    val notice: LocalizedText? = null,
+    /** True when the last dashboard refresh failed; separate from [error], which actions share. */
+    val dashboardRefreshFailed: Boolean = false
 )
+
+/** A failed refresh with a dashboard already on screen keeps the last saved list, like iPhone. */
+internal fun showsSavedFriendsListHint(state: FriendsUiState): Boolean =
+    state.dashboardRefreshFailed &&
+        state.dashboard != null &&
+        state.error?.resourceId == R.string.friends_load_failed
 
 private fun Long.nextRefreshGeneration(): Long =
     if (this == Long.MAX_VALUE) 1L else this + 1L
@@ -406,6 +414,7 @@ internal class FriendsViewModel(
             _uiState.update {
                 invalidateSelectedFriendDetailsForRefresh(it).copy(
                     isDashboardLoading = true,
+                    dashboardRefreshFailed = false,
                     error = null
                 )
             }
@@ -431,6 +440,7 @@ internal class FriendsViewModel(
                                 discoveredFriendCode
                             ),
                             isDashboardLoading = false,
+                            dashboardRefreshFailed = false,
                             selectedProfileId = selectedProfileToReload,
                             selectedFriendDetails = null,
                             friendWorkouts = emptyList(),
@@ -463,6 +473,7 @@ internal class FriendsViewModel(
                             } else {
                                 state.isDetailsLoading
                             },
+                            dashboardRefreshFailed = true,
                             error = authErrorText(error, R.string.friends_load_failed)
                         )
                     }
@@ -968,7 +979,7 @@ internal class FriendsViewModel(
     }
 
     fun clearMessages() {
-        _uiState.update { it.copy(error = null, notice = null) }
+        _uiState.update { it.copy(error = null, notice = null, dashboardRefreshFailed = false) }
     }
 
     override fun onCleared() {

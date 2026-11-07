@@ -48,6 +48,7 @@
     <string name="friends_synced_title">Друзья и приглашения</string>
     <string name="friends_synced_supporting">Обновляет друзей, заявки, приватность и приглашения на тренировки.</string>
     <string name="friends_load_failed">Не удалось загрузить друзей. Попробуй ещё раз.</string>
+    <string name="friends_refresh_kept_saved">Показываем последний сохранённый список. Повтори, когда будет удобно.</string>
     <string name="friends_add_eyebrow">ДОБАВИТЬ ДРУГА</string>
     <string name="friends_add_title">Введи код друга</string>
     <string name="friends_add_supporting">Ответ не раскрывает, принадлежит ли недоступный код какому-либо аккаунту.</string>

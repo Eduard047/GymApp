@@ -85,6 +85,7 @@ import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.FriendsUiState
 import com.example.gymapp.ui.viewmodel.LiveConnectionMode
 import com.example.gymapp.ui.viewmodel.LiveWorkoutUiState
+import com.example.gymapp.ui.viewmodel.showsSavedFriendsListHint
 import com.example.gymapp.util.asString
 import com.example.gymapp.util.DateTimeUtils
 import java.time.Instant
@@ -228,7 +229,11 @@ internal fun FriendsScreen(
         uiState.error?.let { error ->
             item {
                 MessagePanel(
-                    message = error.asString(),
+                    message = if (showsSavedFriendsListHint(uiState)) {
+                        stringResource(R.string.friends_refresh_kept_saved)
+                    } else {
+                        error.asString()
+                    },
                     isError = true,
                     onDismiss = onClearMessages,
                     actionLabel = stringResource(R.string.action_retry),

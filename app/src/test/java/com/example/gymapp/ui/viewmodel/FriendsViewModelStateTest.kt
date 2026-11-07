@@ -17,6 +17,7 @@ import com.example.gymapp.auth.SocialWorkoutExerciseLabel
 import com.example.gymapp.data.repository.SharedWorkoutExercise
 import com.example.gymapp.data.repository.SharedWorkoutPlan
 import com.example.gymapp.data.repository.SharedWorkoutSet
+import com.example.gymapp.util.LocalizedText
 import java.io.IOException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -273,6 +274,43 @@ class FriendsViewModelStateTest {
         assertNull(state.selectedFriendDetails)
         assertNull(state.acceptedWorkout)
         assertEquals(1, retainedRequestIds.size)
+    }
+
+    @Test
+    fun failedDashboardRefreshKeepsSavedListHintOnlyForTheRefreshError() {
+        val failed = loadedSocialState().copy(
+            dashboardRefreshFailed = true,
+            error = LocalizedText(R.string.friends_load_failed)
+        )
+        assertTrue(showsSavedFriendsListHint(failed))
+        // No dashboard on screen: the generic error stays.
+        assertFalse(showsSavedFriendsListHint(failed.copy(dashboard = null)))
+        // A later action error must not borrow the saved-list wording.
+        assertFalse(
+            showsSavedFriendsListHint(
+                failed.copy(error = LocalizedText(R.string.workout_invite_send_failed))
+            )
+        )
+        // Flag cleared by a new refresh or success.
+        assertFalse(showsSavedFriendsListHint(failed.copy(dashboardRefreshFailed = false)))
+    }
+
+    @Test
+    fun failedDashboardRefreshLeavesOpenFriendWithItsOwnErrorAndRetry() {
+        // The VM clears details, stops detail loading and sets the shared error;
+        // FriendDetailScreen renders that error with Retry (openFriend).
+        val state = loadedSocialState()
+        val invalidated = invalidateSelectedFriendDetailsForRefresh(state)
+        assertTrue(invalidated.isDetailsLoading)
+        val failed = invalidated.copy(
+            isDetailsLoading = false,
+            dashboardRefreshFailed = true,
+            error = LocalizedText(R.string.friends_load_failed)
+        )
+        assertNull(failed.selectedFriendDetails)
+        assertFalse(failed.isDetailsLoading)
+        assertEquals(state.selectedProfileId, failed.selectedProfileId)
+        assertTrue(failed.error != null)
     }
 
     private fun loadedSocialState(): FriendsUiState {

@@ -48,6 +48,7 @@
     <string name="friends_synced_title">Friends and invites</string>
     <string name="friends_synced_supporting">Refreshes accepted friends, requests, privacy, and workout invites.</string>
     <string name="friends_load_failed">Could not load friends. Try again.</string>
+    <string name="friends_refresh_kept_saved">Showing the last saved list. Try again when convenient.</string>
     <string name="friends_add_eyebrow">ADD A FRIEND</string>
     <string name="friends_add_title">Enter a friend code</string>
     <string name="friends_add_supporting">Requests do not reveal whether an unavailable code belongs to an account.</string>
