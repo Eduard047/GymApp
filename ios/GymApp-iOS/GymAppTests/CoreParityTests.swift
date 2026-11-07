@@ -19377,7 +19377,7 @@ final class CoreParityTests: XCTestCase {
         // width and correctly fall back to the two-line layout instead of
         // everything silently shrinking to "fit".
         XCTAssertTrue(source.contains(
-            "Text(Self.clock(TimeInterval(remainingSeconds)))\n"
+            "Text(WorkoutRestTimerControls.clock(max(0, remainingSeconds)))\n"
                 + "                .font(.caption.weight(.semibold).monospacedDigit())\n"
                 + "                .foregroundStyle(GymTheme.primary)\n"
                 + "                .lineLimit(1)\n"

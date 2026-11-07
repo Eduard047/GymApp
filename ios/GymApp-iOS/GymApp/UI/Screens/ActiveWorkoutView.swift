@@ -2513,7 +2513,7 @@ struct ActiveWorkoutView: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
             : AnyLayout(HStackLayout(spacing: 6))
         return restLayout {
-            Text(Self.clock(TimeInterval(remainingSeconds)))
+            Text(WorkoutRestTimerControls.clock(max(0, remainingSeconds)))
                 .font(.caption.weight(.semibold).monospacedDigit())
                 .foregroundStyle(GymTheme.primary)
                 .lineLimit(1)
@@ -4102,7 +4102,7 @@ struct ActiveWorkoutView: View {
         )
     }
 
-    private static func clock(_ interval: TimeInterval) -> String {
+    static func clock(_ interval: TimeInterval) -> String {
         let seconds = max(0, Int(interval.rounded(.down)))
         let hours = seconds / 3_600
         let minutes = seconds % 3_600 / 60
