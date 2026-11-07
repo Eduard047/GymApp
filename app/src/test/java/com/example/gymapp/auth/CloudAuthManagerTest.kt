@@ -268,6 +268,31 @@ class CloudAuthManagerTest {
     }
 
     @Test
+    fun passwordResetReusesOnlyTheFreshRecoveryTransactionForTheSameEmail() {
+        val now = 1_750_000_000_000L
+        val existing = PendingAuthTransaction(
+            state = "R".repeat(32),
+            codeVerifier = "V".repeat(64),
+            email = "athlete@example.com",
+            createdAtMillis = now - 60_000L
+        )
+
+        assertEquals(
+            existing,
+            reusablePendingRecoveryTransaction(existing, "athlete@example.com", now)
+        )
+        assertNull(reusablePendingRecoveryTransaction(null, "athlete@example.com", now))
+        assertNull(reusablePendingRecoveryTransaction(existing, "other@example.com", now))
+        assertNull(
+            reusablePendingRecoveryTransaction(
+                existing.copy(createdAtMillis = now - 24 * 60 * 60 * 1_000L - 1),
+                "athlete@example.com",
+                now
+            )
+        )
+    }
+
+    @Test
     fun ambiguousAuthInitiationOutcomesKeepThePendingPkceTransaction() {
         assertTrue(isDeterministicAuthInitiationHttpFailure(400))
         assertTrue(isDeterministicAuthInitiationHttpFailure(422))

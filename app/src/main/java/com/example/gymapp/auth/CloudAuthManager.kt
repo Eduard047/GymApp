@@ -197,6 +197,12 @@ internal fun reusablePendingSignupTransaction(
     transaction.email == email && transaction.isFresh(nowMillis)
 }
 
+internal fun reusablePendingRecoveryTransaction(
+    existing: PendingAuthTransaction?,
+    email: String,
+    nowMillis: Long = System.currentTimeMillis()
+): PendingAuthTransaction? = reusablePendingSignupTransaction(existing, email, nowMillis)
+
 internal fun isDeterministicAuthInitiationHttpFailure(responseCode: Int?): Boolean {
     return responseCode != null &&
         responseCode in 400..499 &&
@@ -887,11 +893,11 @@ class CloudAuthManager internal constructor(
     suspend fun requestPasswordReset(email: String) = withContext(Dispatchers.IO) {
         val cleanEmail = normalizeEmail(email)
         validateEmail(cleanEmail)
-        val transaction = beginAuthTransaction(
-            key = PENDING_RECOVERY_KEY,
+        val transactionSelection = reusableRecoveryAuthTransaction(
             email = cleanEmail,
             expectedAuthMutationVersion = authMutationSnapshot()
         )
+        val transaction = transactionSelection.transaction
         val redirectSeparator = if (AUTH_REDIRECT_URL.contains('?')) '&' else '?'
         val redirectURL = "$AUTH_REDIRECT_URL$redirectSeparator" +
             "state=${transaction.state}&purpose=recovery"
@@ -906,7 +912,7 @@ class CloudAuthManager internal constructor(
                     .toString()
             )
         } catch (error: Throwable) {
-            if (isDeterministicAuthInitiationFailure(error)) {
+            if (transactionSelection.wasCreated && isDeterministicAuthInitiationFailure(error)) {
                 clearPendingAuthTransaction(PENDING_RECOVERY_KEY, transaction.state)
             }
             throw error
@@ -2772,6 +2778,28 @@ class CloudAuthManager internal constructor(
         } ?: PendingAuthTransactionSelection(
             transaction = beginAuthTransaction(
                 key = PENDING_SIGNUP_KEY,
+                email = email,
+                expectedAuthMutationVersion = expectedAuthMutationVersion
+            ),
+            wasCreated = true
+        )
+    }
+
+    private fun reusableRecoveryAuthTransaction(
+        email: String,
+        expectedAuthMutationVersion: Long
+    ): PendingAuthTransactionSelection = synchronized(authStateLock) {
+        check(authMutationVersion == expectedAuthMutationVersion) {
+            INACTIVE_CLOUD_SESSION_MESSAGE
+        }
+        reusablePendingRecoveryTransaction(
+            existing = pendingAuthTransaction(PENDING_RECOVERY_KEY),
+            email = email
+        )?.let { existing ->
+            PendingAuthTransactionSelection(existing, wasCreated = false)
+        } ?: PendingAuthTransactionSelection(
+            transaction = beginAuthTransaction(
+                key = PENDING_RECOVERY_KEY,
                 email = email,
                 expectedAuthMutationVersion = expectedAuthMutationVersion
             ),
