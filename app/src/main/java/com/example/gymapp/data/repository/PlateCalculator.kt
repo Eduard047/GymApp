@@ -37,7 +37,8 @@ internal object PlateCalculator {
 
     fun load(total: Double, bar: Double = BAR_WEIGHT, plates: List<Double> = PLATES): PlateLoad {
         // Work in hundredths of a kilogram so 2.5 and 1.25 add up exactly.
-        val totalUnits = if (total.isFinite()) (total * 100).roundToLong() else 0L
+        // Like iPhone: non-finite or above the 1,000,000 kg weight limit is treated as invalid.
+        val totalUnits = if (total.isFinite() && total <= 1_000_000.0) (total * 100).roundToLong() else 0L
         val barUnits = (bar * 100).roundToLong()
         if (totalUnits < barUnits) {
             return PlateLoad(PlateLoad.Status.BelowBar, emptyList(), 0.0)
