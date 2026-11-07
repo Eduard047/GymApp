@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -27,6 +28,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -58,7 +61,11 @@ internal class AndroidPushManager(
     private val applicationContext = context.applicationContext
     private val store = PushInstallationStore(applicationContext)
     private val workScheduler = PushWorkScheduler(applicationContext)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, error ->
+            Log.e(PUSH_LOG_TAG, "Push background task failed", error)
+        }
+    )
     private val operationMutex = Mutex()
     private val notificationStateGate = PushNotificationStateGate()
     private val operationEpoch = AtomicLong(0L)
@@ -90,7 +97,14 @@ internal class AndroidPushManager(
         lastObservedCloudSession = authManager.authState.value.session as? AccountSession.Cloud
         scope.launch {
             authManager.authState.collect { authState ->
-                handleAccountTransition(authState.session)
+                // One failed transition must not stop observing later account changes.
+                try {
+                    handleAccountTransition(authState.session)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (error: Exception) {
+                    Log.e(PUSH_LOG_TAG, "Push account transition failed", error)
+                }
             }
         }
         refreshSystemState()
@@ -937,6 +951,7 @@ internal class AndroidPushManager(
         const val MAX_REGISTRATION_REFRESH_AGE_MILLIS = 30L * 24 * 60 * 60 * 1_000
         const val PUSH_NOTIFICATION_ID = 41_701
         const val PUSH_NOTIFICATION_TAG_PREFIX = "gymapp_push:"
+        const val PUSH_LOG_TAG = "AndroidPushManager"
     }
 }
 

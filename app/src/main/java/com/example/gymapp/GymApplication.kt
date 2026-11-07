@@ -30,6 +30,9 @@ import com.example.gymapp.util.TrainingGuidanceManager
 import com.example.gymapp.util.TrainingProfileManager
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import android.util.Log
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -42,7 +45,11 @@ class GymApplication : Application() {
     private val localDatabaseBindingStore by lazy { LocalDatabaseBindingStore(this) }
     private val cloudAccountDeletionJournal by lazy { CloudAccountDeletionJournal(this) }
     private val liveWorkoutSidecarStore by lazy { LiveWorkoutSidecarStore(this) }
-    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val applicationScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, error ->
+            Log.e(TAG, "Unhandled application background failure", error)
+        }
+    )
     val legacyRepository: GymRepository by lazy { repositoryFor(null) }
     val cloudAuthManager: CloudAuthManager by lazy {
         CloudAuthManager(
@@ -79,9 +86,10 @@ class GymApplication : Application() {
         val pendingLocalProfileDeletion = authManager.pendingLocalProfileDeletion()
         applicationScope.launch(start = CoroutineStart.UNDISPATCHED) {
             authManager.authState.collect { state ->
-                profileManager.switchAccount(state.session)
-                guidanceManager.switchAccount(state.session)
-                timerController.switchAccount(state.session)
+                // Corrupt prefs or IO in one manager must not kill the collector (and the process).
+                runGuarded("profile switchAccount") { profileManager.switchAccount(state.session) }
+                runGuarded("guidance switchAccount") { guidanceManager.switchAccount(state.session) }
+                runGuarded("timer switchAccount") { timerController.switchAccount(state.session) }
             }
         }
         if (pendingAccountDeletions.isNotEmpty()) {
@@ -156,6 +164,16 @@ class GymApplication : Application() {
         }
         garminManager.initialize()
         nativePushManager.initialize()
+    }
+
+    private inline fun runGuarded(step: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Exception) {
+            Log.e(TAG, "Account switch step failed: $step", error)
+        }
     }
 
     fun repositoryFor(session: AccountSession?): GymRepository {
@@ -240,6 +258,10 @@ class GymApplication : Application() {
         physicalDatabaseName: String
     ): GymRepository = repositories.computeIfAbsent(logicalDatabaseName) {
         GymRepository(GymDatabase.getInstance(this, physicalDatabaseName))
+    }
+
+    private companion object {
+        const val TAG = "GymApplication"
     }
 }
 

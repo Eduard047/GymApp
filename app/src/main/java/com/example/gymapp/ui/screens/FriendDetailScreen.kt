@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
 import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +40,7 @@ import com.example.gymapp.auth.SocialFriend
 import com.example.gymapp.auth.SocialFriendDetails
 import com.example.gymapp.auth.SocialRecentWorkout
 import com.example.gymapp.auth.SocialFriendWorkout
+import com.example.gymapp.auth.SocialFriendWorkoutExercise
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMediaPreview
@@ -617,10 +619,10 @@ private fun FriendWorkoutDetail(
                 )
             }
         }
-        items(
+        itemsIndexed(
             workout.exercises,
-            key = { exercise -> "${exercise.catalogKey.orEmpty()}-${exercise.name}" }
-        ) { exercise ->
+            key = { index, exercise -> friendWorkoutExerciseKey(index, exercise) }
+        ) { _, exercise ->
             AppPanel(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -755,3 +757,10 @@ private fun sharingLabel(shared: Boolean): String = stringResource(
 
 private enum class FriendActivityTab { Workouts, Records }
 private enum class FriendSafetyAction { Remove, Block }
+
+/**
+ * A friend's shared workout may list the same exercise twice (or two custom exercises with the
+ * same name and no catalog key), so the position is part of the lazy-list key.
+ */
+internal fun friendWorkoutExerciseKey(index: Int, exercise: SocialFriendWorkoutExercise): String =
+    "$index-${exercise.catalogKey.orEmpty()}-${exercise.name}"

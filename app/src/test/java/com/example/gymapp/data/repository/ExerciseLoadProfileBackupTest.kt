@@ -352,6 +352,21 @@ class ExerciseLoadProfileBackupTest {
         }
     }
 
+    @Test
+    fun emptyWeightOptionsAreRejectedAsInvalidProfileNotAsCrash() {
+        assertThrows(IllegalArgumentException::class.java) {
+            BackupImportValidator.validate(
+                backup(exercise("Machine", "higherIsHarder", emptyList()))
+            )
+        }
+        assertEquals(false, ExerciseLoadProfile.isValid(ExerciseLoadDirection.HigherIsHarder, emptyList()))
+        // Every persisted decode path wraps construction like this and treats failure as "no profile".
+        val decoded = runCatching {
+            ExerciseLoadProfile(ExerciseLoadDirection.HigherIsHarder, emptyList())
+        }.getOrNull()
+        assertNull(decoded)
+    }
+
     private fun exercise(
         name: String,
         direction: String? = null,

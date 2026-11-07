@@ -14,6 +14,7 @@ import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -24,6 +25,7 @@ import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.util.RestTimerState
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,7 +43,12 @@ class RestTimerService : Service() {
         super.attachBaseContext(newBase.withAppLanguage())
     }
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val serviceScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, error ->
+            // The backstop alarm still posts the finished alert if the countdown dies.
+            Log.e(TAG, "Rest timer countdown failed", error)
+        }
+    )
     private var countdownJob: Job? = null
     private var remainingSeconds: Int = 0
     private val notificationManager by lazy { getSystemService(NotificationManager::class.java) }
@@ -258,6 +265,7 @@ class RestTimerService : Service() {
     }
 
     companion object {
+        private const val TAG = "RestTimerService"
         private const val ACTION_START = "com.setforge.gymapp.action.REST_TIMER_START"
         private const val ACTION_STOP = "com.setforge.gymapp.action.REST_TIMER_STOP"
         private const val ACTION_DISMISS_ALERT = "com.setforge.gymapp.action.REST_TIMER_DISMISS_ALERT"

@@ -1112,10 +1112,10 @@ object WorkoutRecommendationEngine {
             }
             return if (increaseWeight) {
                 loadProfile.allowedWeightsKg.firstOrNull { it > currentWeight }
-                    ?: loadProfile.allowedWeightsKg.last()
+                    ?: loadProfile.allowedWeightsKg.lastOrNull() ?: currentWeight
             } else {
                 loadProfile.allowedWeightsKg.lastOrNull { it < currentWeight }
-                    ?: loadProfile.allowedWeightsKg.first()
+                    ?: loadProfile.allowedWeightsKg.firstOrNull() ?: currentWeight
             }
         }
         val increaseWeight = when (direction) {
