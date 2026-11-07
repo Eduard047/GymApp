@@ -151,6 +151,12 @@
       "input": " \t\u00a0 ",
       "normalized": "",
       "catalogKey": null
+    },
+    {
+      "id": "separators-only",
+      "input": "\u001c\u001d\u001e\u001f",
+      "normalized": "",
+      "catalogKey": null
     }
   ]
 }

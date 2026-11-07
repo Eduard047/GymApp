@@ -24,6 +24,12 @@ final class PlateCalculatorTests: XCTestCase {
         XCTAssertEqual(PlateCalculator.load(total: .nan).status, .belowBar)
     }
 
+    func testHugeOrInfiniteTotalsDoNotCrash() {
+        XCTAssertEqual(PlateCalculator.load(total: 1e18).status, .belowBar)
+        XCTAssertEqual(PlateCalculator.load(total: .greatestFiniteMagnitude).status, .belowBar)
+        XCTAssertEqual(PlateCalculator.load(total: .infinity).status, .belowBar)
+    }
+
     func testReportsWhatThePlatesCannotMakeUp() {
         let load = PlateCalculator.load(total: 83)
 

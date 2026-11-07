@@ -216,7 +216,8 @@ public enum BuiltInExerciseCatalog {
         // Backup JSON is user-controlled input. Any non-empty raw name is authoritative:
         // recognized names resolve through reviewed aliases, while unknown names remain custom.
         // A catalogKey is only recovery metadata for legacy records whose raw name is missing.
-        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Same whitespace set as Android, including U+001C-U+001F.
+        let cleanName = normalizeExerciseIdentityName(name)
         return cleanName.isEmpty
             ? definition(forKey: catalogKey)?.key
             : canonicalKey(forName: cleanName)

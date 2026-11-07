@@ -29,6 +29,14 @@ final class ExerciseIdentityGoldenTests: XCTestCase {
                     expectedKey,
                     "\(id) resolvedKey no metadata"
                 )
+            } else {
+                // Whitespace-only raw names fall back to the supplied catalog key.
+                XCTAssertEqual(
+                    BuiltInExerciseCatalog.resolvedKey(catalogKey: "bench_press", name: input),
+                    "bench_press",
+                    "\(id) resolvedKey falls back to catalogKey"
+                )
+                XCTAssertNil(BuiltInExerciseCatalog.resolvedKey(catalogKey: nil, name: input), "\(id) resolvedKey nil")
             }
         }
     }

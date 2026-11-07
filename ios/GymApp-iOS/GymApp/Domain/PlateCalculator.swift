@@ -27,7 +27,10 @@ enum PlateCalculator {
 
     static func load(total: Double, bar: Double = barWeight, plates: [Double] = plates) -> PlateLoad {
         // Work in hundredths of a kilogram so 2.5 and 1.25 add up exactly.
-        let totalUnits = total.isFinite ? Int((total * 100).rounded()) : 0
+        // A non-finite or absurdly large total is invalid input; it must not trap in Int().
+        let totalUnits = total.isFinite && total <= ActiveWorkoutStore.maximumWeight
+            ? Int((total * 100).rounded())
+            : 0
         let barUnits = Int((bar * 100).rounded())
         guard totalUnits >= barUnits else {
             return PlateLoad(status: .belowBar, platesPerSide: [], remainderPerSide: 0)

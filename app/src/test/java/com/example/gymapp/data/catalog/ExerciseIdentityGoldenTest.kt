@@ -24,6 +24,10 @@ class ExerciseIdentityGoldenTest {
                 // The raw name is authoritative; untrusted catalogKey metadata never overrides it.
                 assertEquals("$id resolvedKey", expectedKey, BuiltInExerciseCatalog.resolvedKey("bench_press", input))
                 assertEquals("$id resolvedKey no metadata", expectedKey, BuiltInExerciseCatalog.resolvedKey(null, input))
+            } else {
+                // Whitespace-only raw names fall back to the supplied catalog key.
+                assertEquals("$id resolvedKey falls back to catalogKey", "bench_press", BuiltInExerciseCatalog.resolvedKey("bench_press", input))
+                assertEquals("$id resolvedKey null", null, BuiltInExerciseCatalog.resolvedKey(null, input))
             }
         }
     }
