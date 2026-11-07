@@ -24,6 +24,7 @@ import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
+import com.example.gymapp.data.repository.MachineWeightsText
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.catalogContributionsForExercise
 import com.example.gymapp.data.repository.defaultContributionsForExercise
@@ -760,35 +761,17 @@ class ExerciseListViewModel(
             ExerciseLoadDirection.HigherIsHarder
         }
 
-    private fun parseLoadWeights(raw: String): List<Double>? {
-        val tokens = raw
-            .replace(Regex(",(?=\\s|$)"), " ")
-            .split(Regex("[;\\s]+"))
-            .filter { it.isNotBlank() }
-            .flatMap { token ->
-                if (token.count { it == ',' } > 1 || token.contains(',') && token.contains('.')) {
-                    token.split(',').filter(String::isNotBlank)
-                } else {
-                    listOf(token)
-                }
-            }
-        if (tokens.isEmpty() || tokens.size > ExerciseLoadProfile.MAX_WEIGHT_OPTIONS) return null
-        val parsed = tokens.map { token ->
-            token.replace(',', '.').toDoubleOrNull()?.takeIf(WorkoutDataLimits::isValidWeight)
-                ?: return null
-        }
-        return parsed.distinct().sorted().takeIf {
+    private fun parseLoadWeights(raw: String): List<Double>? =
+        MachineWeightsText.parse(raw)?.takeIf {
             ExerciseLoadProfile.isValid(loadEditorDirection.value, it)
         }
-    }
 
     private fun loadEditorWeightsText(profile: ExerciseLoadProfile?): String =
         profile?.allowedWeightsKg
             ?.joinToString(separator = "\n", transform = ::formatLoadWeight)
             .orEmpty()
 
-    private fun formatLoadWeight(weight: Double): String =
-        if (weight % 1.0 == 0.0) weight.toLong().toString() else weight.toString()
+    private fun formatLoadWeight(weight: Double): String = MachineWeightsText.format(weight)
 
     fun exportBackup() {
         viewModelScope.launch {

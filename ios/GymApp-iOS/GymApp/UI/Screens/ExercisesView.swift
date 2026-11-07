@@ -825,7 +825,8 @@ private enum ExerciseEditorValidationError: LocalizedError {
 
 /// One allowed machine weight as editable text in the app language's decimal separator
 /// (ru/uk comma, en dot), at most 2 decimals so step arithmetic noise like 0.30000000000000004
-/// never shows. No digit grouping: the editor splits the text on whitespace when saving.
+/// never shows. No digit grouping. `MachineWeightsText.parse` reads it back: a bare comma between
+/// digits is a decimal separator, so entries are separated by newlines or spaces, never a bare comma.
 func gymMachineWeightEditText(
     _ weight: Double,
     languageCode: String = gymCurrentLanguageCode()
@@ -1040,21 +1041,9 @@ private struct ExerciseEditorSheet: View {
         do {
             let machineLoadProfile: MachineLoadProfile?
             if usesExactMachineWeights {
-                guard allowedWeightsText.utf8.count <= 2_048 else {
+                guard let normalized = MachineWeightsText.parse(allowedWeightsText) else {
                     throw ExerciseEditorValidationError.invalidWeights
                 }
-                let tokens = allowedWeightsText.components(
-                    separatedBy: CharacterSet.whitespacesAndNewlines.union(
-                        CharacterSet(charactersIn: ";")
-                    )
-                ).filter { !$0.isEmpty }
-                let parsed = tokens.compactMap { Double($0.replacingOccurrences(of: ",", with: ".")) }
-                guard parsed.count == tokens.count,
-                      !parsed.isEmpty,
-                      parsed.count <= MachineLoadProfile.maximumAllowedWeightCount else {
-                    throw ExerciseEditorValidationError.invalidWeights
-                }
-                let normalized = Array(Set(parsed)).sorted()
                 do {
                     machineLoadProfile = try MachineLoadProfile(
                         direction: loadDirection,
@@ -1085,13 +1074,9 @@ private struct ExerciseEditorSheet: View {
     }
 
     private func applyPreset(step: Double, maximum: Double) {
-        let count = min(
-            MachineLoadProfile.maximumAllowedWeightCount,
-            Int(floor(maximum / step))
-        )
-        allowedWeightsText = (1 ... count)
-            .map { Self.displayWeight(Double($0) * step) }
-            .joined(separator: "\n")
+        let weights = MachineWeightsText.presetWeights(step: step, maximum: maximum)
+        guard !weights.isEmpty else { return }
+        allowedWeightsText = weights.map(Self.displayWeight).joined(separator: "\n")
         error = nil
     }
 }

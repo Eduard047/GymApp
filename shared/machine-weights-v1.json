@@ -1,0 +1,438 @@
+{
+  "version": 1,
+  "description": "Machine allowed-weights editor text parsing, run against the real parser by Android MachineWeightsTextGoldenTest and iOS MachineWeightsTextGoldenTests. Tokens are separated by ASCII whitespace (space, tab, CR, LF, VT, FF), newlines, semicolons, or a comma followed by whitespace or the end of the text. A bare comma between digits is always a decimal separator (12,5 = 12.5), so 10,20,30 is invalid. A token is ASCII digits with one optional . or , decimal separator and 1 to 2 decimals. Weights must be 0 to 1,000,000; at most 128 tokens; the text is at most 2048 UTF-8 bytes. Parsed weights are de-duplicated and sorted ascending. Each case has either weights (the parsed list) or invalid:true.",
+  "cases": [
+    {
+      "id": "comma-space",
+      "input": "10, 20, 30",
+      "weights": [
+        10,
+        20,
+        30
+      ]
+    },
+    {
+      "id": "spaces",
+      "input": "10 20 30",
+      "weights": [
+        10,
+        20,
+        30
+      ]
+    },
+    {
+      "id": "semicolons",
+      "input": "10;20;30",
+      "weights": [
+        10,
+        20,
+        30
+      ]
+    },
+    {
+      "id": "newline",
+      "input": "10\n20",
+      "weights": [
+        10,
+        20
+      ]
+    },
+    {
+      "id": "tab",
+      "input": "10\t20",
+      "weights": [
+        10,
+        20
+      ]
+    },
+    {
+      "id": "comma-then-newline",
+      "input": "10,\n20",
+      "weights": [
+        10,
+        20
+      ]
+    },
+    {
+      "id": "trailing-comma",
+      "input": "10, 20,",
+      "weights": [
+        10,
+        20
+      ]
+    },
+    {
+      "id": "space-comma-space",
+      "input": "10 , 20",
+      "weights": [
+        10,
+        20
+      ]
+    },
+    {
+      "id": "decimal-comma",
+      "input": "12,5 15",
+      "weights": [
+        12.5,
+        15
+      ]
+    },
+    {
+      "id": "decimal-dot-comma-space",
+      "input": "12.5, 15",
+      "weights": [
+        12.5,
+        15
+      ]
+    },
+    {
+      "id": "two-decimals",
+      "input": "12.25 12,75",
+      "weights": [
+        12.25,
+        12.75
+      ]
+    },
+    {
+      "id": "single-zero",
+      "input": "0",
+      "weights": [
+        0
+      ]
+    },
+    {
+      "id": "zero-and-step",
+      "input": "0 2.5",
+      "weights": [
+        0,
+        2.5
+      ]
+    },
+    {
+      "id": "leading-zeros",
+      "input": "007 10",
+      "weights": [
+        7,
+        10
+      ]
+    },
+    {
+      "id": "unsorted",
+      "input": "30 10 20",
+      "weights": [
+        10,
+        20,
+        30
+      ]
+    },
+    {
+      "id": "duplicates",
+      "input": "10 10 20",
+      "weights": [
+        10,
+        20
+      ]
+    },
+    {
+      "id": "duplicate-comma-dot",
+      "input": "12,5 12.5",
+      "weights": [
+        12.5
+      ]
+    },
+    {
+      "id": "max-weight",
+      "input": "1000000",
+      "weights": [
+        1000000
+      ]
+    },
+    {
+      "id": "mixed-separators",
+      "input": "5; 10,\n15 20",
+      "weights": [
+        5,
+        10,
+        15,
+        20
+      ]
+    },
+    {
+      "id": "surrounding-whitespace",
+      "input": "  10 20  ",
+      "weights": [
+        10,
+        20
+      ]
+    },
+    {
+      "id": "bare-commas-integers",
+      "input": "10,20,30",
+      "invalid": true
+    },
+    {
+      "id": "bare-comma-then-dot",
+      "input": "1,2.5",
+      "invalid": true
+    },
+    {
+      "id": "two-commas-one-token",
+      "input": "1,2,3",
+      "invalid": true
+    },
+    {
+      "id": "hex",
+      "input": "0x10",
+      "invalid": true
+    },
+    {
+      "id": "exponent",
+      "input": "1e2",
+      "invalid": true
+    },
+    {
+      "id": "negative",
+      "input": "-5",
+      "invalid": true
+    },
+    {
+      "id": "plus-sign",
+      "input": "+5",
+      "invalid": true
+    },
+    {
+      "id": "empty",
+      "input": "",
+      "invalid": true
+    },
+    {
+      "id": "whitespace-only",
+      "input": " \n\t ",
+      "invalid": true
+    },
+    {
+      "id": "nan",
+      "input": "NaN",
+      "invalid": true
+    },
+    {
+      "id": "infinity",
+      "input": "inf",
+      "invalid": true
+    },
+    {
+      "id": "infinity-word",
+      "input": "Infinity",
+      "invalid": true
+    },
+    {
+      "id": "letters",
+      "input": "10 abc",
+      "invalid": true
+    },
+    {
+      "id": "over-max",
+      "input": "1000001",
+      "invalid": true
+    },
+    {
+      "id": "over-max-decimal",
+      "input": "1000000.5",
+      "invalid": true
+    },
+    {
+      "id": "three-decimals",
+      "input": "12.345",
+      "invalid": true
+    },
+    {
+      "id": "trailing-dot",
+      "input": "5.",
+      "invalid": true
+    },
+    {
+      "id": "leading-dot",
+      "input": ".5",
+      "invalid": true
+    },
+    {
+      "id": "two-dots",
+      "input": "1.2.3",
+      "invalid": true
+    },
+    {
+      "id": "comma-only-token",
+      "input": ",",
+      "invalid": true
+    },
+    {
+      "id": "semicolons-only",
+      "input": ";;",
+      "invalid": true
+    },
+    {
+      "id": "leading-comma",
+      "input": ",5",
+      "invalid": true
+    },
+    {
+      "id": "fullwidth-digits",
+      "input": "１２",
+      "invalid": true
+    },
+    {
+      "id": "arabic-indic-digits",
+      "input": "١٢",
+      "invalid": true
+    },
+    {
+      "id": "nbsp-separator",
+      "input": "10 20",
+      "invalid": true
+    },
+    {
+      "id": "count-128",
+      "input": "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127 128",
+      "weights": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121,
+        122,
+        123,
+        124,
+        125,
+        126,
+        127,
+        128
+      ]
+    },
+    {
+      "id": "count-129",
+      "input": "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127 128 129",
+      "invalid": true
+    },
+    {
+      "id": "count-129-with-duplicates",
+      "input": "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127 128 1",
+      "invalid": true
+    }
+  ]
+}
