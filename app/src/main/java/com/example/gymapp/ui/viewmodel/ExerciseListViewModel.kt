@@ -32,6 +32,7 @@ import com.example.gymapp.data.repository.normalizedExerciseName
 import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.util.LocalizedText
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
@@ -894,7 +895,12 @@ class ExerciseListViewModel(
     }
 
     fun logout() {
-        authManager?.logout()
+        val manager = authManager ?: return
+        // Logout commits several SharedPreferences files; keep that disk I/O off the UI thread.
+        // ATOMIC: once the user tapped logout it runs even if this ViewModel is cleared first.
+        viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
+            manager.logout()
+        }
     }
 
     private fun activeBackupOwner(): BackupOwner? {

@@ -24,6 +24,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.FirebaseMessaging
 import java.security.MessageDigest
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
@@ -33,6 +34,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -66,6 +68,11 @@ internal class AndroidPushManager(
             Log.e(PUSH_LOG_TAG, "Push background task failed", error)
         }
     )
+    // enable()/disable() are called from the UI thread. Their SharedPreferences commits run
+    // here, on one serial thread, so rapid taps still persist and apply in tap order.
+    private val toggleDispatcher = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "push-toggle").apply { isDaemon = true }
+    }.asCoroutineDispatcher()
     private val operationMutex = Mutex()
     private val notificationStateGate = PushNotificationStateGate()
     private val operationEpoch = AtomicLong(0L)
@@ -140,40 +147,47 @@ internal class AndroidPushManager(
             refreshUiState()
             return
         }
-        if (!store.setEnabled(true)) {
-            _uiState.value = currentUiState(hasError = true)
-            return
+        scope.launch(toggleDispatcher) {
+            // Persist the flag first, before any registration work starts.
+            if (!store.setEnabled(true)) {
+                _uiState.value = currentUiState(hasError = true)
+                return@launch
+            }
+            messaging?.isAutoInitEnabled = true
+            operationEpoch.incrementAndGet()
+            refreshUiState(isSyncing = true)
+            workScheduler.enqueue(replace = true)
+            scope.launch { synchronizeRegistration(force = true) }
         }
-        messaging?.isAutoInitEnabled = true
-        operationEpoch.incrementAndGet()
-        refreshUiState(isSyncing = true)
-        workScheduler.enqueue(replace = true)
-        scope.launch { synchronizeRegistration(force = true) }
     }
 
     fun disable() {
+        // Capture the session on the caller's thread, then persist the flag and the pending
+        // revocation marker (in that order) before revocation starts.
         val session = authManager.authState.value.session as? AccountSession.Cloud
-        val preferenceSaved = store.setEnabled(false)
-        val pending = preparePendingRevocation(session, deleteProviderToken = true)
-        val invalidation = invalidateDelivery(
-            clearBinding = canClearPushBindingAfterRevocationPreparation(
-                pending.marker,
-                pending.saved
+        scope.launch(toggleDispatcher) {
+            val preferenceSaved = store.setEnabled(false)
+            val pending = preparePendingRevocation(session, deleteProviderToken = true)
+            val invalidation = invalidateDelivery(
+                clearBinding = canClearPushBindingAfterRevocationPreparation(
+                    pending.marker,
+                    pending.saved
+                )
             )
-        )
-        messaging?.isAutoInitEnabled = false
-        refreshUiState(
-            hasError = !preferenceSaved || !pending.saved || !invalidation.bindingCleared
-        )
-        scope.launch {
-            executeRevocation(
-                session,
-                pending.marker,
-                pendingMarkerSaved = pending.saved,
-                deleteProviderToken = true
+            messaging?.isAutoInitEnabled = false
+            refreshUiState(
+                hasError = !preferenceSaved || !pending.saved || !invalidation.bindingCleared
             )
+            scope.launch {
+                executeRevocation(
+                    session,
+                    pending.marker,
+                    pendingMarkerSaved = pending.saved,
+                    deleteProviderToken = true
+                )
+            }
+            workScheduler.enqueue(replace = true)
         }
-        workScheduler.enqueue(replace = true)
     }
 
     fun refreshSystemState() {
