@@ -1737,4 +1737,10 @@
     <string name="message_remove_exercise_failed">Не удалось удалить упражнение. Обнови тренировку и попробуй снова.</string>
     <string name="workout_detail_best_set_label">Лучший</string>
     <string name="workout_detail_best_set_a11y">лучший подход</string>
+    <string name="progress_pr_history_title">Личные рекорды</string>
+    <string name="progress_pr_history_show_all">Показать все</string>
+    <string name="progress_pr_history_show_less">Показать меньше</string>
+    <string name="progress_pr_history_kind_weight">Рекорд веса</string>
+    <string name="progress_pr_history_kind_e1rm">Рекорд расчётного 1ПМ</string>
+    <string name="progress_pr_history_set_value">%1$s × %2$d</string>
 </resources>

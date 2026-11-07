@@ -17,6 +17,17 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import com.example.gymapp.data.repository.PersonalRecordEvent
+import com.example.gymapp.data.repository.PersonalRecordKind
+import java.time.ZoneId
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -195,6 +206,12 @@ fun ExerciseProgressScreen(
                     }
                 }
 
+                if (uiState.personalRecords.isNotEmpty()) {
+                    item(key = "personal-records") {
+                        PersonalRecordsHistoryCard(records = uiState.personalRecords)
+                    }
+                }
+
                 if (sessionGroups.isEmpty()) {
                     item {
                         EmptyStatePanel(
@@ -231,6 +248,81 @@ fun ExerciseProgressScreen(
                     }
                 }
             }
+    }
+}
+
+private const val PERSONAL_RECORDS_COLLAPSED_COUNT = 5
+
+/** Flat tonal list of the sets that broke this exercise's record, newest first. */
+@Composable
+private fun PersonalRecordsHistoryCard(records: List<PersonalRecordEvent>) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val languageTag = currentAppLanguageTag()
+    val locale = remember(languageTag) { Locale.forLanguageTag(languageTag) }
+    val visible = if (expanded) records else records.take(PERSONAL_RECORDS_COLLAPSED_COUNT)
+
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.progress_pr_history_title),
+                modifier = Modifier.semantics { heading() },
+                style = MaterialTheme.typography.titleMedium
+            )
+            visible.forEachIndexed { index, record ->
+                if (index > 0) HorizontalDivider()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.EmojiEvents,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = DateTimeUtils.formatShortDate(record.sessionDate, locale, ZoneId.systemDefault()),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = stringResource(
+                                if (record.kind == PersonalRecordKind.WEIGHT) {
+                                    R.string.progress_pr_history_kind_weight
+                                } else {
+                                    R.string.progress_pr_history_kind_e1rm
+                                }
+                            ),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        text = formattedStringResource(
+                            R.string.progress_pr_history_set_value,
+                            formattedStringResource(R.string.progress_weight_value, formatProgressWeight(record.weight)),
+                            record.reps
+                        ),
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                }
+            }
+            if (records.size > PERSONAL_RECORDS_COLLAPSED_COUNT) {
+                TextButton(onClick = { expanded = !expanded }) {
+                    Text(
+                        text = stringResource(
+                            if (expanded) R.string.progress_pr_history_show_less else R.string.progress_pr_history_show_all
+                        )
+                    )
+                }
+            }
+        }
     }
 }
 

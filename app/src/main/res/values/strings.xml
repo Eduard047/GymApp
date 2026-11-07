@@ -1691,4 +1691,10 @@
     <string name="message_remove_exercise_failed">Could not remove the exercise. Refresh the workout and try again.</string>
     <string name="workout_detail_best_set_label">Best</string>
     <string name="workout_detail_best_set_a11y">best set</string>
+    <string name="progress_pr_history_title">Personal records</string>
+    <string name="progress_pr_history_show_all">Show all</string>
+    <string name="progress_pr_history_show_less">Show less</string>
+    <string name="progress_pr_history_kind_weight">Weight record</string>
+    <string name="progress_pr_history_kind_e1rm">Estimated 1RM record</string>
+    <string name="progress_pr_history_set_value">%1$s × %2$d</string>
 </resources>

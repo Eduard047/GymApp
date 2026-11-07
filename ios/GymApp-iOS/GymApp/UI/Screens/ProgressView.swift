@@ -467,6 +467,11 @@ struct ExerciseProgressView: View {
     /// default (most-logged exercise) may be re-applied as workouts change.
     @State private var userPickedExercise = false
     @State private var showingExerciseSelector = false
+    /// Record-breaking sets of the selected exercise, replayed off the main actor whenever
+    /// the exercise or the workout history changes.
+    @State private var personalRecords: [PersonalRecordHistoryEvent] = []
+    @State private var showsAllPersonalRecords = false
+    @State private var personalRecordsTask: Task<Void, Never>?
     private let showsHeader: Bool
 
     private let onStartWorkout: () -> Void
@@ -518,6 +523,9 @@ struct ExerciseProgressView: View {
                             muscleBreakdown(for: selectedExercise)
                             if !snapshot.monthHistory.isEmpty {
                                 summaryCard(snapshot)
+                            }
+                            personalRecordsCard
+                            if !snapshot.monthHistory.isEmpty {
                                 spotlightCard(for: selectedExercise, snapshot)
                                 ExerciseProgressChartsCard(
                                     points: snapshot.progressPoints,
@@ -544,7 +552,15 @@ struct ExerciseProgressView: View {
             .scrollIndicators(.hidden)
         }
         .environment(\.locale, appLocale)
-        .onAppear(perform: selectDefaultExerciseIfNeeded)
+        .onAppear {
+            selectDefaultExerciseIfNeeded()
+            refreshPersonalRecords()
+        }
+        .onChange(of: selectedExerciseID) { _, _ in
+            showsAllPersonalRecords = false
+            refreshPersonalRecords()
+        }
+        .onDisappear { personalRecordsTask?.cancel() }
 #if DEBUG
         .task {
             // UI-audit: opens the exercise selector sheet for `progress-exercise-selector`.
@@ -554,7 +570,10 @@ struct ExerciseProgressView: View {
         }
 #endif
         .onChange(of: store.exercises) { _, _ in selectDefaultExerciseIfNeeded() }
-        .onChange(of: store.workouts) { _, _ in selectDefaultExerciseIfNeeded() }
+        .onChange(of: store.workouts) { _, _ in
+            selectDefaultExerciseIfNeeded()
+            refreshPersonalRecords()
+        }
         .sheet(isPresented: $showingExerciseSelector) {
             ProgressExerciseSelectorSheet(
                 store: store,
@@ -953,6 +972,89 @@ struct ExerciseProgressView: View {
         let previous = calendar.date(byAdding: .month, value: -1, to: selectedMonth) ?? selectedMonth
         return calendar.dateInterval(of: .month, for: previous) ??
             DateInterval(start: calendar.startOfDay(for: previous), duration: 1)
+    }
+
+    /// Replays the whole history of the selected exercise off the main actor; a newer
+    /// request cancels an older one so a stale result never lands.
+    private func refreshPersonalRecords() {
+        personalRecordsTask?.cancel()
+        guard let exerciseID = selectedExerciseID else {
+            personalRecords = []
+            return
+        }
+        let history = store.exerciseHistory(exerciseID: exerciseID)
+        personalRecordsTask = Task {
+            let events = await Task.detached(priority: .userInitiated) {
+                PersonalRecordHistory.replay(history)
+            }.value
+            guard !Task.isCancelled else { return }
+            personalRecords = events
+        }
+    }
+
+    private static let collapsedPersonalRecordCount = 5
+
+    @ViewBuilder
+    private var personalRecordsCard: some View {
+        if !personalRecords.isEmpty {
+            let visible = showsAllPersonalRecords
+                ? personalRecords
+                : Array(personalRecords.prefix(Self.collapsedPersonalRecordCount))
+            GymPanel {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(t("Personal records", "Особисті рекорди", "Личные рекорды"))
+                        .font(.headline)
+                        .accessibilityAddTraits(.isHeader)
+
+                    ForEach(Array(visible.enumerated()), id: \.element.id) { index, record in
+                        if index > 0 { Divider().opacity(0.55) }
+                        personalRecordRow(record)
+                    }
+
+                    if personalRecords.count > Self.collapsedPersonalRecordCount {
+                        Button {
+                            showsAllPersonalRecords.toggle()
+                        } label: {
+                            Text(showsAllPersonalRecords
+                                 ? t("Show less", "Показати менше", "Показать меньше")
+                                 : t("Show all", "Показати всі", "Показать все"))
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(GymTheme.primary)
+                        .frame(minHeight: 44, alignment: .leading)
+                    }
+                }
+            }
+        }
+    }
+
+    private func personalRecordRow(_ record: PersonalRecordHistoryEvent) -> some View {
+        let kindLabel = record.kind == .weight
+            ? t("Weight PR", "Рекорд ваги", "Рекорд веса")
+            : t("Estimated 1RM PR", "Рекорд розрахункового 1ПМ", "Рекорд расчётного 1ПМ")
+        let value = "\(formatWeight(record.weight)) × \(record.reps)"
+        return HStack(spacing: 12) {
+            Image(systemName: "trophy.fill")
+                .font(.subheadline)
+                .foregroundStyle(GymTheme.primary)
+                .frame(width: 20)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(gymShortDate(record.date))
+                    .font(.subheadline)
+                    .foregroundStyle(GymTheme.textPrimary)
+                Text(kindLabel)
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+            }
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(GymTheme.textPrimary)
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
     }
 
     private func makeSnapshot() -> ExerciseProgressSnapshot {

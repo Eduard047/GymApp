@@ -16,6 +16,11 @@ internal data class PersonalRecordBaseline(
     val bestEstimatedOneRepMax: Double
 )
 
+/** Which record kinds one set achieves; both false when it is no record. */
+internal data class RecordEvaluation(val weight: Boolean, val estimatedOneRepMax: Boolean) {
+    val isRecord: Boolean get() = weight || estimatedOneRepMax
+}
+
 /** One completed set of the running workout, in the order the athlete sees it. */
 internal data class LiveCompletedSet(
     val exerciseId: Long,
@@ -47,6 +52,29 @@ internal object LivePersonalRecords {
             )
         }
 
+    /**
+     * Which record kinds one set achieves against the best seen so far (same rule as iOS
+     * `LivePersonalRecords.evaluate`). A 0 kg set never qualifies; weight must be strictly greater;
+     * the estimate must exceed the best by more than the tolerance.
+     */
+    fun evaluate(weight: Double, reps: Int, best: PersonalRecordBaseline): RecordEvaluation {
+        if (weight <= 0.0) return RecordEvaluation(weight = false, estimatedOneRepMax = false)
+        val estimate = GymOneRepMax.estimate(weight, reps)
+        return RecordEvaluation(
+            weight = weight > best.bestWeight,
+            estimatedOneRepMax = estimate > best.bestEstimatedOneRepMax + ESTIMATE_TOLERANCE
+        )
+    }
+
+    /** The running best after a set has been performed (a 0 kg set changes nothing). */
+    fun advanced(best: PersonalRecordBaseline, weight: Double, reps: Int): PersonalRecordBaseline {
+        if (weight <= 0.0) return best
+        return PersonalRecordBaseline(
+            bestWeight = maxOf(best.bestWeight, weight),
+            bestEstimatedOneRepMax = maxOf(best.bestEstimatedOneRepMax, GymOneRepMax.estimate(weight, reps))
+        )
+    }
+
     fun recordSetIds(
         completed: List<LiveCompletedSet>,
         baselines: Map<Long, PersonalRecordBaseline>
@@ -61,14 +89,8 @@ internal object LivePersonalRecords {
         for (entry in ordered) {
             if (entry.weight <= 0.0) continue
             val best = bests[entry.exerciseId] ?: continue
-            val estimate = GymOneRepMax.estimate(entry.weight, entry.reps)
-            val beatsWeight = entry.weight > best.bestWeight
-            val beatsEstimate = estimate > best.bestEstimatedOneRepMax + ESTIMATE_TOLERANCE
-            if (beatsWeight || beatsEstimate) records += entry.setId
-            bests[entry.exerciseId] = PersonalRecordBaseline(
-                bestWeight = maxOf(best.bestWeight, entry.weight),
-                bestEstimatedOneRepMax = maxOf(best.bestEstimatedOneRepMax, estimate)
-            )
+            if (LivePersonalRecords.evaluate(entry.weight, entry.reps, best).isRecord) records += entry.setId
+            bests[entry.exerciseId] = advanced(best, entry.weight, entry.reps)
         }
         return records
     }

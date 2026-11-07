@@ -11,6 +11,8 @@ import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.GymOneRepMax
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.MuscleContribution
+import com.example.gymapp.data.repository.PersonalRecordEvent
+import com.example.gymapp.data.repository.personalRecordHistory
 import com.example.gymapp.data.repository.muscleContributionsForExercise
 import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.util.AppLanguageSignal
@@ -25,6 +27,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
@@ -105,7 +108,9 @@ data class ExerciseProgressUiState(
     val bestWeight: Double? = null,
     val averageWeight: Double? = null,
     val spotlight: ExerciseProgressSpotlightUiModel = ExerciseProgressSpotlightUiModel(),
-    val trendChart: ExerciseTrendChartUiModel = ExerciseTrendChartUiModel()
+    val trendChart: ExerciseTrendChartUiModel = ExerciseTrendChartUiModel(),
+    /** Record-breaking sets of the selected exercise over its whole history, newest first (max 50). */
+    val personalRecords: List<PersonalRecordEvent> = emptyList()
 )
 
 private data class ExerciseProgressCatalog(
@@ -461,6 +466,12 @@ class ExerciseProgressViewModel(
         }
     }
 
+    // The record replay walks the whole history, so it runs once per history change on Default and is
+    // not repeated when only the month or language changes.
+    private val fullHistoryWithRecordsFlow = fullHistoryFlow
+        .map { history -> history to personalRecordHistory(history) }
+        .flowOn(Dispatchers.Default)
+
     // Re-emits when the in-app language changes so spotlight/trend text and number formats follow it.
     private val localizedHistoryFlow = combine(historyFlow, languageTag) { history, tag -> history to tag }
 
@@ -469,8 +480,8 @@ class ExerciseProgressViewModel(
         exerciseCatalogFlow,
         selectedExerciseId,
         localizedHistoryFlow,
-        fullHistoryFlow
-    ) { offset, catalog, selectedId, (history, tag), fullHistory ->
+        fullHistoryWithRecordsFlow
+    ) { offset, catalog, selectedId, (history, tag), (fullHistory, personalRecords) ->
         val textBuilder = ExerciseProgressTextBuilder(tag, zoneId)
         val exerciseList = catalog.exercises
         val selectedExerciseName = exerciseList.firstOrNull { it.id == selectedId }?.name
@@ -500,7 +511,8 @@ class ExerciseProgressViewModel(
                 monthPoints = progressPoints,
                 allTimePoints = allTimePoints
             ),
-            trendChart = textBuilder.buildTrendChart(progressPoints)
+            trendChart = textBuilder.buildTrendChart(progressPoints),
+            personalRecords = personalRecords
         )
     }
 

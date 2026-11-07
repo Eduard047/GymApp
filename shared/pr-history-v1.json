@@ -1,0 +1,472 @@
+{
+  "version": 1,
+  "rules": "Replay one exercise's sessions oldest first (date, then id). The first session is the baseline and never holds a record, even when all its sets are 0 kg. Afterwards each set (in set order) is compared with the best weight and best Epley estimate (weight * (1 + reps / 30)) logged before it, including earlier sets of its own session. 0 kg sets are never records and do not move the best. A weight record needs strictly more weight; an e1RM record needs an estimate above the best by more than 1e-9. A set that beats both is reported as kind weight. Expected events are newest first (later sets first inside a session); set is the zero-based set order inside the session. The list is capped at limit (default 50).",
+  "limit": 50,
+  "cases": [
+    {
+      "id": "first-session-baseline",
+      "description": "The first session only sets the baseline: no record, however heavy",
+      "sessions": [
+        {
+          "id": 1,
+          "date": 1700000000000,
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 5
+            },
+            {
+              "weight": 110,
+              "reps": 5
+            }
+          ]
+        }
+      ],
+      "expected": []
+    },
+    {
+      "id": "weight-record",
+      "description": "A heavier set than all earlier history is a weight record",
+      "sessions": [
+        {
+          "id": 1,
+          "date": 1700000000000,
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 5
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "date": 1700086400000,
+          "sets": [
+            {
+              "weight": 105,
+              "reps": 5
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "session": 2,
+          "set": 0,
+          "weight": 105,
+          "reps": 5,
+          "kind": "weight"
+        }
+      ]
+    },
+    {
+      "id": "tie-not-a-record",
+      "description": "Matching the best weight and estimate is not a record",
+      "sessions": [
+        {
+          "id": 1,
+          "date": 1700000000000,
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 5
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "date": 1700086400000,
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 5
+            }
+          ]
+        }
+      ],
+      "expected": []
+    },
+    {
+      "id": "zero-kg-ignored",
+      "description": "0 kg sets are never records and do not move the best",
+      "sessions": [
+        {
+          "id": 1,
+          "date": 1700000000000,
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 5
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "date": 1700086400000,
+          "sets": [
+            {
+              "weight": 0,
+              "reps": 20
+            },
+            {
+              "weight": 0,
+              "reps": 30
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "date": 1700172800000,
+          "sets": [
+            {
+              "weight": 95,
+              "reps": 5
+            }
+          ]
+        }
+      ],
+      "expected": []
+    },
+    {
+      "id": "zero-kg-first-session-still-baseline",
+      "description": "A first session of only 0 kg sets still counts as the baseline, so the next heavier set is a record",
+      "sessions": [
+        {
+          "id": 1,
+          "date": 1700000000000,
+          "sets": [
+            {
+              "weight": 0,
+              "reps": 12
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "date": 1700086400000,
+          "sets": [
+            {
+              "weight": 50,
+              "reps": 10
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "session": 2,
+          "set": 0,
+          "weight": 50,
+          "reps": 10,
+          "kind": "weight"
+        }
+      ]
+    },
+    {
+      "id": "same-day-sessions",
+      "description": "Two sessions on one day replay by time, not by input order; the second beats the first, the third ties it",
+      "sessions": [
+        {
+          "id": 2,
+          "date": 1700003600000,
+          "sets": [
+            {
+              "weight": 105,
+              "reps": 5
+            }
+          ]
+        },
+        {
+          "id": 1,
+          "date": 1700000000000,
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 5
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "date": 1700007200000,
+          "sets": [
+            {
+              "weight": 105,
+              "reps": 5
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "session": 2,
+          "set": 0,
+          "weight": 105,
+          "reps": 5,
+          "kind": "weight"
+        }
+      ]
+    },
+    {
+      "id": "e1rm-without-weight-record",
+      "description": "A lighter set with a higher estimated 1RM is an e1RM record only",
+      "sessions": [
+        {
+          "id": 1,
+          "date": 1700000000000,
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 5
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "date": 1700086400000,
+          "sets": [
+            {
+              "weight": 90,
+              "reps": 10
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "session": 2,
+          "set": 0,
+          "weight": 90,
+          "reps": 10,
+          "kind": "e1rm"
+        }
+      ]
+    },
+    {
+      "id": "both-kinds-reports-weight",
+      "description": "A set that beats both the weight and the estimate is reported as a weight record",
+      "sessions": [
+        {
+          "id": 1,
+          "date": 1700000000000,
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 5
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "date": 1700086400000,
+          "sets": [
+            {
+              "weight": 110,
+              "reps": 8
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "session": 2,
+          "set": 0,
+          "weight": 110,
+          "reps": 8,
+          "kind": "weight"
+        }
+      ]
+    },
+    {
+      "id": "e1rm-tie-within-tolerance",
+      "description": "An equal estimate from a different weight/rep pair is not a record",
+      "sessions": [
+        {
+          "id": 1,
+          "date": 1700000000000,
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 6
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "date": 1700086400000,
+          "sets": [
+            {
+              "weight": 90,
+              "reps": 10
+            }
+          ]
+        }
+      ],
+      "expected": []
+    },
+    {
+      "id": "within-session-progression",
+      "description": "Later sets compare with earlier sets of their own session; events list newest first",
+      "sessions": [
+        {
+          "id": 1,
+          "date": 1700000000000,
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 5
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "date": 1700086400000,
+          "sets": [
+            {
+              "weight": 105,
+              "reps": 5
+            },
+            {
+              "weight": 105,
+              "reps": 5
+            },
+            {
+              "weight": 110,
+              "reps": 3
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "session": 2,
+          "set": 2,
+          "weight": 110,
+          "reps": 3,
+          "kind": "weight"
+        },
+        {
+          "session": 2,
+          "set": 0,
+          "weight": 105,
+          "reps": 5,
+          "kind": "weight"
+        }
+      ]
+    },
+    {
+      "id": "date-order-beats-id-order",
+      "description": "Sessions replay by date even when ids run the other way",
+      "sessions": [
+        {
+          "id": 1,
+          "date": 1700172800000,
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 5
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "date": 1700000000000,
+          "sets": [
+            {
+              "weight": 80,
+              "reps": 5
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "date": 1700086400000,
+          "sets": [
+            {
+              "weight": 90,
+              "reps": 5
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "session": 1,
+          "set": 0,
+          "weight": 100,
+          "reps": 5,
+          "kind": "weight"
+        },
+        {
+          "session": 3,
+          "set": 0,
+          "weight": 90,
+          "reps": 5,
+          "kind": "weight"
+        }
+      ]
+    },
+    {
+      "id": "later-lighter-session-keeps-best",
+      "description": "A weaker session after a record is not a record, and the best stays",
+      "sessions": [
+        {
+          "id": 1,
+          "date": 1700000000000,
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 5
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "date": 1700086400000,
+          "sets": [
+            {
+              "weight": 110,
+              "reps": 5
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "date": 1700172800000,
+          "sets": [
+            {
+              "weight": 105,
+              "reps": 5
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "date": 1700259200000,
+          "sets": [
+            {
+              "weight": 111,
+              "reps": 5
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "session": 4,
+          "set": 0,
+          "weight": 111,
+          "reps": 5,
+          "kind": "weight"
+        },
+        {
+          "session": 2,
+          "set": 0,
+          "weight": 110,
+          "reps": 5,
+          "kind": "weight"
+        }
+      ]
+    }
+  ]
+}
