@@ -733,6 +733,63 @@ final class ActivityOnlyWorkoutCloudSidecarTests: XCTestCase {
         }
     }
 
+    func testDeletingEnrichedWorkoutRestoresMetricsMirrorLikeAndroid() throws {
+        let directory = try temporaryDirectory(named: "delete-enriched")
+        let storageKey = "delete-enriched-owner"
+        let timestamp: Int64 = 1_750_000_000_000
+        let original = try item(timestamp: timestamp, duration: 754, gymCalories: 45.125,
+                                garminCalories: 50, averageHeartRate: 120, maximumHeartRate: 155,
+                                endingHeartRateZone: 3, note: "Watch activity")
+        let store = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        _ = try store.applyActivityOnlyCloudItems([original], expectedLocalItems: [])
+        let workout = try XCTUnwrap(store.workouts.first)
+        let exercise = try store.addExercise(name: "Bench Press")
+        let block = try store.addExercise(toWorkout: workout.id, exerciseID: exercise.id,
+                                          initialSet: WorkoutSetDraft(weight: 55, reps: 12))
+        XCTAssertFalse(try XCTUnwrap(store.workout(id: workout.id)).exercises.isEmpty)
+
+        // Android deleteWorkoutSession: deleting a workout with exercises re-creates the
+        // private metrics-only mirror at that start time (set deletion ends the same way).
+        try store.deleteWorkout(id: workout.id)
+
+        func assertMirror(_ candidate: WorkoutStore) throws {
+            XCTAssertEqual(candidate.workouts.count, 1)
+            let mirror = try XCTUnwrap(candidate.workouts.first)
+            XCTAssertEqual(mirror.date.gymEpochMilliseconds, timestamp)
+            XCTAssertTrue(mirror.exercises.isEmpty)
+            XCTAssertEqual(mirror.durationSeconds, 754)
+            XCTAssertEqual(mirror.note, "Watch activity")
+            XCTAssertEqual(candidate.activityOnlyCloudItems, [original])
+            XCTAssertEqual(try candidate.activityOnlyCloudSnapshotItems(), [original])
+        }
+        try assertMirror(store)
+        try assertMirror(try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory))
+        _ = block
+    }
+
+    func testDeletingActivityOnlyWorkoutDropsStoredItemSoItNeverReturns() throws {
+        let directory = try temporaryDirectory(named: "delete-activity-only")
+        let storageKey = "delete-activity-only-owner"
+        let timestamp: Int64 = 1_750_000_000_000
+        let original = try item(timestamp: timestamp, duration: 754, gymCalories: 45.125,
+                                garminCalories: 50, averageHeartRate: 120, maximumHeartRate: 155,
+                                endingHeartRateZone: 3, note: "Watch activity")
+        let store = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        _ = try store.applyActivityOnlyCloudItems([original], expectedLocalItems: [])
+        let mirror = try XCTUnwrap(store.workouts.first)
+
+        // Android deleteWorkoutSession: deleting the metrics-only workout itself deletes
+        // the stored item, so a later workout removed at that start cannot resurrect it.
+        try store.deleteWorkout(id: mirror.id)
+        XCTAssertTrue(store.workouts.isEmpty)
+        XCTAssertTrue(store.activityOnlyCloudItems.isEmpty)
+
+        let reopened = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        XCTAssertTrue(reopened.workouts.isEmpty)
+        XCTAssertTrue(reopened.activityOnlyCloudItems.isEmpty)
+        XCTAssertEqual(try reopened.activityOnlyCloudSnapshotItems(), [])
+    }
+
     func testPendingTupleIsOwnerBoundAndExactTransientReplayUsesSameBody() async throws {
         let directory = try temporaryDirectory(named: "exact-replay")
         let storageKey = "cloud-activity-owner"

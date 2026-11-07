@@ -1568,12 +1568,27 @@ public final class WorkoutStore: ObservableObject {
         }
     }
 
+    /// Same rule as Android `deleteWorkoutSession`: deleting the metrics-only workout itself
+    /// drops its stored activity item (it must not come back); deleting a workout with
+    /// exercises re-creates the private metrics-only mirror at that start unless occupied.
     public func deleteWorkout(id: UUID) throws {
-        try mutate { state in
-            guard state.workouts.contains(where: { $0.id == id }) else {
-                throw WorkoutStoreError.workoutNotFound
+        let previousCloudItems = activityOnlyCloudItems
+        do {
+            try mutate { state in
+                guard let removed = state.workouts.first(where: { $0.id == id }) else {
+                    throw WorkoutStoreError.workoutNotFound
+                }
+                state.workouts.removeAll { $0.id == id }
+                let startedAt = removed.date.gymEpochMilliseconds
+                if Self.isActivityOnlyWorkout(removed) {
+                    activityOnlyCloudItems.removeAll { $0.workoutStartedAt == startedAt }
+                } else {
+                    try restoreActivityOnlyMirrorIfUnshadowed(in: &state, startedAt: startedAt)
+                }
             }
-            state.workouts.removeAll { $0.id == id }
+        } catch {
+            activityOnlyCloudItems = previousCloudItems
+            throw error
         }
     }
 
@@ -1897,7 +1912,11 @@ public final class WorkoutStore: ObservableObject {
             }
             if state.workouts[location.workout].exercises.isEmpty &&
                 !hasRecordedActivityMetrics(state.workouts[location.workout]) {
+                let startedAt = state.workouts[location.workout].date.gymEpochMilliseconds
                 state.workouts.remove(at: location.workout)
+                // Android cleanupAfterSetDeletion: restore the activity mirror once the
+                // workout that shadowed it is gone.
+                try restoreActivityOnlyMirrorIfUnshadowed(in: &state, startedAt: startedAt)
             }
         }
     }
