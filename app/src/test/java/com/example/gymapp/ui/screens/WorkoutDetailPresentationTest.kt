@@ -1,5 +1,6 @@
 package com.example.gymapp.ui.screens
 
+import com.example.gymapp.util.keepNumberWithUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -123,5 +124,13 @@ class WorkoutDetailPresentationTest {
             listOf("30 reps"),
             savedExerciseSummaryParts("30 reps", 0.0, "Volume: 0 kg")
         )
+    }
+
+    @Test
+    fun headerSummaryNeverOrphansUnitFromNumber() {
+        val line = workoutHeaderMetricParts(
+            "4 exercises", "13 sets", 10570.0, keepNumberWithUnit("10,570 kg"), 3600L, keepNumberWithUnit("1 h")
+        ).joinToString("\u00A0\u00B7 ")
+        assertEquals("4 exercises\u00A0\u00B7 13 sets\u00A0\u00B7 1\u00A0h\u00A0\u00B7 10,570\u00A0kg", line)
     }
 }

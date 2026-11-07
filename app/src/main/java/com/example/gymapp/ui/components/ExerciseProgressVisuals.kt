@@ -32,6 +32,7 @@ import com.example.gymapp.ui.viewmodel.ExerciseTrendChartPointUiModel
 import com.example.gymapp.ui.viewmodel.ExerciseTrendChartUiModel
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formatVolumeTotal
+import com.example.gymapp.util.keepNumberWithUnit
 import com.example.gymapp.util.formatWeightDisplay
 import com.example.gymapp.util.formattedPluralStringResource
 
@@ -68,7 +69,7 @@ fun ExerciseSpotlightCard(
                     label = spotlight.latestVolumeCaption,
                     value = spotlight.latestVolumeLabel
                         .takeIf { label -> label.any(Char::isDigit) }
-                        ?.let { label -> formattedStringResource(R.string.today_history_volume_kg, label) }
+                        ?.let { label -> keepNumberWithUnit(formattedStringResource(R.string.today_history_volume_kg, label)) }
                         ?: spotlight.latestVolumeLabel,
                     modifier = Modifier.weight(1f),
                     onHero = true
@@ -210,7 +211,7 @@ fun ExerciseTrendChartsCard(
                         label = stringResource(R.string.progress_average_volume),
                         value = chart.averageVolumeLabel
                             .takeIf { label -> label.any(Char::isDigit) }
-                            ?.let { label -> formattedStringResource(R.string.today_history_volume_kg, label) }
+                            ?.let { label -> keepNumberWithUnit(formattedStringResource(R.string.today_history_volume_kg, label)) }
                             ?: chart.averageVolumeLabel,
                         modifier = Modifier.weight(1f)
                     )

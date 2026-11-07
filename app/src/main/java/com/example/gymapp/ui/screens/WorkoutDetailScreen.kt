@@ -133,6 +133,7 @@ import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.Locale
 import com.example.gymapp.util.formatVolumeTotal
+import com.example.gymapp.util.keepNumberWithUnit
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
 
@@ -668,12 +669,14 @@ private fun WorkoutHeaderCard(
                 setCount
             ),
             volume = volume,
-            volumeLabel = formattedStringResource(
-                R.string.today_history_volume_kg,
-                formatVolumeTotal(volume, Locale.getDefault())
+            volumeLabel = keepNumberWithUnit(
+                formattedStringResource(
+                    R.string.today_history_volume_kg,
+                    formatVolumeTotal(volume, Locale.getDefault())
+                )
             ),
             durationSeconds = durationSeconds,
-            durationLabel = formatWorkoutDuration(durationSeconds ?: 0L)
+            durationLabel = keepNumberWithUnit(formatWorkoutDuration(durationSeconds ?: 0L))
         ).joinToString("\u00A0· ")
     }
     val noteText = note?.takeIf { it.isNotBlank() && !isActivityOnly }
@@ -2093,9 +2096,11 @@ private fun SavedWorkoutExerciseCard(
     val setCountLabel = formattedPluralStringResource(R.plurals.saved_workout_set_count, setCount, setCount)
     val repsLabel = formattedPluralStringResource(R.plurals.saved_workout_rep_count, repCount, repCount)
     val exerciseVolume = sets.sumOf { it.weight * it.reps }
-    val volumeLabel = formattedStringResource(
-        R.string.stats_volume,
-        formatVolumeTotal(exerciseVolume, Locale.getDefault())
+    val volumeLabel = keepNumberWithUnit(
+        formattedStringResource(
+            R.string.stats_volume,
+            formatVolumeTotal(exerciseVolume, Locale.getDefault())
+        )
     )
     val summaryParts = savedExerciseSummaryParts(repsLabel, exerciseVolume, volumeLabel)
     val removeLabel = stringResource(R.string.active_workout_remove_exercise)

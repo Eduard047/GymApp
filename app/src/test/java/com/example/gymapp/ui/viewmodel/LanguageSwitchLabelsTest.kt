@@ -88,4 +88,14 @@ class LanguageSwitchLabelsTest {
             AppLanguageSignal.update(original)
         }
     }
+
+    @Test
+    fun latestVolumeGroupsThousandsLikeNeighbourTiles() {
+        val big = listOf(
+            ExerciseProgressPoint(sessionId = 3, sessionDate = 1_700_600_000_000, maxWeight = 200.0, totalVolume = 5120.4, totalReps = 20)
+        )
+        val enSpot = ExerciseProgressTextBuilder("en", zone).buildSpotlight(null, big, big)
+        assertEquals("5,120", enSpot.latestVolumeLabel)
+        assertEquals("5,120", ExerciseProgressTextBuilder("en", zone).buildTrendChart(big).points.last().volumeLabel)
+    }
 }

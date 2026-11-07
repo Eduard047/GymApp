@@ -1747,7 +1747,9 @@ struct WorkoutDetailView: View {
                 languageCode: languageCode
             )
         ]
+        // No-break spaces keep "3 h 52 min" from wrapping between a number and its unit.
         let durationText = gymCompactDuration(workout.durationSeconds ?? 0, languageCode: languageCode)
+            .replacingOccurrences(of: #"(?<=\d) (?=\p{L})"#, with: "\u{00A0}", options: .regularExpression)
         if !durationText.isEmpty {
             parts.append(durationText)
         }

@@ -17,6 +17,7 @@ import com.example.gymapp.data.repository.muscleContributionsForExercise
 import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.util.AppLanguageSignal
 import com.example.gymapp.util.DateTimeUtils
+import com.example.gymapp.util.formatSessionVolume
 import com.example.gymapp.util.localizedText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -253,7 +254,7 @@ internal class ExerciseProgressTextBuilder(
                 previous = previous?.maxWeight,
                 unit = t(en = "kg", uk = "кг")
             ),
-            latestVolumeLabel = latest.totalVolume.roundToInt().toString(),
+            latestVolumeLabel = formatSessionVolume(latest.totalVolume.roundToInt().toDouble(), locale),
             latestVolumeCaption = t(en = "Latest volume", uk = "Останній обсяг"),
             volumeDeltaLabel = deltaLabel(
                 latest = latest.totalVolume,
@@ -288,7 +289,7 @@ internal class ExerciseProgressTextBuilder(
                 totalVolume = point.totalVolume,
                 totalReps = point.totalReps,
                 weightLabel = formatWeight(point.maxWeight),
-                volumeLabel = point.totalVolume.roundToInt().toString(),
+                volumeLabel = formatSessionVolume(point.totalVolume.roundToInt().toDouble(), locale),
                 repsLabel = when {
                     isUkrainian -> "${point.totalReps} повт"
                     isRussian -> "${point.totalReps} повт"

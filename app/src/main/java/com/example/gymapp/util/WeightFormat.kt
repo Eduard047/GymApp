@@ -33,3 +33,12 @@ fun formatVolumeTotal(volume: Double, locale: Locale = Locale.getDefault()): Str
 /** Whole-kilogram session volume with locale grouping ("10,570", "10 570"), like the post-workout summary. */
 fun formatSessionVolume(volume: Double, locale: Locale = Locale.getDefault()): String =
     NumberFormat.getIntegerInstance(locale).format(if (volume.isFinite() && volume > 0.0) volume else 0.0)
+
+private val numberUnitGap = Regex("(?<=\\d) (?=\\p{L})")
+
+/**
+ * Replaces the plain space between a digit and a following letter with U+00A0 so a value never
+ * wraps away from its unit ("10,570 kg", "1 h 5 min" -> "10,570\u00A0kg", "1\u00A0h 5\u00A0min").
+ * Other spaces stay breakable.
+ */
+fun keepNumberWithUnit(text: String): String = numberUnitGap.replace(text, "\u00A0")
