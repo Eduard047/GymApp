@@ -88,7 +88,9 @@ internal fun ExerciseCatalogSelector(
      * Adds a "Create exercise" panel (Add mode only): creates a custom exercise and returns its id,
      * which is then selected and the picker closes, like iOS "Create and add".
      */
-    onCreateExercise: (suspend (String) -> Long)? = null
+    onCreateExercise: (suspend (String) -> Long)? = null,
+    /** Exercises already in the plan: shown with a check and not selectable again (Add mode). */
+    addedExerciseIds: Set<Long> = emptySet()
 ) {
     val isChooseMode = mode == ExerciseSelectorMode.Choose
     var internalExpanded by rememberSaveable { mutableStateOf(false) }
@@ -245,11 +247,13 @@ internal fun ExerciseCatalogSelector(
                         items(visibleExercises, key = { it.id }) { exercise ->
                             val searchMatchReason = exerciseSearchMatch(exercise.name, query, exerciseMuscleIds[exercise.name])?.reason
                             // Same solid hairline row as the Exercises list: primary text, no blue capsule.
+                            val alreadyAdded = !isChooseMode && exercise.id in addedExerciseIds
                             Surface(
                                 onClick = {
                                     onExerciseSelected(exercise.id)
                                     closePicker()
                                 },
+                                enabled = !alreadyAdded,
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = GymPanelShape,
                                 color = androidx.compose.material3.MaterialTheme.colorScheme.surface,
@@ -315,7 +319,7 @@ internal fun ExerciseCatalogSelector(
                                         )
                                     }
                                 }
-                                if (exercise.id == selectedExerciseId) {
+                                if (exercise.id == selectedExerciseId || alreadyAdded) {
                                     Spacer(modifier = Modifier.size(8.dp))
                                     Icon(
                                         imageVector = Icons.Default.CheckCircle,

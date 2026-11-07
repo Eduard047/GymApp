@@ -410,6 +410,7 @@
     <string name="label_workout_date">Дата</string>
     <string name="label_exercise">Упражнение</string>
     <string name="label_select_exercise">Выбери упражнение</string>
+    <string name="plan_editor_exercise_already_added">Это упражнение уже есть в тренировке.</string>
     <string name="label_last_weight">Последний вес: %1$.1f кг</string>
     <string name="label_set">Подход %1$d</string>
     <string name="label_set_short">Подход</string>

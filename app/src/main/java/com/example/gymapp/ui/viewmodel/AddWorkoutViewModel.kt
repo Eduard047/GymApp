@@ -529,26 +529,53 @@ internal fun movedExerciseDraftTo(
     return drafts.toMutableList().apply { add(toIndex, removeAt(from)) }
 }
 
-/** New exercise cards are appended, so the first added stays first (insertion order). */
+/** Reps a freshly added set starts with, matching the iPhone plan editor. */
+internal const val DEFAULT_PLANNED_REPS = "10"
+
+/**
+ * New exercise cards are appended, so the first added stays first (insertion order). The card
+ * starts with one set of [DEFAULT_PLANNED_REPS] reps; its weight is seeded by [withInitialWeightIfBlank].
+ */
 internal fun appendExerciseDraft(
     current: List<ExerciseInputState>,
     draftId: Long,
     exerciseId: Long? = null
-): List<ExerciseInputState> = current + ExerciseInputState(draftId = draftId, exerciseId = exerciseId)
+): List<ExerciseInputState> = current + ExerciseInputState(
+    draftId = draftId,
+    exerciseId = exerciseId,
+    sets = listOf(SetInputState(reps = DEFAULT_PLANNED_REPS))
+)
 
-/** Seeds the weight of a freshly added card's only set, never overwriting anything the user typed. */
+/**
+ * Seeds the weight of a freshly added card's only set, never overwriting anything the user typed
+ * (a typed weight, or reps changed away from the default).
+ */
 internal fun withInitialWeightIfBlank(
     current: List<ExerciseInputState>,
     draftId: Long,
     lastWeight: Double
 ): List<ExerciseInputState> = current.map { draft ->
     val onlySet = draft.sets.singleOrNull()
-    if (draft.draftId == draftId && onlySet != null && onlySet.weight.isBlank() && onlySet.reps.isBlank()) {
+    if (draft.draftId == draftId && onlySet != null && onlySet.weight.isBlank() &&
+        (onlySet.reps.isBlank() || onlySet.reps == DEFAULT_PLANNED_REPS)
+    ) {
         draft.copy(sets = listOf(onlySet.copy(weight = formatPlannedWeight(lastWeight))))
     } else {
         draft
     }
 }
+
+/**
+ * The set "+ Set" appends: a copy of the previous set's weight and reps, falling back to the last
+ * known weight and [DEFAULT_PLANNED_REPS] when there is no previous set (or its field is blank).
+ */
+internal fun nextSetInput(previous: SetInputState?, lastWeight: Double?): SetInputState = SetInputState(
+    weight = previous?.weight?.takeIf { it.isNotBlank() } ?: lastWeight?.let(::formatPlannedWeight).orEmpty(),
+    reps = previous?.reps?.takeIf { it.isNotBlank() } ?: DEFAULT_PLANNED_REPS
+)
+
+internal fun hasPlannedExercise(current: List<ExerciseInputState>, exerciseId: Long): Boolean =
+    current.any { it.exerciseId == exerciseId }
 
 internal fun formatPlannedWeight(weight: Double): String = formatWeightInput(weight)
 
@@ -1670,12 +1697,20 @@ class AddWorkoutViewModel internal constructor(
 
     /**
      * Appends a new card for an exercise picked from the "Add exercise" picker. Nothing is added when
-     * the exercise is unknown or the per-workout exercise limit is reached. The first set starts with
-     * the last logged weight for that exercise when one exists; reps stay empty like any new set.
+     * the exercise is unknown, already in the plan (a message is shown), or the per-workout exercise
+     * limit is reached. The first set starts with 10 reps and the last logged weight for that
+     * exercise when one exists.
      */
     fun addExerciseDraftWithExercise(exerciseId: Long) {
         if (exerciseId <= 0L || exerciseCatalogState.value.exercises.none { it.id == exerciseId }) {
             hasValidationError.value = true
+            return
+        }
+        if (hasPlannedExercise(exerciseDrafts.value, exerciseId)) {
+            presetMessage.value = WorkoutPresetMessage(
+                R.string.plan_editor_exercise_already_added,
+                isError = true
+            )
             return
         }
         resetWatchPlanSyncResult()
@@ -1838,11 +1873,7 @@ class AddWorkoutViewModel internal constructor(
                     }
                     markDraftDirty()
                     val lastWeight = draft.exerciseId?.let { lastWeightsSnapshot[it] }
-                    draft.copy(
-                        sets = draft.sets + SetInputState(
-                            weight = lastWeight?.let(::formatWeight).orEmpty()
-                        )
-                    )
+                    draft.copy(sets = draft.sets + nextSetInput(draft.sets.lastOrNull(), lastWeight))
                 } else {
                     draft
                 }

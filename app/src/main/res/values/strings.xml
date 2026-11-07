@@ -410,6 +410,7 @@
     <string name="label_workout_date">Date</string>
     <string name="label_exercise">Exercise</string>
     <string name="label_select_exercise">Select exercise</string>
+    <string name="plan_editor_exercise_already_added">That exercise is already in this workout.</string>
     <string name="label_last_weight">Last: %1$.1f kg</string>
     <string name="label_set">Set %1$d</string>
     <string name="label_set_short">Set</string>

@@ -280,6 +280,7 @@ fun AddWorkoutScreen(
     Box(modifier = modifier.fillMaxSize()) {
     ExerciseCatalogSelector(
         selectedExerciseId = null,
+        addedExerciseIds = uiState.exerciseDrafts.mapNotNull { it.exerciseId }.toSet(),
         exercises = uiState.exercises,
         frequentExerciseIds = uiState.frequentExerciseIds,
         exerciseWorkoutCounts = uiState.exerciseWorkoutCounts,

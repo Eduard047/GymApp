@@ -211,4 +211,57 @@ class AddWorkoutViewModelTest {
         assertEquals(60.0, lastLoggedWeight(history, 1)!!, 0.0)
         assertNull(lastLoggedWeight(history, 3))
     }
+
+    @Test
+    fun newExerciseCardStartsWithOneSetOfTenRepsAndBlankWeight() {
+        val set = appendExerciseDraft(emptyList(), draftId = 1L, exerciseId = 5L).single().sets.single()
+        assertEquals("", set.weight)
+        assertEquals("10", set.reps)
+    }
+
+    @Test
+    fun initialWeightIsSeededNextToTheDefaultRepsButNeverOverTypedValues() {
+        val fresh = appendExerciseDraft(emptyList(), draftId = 1L, exerciseId = 5L)
+        val seeded = withInitialWeightIfBlank(fresh, 1L, 62.5).single().sets.single()
+        assertEquals("62.5", seeded.weight)
+        assertEquals("10", seeded.reps)
+
+        val typedWeight = fresh.map { it.copy(sets = listOf(SetInputState(weight = "70", reps = "10"))) }
+        assertEquals(typedWeight, withInitialWeightIfBlank(typedWeight, 1L, 62.5))
+        val editedReps = fresh.map { it.copy(sets = listOf(SetInputState(weight = "", reps = "6"))) }
+        assertEquals(editedReps, withInitialWeightIfBlank(editedReps, 1L, 62.5))
+    }
+
+    @Test
+    fun addSetCopiesThePreviousSetWeightAndReps() {
+        val next = nextSetInput(SetInputState(weight = "80", reps = "5"), lastWeight = 60.0)
+        assertEquals(SetInputState(weight = "80", reps = "5"), next)
+    }
+
+    @Test
+    fun addSetWithoutAPreviousSetUsesLastWeightAndTenReps() {
+        assertEquals(SetInputState(weight = "60", reps = "10"), nextSetInput(null, lastWeight = 60.0))
+        assertEquals(SetInputState(weight = "62.5", reps = "10"), nextSetInput(null, lastWeight = 62.5))
+        assertEquals(SetInputState(weight = "", reps = "10"), nextSetInput(null, lastWeight = null))
+    }
+
+    @Test
+    fun addSetFillsBlankFieldsOfThePreviousSetFromTheDefaults() {
+        assertEquals(
+            SetInputState(weight = "60", reps = "10"),
+            nextSetInput(SetInputState(weight = "", reps = ""), lastWeight = 60.0)
+        )
+        assertEquals(
+            SetInputState(weight = "", reps = "8"),
+            nextSetInput(SetInputState(weight = "", reps = "8"), lastWeight = null)
+        )
+    }
+
+    @Test
+    fun plannedExerciseLookupMatchesOnlyExercisesAlreadyInThePlan() {
+        val plan = appendExerciseDraft(appendExerciseDraft(emptyList(), 1L, 5L), 2L, null)
+        assertTrue(hasPlannedExercise(plan, 5L))
+        assertFalse(hasPlannedExercise(plan, 6L))
+        assertFalse(hasPlannedExercise(emptyList(), 5L))
+    }
 }
