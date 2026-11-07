@@ -853,6 +853,9 @@ private struct ExerciseEditorSheet: View {
     @State private var loadDirection: MachineLoadDirection
     @State private var allowedWeightsText: String
     @State private var error: String?
+    @State private var showingDiscardConfirmation = false
+    private let initialLoadDirection: MachineLoadDirection
+    private let initialAllowedWeightsText: String
 
     init(
         title: String,
@@ -867,13 +870,47 @@ private struct ExerciseEditorSheet: View {
         self.initialMachineLoadProfile = initialMachineLoadProfile
         self.allowsRenaming = allowsRenaming
         self.onSave = onSave
+        let startingDirection = initialMachineLoadProfile?.direction ?? defaultLoadDirection
+        let startingWeightsText = initialMachineLoadProfile?.allowedWeightsKg
+            .map(Self.displayWeight)
+            .joined(separator: "\n") ?? ""
+        self.initialLoadDirection = startingDirection
+        self.initialAllowedWeightsText = startingWeightsText
         _name = State(initialValue: initialName)
         _usesExactMachineWeights = State(initialValue: initialMachineLoadProfile != nil)
-        _loadDirection = State(initialValue: initialMachineLoadProfile?.direction ?? defaultLoadDirection)
-        _allowedWeightsText = State(
-            initialValue: initialMachineLoadProfile?.allowedWeightsKg
-                .map(Self.displayWeight)
-                .joined(separator: "\n") ?? ""
+        _loadDirection = State(initialValue: startingDirection)
+        _allowedWeightsText = State(initialValue: startingWeightsText)
+    }
+
+    /// True when any field differs from what the sheet opened with; a swipe-down or
+    /// Cancel would then silently drop the typed name or the allowed-weights list.
+    static func hasUnsavedChanges(
+        name: String,
+        initialName: String,
+        usesExactMachineWeights: Bool,
+        initiallyUsedExactMachineWeights: Bool,
+        loadDirection: MachineLoadDirection,
+        initialLoadDirection: MachineLoadDirection,
+        allowedWeightsText: String,
+        initialAllowedWeightsText: String
+    ) -> Bool {
+        name != initialName
+            || usesExactMachineWeights != initiallyUsedExactMachineWeights
+            || (usesExactMachineWeights
+                && (loadDirection != initialLoadDirection
+                    || allowedWeightsText != initialAllowedWeightsText))
+    }
+
+    private var hasUnsavedChanges: Bool {
+        Self.hasUnsavedChanges(
+            name: name,
+            initialName: initialName,
+            usesExactMachineWeights: usesExactMachineWeights,
+            initiallyUsedExactMachineWeights: initialMachineLoadProfile != nil,
+            loadDirection: loadDirection,
+            initialLoadDirection: initialLoadDirection,
+            allowedWeightsText: allowedWeightsText,
+            initialAllowedWeightsText: initialAllowedWeightsText
         )
     }
 
@@ -951,8 +988,51 @@ private struct ExerciseEditorSheet: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }
+                Button("Cancel") {
+                    if hasUnsavedChanges {
+                        showingDiscardConfirmation = true
+                    } else {
+                        dismiss()
+                    }
+                }
             }
+        }
+        .interactiveDismissDisabled(hasUnsavedChanges)
+        .confirmationDialog(
+            gymText(
+                "Discard exercise changes?",
+                "Відкинути зміни вправи?",
+                "Отменить изменения упражнения?",
+                languageCode: gymCurrentLanguageCode()
+            ),
+            isPresented: $showingDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(
+                gymText(
+                    "Discard changes",
+                    "Відкинути зміни",
+                    "Отменить изменения",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                role: .destructive
+            ) { dismiss() }
+            Button(
+                gymText(
+                    "Keep editing",
+                    "Продовжити редагування",
+                    "Продолжить редактирование",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                role: .cancel
+            ) {}
+        } message: {
+            Text(gymText(
+                "Your edits will be lost.",
+                "Зміни буде втрачено.",
+                "Изменения будут потеряны.",
+                languageCode: gymCurrentLanguageCode()
+            ))
         }
     }
 

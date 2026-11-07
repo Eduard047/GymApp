@@ -19778,6 +19778,21 @@ final class CoreParityTests: XCTestCase {
         try XCTUnwrap(snapshot.missions.all.first { $0.id == id })
     }
 
+    func testExerciseEditorSheetAsksBeforeDroppingUnsavedEdits() throws {
+        let source = try iosSource("GymApp/UI/Screens/ExercisesView.swift")
+        XCTAssertTrue(source.contains(".interactiveDismissDisabled(hasUnsavedChanges)"))
+        XCTAssertTrue(source.contains("showingDiscardConfirmation = true"))
+        XCTAssertTrue(source.contains("static func hasUnsavedChanges("))
+        for copy in [
+            "Discard exercise changes?", "Відкинути зміни вправи?", "Отменить изменения упражнения?",
+            "Discard changes", "Відкинути зміни", "Отменить изменения",
+            "Keep editing", "Продовжити редагування", "Продолжить редактирование",
+            "Your edits will be lost.", "Зміни буде втрачено.", "Изменения будут потеряны."
+        ] {
+            XCTAssertTrue(source.contains("\"\(copy)\""), copy)
+        }
+    }
+
     private func iosSource(_ relativePath: String) throws -> String {
         let projectRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
