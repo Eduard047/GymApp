@@ -32,12 +32,12 @@
     <string name="leaderboard_hero_supporting">Workouts are currently scored on your device, so public ranking is disabled, not queued for review. It will appear only after a future app and server update adds verified scoring; no release date is set. Your private progress remains available.</string>
     <string name="leaderboard_your_xp">Your XP</string>
     <string name="leaderboard_title">Your synced progress</string>
-    <string name="leaderboard_loading_supporting">Loading your protected cloud progress...</string>
+    <string name="leaderboard_loading_supporting">Loading your protected cloud progress…</string>
     <string name="leaderboard_synced_supporting">Refresh updates only your own cloud XP. It does not start a rating check.</string>
     <string name="leaderboard_loading_action">Loading</string>
     <string name="leaderboard_refresh_action">Refresh progress</string>
     <string name="leaderboard_empty">No synced progress yet.</string>
-    <string name="leaderboard_row_detail">Level %1$d - %2$d workouts</string>
+    <string name="leaderboard_row_detail">Level %1$d · %2$d workouts</string>
 
     <string name="friend_details_title">Friend details</string>
     <string name="friends_hero_title">Your training circle</string>
@@ -1036,7 +1036,7 @@
     <string name="chart_no_data">Add sets to see chart.</string>
     <string name="splash_tagline">Build strength with focus and consistency.</string>
     <string name="splash_wordmark">GymApp</string>
-    <string name="splash_loading">Preparing your session...</string>
+    <string name="splash_loading">Preparing your session…</string>
 
     <string name="exercise_history_sessions">Sessions</string>
     <string name="exercise_history_max_weight">Max weight</string>
