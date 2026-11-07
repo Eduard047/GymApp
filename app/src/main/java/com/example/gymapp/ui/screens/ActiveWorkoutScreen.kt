@@ -259,6 +259,10 @@ fun ActiveWorkoutScreen(
 ) {
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     val gymHaptics = rememberGymHaptics()
+    // Device-local cues, one account's file per owner key (the database name); the revision re-reads after a save.
+    val cueContext = LocalContext.current
+    val cueStore = remember(cueContext) { com.example.gymapp.util.ExerciseCueStore.forContext(cueContext) }
+    var cueRevision by remember { mutableIntStateOf(0) }
     val recordSetIds = uiState.exercises.asSequence()
         .flatMap { exercise -> exercise.sets.asSequence() }
         .filter { set -> set.isPersonalRecord }
@@ -692,6 +696,14 @@ fun ActiveWorkoutScreen(
                     canMoveUp = exerciseIndex > 0,
                     canMoveDown = exerciseIndex < uiState.exercises.lastIndex,
                     onMoveExercise = { offset -> onMoveExercise(exercise.id, offset) },
+                    cue = remember(cueRevision, exerciseMediaOwnerKey, exercise.friendGhostKey) {
+                        cueStore.cue(exerciseMediaOwnerKey, exercise.friendGhostKey)
+                    },
+                    canEditCue = exercise.friendGhostKey.isNotBlank(),
+                    onSaveCue = { raw ->
+                        cueStore.setCue(exerciseMediaOwnerKey, exercise.friendGhostKey, raw)
+                        cueRevision++
+                    },
                     onDeleteSet = onDeleteSet,
                     onRecordSet = onRecordSet,
                     onUndoSet = onUndoSet,
@@ -1313,6 +1325,10 @@ private fun ActiveWorkoutExerciseCard(
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onMoveExercise: (Int) -> Unit,
+    /** The exercise's pinned device-local cue, shown under the name; [onSaveCue] takes raw text (empty clears). */
+    cue: String? = null,
+    canEditCue: Boolean = false,
+    onSaveCue: (String) -> Unit = {},
     reorderHandle: (@Composable () -> Unit)? = null,
     onDeleteSet: (String) -> Unit,
     onRecordSet: (String) -> Unit,
@@ -1334,6 +1350,7 @@ private fun ActiveWorkoutExerciseCard(
     }
     var showFinishDialog by remember(exercise.id) { mutableStateOf(false) }
     var showRemoveDialog by remember(exercise.id) { mutableStateOf(false) }
+    var showCueDialog by remember(exercise.id) { mutableStateOf(false) }
     var recordedSetToDeleteId by remember(exercise.id) { mutableStateOf<String?>(null) }
     val gymHaptics = rememberGymHaptics()
     // Set when the finish dialog starts a save or skip; the card then collapses as soon as every
@@ -1389,15 +1406,25 @@ private fun ActiveWorkoutExerciseCard(
                     )
                 }
             },
-            menu = if (canRemoveExercise) {
+            descriptionExtra = cue?.let { "${stringResource(R.string.exercise_cue_label)}: $it" },
+            menu = if (canRemoveExercise || canEditCue) {
                 {
                     WorkoutExerciseMenu(
                         enabled = !operationInProgress,
                         onRemove = { showRemoveDialog = true },
-                        onMoveUp = { moveExercise(-1) },
-                        onMoveDown = { moveExercise(1) },
+                        onMoveUp = if (canRemoveExercise) ({ moveExercise(-1) }) else null,
+                        onMoveDown = if (canRemoveExercise) ({ moveExercise(1) }) else null,
                         canMoveUp = canMoveUp,
-                        canMoveDown = canMoveDown
+                        canMoveDown = canMoveDown,
+                        showRemove = canRemoveExercise,
+                        extraItems = { closeMenu ->
+                            if (canEditCue) {
+                                ExerciseCueMenuItem(hasCue = cue != null) {
+                                    closeMenu()
+                                    showCueDialog = true
+                                }
+                            }
+                        }
                     )
                 }
             } else {
@@ -1412,6 +1439,15 @@ private fun ActiveWorkoutExerciseCard(
                 emptyList()
             }
         ) {
+            if (cue != null) {
+                Text(
+                    text = cue,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             if (isExpanded) {
                 if (totalCount > 0) {
                     val index = exercise.sets
@@ -1576,6 +1612,16 @@ private fun ActiveWorkoutExerciseCard(
                 )
             }
         }
+    }
+    if (showCueDialog) {
+        ExerciseCueDialog(
+            initialCue = cue,
+            onSave = { raw ->
+                showCueDialog = false
+                onSaveCue(raw)
+            },
+            onDismiss = { showCueDialog = false }
+        )
     }
     if (showRemoveDialog) {
         WorkoutRemoveExerciseDialog(

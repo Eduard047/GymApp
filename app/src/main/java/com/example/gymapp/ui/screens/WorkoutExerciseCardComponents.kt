@@ -202,6 +202,8 @@ internal fun WorkoutExerciseCardHeader(
     media: (@Composable () -> Unit)? = null,
     menu: (@Composable () -> Unit)? = null,
     accessibilityActions: List<CustomAccessibilityAction> = emptyList(),
+    /** Read together with [title] by a screen reader (the exercise's cue line). */
+    descriptionExtra: String? = null,
     subtitle: @Composable ColumnScope.() -> Unit
 ) {
     val toggleLabel = stringResource(
@@ -224,7 +226,7 @@ internal fun WorkoutExerciseCardHeader(
                                 onClick = onToggleExpanded
                             )
                             .semantics {
-                                contentDescription = title
+                                contentDescription = if (descriptionExtra == null) title else "$title. $descriptionExtra"
                                 if (stateText != null) stateDescription = stateText
                                 if (accessibilityActions.isNotEmpty()) {
                                     this.customActions = accessibilityActions
@@ -313,6 +315,8 @@ internal fun WorkoutExerciseMenu(
     onMoveDown: (() -> Unit)? = null,
     canMoveUp: Boolean = true,
     canMoveDown: Boolean = true,
+    /** False hides the remove item (a menu that only carries [extraItems], such as the cue editor). */
+    showRemove: Boolean = true,
     extraItems: @Composable ColumnScope.(closeMenu: () -> Unit) -> Unit = {}
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -348,7 +352,7 @@ internal fun WorkoutExerciseMenu(
                 )
             }
             extraItems { expanded = false }
-            DropdownMenuItem(
+            if (showRemove) DropdownMenuItem(
                 text = {
                     Text(
                         text = removeLabel,

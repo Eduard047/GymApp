@@ -25,14 +25,17 @@ class RestTimerController internal constructor(
     private val activeWorkoutTimer: ActiveWorkoutTimerLedger,
     private val startService: (seconds: Int) -> Unit,
     private val stopService: () -> Unit,
-    private val setFinishedExercise: (exerciseName: String?) -> Unit = {}
+    private val setFinishedExercise: (exerciseName: String?) -> Unit = {},
+    /** Wipes the account's device-local exercise cues (by database name) when the account is deleted. */
+    private val clearExerciseCues: (databaseName: String) -> Boolean = { true }
 ) {
     constructor(appContext: Context) : this(
         ExerciseRestTimerLedger(SharedPreferencesExerciseRestTimerPersistence(appContext)),
         ActiveWorkoutTimerLedger(SharedPreferencesActiveWorkoutTimerPersistence(appContext)),
         { seconds -> RestTimerService.start(appContext, seconds) },
         { RestTimerService.stop(appContext) },
-        { exerciseName -> RestTimerService.setFinishedExercise(appContext, exerciseName) }
+        { exerciseName -> RestTimerService.setFinishedExercise(appContext, exerciseName) },
+        ExerciseCueStore.forContext(appContext)::clearAccount
     )
 
     private val accountSwitchTracker = RestTimerAccountSwitchTracker()
@@ -137,7 +140,8 @@ class RestTimerController internal constructor(
         } else {
             true
         }
-        return exerciseCleared && activeWorkoutCleared && foregroundCleared
+        val cuesCleared = runCatching { clearExerciseCues(databaseName) }.getOrDefault(false)
+        return exerciseCleared && activeWorkoutCleared && foregroundCleared && cuesCleared
     }
 
     internal fun clearAccount(session: com.example.gymapp.auth.AccountSession.Cloud): Boolean =
@@ -157,7 +161,8 @@ class RestTimerController internal constructor(
         } else {
             true
         }
-        return exerciseCleared && activeWorkoutCleared && foregroundCleared
+        val cuesCleared = runCatching { clearExerciseCues(databaseName) }.getOrDefault(false)
+        return exerciseCleared && activeWorkoutCleared && foregroundCleared && cuesCleared
     }
 
     internal fun startExercise(

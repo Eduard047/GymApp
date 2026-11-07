@@ -542,6 +542,11 @@
     <string name="active_workout_exercise_limit_reached">В этой тренировке достигнут лимит упражнений.</string>
     <string name="active_workout_exercise_already_added">Это упражнение уже есть в тренировке.</string>
     <string name="active_workout_log_set_cd">Записать подход %1$d</string>
+    <string name="exercise_cue_label">Подсказка</string>
+    <string name="exercise_cue_add">Добавить подсказку</string>
+    <string name="exercise_cue_edit">Изменить подсказку</string>
+    <string name="exercise_cue_placeholder">Сиденье 4, узкий хват</string>
+    <string name="exercise_cue_clear">Очистить</string>
     <string name="active_workout_remove_exercise">Удалить упражнение</string>
     <string name="workout_exercise_move_up">Переместить выше</string>
     <string name="workout_exercise_move_down">Переместить ниже</string>

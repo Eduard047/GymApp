@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "description": "Exercise cue normalization golden cases run by Android ExerciseCueGoldenTest and iOS ExerciseCueGoldenTests. A cue is a short device-local note pinned to an exercise. stored is the text kept for input, or null when the cue is removed. Rules: each line break (CRLF counts once; CR, LF, U+0085, U+2028, U+2029) becomes one space, the text is trimmed, cut to maxCodePoints Unicode code points (not UTF-16 units, not grapheme clusters), then trimmed again; an empty result is null.",
+  "maxCodePoints": 80,
+  "cases": [
+    {
+      "id": "plain",
+      "input": "seat 4, narrow grip",
+      "stored": "seat 4, narrow grip"
+    },
+    {
+      "id": "cyrillic",
+      "input": "Сидіння 4, вузький хват",
+      "stored": "Сидіння 4, вузький хват"
+    },
+    {
+      "id": "trims-ends",
+      "input": "   seat 4  ",
+      "stored": "seat 4"
+    },
+    {
+      "id": "tabs-trimmed-at-ends",
+      "input": "\tseat 4\t",
+      "stored": "seat 4"
+    },
+    {
+      "id": "newline-to-space",
+      "input": "seat 4\nnarrow grip",
+      "stored": "seat 4 narrow grip"
+    },
+    {
+      "id": "crlf-to-one-space",
+      "input": "seat 4\r\nnarrow grip",
+      "stored": "seat 4 narrow grip"
+    },
+    {
+      "id": "cr-to-space",
+      "input": "seat 4\rnarrow grip",
+      "stored": "seat 4 narrow grip"
+    },
+    {
+      "id": "trailing-newline-trimmed",
+      "input": "seat 4\n",
+      "stored": "seat 4"
+    },
+    {
+      "id": "empty",
+      "input": "",
+      "stored": null
+    },
+    {
+      "id": "whitespace-only",
+      "input": "  \n\t ",
+      "stored": null
+    },
+    {
+      "id": "exactly-80-kept",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "stored": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "id": "81-cut-to-80",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab",
+      "stored": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "id": "cut-then-trimmed",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa b",
+      "stored": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "id": "emoji-counted-as-code-points",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa😀😀",
+      "stored": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa😀"
+    },
+    {
+      "id": "emoji-80-kept",
+      "input": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+      "stored": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+    },
+    {
+      "id": "emoji-81-cut",
+      "input": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+      "stored": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+    }
+  ]
+}

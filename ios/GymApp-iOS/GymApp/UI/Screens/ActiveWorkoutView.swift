@@ -153,6 +153,8 @@ struct ActiveWorkoutView: View {
     @ObservedObject private var workoutStore: WorkoutStore
     @ObservedObject private var activeWorkoutStore: ActiveWorkoutStore
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
+    /// The exercise whose device-local cue is being edited (see `ExerciseCueStore`).
+    @State private var cueEditTarget: ExerciseCueEditTarget?
     private let restTimers: RestTimerManager
 
     private let draftID: UUID
@@ -637,6 +639,20 @@ struct ActiveWorkoutView: View {
             }
         } message: {
             Text(deleteRecordedSetAlertMessage)
+        }
+        .sheet(item: $cueEditTarget) { target in
+            ExerciseCueEditorSheet(
+                target: target,
+                onSave: { raw in
+                    ExerciseCueStore().setCue(
+                        raw,
+                        accountStorageKey: workoutStore.accountStorageKey,
+                        identityKey: target.identityKey
+                    )
+                    cueEditTarget = nil
+                },
+                onCancel: { cueEditTarget = nil }
+            )
         }
         .sheet(isPresented: $showingAddExercisePicker) {
             ExercisePickerSheet(
@@ -1394,11 +1410,19 @@ struct ActiveWorkoutView: View {
             ? { moveExercise(exercise, by: -1) } : nil
         let onMoveDown: (() -> Void)? = canMoveExercise && (exerciseIndex ?? draft.exercises.count - 1) < draft.exercises.count - 1
             ? { moveExercise(exercise, by: 1) } : nil
+        let cueKey = cueIdentityKey(exercise, storedExercise: storedExercise)
+        let cue = cueKey.flatMap {
+            ExerciseCueStore().cue(accountStorageKey: workoutStore.accountStorageKey, identityKey: $0)
+        }
+        let cueTarget = cueKey.map {
+            ExerciseCueEditTarget(identityKey: $0, exerciseName: exerciseName, currentCue: cue)
+        }
         return GymExerciseCard(
             name: exerciseName,
             highlighted: isCurrent,
             isCollapsed: isCollapsed,
-            accessibilityValueText: "\(completedCount) / \(exercise.sets.count)",
+            accessibilityValueText: "\(completedCount) / \(exercise.sets.count)"
+                + (cue.map { ", \(gymExerciseCueLabel()): \($0)" } ?? ""),
             onToggle: {
                 withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) {
                     if isCollapsed { collapsedExerciseIDs.remove(exercise.id) }
@@ -1421,6 +1445,12 @@ struct ActiveWorkoutView: View {
                 }
             },
             info: {
+                if let cue {
+                    Text(cue)
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .lineLimit(1)
+                }
                 if isCollapsed {
                     Label(
                         "\(completedCount) / \(exercise.sets.count)",
@@ -1462,7 +1492,24 @@ struct ActiveWorkoutView: View {
                     hasCommitIntent: draft.commitIntent != nil,
                     isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
                 ) {
-                    exerciseOverflowMenu(exercise, onMoveUp: onMoveUp, onMoveDown: onMoveDown)
+                    exerciseOverflowMenu(exercise, onMoveUp: onMoveUp, onMoveDown: onMoveDown, cueTarget: cueTarget)
+                } else if let cueTarget {
+                    // Nothing to move or remove (a lone exercise, a live room): the menu only carries the cue.
+                    Menu {
+                        cueMenuButton(cueTarget)
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(GymTheme.textSecondary)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(
+                        gymText(
+                            "More exercise options", "Інші дії з вправою", "Другие действия с упражнением",
+                            languageCode: gymCurrentLanguageCode()
+                        )
+                    )
                 }
             },
             content: {
@@ -1612,12 +1659,38 @@ struct ActiveWorkoutView: View {
     private func exerciseOverflowMenu(
         _ exercise: ActiveWorkoutExercise,
         onMoveUp: (() -> Void)?,
-        onMoveDown: (() -> Void)?
+        onMoveDown: (() -> Void)?,
+        cueTarget: ExerciseCueEditTarget? = nil
     ) -> some View {
         GymExerciseOverflowMenu(
             onRemove: { pendingRemoveExerciseID = exercise.id },
-            extraItems: { GymExerciseMoveMenuItems(onMoveUp: onMoveUp, onMoveDown: onMoveDown) }
+            extraItems: {
+                GymExerciseMoveMenuItems(onMoveUp: onMoveUp, onMoveDown: onMoveDown)
+                if let cueTarget { cueMenuButton(cueTarget) }
+            }
         )
+    }
+
+    /// "Add cue" / "Edit cue" item of the exercise menu; opens the cue editor sheet.
+    private func cueMenuButton(_ target: ExerciseCueEditTarget) -> some View {
+        Button {
+            cueEditTarget = target
+        } label: {
+            Label(
+                target.currentCue == nil
+                    ? gymText("Add cue", "Додати підказку", "Добавить подсказку", languageCode: gymCurrentLanguageCode())
+                    : gymText("Edit cue", "Змінити підказку", "Изменить подсказку", languageCode: gymCurrentLanguageCode()),
+                systemImage: "pin"
+            )
+        }
+    }
+
+    /// The exercise's stable identity for its cue (the friend-ghost key), or nil when it has no name.
+    private func cueIdentityKey(_ exercise: ActiveWorkoutExercise, storedExercise: Exercise?) -> String? {
+        let name = storedExercise?.name ?? exercise.exerciseName ?? ""
+        let catalogKey = storedExercise?.catalogKey ?? exercise.exerciseCatalogKey
+        guard catalogKey != nil || !name.isEmpty else { return nil }
+        return FriendGhosts.exerciseKey(catalogKey: catalogKey, name: name)
     }
 
     private func friendGhost(for exercise: ActiveWorkoutExercise, storedExercise: Exercise?) -> FriendGhost? {
