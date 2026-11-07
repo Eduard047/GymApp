@@ -649,6 +649,9 @@ class GymRepository(
         exerciseDao.delete(exercise)
     }
 
+    /** Current exercise rows (ids and names) for re-attaching local photos after a replace. */
+    suspend fun getExercisesForMediaRemap(): List<ExerciseEntity> = exerciseDao.getExercisesSnapshot()
+
     suspend fun getExerciseDeletionSnapshot(exerciseId: Long): ExerciseDeletionSnapshot? {
         if (exerciseId <= 0) return null
         return database.withTransaction {

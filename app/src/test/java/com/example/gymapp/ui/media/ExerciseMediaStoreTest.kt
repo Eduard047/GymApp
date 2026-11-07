@@ -159,4 +159,92 @@ class ExerciseMediaStoreTest {
             directory.deleteRecursively()
         }
     }
+
+    @Test
+    fun planPhotoRemapMovesPhotoToTheNewIdOfTheSameIdentity() {
+        val plan = planPhotoRemap(
+            photoHolders = listOf("name:my lift" to 7L),
+            newIdsByIdentity = mapOf("name:my lift" to 31L, "name:other" to 32L)
+        )
+        assertEquals(listOf(PhotoMove(7L, 31L)), plan.moves)
+        assertTrue(plan.deletions.isEmpty())
+    }
+
+    @Test
+    fun planPhotoRemapHandlesSwappedIds() {
+        val plan = planPhotoRemap(
+            photoHolders = listOf("name:a" to 1L, "name:b" to 2L),
+            newIdsByIdentity = mapOf("name:a" to 2L, "name:b" to 1L)
+        )
+        assertEquals(listOf(PhotoMove(1L, 2L), PhotoMove(2L, 1L)), plan.moves)
+        assertTrue(plan.deletions.isEmpty())
+    }
+
+    @Test
+    fun planPhotoRemapDeletesPhotosOfExercisesRemovedRemotely() {
+        val plan = planPhotoRemap(
+            photoHolders = listOf("name:gone" to 4L, "name:kept" to 5L),
+            newIdsByIdentity = mapOf("name:kept" to 5L)
+        )
+        assertTrue(plan.moves.isEmpty())
+        assertEquals(listOf(4L), plan.deletions)
+    }
+
+    @Test
+    fun planPhotoRemapIgnoresExercisesWithoutPhotoAndUnchangedIds() {
+        val plan = planPhotoRemap(
+            photoHolders = listOf("name:same" to 9L),
+            newIdsByIdentity = mapOf("name:same" to 9L, "name:no photo" to 10L)
+        )
+        assertTrue(plan.isEmpty)
+        assertTrue(planPhotoRemap(emptyList(), mapOf("name:x" to 1L)).isEmpty)
+    }
+
+    @Test
+    fun planPhotoRemapKeepsOnlyOnePhotoPerIdentity() {
+        val plan = planPhotoRemap(
+            photoHolders = listOf("catalog:bench_press" to 8L, "catalog:bench_press" to 3L),
+            newIdsByIdentity = mapOf("catalog:bench_press" to 20L)
+        )
+        assertEquals(listOf(PhotoMove(3L, 20L)), plan.moves)
+        assertEquals(listOf(8L), plan.deletions)
+    }
+
+    @Test
+    fun exerciseMediaIdentityKeyUsesCatalogKeyThenNormalizedName() {
+        assertEquals(
+            exerciseMediaIdentityKey("Bench Press"),
+            exerciseMediaIdentityKey("  bench   press ")
+        )
+        assertEquals("name:my  weird lift".replace("  ", " "), exerciseMediaIdentityKey("My  Weird Lift"))
+    }
+
+    @Test
+    fun applyPhotoRemapSwapsPhotosWithoutClobberingAndDeletesRemovedOnes() {
+        val directory = createTempDirectory("exercise-media-remap").toFile()
+        try {
+            fun photo(id: Long, content: Byte) =
+                java.io.File(directory, "$id.jpg").apply { writeBytes(byteArrayOf(content)) }
+            photo(1L, 11)
+            photo(2L, 22)
+            photo(3L, 33)
+            photo(4L, 44)
+            val plan = planPhotoRemap(
+                photoHolders = listOf("name:a" to 1L, "name:b" to 2L, "name:c" to 3L, "name:d" to 4L),
+                // a and b swap, c is removed remotely, d moves onto the freed id 3.
+                newIdsByIdentity = mapOf("name:a" to 2L, "name:b" to 1L, "name:d" to 3L)
+            )
+            applyPhotoRemap(directory, plan)
+            assertEquals(11.toByte(), java.io.File(directory, "2.jpg").readBytes().single())
+            assertEquals(22.toByte(), java.io.File(directory, "1.jpg").readBytes().single())
+            assertEquals(44.toByte(), java.io.File(directory, "3.jpg").readBytes().single())
+            assertFalse(java.io.File(directory, "4.jpg").exists())
+            assertEquals(
+                listOf("1.jpg", "2.jpg", "3.jpg"),
+                directory.listFiles().orEmpty().map { it.name }.sorted()
+            )
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
 }

@@ -8,11 +8,16 @@ import android.media.ExifInterface
 import android.net.Uri
 import androidx.collection.LruCache
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
+import com.example.gymapp.data.catalog.normalizeExerciseIdentityName
+import com.example.gymapp.data.entity.ExerciseEntity
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
 import kotlin.math.min
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** What the media sheet offers for a custom photo; null means there is no custom photo. */
 internal enum class CustomPhotoRemoval { RestoreBuiltIn, Remove }
@@ -23,6 +28,71 @@ internal fun customPhotoRemoval(hasCustomPhoto: Boolean, hasBundledFrames: Boole
         hasBundledFrames -> CustomPhotoRemoval.RestoreBuiltIn
         else -> CustomPhotoRemoval.Remove
     }
+
+/**
+ * Stable identity of an exercise across a cloud replace, which re-inserts every exercise with a
+ * new auto-generated id. Same rule as the repository's exercise matching: the built-in catalog
+ * key when the name resolves, otherwise the portable normalized name.
+ */
+internal fun exerciseMediaIdentityKey(name: String): String =
+    BuiltInExerciseCatalog.inferKey(name)?.let { "catalog:$it" }
+        ?: "name:${normalizeExerciseIdentityName(name)}"
+
+internal data class PhotoMove(val fromId: Long, val toId: Long)
+
+internal data class PhotoRemapPlan(val moves: List<PhotoMove>, val deletions: List<Long>) {
+    val isEmpty: Boolean get() = moves.isEmpty() && deletions.isEmpty()
+}
+
+/**
+ * Pure mapping from "exercises that had a custom photo before the replace" (identity to old id)
+ * and "exercises after the replace" (identity to new id) to the file moves and deletions.
+ * Photos whose identity no longer exists are deleted. When several old exercises share one
+ * identity, only the lowest old id keeps its photo.
+ */
+internal fun planPhotoRemap(
+    photoHolders: List<Pair<String, Long>>,
+    newIdsByIdentity: Map<String, Long>
+): PhotoRemapPlan {
+    val sorted = photoHolders.sortedBy { it.second }
+    val claimedTargets = HashSet<Long>()
+    val moves = ArrayList<PhotoMove>()
+    val deletions = ArrayList<Long>()
+    // Photos that already sit on the right id stay put and claim their target first.
+    sorted.forEach { (identity, oldId) ->
+        if (newIdsByIdentity[identity] == oldId) claimedTargets += oldId
+    }
+    sorted.forEach { (identity, oldId) ->
+        val newId = newIdsByIdentity[identity]
+        when {
+            newId == null -> deletions += oldId
+            newId == oldId -> Unit
+            claimedTargets.add(newId) -> moves += PhotoMove(oldId, newId)
+            else -> deletions += oldId
+        }
+    }
+    return PhotoRemapPlan(moves = moves, deletions = deletions)
+}
+
+private const val PhotoRemapSuffix = ".remap"
+
+/**
+ * Applies [plan] inside one owner [directory]. Deletions first, then every moved photo is renamed
+ * to a temporary name before any is renamed to its final name, so swaps and chains of id changes
+ * can never overwrite a photo that has not moved yet.
+ */
+internal fun applyPhotoRemap(directory: File, plan: PhotoRemapPlan) {
+    plan.deletions.forEach { id -> ExerciseMediaStore.deleteCustomFile(File(directory, "$id.jpg")) }
+    val staged = plan.moves.mapNotNull { move ->
+        val source = File(directory, "${move.fromId}.jpg")
+        val temporary = File(directory, "${move.fromId}.jpg$PhotoRemapSuffix")
+        if (source.isFile && source.renameTo(temporary)) move to temporary else null
+    }
+    staged.forEach { (move, temporary) ->
+        val target = File(directory, "${move.toId}.jpg")
+        if (!temporary.renameTo(target)) temporary.delete()
+    }
+}
 
 object ExerciseMediaStore {
     private const val MaxInputBytes = 8 * 1024 * 1024
@@ -164,6 +234,54 @@ object ExerciseMediaStore {
         val temporary = File(target.parentFile, "${target.name}.tmp")
         temporary.writeBytes(encoded)
         check(temporary.renameTo(target)) { "save_failed" }
+    }
+
+    /**
+     * Runs a cloud replace that deletes and re-inserts every exercise with new ids, and keeps each
+     * custom photo attached to the same exercise (by identity). If [replace] throws, no photo is
+     * touched. A media failure never fails the replace.
+     */
+    suspend fun <T> preservePhotosAcrossReplace(
+        context: Context,
+        ownerKey: String,
+        loadExercises: suspend () -> List<ExerciseEntity>,
+        replace: suspend () -> T
+    ): T {
+        val holders = try {
+            loadExercises().mapNotNull { exercise ->
+                exerciseMediaIdentityKey(exercise.name)
+                    .takeIf { customFile(context, ownerKey, exercise.id).isFile }
+                    ?.let { it to exercise.id }
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            emptyList()
+        }
+        val result = replace()
+        if (holders.isNotEmpty()) {
+            try {
+                val newIds = LinkedHashMap<String, Long>()
+                loadExercises().sortedBy { it.id }.forEach { exercise ->
+                    newIds.putIfAbsent(exerciseMediaIdentityKey(exercise.name), exercise.id)
+                }
+                val plan = planPhotoRemap(holders, newIds)
+                if (!plan.isEmpty) {
+                    withContext(Dispatchers.IO) {
+                        applyPhotoRemap(
+                            directory = customFile(context, ownerKey, 0L).parentFile
+                                ?: return@withContext,
+                            plan = plan
+                        )
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                // Photos are a best-effort extra; the already-applied replace must still succeed.
+            }
+        }
+        return result
     }
 
     fun deleteCustom(context: Context, ownerKey: String, exerciseId: Long): Boolean =

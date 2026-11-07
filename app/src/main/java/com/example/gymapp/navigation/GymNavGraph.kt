@@ -1813,12 +1813,18 @@ internal fun GymAppRoot(
 
                         CloudSnapshotApplyDecision.ReplaceAuthoritatively -> {
                             workoutLocalChangeTracker.mutex.withLock {
-                                repository.replaceWithBackupJsonObject(
-                                    root = remoteState,
-                                    expectedLocalState = localState,
-                                    activeUserId = session.userId,
-                                    activeRemote = true
-                                )
+                                ExerciseMediaStore.preservePhotosAcrossReplace(
+                                    context = applicationContext,
+                                    ownerKey = session.databaseName(),
+                                    loadExercises = repository::getExercisesForMediaRemap
+                                ) {
+                                    repository.replaceWithBackupJsonObject(
+                                        root = remoteState,
+                                        expectedLocalState = localState,
+                                        activeUserId = session.userId,
+                                        activeRemote = true
+                                    )
+                                }
                                 workoutLocalChangeTracker.lastSeen =
                                     repository.getWorkoutMergeSnapshot().second
                             }
@@ -2220,12 +2226,18 @@ internal fun GymAppRoot(
                         }
                         val acceptedDigest = acceptedPrepared.workoutDigest
                         workoutLocalChangeTracker.mutex.withLock {
-                            repository.replaceWithBackupJsonObject(
-                                root = acceptedRemote,
-                                expectedLocalState = localState,
-                                activeUserId = session.userId,
-                                activeRemote = true
-                            )
+                            ExerciseMediaStore.preservePhotosAcrossReplace(
+                                context = applicationContext,
+                                ownerKey = session.databaseName(),
+                                loadExercises = repository::getExercisesForMediaRemap
+                            ) {
+                                repository.replaceWithBackupJsonObject(
+                                    root = acceptedRemote,
+                                    expectedLocalState = localState,
+                                    activeUserId = session.userId,
+                                    activeRemote = true
+                                )
+                            }
                             workoutLocalChangeTracker.lastSeen =
                                 repository.getWorkoutMergeSnapshot().second
                         }
