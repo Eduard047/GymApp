@@ -14,6 +14,16 @@ import java.io.File
 import java.security.MessageDigest
 import kotlin.math.min
 
+/** What the media sheet offers for a custom photo; null means there is no custom photo. */
+internal enum class CustomPhotoRemoval { RestoreBuiltIn, Remove }
+
+internal fun customPhotoRemoval(hasCustomPhoto: Boolean, hasBundledFrames: Boolean): CustomPhotoRemoval? =
+    when {
+        !hasCustomPhoto -> null
+        hasBundledFrames -> CustomPhotoRemoval.RestoreBuiltIn
+        else -> CustomPhotoRemoval.Remove
+    }
+
 object ExerciseMediaStore {
     private const val MaxInputBytes = 8 * 1024 * 1024
     private const val MaxOutputBytes = 1_600_000

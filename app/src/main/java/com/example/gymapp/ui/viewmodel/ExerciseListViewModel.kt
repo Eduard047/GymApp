@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.gymapp.R
 import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.CloudAuthManager
+import com.example.gymapp.auth.databaseName
 import com.example.gymapp.auth.localDatabaseLogicalName
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.repository.BackupFileReader
@@ -30,6 +31,7 @@ import com.example.gymapp.util.LocalizedText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -236,7 +238,9 @@ private data class ExerciseConfigurationState(
 @OptIn(ExperimentalCoroutinesApi::class)
 class ExerciseListViewModel(
     private val repository: GymRepository,
-    private val authManager: CloudAuthManager? = null
+    private val authManager: CloudAuthManager? = null,
+    // (ownerKey, exerciseId) -> deleted. Runs off the main thread after the exercise row is gone.
+    private val deleteCustomExerciseMedia: ((String, Long) -> Boolean)? = null
 ) : ViewModel() {
     private val newExerciseName = MutableStateFlow("")
     private val hasInputError = MutableStateFlow(false)
@@ -522,9 +526,14 @@ class ExerciseListViewModel(
         val expected = pendingExerciseDeletion.value ?: return
         if (isExerciseDeletionInProgress.value || exerciseDeletionError.value != null) return
         isExerciseDeletionInProgress.value = true
+        // Resolved before the delete so an account switch mid-flight cannot point at another owner.
+        val mediaOwnerKey = runCatching {
+            authManager?.authState?.value?.session?.databaseName()
+        }.getOrNull()
         viewModelScope.launch {
             try {
                 if (repository.deleteExerciseIfUnchanged(expected)) {
+                    removeCustomMediaAfterDeletion(mediaOwnerKey, expected.exerciseId)
                     pendingExerciseDeletion.value = null
                     exerciseDeletionError.value = null
                 } else {
@@ -537,6 +546,15 @@ class ExerciseListViewModel(
             } finally {
                 isExerciseDeletionInProgress.value = false
             }
+        }
+    }
+
+    private suspend fun removeCustomMediaAfterDeletion(ownerKey: String?, exerciseId: Long) {
+        val delete = deleteCustomExerciseMedia ?: return
+        if (ownerKey.isNullOrBlank()) return
+        // A leftover file must never fail or undo the exercise deletion.
+        withContext(NonCancellable + Dispatchers.IO) {
+            runCatching { delete(ownerKey, exerciseId) }
         }
     }
 
@@ -899,10 +917,11 @@ class ExerciseListViewModel(
     companion object {
         fun factory(
             repository: GymRepository,
-            authManager: CloudAuthManager? = null
+            authManager: CloudAuthManager? = null,
+            deleteCustomExerciseMedia: ((String, Long) -> Boolean)? = null
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
-                ExerciseListViewModel(repository, authManager)
+                ExerciseListViewModel(repository, authManager, deleteCustomExerciseMedia)
             }
         }
     }

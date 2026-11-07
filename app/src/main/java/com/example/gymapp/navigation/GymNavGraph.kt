@@ -3991,7 +3991,17 @@ internal fun GymAppRoot(
 
                         composable(route = AppDestination.Exercises.route) {
                             val viewModel: ExerciseListViewModel = viewModel(
-                                factory = ExerciseListViewModel.factory(repository, authManager)
+                                factory = ExerciseListViewModel.factory(
+                                    repository,
+                                    authManager,
+                                    deleteCustomExerciseMedia = { owner, exerciseId ->
+                                        ExerciseMediaStore.deleteCustom(
+                                            applicationContext,
+                                            owner,
+                                            exerciseId
+                                        )
+                                    }
+                                )
                             )
                             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -4094,7 +4104,17 @@ internal fun GymAppRoot(
                         composable(route = AppDestination.Profile.route) {
                             val profileViewModel: ExerciseListViewModel = viewModel(
                                 key = "profile_account_tools",
-                                factory = ExerciseListViewModel.factory(repository, authManager)
+                                factory = ExerciseListViewModel.factory(
+                                    repository,
+                                    authManager,
+                                    deleteCustomExerciseMedia = { owner, exerciseId ->
+                                        ExerciseMediaStore.deleteCustom(
+                                            applicationContext,
+                                            owner,
+                                            exerciseId
+                                        )
+                                    }
+                                )
                             )
                             val profileState by
                                 profileViewModel.uiState.collectAsStateWithLifecycle()

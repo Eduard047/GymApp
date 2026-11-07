@@ -46,7 +46,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.ui.media.CustomPhotoRemoval
 import com.example.gymapp.ui.media.ExerciseMediaStore
+import com.example.gymapp.ui.media.customPhotoRemoval
 import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.util.localizedExerciseName
 import kotlinx.coroutines.Dispatchers
@@ -306,7 +308,11 @@ private fun ExerciseMediaSheet(
                 ) {
                     Text(stringResource(R.string.exercise_media_choose))
                 }
-                if (frames.custom != null && frames.bundled.isNotEmpty()) {
+                val removal = customPhotoRemoval(
+                    hasCustomPhoto = frames.custom != null,
+                    hasBundledFrames = frames.bundled.isNotEmpty()
+                )
+                if (removal != null) {
                     OutlinedButton(
                         onClick = {
                             scope.launch {
@@ -322,7 +328,15 @@ private fun ExerciseMediaSheet(
                         },
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                     ) {
-                        Text(stringResource(R.string.exercise_media_restore))
+                        Text(
+                            stringResource(
+                                if (removal == CustomPhotoRemoval.RestoreBuiltIn) {
+                                    R.string.exercise_media_restore
+                                } else {
+                                    R.string.exercise_media_remove
+                                }
+                            )
+                        )
                     }
                 }
             }

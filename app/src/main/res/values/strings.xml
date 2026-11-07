@@ -1361,6 +1361,7 @@
     <string name="exercise_media_open_preview_named">Open demonstration for %1$s</string>
     <string name="exercise_media_choose">Choose your image</string>
     <string name="exercise_media_restore">Restore built-in preview</string>
+    <string name="exercise_media_remove">Remove photo</string>
     <string name="exercise_media_hint">Tap to see the start and finish positions</string>
     <string name="exercise_media_error">Couldn’t use this image. Choose a JPEG, PNG, or WebP up to 8 MB.</string>
     <string name="live_workout_load_failed">Couldn’t update the live workout. Polling will retry.</string>

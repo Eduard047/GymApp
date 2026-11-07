@@ -131,4 +131,32 @@ class ExerciseMediaStoreTest {
             root.deleteRecursively()
         }
     }
+
+    @Test
+    fun customPhotoRemovalIsOfferedWheneverACustomPhotoExists() {
+        assertEquals(null, customPhotoRemoval(hasCustomPhoto = false, hasBundledFrames = true))
+        assertEquals(null, customPhotoRemoval(hasCustomPhoto = false, hasBundledFrames = false))
+        assertEquals(
+            CustomPhotoRemoval.RestoreBuiltIn,
+            customPhotoRemoval(hasCustomPhoto = true, hasBundledFrames = true)
+        )
+        // A user-created exercise has no bundled frames; its photo must still be removable.
+        assertEquals(
+            CustomPhotoRemoval.Remove,
+            customPhotoRemoval(hasCustomPhoto = true, hasBundledFrames = false)
+        )
+    }
+
+    @Test
+    fun deleteCustomFileRemovesPhotoAndTreatsMissingFileAsDeleted() {
+        val directory = createTempDirectory("exercise-media-delete").toFile()
+        try {
+            val photo = java.io.File(directory, "42.jpg").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+            assertTrue(ExerciseMediaStore.deleteCustomFile(photo))
+            assertFalse(photo.exists())
+            assertTrue(ExerciseMediaStore.deleteCustomFile(photo))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
 }

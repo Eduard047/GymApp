@@ -1401,6 +1401,7 @@
     <string name="exercise_media_open_preview_named">Открыть демонстрацию упражнения %1$s</string>
     <string name="exercise_media_choose">Выбрать своё фото</string>
     <string name="exercise_media_restore">Вернуть встроенную демонстрацию</string>
+    <string name="exercise_media_remove">Удалить фото</string>
     <string name="exercise_media_hint">Нажми, чтобы увидеть начальное и конечное положение</string>
     <string name="exercise_media_error">Не удалось использовать фото. Выбери JPEG, PNG или WebP до 8 МБ.</string>
     <string name="live_workout_load_failed">Не удалось обновить совместную тренировку. Опрос повторится автоматически.</string>

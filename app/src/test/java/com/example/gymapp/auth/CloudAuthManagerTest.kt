@@ -472,27 +472,40 @@ class CloudAuthManagerTest {
         val state = "A".repeat(32)
         assertEquals(
             true,
-            isExpectedAuthState(listOf(state), state, pendingIsFresh = true)
+            isExpectedAuthState(listOf(state), state, pendingIsFresh = true, hasActiveSession = false)
         )
         assertEquals(
             false,
-            isExpectedAuthState(listOf("B".repeat(32)), state, pendingIsFresh = true)
+            isExpectedAuthState(listOf("B".repeat(32)), state, pendingIsFresh = true, hasActiveSession = false)
         )
         assertEquals(
             false,
-            isExpectedAuthState(listOf(state), expectedState = null, pendingIsFresh = true)
+            isExpectedAuthState(listOf(state), expectedState = null, pendingIsFresh = true, hasActiveSession = false)
         )
         assertEquals(
             false,
-            isExpectedAuthState(listOf(state), state, pendingIsFresh = false)
+            isExpectedAuthState(listOf(state), state, pendingIsFresh = false, hasActiveSession = false)
         )
         assertEquals(
             false,
-            isExpectedAuthState(listOf(state, state), state, pendingIsFresh = true)
+            isExpectedAuthState(listOf(state, state), state, pendingIsFresh = true, hasActiveSession = false)
         )
         assertEquals(
             false,
-            isExpectedAuthState(listOf("short"), state, pendingIsFresh = true)
+            isExpectedAuthState(listOf("short"), state, pendingIsFresh = true, hasActiveSession = false)
+        )
+    }
+
+    @Test
+    fun authCallbackIsRejectedWhileAnySessionIsActive() {
+        val state = "A".repeat(32)
+        // Signed out: a fresh, matching signup or recovery callback still completes.
+        assertTrue(
+            isExpectedAuthState(listOf(state), state, pendingIsFresh = true, hasActiveSession = false)
+        )
+        // Signed in (cloud or local profile): the same valid callback is rejected, like iOS.
+        assertFalse(
+            isExpectedAuthState(listOf(state), state, pendingIsFresh = true, hasActiveSession = true)
         )
     }
 
