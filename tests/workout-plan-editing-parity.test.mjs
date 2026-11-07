@@ -558,8 +558,12 @@ test("iOS exposes the same direct Start plan, Edit plan, and editor order", asyn
   ]) {
     assert.match(iosEditor, new RegExp(`\\b${operation}\\b`));
   }
-  assert.match(iosEditorComponents, /draft\.sets\.append\(/);
-  assert.match(iosEditorComponents, /draft\.sets\.removeAll/);
+  assert.match(iosEditorComponents, /draft\.appendSet\(/);
+  assert.match(iosEditorComponents, /draft\.duplicateSet\(id: id\)/);
+  assert.match(iosEditorComponents, /draft\.removeSet\(id: id\)/);
+  assert.match(iosEditorComponents, /sets\.removeAll/);
+  assert.match(iosEditorComponents, /maxSetsPerExercise = 100/);
+  assert.match(iosEditorComponents, /maxExercises = 100/);
   assert.match(iosEditorComponents, /draft\.sets\[index\] = value/);
 });
 

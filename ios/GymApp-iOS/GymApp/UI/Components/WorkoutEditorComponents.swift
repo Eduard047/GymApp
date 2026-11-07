@@ -56,6 +56,59 @@ struct WorkoutEditorExerciseDraft: Identifiable, Hashable, Codable {
     }
 }
 
+/// Plan-editor caps; equal to Android `WorkoutDataLimits` and to what
+/// `ActiveWorkoutStore` accepts when the plan is started.
+enum WorkoutEditorLimits {
+    static let maxExercises = 100
+    static let maxSetsPerExercise = 100
+
+    static func setLimitMessage() -> String {
+        gymText(
+            "This exercise has reached the set limit.",
+            "Досягнуто ліміту підходів для вправи.",
+            "Достигнут лимит подходов для упражнения.",
+            languageCode: gymCurrentLanguageCode()
+        )
+    }
+
+    static func exerciseLimitMessage() -> String {
+        gymText(
+            "This workout has reached the exercise limit.",
+            "У цьому тренуванні досягнуто ліміту вправ.",
+            "В этой тренировке достигнут лимит упражнений.",
+            languageCode: gymCurrentLanguageCode()
+        )
+    }
+}
+
+extension WorkoutEditorExerciseDraft {
+    /// Appends a set unless the per-exercise cap is reached; returns whether it did.
+    @discardableResult
+    mutating func appendSet(_ newSet: WorkoutEditorSetDraft) -> Bool {
+        guard sets.count < WorkoutEditorLimits.maxSetsPerExercise else { return false }
+        sets.append(newSet)
+        return true
+    }
+
+    /// Inserts a copy right after `id`; false at the cap or for an unknown id.
+    @discardableResult
+    mutating func duplicateSet(id: UUID) -> Bool {
+        guard sets.count < WorkoutEditorLimits.maxSetsPerExercise,
+              let index = sets.firstIndex(where: { $0.id == id }) else { return false }
+        let source = sets[index]
+        sets.insert(WorkoutEditorSetDraft(weight: source.weight, reps: source.reps), at: index + 1)
+        return true
+    }
+
+    /// Removes a set; deleting the last remaining one resets it to a fresh default
+    /// set (as Android does), so an exercise never ends up with zero sets.
+    mutating func removeSet(id: UUID) {
+        guard sets.contains(where: { $0.id == id }) else { return }
+        sets.removeAll { $0.id == id }
+        if sets.isEmpty { sets = [WorkoutEditorSetDraft()] }
+    }
+}
+
 enum WorkoutTemplatePreset: String, CaseIterable, Identifiable {
     case push
     case pull
@@ -271,6 +324,8 @@ struct WorkoutDraftExerciseCard: View {
     /// Drag-to-reorder grip; nil = no handle.
     var reorderHandle: GymReorderHandleSource?
     var highlightsInvalid = false
+    /// Reports a cap message (set limit) to the host's status banner.
+    var onLimitReached: ((String) -> Void)?
     @State private var showingMedia = false
     @State private var mediaReloadToken = 0
 
@@ -409,12 +464,13 @@ struct WorkoutDraftExerciseCard: View {
 
     private func addSet() {
         let source = draft.sets.last
-        draft.sets.append(
+        let added = draft.appendSet(
             WorkoutEditorSetDraft(
                 weight: source?.weight ?? lastWeight ?? 0,
                 reps: source?.reps ?? 10
             )
         )
+        if !added { onLimitReached?(WorkoutEditorLimits.setLimitMessage()) }
     }
 
     private var displayName: String {
@@ -438,19 +494,12 @@ struct WorkoutDraftExerciseCard: View {
     }
 
     private func duplicate(_ id: UUID) {
-        guard let index = draft.sets.firstIndex(where: { $0.id == id }) else { return }
-        let source = draft.sets[index]
-        draft.sets.insert(
-            WorkoutEditorSetDraft(
-                weight: source.weight,
-                reps: source.reps
-            ),
-            at: index + 1
-        )
+        guard draft.sets.contains(where: { $0.id == id }) else { return }
+        if !draft.duplicateSet(id: id) { onLimitReached?(WorkoutEditorLimits.setLimitMessage()) }
     }
 
     private func delete(_ id: UUID) {
-        draft.sets.removeAll { $0.id == id }
+        draft.removeSet(id: id)
     }
 }
 

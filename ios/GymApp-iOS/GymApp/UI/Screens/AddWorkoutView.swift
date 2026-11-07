@@ -1078,7 +1078,8 @@ struct AddWorkoutView: View {
                             ? { moveDraft(item.id, toward: visibleDraftIDs[visibleIndex + 1]) } : nil,
                         reorderHandle: canDragReorder
                             ? GymReorderHandleSource(coordinator: exerciseReorder, id: item.id) : nil,
-                        highlightsInvalid: highlightsInvalidSets
+                        highlightsInvalid: highlightsInvalidSets,
+                        onLimitReached: { show($0, error: true) }
                     )
                     .gymReorderable(exerciseReorder, id: item.id)
                     .id(item.id)
@@ -1809,6 +1810,10 @@ struct AddWorkoutView: View {
 
     private func addExercise(_ exercise: Exercise) {
         guard !drafts.contains(where: { $0.exerciseID == exercise.id }) else { return }
+        guard drafts.count < WorkoutEditorLimits.maxExercises else {
+            show(WorkoutEditorLimits.exerciseLimitMessage(), error: true)
+            return
+        }
         latestSmartPlan = nil
         smartPlanIsStale = !smartGeneratedDraftIDs.isEmpty
         // New exercises go to the end so the first added stays first.

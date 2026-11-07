@@ -333,4 +333,41 @@ final class PlanEditorSnapshotTests: XCTestCase {
         let decoded = try JSONDecoder().decode(WorkoutPlanEditorDraftState.self, from: legacyData)
         XCTAssertFalse(decoded.dateIsExplicit)
     }
+
+    func testEditorSetCapStopsAtOneHundredForAddAndDuplicate() {
+        var draft = WorkoutEditorExerciseDraft(
+            exerciseID: UUID(),
+            sets: (0 ..< 99).map { _ in WorkoutEditorSetDraft(weight: 20, reps: 8) }
+        )
+        XCTAssertTrue(draft.appendSet(WorkoutEditorSetDraft()))
+        XCTAssertEqual(draft.sets.count, 100)
+        XCTAssertFalse(draft.appendSet(WorkoutEditorSetDraft()))
+        XCTAssertFalse(draft.duplicateSet(id: draft.sets[0].id))
+        XCTAssertEqual(draft.sets.count, 100)
+        XCTAssertEqual(WorkoutEditorLimits.maxSetsPerExercise, 100)
+        XCTAssertEqual(WorkoutEditorLimits.maxExercises, 100)
+
+        draft.removeSet(id: draft.sets[0].id)
+        XCTAssertTrue(draft.duplicateSet(id: draft.sets[0].id))
+        XCTAssertEqual(draft.sets.count, 100)
+    }
+
+    func testDeletingLastEditorSetResetsToFreshDefaultSet() {
+        let original = WorkoutEditorSetDraft(weight: 55, reps: 5)
+        var draft = WorkoutEditorExerciseDraft(exerciseID: UUID(), sets: [original])
+        draft.removeSet(id: original.id)
+        XCTAssertEqual(draft.sets.count, 1)
+        XCTAssertNotEqual(draft.sets[0].id, original.id)
+        XCTAssertEqual(draft.sets[0].weight, 0)
+        XCTAssertEqual(draft.sets[0].reps, 10)
+
+        var two = WorkoutEditorExerciseDraft(
+            exerciseID: UUID(),
+            sets: [WorkoutEditorSetDraft(), WorkoutEditorSetDraft()]
+        )
+        two.removeSet(id: two.sets[0].id)
+        XCTAssertEqual(two.sets.count, 1)
+        two.removeSet(id: UUID())
+        XCTAssertEqual(two.sets.count, 1)
+    }
 }
