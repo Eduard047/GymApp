@@ -34,23 +34,52 @@ internal fun normalizeExerciseCue(raw: String?): String? {
     return cut.ifEmpty { null }
 }
 
-/** The private preferences file of one account's cues; the name hides the account's database name. */
-internal fun exerciseCueStorageName(databaseName: String): String? {
+/** The one private preferences file all accounts' cues live in (excluded from backup and device transfer). */
+internal const val EXERCISE_CUE_PREFERENCES_NAME = "gym_exercise_cues_v1"
+
+private const val EXERCISE_CUE_CUSTOM_PREFIX = "custom:"
+
+/** Hides the account's database name in the shared cue file's keys; null for an unusable name. */
+internal fun exerciseCueAccountHash(databaseName: String): String? {
     if (databaseName.isEmpty() || databaseName.length > 512 || databaseName.any(Char::isISOControl)) {
         return null
     }
     val digest = MessageDigest.getInstance("SHA-256")
         .digest("GymAppExerciseCueAccountV1:$databaseName".toByteArray(Charsets.UTF_8))
         .joinToString(separator = "") { byte -> "%02x".format(byte) }
-    return "exercise_cues_v1_${digest.take(32)}"
+    return digest.take(32)
+}
+
+/** False for a blank key, an oversized or control-character key, and a `custom:` key with no name. */
+internal fun isUsableExerciseCueKey(key: String): Boolean =
+    key.isNotBlank() &&
+        key.length <= EXERCISE_CUE_MAX_KEY_CHARS &&
+        key.none(Char::isISOControl) &&
+        !(key.startsWith(EXERCISE_CUE_CUSTOM_PREFIX) && key.removePrefix(EXERCISE_CUE_CUSTOM_PREFIX).isBlank())
+
+/** What [ExerciseCueStore.setCue] did. */
+internal enum class ExerciseCueSaveResult {
+    /** The normalized text is stored. */
+    STORED,
+
+    /** The text was empty, so the cue is gone. */
+    REMOVED,
+
+    /** A new cue was refused because the account already keeps [EXERCISE_CUE_MAX_ENTRIES]. */
+    TOO_MANY,
+
+    /** Unusable account or key, or the write failed. */
+    FAILED
 }
 
 internal interface ExerciseCueStorage {
     fun get(key: String): String?
     fun put(key: String, value: String): Boolean
     fun remove(key: String): Boolean
-    fun count(): Int
-    fun clear(): Boolean
+
+    /** Every stored key with its text. */
+    fun all(): Map<String, String>
+    fun removeAll(keys: Collection<String>): Boolean
 }
 
 internal class SharedPreferencesExerciseCueStorage(
@@ -61,58 +90,82 @@ internal class SharedPreferencesExerciseCueStorage(
         runCatching { preferences.edit().putString(key, value).commit() }.getOrDefault(false)
     override fun remove(key: String): Boolean =
         runCatching { preferences.edit().remove(key).commit() }.getOrDefault(false)
-    override fun count(): Int = runCatching { preferences.all.size }.getOrDefault(0)
-    override fun clear(): Boolean =
-        runCatching { preferences.edit().clear().commit() }.getOrDefault(false)
+    override fun all(): Map<String, String> = runCatching {
+        preferences.all.mapNotNull { (key, value) -> (value as? String)?.let { key to it } }.toMap()
+    }.getOrDefault(emptyMap())
+    override fun removeAll(keys: Collection<String>): Boolean = runCatching {
+        val editor = preferences.edit()
+        keys.forEach { editor.remove(it) }
+        editor.commit()
+    }.getOrDefault(false)
 }
 
 /**
  * Device-local cues per account and exercise identity (the friend-ghost key: catalog key, else the
- * normalized name). Never synced, never part of a backup. Every account has its own storage, found by
- * [exerciseCueStorageName] of its database name, and [clearAccount] wipes it on account deletion.
+ * normalized name). Never synced. All accounts share one preferences file
+ * ([EXERCISE_CUE_PREFERENCES_NAME]), which backup_rules.xml and data_extraction_rules.xml exclude by
+ * name (they have no wildcards); a key is `<[exerciseCueAccountHash]>|<identity key>`. [clearAccount]
+ * removes only that account's keys on account deletion. Reads and writes do disk I/O: call them off
+ * the main thread.
  */
 internal class ExerciseCueStore(
-    private val openStorage: (storageName: String) -> ExerciseCueStorage?
+    private val openStorage: () -> ExerciseCueStorage?
 ) {
     fun cue(databaseName: String, identityKey: String): String? {
-        val storage = storageFor(databaseName) ?: return null
-        if (!validKey(identityKey)) return null
-        return normalizeExerciseCue(storage.get(identityKey))
+        val prefix = prefixFor(databaseName) ?: return null
+        if (!isUsableExerciseCueKey(identityKey)) return null
+        val storage = openStorage() ?: return null
+        return normalizeExerciseCue(storage.get(prefix + identityKey))
     }
 
-    /** Stores the normalized [raw] (an empty result removes the cue) and returns what is now stored. */
-    fun setCue(databaseName: String, identityKey: String, raw: String?): String? {
-        val storage = storageFor(databaseName) ?: return null
-        if (!validKey(identityKey)) return null
+    /** Every cue of the account by identity key. */
+    fun cues(databaseName: String): Map<String, String> {
+        val prefix = prefixFor(databaseName) ?: return emptyMap()
+        val storage = openStorage() ?: return emptyMap()
+        val result = linkedMapOf<String, String>()
+        for ((key, value) in storage.all()) {
+            if (!key.startsWith(prefix)) continue
+            val identityKey = key.substring(prefix.length)
+            val cue = normalizeExerciseCue(value)
+            if (cue != null && isUsableExerciseCueKey(identityKey)) result[identityKey] = cue
+        }
+        return result
+    }
+
+    /** Stores the normalized [raw] (an empty result removes the cue). */
+    fun setCue(databaseName: String, identityKey: String, raw: String?): ExerciseCueSaveResult {
+        val prefix = prefixFor(databaseName) ?: return ExerciseCueSaveResult.FAILED
+        if (!isUsableExerciseCueKey(identityKey)) return ExerciseCueSaveResult.FAILED
+        val storage = openStorage() ?: return ExerciseCueSaveResult.FAILED
+        val key = prefix + identityKey
         val normalized = normalizeExerciseCue(raw)
         if (normalized == null) {
-            storage.remove(identityKey)
-            return null
+            return if (storage.remove(key)) ExerciseCueSaveResult.REMOVED else ExerciseCueSaveResult.FAILED
         }
-        if (storage.get(identityKey) == null && storage.count() >= EXERCISE_CUE_MAX_ENTRIES) return null
-        return if (storage.put(identityKey, normalized)) normalized else cue(databaseName, identityKey)
+        val stored = storage.all().keys
+        if (key !in stored && stored.count { it.startsWith(prefix) } >= EXERCISE_CUE_MAX_ENTRIES) {
+            return ExerciseCueSaveResult.TOO_MANY
+        }
+        return if (storage.put(key, normalized)) ExerciseCueSaveResult.STORED else ExerciseCueSaveResult.FAILED
     }
 
     fun clearAccount(databaseName: String): Boolean {
-        val storage = storageFor(databaseName) ?: return false
-        return storage.clear()
+        val prefix = prefixFor(databaseName) ?: return false
+        val storage = openStorage() ?: return false
+        val keys = storage.all().keys.filter { it.startsWith(prefix) }
+        return keys.isEmpty() || storage.removeAll(keys)
     }
 
-    private fun storageFor(databaseName: String): ExerciseCueStorage? {
-        val name = exerciseCueStorageName(databaseName) ?: return null
-        return openStorage(name)
-    }
-
-    private fun validKey(key: String) =
-        key.isNotBlank() && key.length <= EXERCISE_CUE_MAX_KEY_CHARS && key.none(Char::isISOControl)
+    private fun prefixFor(databaseName: String): String? =
+        exerciseCueAccountHash(databaseName)?.let { "$it|" }
 
     companion object {
         fun forContext(context: Context): ExerciseCueStore {
             val appContext = context.applicationContext
-            return ExerciseCueStore { name ->
+            return ExerciseCueStore {
                 runCatching {
                     SharedPreferencesExerciseCueStorage(
-                        appContext.getSharedPreferences(name, Context.MODE_PRIVATE)
+                        appContext.getSharedPreferences(EXERCISE_CUE_PREFERENCES_NAME, Context.MODE_PRIVATE)
                     )
                 }.getOrNull()
             }

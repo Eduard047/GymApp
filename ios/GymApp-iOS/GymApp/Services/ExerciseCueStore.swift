@@ -21,6 +21,18 @@ enum ExerciseCue {
     }
 }
 
+/// What `ExerciseCueStore.setCue` did.
+enum ExerciseCueSaveResult: Equatable {
+    /// The normalized text is stored.
+    case stored(String)
+    /// The text was empty, so the cue is gone.
+    case removed
+    /// A new cue was refused because the account already keeps `ExerciseCueStore.maximumEntries`.
+    case tooMany
+    /// Unusable account or key, or the write failed.
+    case failed
+}
+
 /// Cues per account (`accountStorageKey`) and exercise identity (`FriendGhosts.exerciseKey`), in
 /// UserDefaults like `AppTutorialStore`. Kept on sign-out; wiped by account deletion cleanup.
 struct ExerciseCueStore {
@@ -36,26 +48,47 @@ struct ExerciseCueStore {
     }
 
     func cue(accountStorageKey: String, identityKey: String) -> String? {
-        guard Self.isUsable(accountStorageKey), Self.isUsable(identityKey) else { return nil }
+        guard Self.isUsable(accountStorageKey), Self.isUsableIdentityKey(identityKey) else { return nil }
         return ExerciseCue.normalize(load(accountStorageKey)[identityKey])
     }
 
-    /// Stores the normalized `raw` (an empty result removes the cue) and returns what is now stored.
+    /// Every cue of the account by identity key, read once (the active workout keeps it in state).
+    func cues(accountStorageKey: String) -> [String: String] {
+        guard Self.isUsable(accountStorageKey) else { return [:] }
+        return load(accountStorageKey).reduce(into: [:]) { result, entry in
+            if Self.isUsableIdentityKey(entry.key), let cue = ExerciseCue.normalize(entry.value) {
+                result[entry.key] = cue
+            }
+        }
+    }
+
+    /// Stores the normalized `raw` (an empty result removes the cue).
     @discardableResult
-    func setCue(_ raw: String?, accountStorageKey: String, identityKey: String) -> String? {
-        guard Self.isUsable(accountStorageKey), Self.isUsable(identityKey) else { return nil }
+    func setCue(_ raw: String?, accountStorageKey: String, identityKey: String) -> ExerciseCueSaveResult {
+        guard Self.isUsable(accountStorageKey), Self.isUsableIdentityKey(identityKey) else { return .failed }
         var cues = load(accountStorageKey)
         guard let normalized = ExerciseCue.normalize(raw) else {
-            if cues.removeValue(forKey: identityKey) != nil { save(cues, accountStorageKey) }
-            return nil
+            if cues.removeValue(forKey: identityKey) != nil, !save(cues, accountStorageKey) { return .failed }
+            return .removed
         }
-        if cues[identityKey] == nil, cues.count >= Self.maximumEntries { return nil }
+        if cues[identityKey] == nil, cues.count >= Self.maximumEntries { return .tooMany }
         cues[identityKey] = normalized
-        return save(cues, accountStorageKey) ? normalized : self.cue(accountStorageKey: accountStorageKey, identityKey: identityKey)
+        return save(cues, accountStorageKey) ? .stored(normalized) : .failed
     }
 
     func clear(accountStorageKey: String) {
         defaults.removeObject(forKey: Self.keyPrefix + accountStorageKey)
+    }
+
+    /// False for a blank key, a control character, and `custom:` with no name after it.
+    static func isUsableIdentityKey(_ key: String) -> Bool {
+        guard isUsable(key) else { return false }
+        let customPrefix = "custom:"
+        if key.hasPrefix(customPrefix),
+           key.dropFirst(customPrefix.count).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return false
+        }
+        return true
     }
 
     private static func isUsable(_ key: String) -> Bool {

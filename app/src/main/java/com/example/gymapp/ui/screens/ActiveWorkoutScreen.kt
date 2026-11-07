@@ -114,6 +114,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -208,8 +209,10 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.text.NumberFormat
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.material3.LocalContentColor
 import com.example.gymapp.util.formatSessionVolume
 import com.example.gymapp.util.formattedStringResource
@@ -259,10 +262,20 @@ fun ActiveWorkoutScreen(
 ) {
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     val gymHaptics = rememberGymHaptics()
-    // Device-local cues, one account's file per owner key (the database name); the revision re-reads after a save.
+    // Device-local cues of this account (the owner key is its database name), loaded once off the main
+    // thread; the revision re-reads them after a save. Cues of another owner are never shown.
     val cueContext = LocalContext.current
     val cueStore = remember(cueContext) { com.example.gymapp.util.ExerciseCueStore.forContext(cueContext) }
     var cueRevision by remember { mutableIntStateOf(0) }
+    val loadedCues by produceState(
+        initialValue = "" to emptyMap<String, String>(),
+        cueStore,
+        exerciseMediaOwnerKey,
+        cueRevision
+    ) {
+        value = exerciseMediaOwnerKey to withContext(Dispatchers.IO) { cueStore.cues(exerciseMediaOwnerKey) }
+    }
+    val cues = if (loadedCues.first == exerciseMediaOwnerKey) loadedCues.second else emptyMap()
     val recordSetIds = uiState.exercises.asSequence()
         .flatMap { exercise -> exercise.sets.asSequence() }
         .filter { set -> set.isPersonalRecord }
@@ -696,13 +709,14 @@ fun ActiveWorkoutScreen(
                     canMoveUp = exerciseIndex > 0,
                     canMoveDown = exerciseIndex < uiState.exercises.lastIndex,
                     onMoveExercise = { offset -> onMoveExercise(exercise.id, offset) },
-                    cue = remember(cueRevision, exerciseMediaOwnerKey, exercise.friendGhostKey) {
-                        cueStore.cue(exerciseMediaOwnerKey, exercise.friendGhostKey)
-                    },
-                    canEditCue = exercise.friendGhostKey.isNotBlank(),
+                    cue = cues[exercise.friendGhostKey],
+                    canEditCue = com.example.gymapp.util.isUsableExerciseCueKey(exercise.friendGhostKey),
                     onSaveCue = { raw ->
-                        cueStore.setCue(exerciseMediaOwnerKey, exercise.friendGhostKey, raw)
+                        val result = withContext(Dispatchers.IO) {
+                            cueStore.setCue(exerciseMediaOwnerKey, exercise.friendGhostKey, raw)
+                        }
                         cueRevision++
+                        result
                     },
                     onDeleteSet = onDeleteSet,
                     onRecordSet = onRecordSet,
@@ -1328,7 +1342,8 @@ private fun ActiveWorkoutExerciseCard(
     /** The exercise's pinned device-local cue, shown under the name; [onSaveCue] takes raw text (empty clears). */
     cue: String? = null,
     canEditCue: Boolean = false,
-    onSaveCue: (String) -> Unit = {},
+    onSaveCue: suspend (String) -> com.example.gymapp.util.ExerciseCueSaveResult =
+        { com.example.gymapp.util.ExerciseCueSaveResult.FAILED },
     reorderHandle: (@Composable () -> Unit)? = null,
     onDeleteSet: (String) -> Unit,
     onRecordSet: (String) -> Unit,
@@ -1351,6 +1366,8 @@ private fun ActiveWorkoutExerciseCard(
     var showFinishDialog by remember(exercise.id) { mutableStateOf(false) }
     var showRemoveDialog by remember(exercise.id) { mutableStateOf(false) }
     var showCueDialog by remember(exercise.id) { mutableStateOf(false) }
+    var cueLimitReached by remember(exercise.id) { mutableStateOf(false) }
+    val cueScope = rememberCoroutineScope()
     var recordedSetToDeleteId by remember(exercise.id) { mutableStateOf<String?>(null) }
     val gymHaptics = rememberGymHaptics()
     // Set when the finish dialog starts a save or skip; the card then collapses as soon as every
@@ -1421,7 +1438,8 @@ private fun ActiveWorkoutExerciseCard(
                             if (canEditCue) {
                                 ExerciseCueMenuItem(hasCue = cue != null) {
                                     closeMenu()
-                                    showCueDialog = true
+                                    cueLimitReached = false
+                    showCueDialog = true
                                 }
                             }
                         }
@@ -1616,9 +1634,16 @@ private fun ActiveWorkoutExerciseCard(
     if (showCueDialog) {
         ExerciseCueDialog(
             initialCue = cue,
+            limitReached = cueLimitReached,
+            onEdited = { cueLimitReached = false },
             onSave = { raw ->
-                showCueDialog = false
-                onSaveCue(raw)
+                cueScope.launch {
+                    if (onSaveCue(raw) == com.example.gymapp.util.ExerciseCueSaveResult.TOO_MANY) {
+                        cueLimitReached = true
+                    } else {
+                        showCueDialog = false
+                    }
+                }
             },
             onDismiss = { showCueDialog = false }
         )

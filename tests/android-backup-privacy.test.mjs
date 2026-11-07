@@ -68,6 +68,9 @@ const requiredExclusions = [
   /<exclude\s+domain="sharedpref"\s+path="gym_training_profiles\.xml\.bak"\s*\/>/,
   /<exclude\s+domain="sharedpref"\s+path="gym_cloud_sync_baselines\.xml"\s*\/>/,
   /<exclude\s+domain="sharedpref"\s+path="gym_cloud_sync_baselines\.xml\.bak"\s*\/>/,
+  // Device-local exercise cues: one shared file for all accounts, excluded by name.
+  /<exclude\s+domain="sharedpref"\s+path="gym_exercise_cues_v1\.xml"\s*\/>/,
+  /<exclude\s+domain="sharedpref"\s+path="gym_exercise_cues_v1\.xml\.bak"\s*\/>/,
 ];
 
 function assertPrivateDataExcluded(rules, label) {

@@ -547,6 +547,7 @@
     <string name="exercise_cue_edit">Изменить подсказку</string>
     <string name="exercise_cue_placeholder">Сиденье 4, узкий хват</string>
     <string name="exercise_cue_clear">Очистить</string>
+    <string name="exercise_cue_too_many">Слишком много подсказок. Сначала удали часть.</string>
     <string name="active_workout_remove_exercise">Удалить упражнение</string>
     <string name="workout_exercise_move_up">Переместить выше</string>
     <string name="workout_exercise_move_down">Переместить ниже</string>

@@ -30,10 +30,15 @@ internal fun ExerciseCueMenuItem(hasCue: Boolean, onClick: () -> Unit) {
     )
 }
 
-/** Small editor for one exercise's cue; [onSave] takes the raw text (empty removes the cue). */
+/**
+ * Small editor for one exercise's cue; [onSave] takes the raw text (empty removes the cue). While
+ * [limitReached] the dialog stays open with an inline error until the text changes ([onEdited]).
+ */
 @Composable
 internal fun ExerciseCueDialog(
     initialCue: String?,
+    limitReached: Boolean = false,
+    onEdited: () -> Unit = {},
     onSave: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -47,6 +52,7 @@ internal fun ExerciseCueDialog(
             OutlinedTextField(
                 value = text,
                 onValueChange = { next ->
+                    onEdited()
                     val singleLine = next.replace('\n', ' ').replace('\r', ' ')
                     text = if (singleLine.codePointCount(0, singleLine.length) > EXERCISE_CUE_MAX_CODE_POINTS) {
                         singleLine.substring(0, singleLine.offsetByCodePoints(0, EXERCISE_CUE_MAX_CODE_POINTS))
@@ -57,8 +63,13 @@ internal fun ExerciseCueDialog(
                 singleLine = true,
                 label = { Text(stringResource(R.string.exercise_cue_label)) },
                 placeholder = { Text(stringResource(R.string.exercise_cue_placeholder)) },
+                isError = limitReached,
                 supportingText = {
-                    Text("${text.codePointCount(0, text.length)} / $EXERCISE_CUE_MAX_CODE_POINTS")
+                    if (limitReached) {
+                        Text(stringResource(R.string.exercise_cue_too_many))
+                    } else {
+                        Text("${text.codePointCount(0, text.length)} / $EXERCISE_CUE_MAX_CODE_POINTS")
+                    }
                 }
             )
         },

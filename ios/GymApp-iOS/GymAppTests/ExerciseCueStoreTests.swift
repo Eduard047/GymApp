@@ -31,16 +31,32 @@ final class ExerciseCueStoreTests: XCTestCase {
         }
     }
 
+    func testSharedIdentityKeyCasesMatchAndroid() throws {
+        let root = try contract()
+        let usable = try XCTUnwrap(root["usableIdentityKeys"] as? [String])
+        let unusable = try XCTUnwrap(root["unusableIdentityKeys"] as? [String])
+        XCTAssertGreaterThanOrEqual(usable.count, 3)
+        XCTAssertGreaterThanOrEqual(unusable.count, 4)
+        let store = ExerciseCueStore(defaults: defaults)
+        for key in usable { XCTAssertTrue(ExerciseCueStore.isUsableIdentityKey(key), key) }
+        for key in unusable {
+            XCTAssertFalse(ExerciseCueStore.isUsableIdentityKey(key), key)
+            XCTAssertEqual(store.setCue("x", accountStorageKey: "a", identityKey: key), .failed, key)
+        }
+        XCTAssertNil(defaults.data(forKey: "gymapp.exercise-cues.v1.a"))
+    }
+
     func testSavesTrimmedSingleLineTextAndReadsItBack() {
         let store = ExerciseCueStore(defaults: defaults)
-        XCTAssertEqual(store.setCue("  seat 4\nnarrow ", accountStorageKey: "a", identityKey: "k"), "seat 4 narrow")
+        XCTAssertEqual(store.setCue("  seat 4\nnarrow ", accountStorageKey: "a", identityKey: "k"), .stored("seat 4 narrow"))
+        XCTAssertEqual(store.cues(accountStorageKey: "a"), ["k": "seat 4 narrow"])
         XCTAssertEqual(store.cue(accountStorageKey: "a", identityKey: "k"), "seat 4 narrow")
     }
 
     func testEmptyTextRemovesTheCue() {
         let store = ExerciseCueStore(defaults: defaults)
         store.setCue("seat 4", accountStorageKey: "a", identityKey: "k")
-        XCTAssertNil(store.setCue(" \n ", accountStorageKey: "a", identityKey: "k"))
+        XCTAssertEqual(store.setCue(" \n ", accountStorageKey: "a", identityKey: "k"), .removed)
         XCTAssertNil(store.cue(accountStorageKey: "a", identityKey: "k"))
         XCTAssertNil(defaults.data(forKey: "gymapp.exercise-cues.v1.a"))
     }
@@ -67,9 +83,9 @@ final class ExerciseCueStoreTests: XCTestCase {
 
     func testRejectsUnusableAccountOrKey() {
         let store = ExerciseCueStore(defaults: defaults)
-        XCTAssertNil(store.setCue("x", accountStorageKey: "", identityKey: "k"))
-        XCTAssertNil(store.setCue("x", accountStorageKey: "a", identityKey: "  "))
-        XCTAssertNil(store.setCue("x", accountStorageKey: "a", identityKey: "k\u{0}"))
+        XCTAssertEqual(store.setCue("x", accountStorageKey: "", identityKey: "k"), .failed)
+        XCTAssertEqual(store.setCue("x", accountStorageKey: "a", identityKey: "  "), .failed)
+        XCTAssertEqual(store.setCue("x", accountStorageKey: "a", identityKey: "k\u{0}"), .failed)
         XCTAssertNil(defaults.data(forKey: "gymapp.exercise-cues.v1.a"))
     }
 
@@ -78,8 +94,10 @@ final class ExerciseCueStoreTests: XCTestCase {
         for index in 0..<ExerciseCueStore.maximumEntries {
             store.setCue("x", accountStorageKey: "a", identityKey: "k\(index)")
         }
-        XCTAssertNil(store.setCue("x", accountStorageKey: "a", identityKey: "extra"))
-        XCTAssertEqual(store.setCue("changed", accountStorageKey: "a", identityKey: "k0"), "changed")
+        XCTAssertEqual(store.setCue("x", accountStorageKey: "a", identityKey: "extra"), .tooMany)
+        XCTAssertNil(store.cue(accountStorageKey: "a", identityKey: "extra"))
+        XCTAssertEqual(store.setCue("changed", accountStorageKey: "a", identityKey: "k0"), .stored("changed"))
+        XCTAssertEqual(store.setCue("x", accountStorageKey: "b", identityKey: "extra"), .stored("x"))
     }
 
     private func contract() throws -> [String: Any] {

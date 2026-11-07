@@ -12,15 +12,17 @@ func gymExerciseCueLabel() -> String {
     gymText("Cue", "Підказка", "Подсказка", languageCode: gymCurrentLanguageCode())
 }
 
-/// Small editor for one exercise's cue; `onSave` takes the raw text (empty removes the cue).
+/// Small editor for one exercise's cue; `onSave` takes the raw text (empty removes the cue) and
+/// closes the sheet itself unless it answers `.tooMany`, which keeps the sheet open with an error.
 struct ExerciseCueEditorSheet: View {
     let target: ExerciseCueEditTarget
-    let onSave: (String) -> Void
+    let onSave: (String) -> ExerciseCueSaveResult
     let onCancel: () -> Void
 
     @State private var text: String
+    @State private var limitReached = false
 
-    init(target: ExerciseCueEditTarget, onSave: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
+    init(target: ExerciseCueEditTarget, onSave: @escaping (String) -> ExerciseCueSaveResult, onCancel: @escaping () -> Void) {
         self.target = target
         self.onSave = onSave
         self.onCancel = onCancel
@@ -45,15 +47,27 @@ struct ExerciseCueEditorSheet: View {
                             singleLine.unicodeScalars.prefix(ExerciseCue.maximumCodePoints)
                         ))
                         if limited != newValue { text = limited }
+                        limitReached = false
                     }
-                    Text("\(text.unicodeScalars.count) / \(ExerciseCue.maximumCodePoints)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(GymTheme.textSecondary)
+                    if limitReached {
+                        Text(gymText(
+                            "Too many cues. Remove some first.",
+                            "Забагато підказок. Спершу видали частину.",
+                            "Слишком много подсказок. Сначала удали часть.",
+                            languageCode: gymCurrentLanguageCode()
+                        ))
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.error)
+                    } else {
+                        Text("\(text.unicodeScalars.count) / \(ExerciseCue.maximumCodePoints)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(GymTheme.textSecondary)
+                    }
                 }
                 if target.currentCue != nil {
                     Section {
                         Button(role: .destructive) {
-                            onSave("")
+                            limitReached = onSave("") == .tooMany
                         } label: {
                             Text(gymText("Clear", "Очистити", "Очистить", languageCode: gymCurrentLanguageCode()))
                         }
@@ -72,7 +86,7 @@ struct ExerciseCueEditorSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(gymText("Save", "Зберегти", "Сохранить", languageCode: gymCurrentLanguageCode())) {
-                        onSave(text)
+                        limitReached = onSave(text) == .tooMany
                     }
                 }
             }

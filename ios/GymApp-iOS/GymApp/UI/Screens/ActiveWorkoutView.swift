@@ -155,6 +155,8 @@ struct ActiveWorkoutView: View {
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
     /// The exercise whose device-local cue is being edited (see `ExerciseCueStore`).
     @State private var cueEditTarget: ExerciseCueEditTarget?
+    /// The account's cues, read once on appear and on account change, and again after a save.
+    @State private var exerciseCues: [String: String] = [:]
     private let restTimers: RestTimerManager
 
     private let draftID: UUID
@@ -644,12 +646,16 @@ struct ActiveWorkoutView: View {
             ExerciseCueEditorSheet(
                 target: target,
                 onSave: { raw in
-                    ExerciseCueStore().setCue(
+                    let result = ExerciseCueStore().setCue(
                         raw,
                         accountStorageKey: workoutStore.accountStorageKey,
                         identityKey: target.identityKey
                     )
-                    cueEditTarget = nil
+                    if result != .tooMany {
+                        exerciseCues = ExerciseCueStore().cues(accountStorageKey: workoutStore.accountStorageKey)
+                        cueEditTarget = nil
+                    }
+                    return result
                 },
                 onCancel: { cueEditTarget = nil }
             )
@@ -690,6 +696,9 @@ struct ActiveWorkoutView: View {
             ) {}
         } message: {
             Text(finishConfirmationMessage)
+        }
+        .task(id: workoutStore.accountStorageKey) {
+            exerciseCues = ExerciseCueStore().cues(accountStorageKey: workoutStore.accountStorageKey)
         }
         .onAppear {
             liveParticipantSelection = .current
@@ -1411,9 +1420,7 @@ struct ActiveWorkoutView: View {
         let onMoveDown: (() -> Void)? = canMoveExercise && (exerciseIndex ?? draft.exercises.count - 1) < draft.exercises.count - 1
             ? { moveExercise(exercise, by: 1) } : nil
         let cueKey = cueIdentityKey(exercise, storedExercise: storedExercise)
-        let cue = cueKey.flatMap {
-            ExerciseCueStore().cue(accountStorageKey: workoutStore.accountStorageKey, identityKey: $0)
-        }
+        let cue = cueKey.flatMap { exerciseCues[$0] }
         let cueTarget = cueKey.map {
             ExerciseCueEditTarget(identityKey: $0, exerciseName: exerciseName, currentCue: cue)
         }
@@ -1690,7 +1697,8 @@ struct ActiveWorkoutView: View {
         let name = storedExercise?.name ?? exercise.exerciseName ?? ""
         let catalogKey = storedExercise?.catalogKey ?? exercise.exerciseCatalogKey
         guard catalogKey != nil || !name.isEmpty else { return nil }
-        return FriendGhosts.exerciseKey(catalogKey: catalogKey, name: name)
+        let key = FriendGhosts.exerciseKey(catalogKey: catalogKey, name: name)
+        return ExerciseCueStore.isUsableIdentityKey(key) ? key : nil
     }
 
     private func friendGhost(for exercise: ActiveWorkoutExercise, storedExercise: Exercise?) -> FriendGhost? {

@@ -1,7 +1,9 @@
 {
   "version": 1,
-  "description": "Exercise cue normalization golden cases run by Android ExerciseCueGoldenTest and iOS ExerciseCueGoldenTests. A cue is a short device-local note pinned to an exercise. stored is the text kept for input, or null when the cue is removed. Rules: each line break (CRLF counts once; CR, LF, U+0085, U+2028, U+2029) becomes one space, the text is trimmed, cut to maxCodePoints Unicode code points (not UTF-16 units, not grapheme clusters), then trimmed again; an empty result is null.",
+  "description": "Exercise cue normalization golden cases run by Android ExerciseCueGoldenTest and iOS ExerciseCueGoldenTests. A cue is a short device-local note pinned to an exercise. stored is the text kept for input, or null when the cue is removed. Rules: each line break (CRLF counts once; CR, LF, U+0085, U+2028, U+2029) becomes one space, the text is trimmed, cut to maxCodePoints Unicode code points (not UTF-16 units, not grapheme clusters), then trimmed again; an empty result is null. usableIdentityKeys / unusableIdentityKeys: an identity key that is blank, holds a control character, or is `custom:` with no name after it gets no cue.",
   "maxCodePoints": 80,
+  "usableIdentityKeys": ["catalog:bench_press", "custom:bench", "custom:жим"],
+  "unusableIdentityKeys": ["", "   ", "custom:", "custom:   ", "custom:\t", "k\u0000"],
   "cases": [
     {
       "id": "plain",

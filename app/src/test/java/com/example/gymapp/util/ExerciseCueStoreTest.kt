@@ -14,13 +14,13 @@ private class MemoryCueStorage : ExerciseCueStorage {
     override fun get(key: String) = values[key]
     override fun put(key: String, value: String): Boolean { values[key] = value; return true }
     override fun remove(key: String): Boolean { values.remove(key); return true }
-    override fun count() = values.size
-    override fun clear(): Boolean { values.clear(); return true }
+    override fun all(): Map<String, String> = values.toMap()
+    override fun removeAll(keys: Collection<String>): Boolean { keys.forEach { values.remove(it) }; return true }
 }
 
 class ExerciseCueStoreTest {
-    private val files = mutableMapOf<String, MemoryCueStorage>()
-    private val store = ExerciseCueStore { name -> files.getOrPut(name) { MemoryCueStorage() } }
+    private val storage = MemoryCueStorage()
+    private val store = ExerciseCueStore { storage }
 
     @Test
     fun sharedGoldenCasesMatchIos() {
@@ -39,40 +39,63 @@ class ExerciseCueStoreTest {
     }
 
     @Test
+    fun sharedIdentityKeyCasesMatchIos() {
+        val root = contract()
+        val usable = root.getJSONArray("usableIdentityKeys")
+        val unusable = root.getJSONArray("unusableIdentityKeys")
+        assertTrue(usable.length() >= 3 && unusable.length() >= 4)
+        for (index in 0 until usable.length()) {
+            assertTrue(usable.getString(index), isUsableExerciseCueKey(usable.getString(index)))
+        }
+        for (index in 0 until unusable.length()) {
+            val key = unusable.getString(index)
+            assertFalse(key, isUsableExerciseCueKey(key))
+            assertEquals(key, ExerciseCueSaveResult.FAILED, store.setCue("db_a", key, "x"))
+        }
+        assertTrue(storage.values.isEmpty())
+    }
+
+    @Test
     fun savesTrimmedSingleLineTextAndReadsItBack() {
-        assertEquals("seat 4 narrow", store.setCue("db_a", "catalog:row", "  seat 4\nnarrow "))
+        assertEquals(ExerciseCueSaveResult.STORED, store.setCue("db_a", "catalog:row", "  seat 4\nnarrow "))
         assertEquals("seat 4 narrow", store.cue("db_a", "catalog:row"))
+        assertEquals(mapOf("catalog:row" to "seat 4 narrow"), store.cues("db_a"))
     }
 
     @Test
     fun limitIsCountedInCodePoints() {
-        val stored = store.setCue("db_a", "k", "a".repeat(79) + "😀😀")
-        assertEquals(80, stored!!.codePointCount(0, stored.length))
+        store.setCue("db_a", "k", "a".repeat(79) + "😀😀")
+        val stored = store.cue("db_a", "k")!!
+        assertEquals(80, stored.codePointCount(0, stored.length))
         assertEquals("a".repeat(79) + "😀", stored)
     }
 
     @Test
     fun emptyTextRemovesTheCue() {
         store.setCue("db_a", "k", "seat 4")
-        assertNull(store.setCue("db_a", "k", " \n "))
+        assertEquals(ExerciseCueSaveResult.REMOVED, store.setCue("db_a", "k", " \n "))
         assertNull(store.cue("db_a", "k"))
-        assertTrue(files.values.all { it.values.isEmpty() })
+        assertTrue(storage.values.isEmpty())
     }
 
     @Test
-    fun cuesDoNotLeakAcrossAccounts() {
+    fun allAccountsShareOneFileWithHashedAccountPrefixedKeys() {
         store.setCue("db_a", "k", "mine")
-        assertNull(store.cue("db_b", "k"))
         store.setCue("db_b", "k", "other")
+        val hashA = exerciseCueAccountHash("db_a")!!
+        val hashB = exerciseCueAccountHash("db_b")!!
+        assertNotEquals(hashA, hashB)
+        assertEquals(32, hashA.length)
+        assertFalse(hashA.contains("db_a"))
+        assertEquals(setOf("$hashA|k", "$hashB|k"), storage.values.keys)
+        assertEquals("gym_exercise_cues_v1", EXERCISE_CUE_PREFERENCES_NAME)
+        assertNull(store.cue("db_c", "k"))
         assertEquals("mine", store.cue("db_a", "k"))
         assertEquals("other", store.cue("db_b", "k"))
-        assertEquals(2, files.size)
-        assertNotEquals(exerciseCueStorageName("db_a"), exerciseCueStorageName("db_b"))
-        assertFalse(exerciseCueStorageName("db_a")!!.contains("db_a"))
     }
 
     @Test
-    fun clearAccountWipesOnlyThatAccount() {
+    fun clearAccountRemovesOnlyThatAccountsKeys() {
         store.setCue("db_a", "k1", "one")
         store.setCue("db_a", "k2", "two")
         store.setCue("db_b", "k1", "keep")
@@ -80,22 +103,35 @@ class ExerciseCueStoreTest {
         assertNull(store.cue("db_a", "k1"))
         assertNull(store.cue("db_a", "k2"))
         assertEquals("keep", store.cue("db_b", "k1"))
+        assertEquals(1, storage.values.size)
     }
 
     @Test
     fun rejectsUnusableAccountOrKey() {
-        assertNull(store.setCue("", "k", "x"))
-        assertNull(store.setCue("db_a", "   ", "x"))
-        assertNull(store.setCue("db_a", "k\u0000", "x"))
+        assertEquals(ExerciseCueSaveResult.FAILED, store.setCue("", "k", "x"))
+        assertEquals(ExerciseCueSaveResult.FAILED, store.setCue("db_a", "   ", "x"))
+        assertEquals(ExerciseCueSaveResult.FAILED, store.setCue("db_a", "k\u0000", "x"))
         assertFalse(store.clearAccount(""))
-        assertTrue(files.values.all { it.values.isEmpty() })
+        assertTrue(storage.values.isEmpty())
     }
 
     @Test
     fun refusesNewCueBeyondTheEntryCapButStillEditsExisting() {
+        repeat(EXERCISE_CUE_MAX_ENTRIES) {
+            assertEquals(ExerciseCueSaveResult.STORED, store.setCue("db_a", "k$it", "x"))
+        }
+        assertEquals(ExerciseCueSaveResult.TOO_MANY, store.setCue("db_a", "extra", "x"))
+        assertNull(store.cue("db_a", "extra"))
+        assertEquals(ExerciseCueSaveResult.STORED, store.setCue("db_a", "k0", "changed"))
+        assertEquals("changed", store.cue("db_a", "k0"))
+    }
+
+    @Test
+    fun capCountsOnlyThatAccountsKeys() {
         repeat(EXERCISE_CUE_MAX_ENTRIES) { store.setCue("db_a", "k$it", "x") }
-        assertNull(store.setCue("db_a", "extra", "x"))
-        assertEquals("changed", store.setCue("db_a", "k0", "changed"))
+        assertEquals(ExerciseCueSaveResult.STORED, store.setCue("db_b", "k", "x"))
+        assertEquals(ExerciseCueSaveResult.REMOVED, store.setCue("db_a", "k1", ""))
+        assertEquals(ExerciseCueSaveResult.STORED, store.setCue("db_a", "extra", "x"))
     }
 
     private fun contract(): JSONObject {
