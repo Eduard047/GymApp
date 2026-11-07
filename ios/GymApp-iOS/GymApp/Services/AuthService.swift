@@ -1641,6 +1641,15 @@ final class AuthService: ObservableObject {
             ?? (object["error_description"] as? String)
             ?? (object["error"] as? String)
         if status >= 500 { return "Cloud service is temporarily unavailable. Try again later." }
+        // Supabase answers a throttled request with HTTP 429 and a generic
+        // "For security purposes, you can only request this after N seconds"
+        // body; the stable signal is the status or `error_code`, not the text.
+        // Same mapping as Android's CloudAuthManager.
+        let code = ((object["error_code"] as? String) ?? (object["code"] as? String))?
+            .lowercased()
+        if status == 429 || code == "over_email_send_rate_limit" {
+            return GymAuthServerMessages.tooManyEmails
+        }
         return raw?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? raw!
             : "Cloud request failed. Check your connection and try again."

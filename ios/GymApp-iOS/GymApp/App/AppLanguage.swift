@@ -512,6 +512,7 @@ private let gymGenericErrorMessage = "Something went wrong. Try again."
 
 enum GymAuthServerMessages {
     static let weakPassword = "The new password does not meet the server password policy."
+    static let tooManyEmails = "Too many emails were requested. Try again later."
 }
 
 private func gymSafeAuthServerErrorMessage(_ raw: String) -> String {
@@ -524,7 +525,7 @@ private func gymSafeAuthServerErrorMessage(_ raw: String) -> String {
         return "Confirm your email first, then sign in."
     }
     if lower.contains("rate limit") || lower.contains("over_email_send_rate_limit") {
-        return "Too many emails were requested. Try again later."
+        return GymAuthServerMessages.tooManyEmails
     }
     if lower.contains("already registered") || lower.contains("user_already_exists") {
         return "An account with this email already exists."
@@ -536,7 +537,7 @@ private func gymSafeAuthServerErrorMessage(_ raw: String) -> String {
     let safeMessages: Set<String> = [
         "Email or password is incorrect.",
         "Confirm your email first, then sign in.",
-        "Too many emails were requested. Try again later.",
+        GymAuthServerMessages.tooManyEmails,
         "An account with this email already exists.",
         GymAuthServerMessages.weakPassword,
         "Cloud service is temporarily unavailable. Try again later.",

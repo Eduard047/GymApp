@@ -2035,6 +2035,37 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(auth.message, GymAuthServerMessages.weakPassword)
     }
 
+    func testSupabaseRateLimit429MapsToTooManyEmailsMessage() async throws {
+        let bodies = [
+            // Real Supabase 429: only `error_code` carries the machine-readable reason.
+            #"{"code":429,"error_code":"over_email_send_rate_limit","msg":"For security purposes, you can only request this after 47 seconds."}"#,
+            // Same status without a recognised code still maps (Android: responseCode == 429).
+            #"{"msg":"For security purposes, you can only request this after 12 seconds."}"#
+        ]
+        for body in bodies {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [AuthURLProtocolStub.self]
+            let urlSession = URLSession(configuration: configuration)
+            let auth = AuthService(
+                keychain: InMemoryKeychainStore(),
+                urlSession: urlSession,
+                defaults: temporaryDefaults(named: "rate-limit-429-\(UUID().uuidString)")
+            )
+            AuthURLProtocolStub.handler = { request in
+                try AuthURLProtocolStub.response(for: request, statusCode: 429, json: body)
+            }
+            defer {
+                AuthURLProtocolStub.handler = nil
+                urlSession.invalidateAndCancel()
+            }
+
+            await auth.requestPasswordReset(email: "rate-limit@example.com")
+
+            XCTAssertTrue(auth.messageIsError)
+            XCTAssertEqual(auth.message, GymAuthServerMessages.tooManyEmails)
+        }
+    }
+
     func testLatePasswordReauthenticationCannotFollowReplacementAccount() async throws {
         let recorder = AuthRequestRecorder()
         let reauthenticationStarted = expectation(description: "password reauthentication started")
