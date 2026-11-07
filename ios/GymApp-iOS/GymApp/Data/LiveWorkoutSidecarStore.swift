@@ -149,6 +149,24 @@ final class LiveWorkoutSidecarStore: ObservableObject {
         }
     }
 
+    /// Read-only peek at the durable attachment, with none of the instance's
+    /// side effects (no directory creation, no write blocking). Lets
+    /// process-wide code (the Live Activity controller, which also runs on a
+    /// background launch where no `LiveWorkoutCoordinator` exists) ask whether a
+    /// draft is attached to a live room. An unreadable envelope reads as `nil`,
+    /// the same as the instance does.
+    static func persistedAttachment(
+        accountStorageKey: String,
+        workoutStorageURL: URL,
+        fileManager: FileManager = .default
+    ) -> LiveWorkoutAttachment? {
+        (try? load(
+            accountStorageKey: accountStorageKey,
+            storageURL: storageURL(forWorkoutStorageURL: workoutStorageURL),
+            fileManager: fileManager
+        )) ?? nil
+    }
+
     static func storageURL(forWorkoutStorageURL workoutStorageURL: URL) -> URL {
         workoutStorageURL
             .deletingPathExtension()

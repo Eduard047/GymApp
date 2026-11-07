@@ -974,10 +974,8 @@ private struct MainTabShell: View {
             // working even when this view never mounts (e.g. a background
             // launch to run a Live Activity App Intent).
             liveWorkoutCoordinator.startMonitoring()
-            let coordinator = liveWorkoutCoordinator
-            appState.liveActivityController.isAttachedToLiveRoom = { [weak coordinator] in
-                coordinator?.isAttachedToCurrentDraft ?? false
-            }
+            // Live-room attachment is read by the controller from the persisted
+            // sidecar (process-wide), so no wiring is needed from this view.
             appState.liveActivityController.refresh()
             openPendingPushRouteIfNeeded()
             if activeWorkoutStore.recoveryMessage != nil {
@@ -1037,14 +1035,18 @@ private struct MainTabShell: View {
             }
         }
         .onChange(of: liveWorkoutCoordinator.sidecar.attachment?.localDraftID) { _, draftID in
-            // Attachment alone does not touch the draft, so re-mirror the
-            // Live Activity to show/hide its "Record set" button.
-            appState.liveActivityController.refresh()
             guard let draftID, activeWorkoutStore.draft?.id == draftID else { return }
             workoutEditorDraft = nil
             workoutEditorLiveRecipient = nil
             showsAddWorkout = false
             showsActiveWorkout = true
+        }
+        .onChange(of: liveWorkoutCoordinator.isAttachedToCurrentDraft) { _, _ in
+            // Attachment alone does not touch the draft, so re-mirror the
+            // Live Activity to show/hide its "Record set" button. Keyed on the
+            // derived flag (not just the sidecar draft id) so the room ending,
+            // being left, or the draft changing under an attachment also refresh.
+            appState.liveActivityController.refresh()
         }
         .onChange(of: liveWorkoutCoordinator.confirmedDraftConsumption) { _, _ in
             reconcileConfirmedLiveDraftConsumption()

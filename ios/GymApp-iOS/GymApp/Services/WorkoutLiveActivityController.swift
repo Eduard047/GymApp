@@ -105,13 +105,28 @@ final class WorkoutLiveActivityController: ObservableObject {
     private weak var activeWorkoutStore: ActiveWorkoutStore?
     private weak var restTimers: RestTimerManager?
 
-    /// Whether the active draft is currently attached to a live room. Set by
-    /// `MainTabShell` (which owns the `LiveWorkoutCoordinator`); `false` until
-    /// then. While `true` the Lock Screen "Record set" button is hidden and
+    /// Test/override hook for "is the active draft attached to a live room".
+    /// When `nil` (the production default) the controller reads the persisted
+    /// live-workout sidecar itself (`isDraftAttachedToLiveRoom`), so the answer
+    /// is right even on a background launch for a Live Activity App Intent,
+    /// where `MainTabShell` and its `LiveWorkoutCoordinator` never exist.
+    /// While attached, the Lock Screen "Record set" button is hidden and
     /// `recordCurrentSet` is a no-op - sets are recorded through the room, so
     /// a Lock Screen tap would diverge the friend's state (Android parity with
     /// `ActiveWorkoutNotificationContent.canLogSet`).
-    var isAttachedToLiveRoom: () -> Bool = { false }
+    var isAttachedToLiveRoom: (() -> Bool)?
+
+    /// Source of truth: the persisted sidecar attachment for the current draft
+    /// (same rule as `LiveWorkoutCoordinator.isAttachedToCurrentDraft`).
+    private func isDraftAttachedToLiveRoom() -> Bool {
+        if let isAttachedToLiveRoom { return isAttachedToLiveRoom() }
+        guard let workoutStore, let draft = activeWorkoutStore?.draft,
+              let attachment = LiveWorkoutSidecarStore.persistedAttachment(
+                accountStorageKey: workoutStore.accountStorageKey,
+                workoutStorageURL: workoutStore.storageURL
+              ) else { return false }
+        return attachment.localDraftID == draft.id
+    }
 
     init(requester: LiveActivityRequesting? = nil) {
         self.requester = requester ?? SystemLiveActivityRequester()
@@ -187,7 +202,7 @@ final class WorkoutLiveActivityController: ObservableObject {
             state: Self.contentState(
                 for: draft,
                 workoutStore: workoutStore,
-                canRecord: !isAttachedToLiveRoom()
+                canRecord: !isDraftAttachedToLiveRoom()
             ),
             staleDate: nil
         )
@@ -207,7 +222,7 @@ final class WorkoutLiveActivityController: ObservableObject {
         let state = Self.contentState(
             for: draft,
             workoutStore: workoutStore,
-            canRecord: !isAttachedToLiveRoom()
+            canRecord: !isDraftAttachedToLiveRoom()
         )
         if let activity {
             let content = ActivityContent(state: state, staleDate: nil)
@@ -230,7 +245,7 @@ final class WorkoutLiveActivityController: ObservableObject {
             for: draft,
             workoutStore: workoutStore,
             languageCode: languageCode,
-            canRecord: !isAttachedToLiveRoom()
+            canRecord: !isDraftAttachedToLiveRoom()
         )
         let content = ActivityContent(state: state, staleDate: nil)
         Task { await activity.update(content) }
@@ -291,7 +306,7 @@ final class WorkoutLiveActivityController: ObservableObject {
             endImmediately()
             return
         }
-        guard !isAttachedToLiveRoom() else {
+        guard !isDraftAttachedToLiveRoom() else {
             liveActivityControllerLog.info("recordCurrentSet: no-op (draft is attached to a live room)")
             return
         }

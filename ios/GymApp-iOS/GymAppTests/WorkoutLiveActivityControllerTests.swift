@@ -499,6 +499,104 @@ final class WorkoutLiveActivityBridgeGuardTests: XCTestCase {
         XCTAssertNotNil(active.draft?.exercises.first?.sets.first?.completedAt)
     }
 
+    /// Writes a valid live-workout sidecar envelope for `account`, as the
+    /// coordinator would persist it, attaching the room to `draftID`.
+    private func writePersistedLiveAttachment(
+        for history: WorkoutStore,
+        draftID: UUID?
+    ) throws {
+        let attachment = draftID.map { id -> String in
+            """
+            {"version":1,"userID":"11111111-1111-4111-8111-111111111111",\
+            "sessionID":"22222222-2222-4222-8222-222222222222",\
+            "roomID":"lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","role":"owner",\
+            "peerProfileID":"p_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","peerDisplayName":"Friend",\
+            "roomRevision":1,"membershipRevision":1,"progressRevision":1,\
+            "localDraftID":"\(id.uuidString)",\
+            "serverToLocalSetIDs":{"s_01_01":"\(UUID().uuidString)"},"pendingOperations":[]}
+            """
+        } ?? "null"
+        let json = """
+        {"schemaVersion":1,"accountStorageKey":"\(history.accountStorageKey)",\
+        "savedAt":1800000000000,"attachment":\(attachment)}
+        """
+        try Data(json.utf8).write(
+            to: LiveWorkoutSidecarStore.storageURL(forWorkoutStorageURL: history.storageURL)
+        )
+    }
+
+    func testPersistedLiveRoomAttachmentBlocksRecordWithoutAnyWiring() throws {
+        // No `isAttachedToLiveRoom` override: the shell never mounted (background
+        // launch for a Live Activity intent), so the controller reads the sidecar.
+        let (history, active, exercise) = try makeStores(account: "bridge-persisted-live-room")
+        let setID = UUID()
+        let draft = try active.start(
+            workoutDate: Date(),
+            note: nil,
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: exercise.id,
+                    exerciseName: exercise.name,
+                    exerciseCatalogKey: exercise.catalogKey,
+                    sets: [ActiveWorkoutSet(id: setID, weight: 60, reps: 8)]
+                )
+            ],
+            workoutStore: history,
+            now: Date()
+        )
+        try writePersistedLiveAttachment(for: history, draftID: draft.id)
+        let requester = FakeLiveActivityRequester()
+        let handle = requester.nextHandle
+        let controller = WorkoutLiveActivityController(requester: requester)
+        controller.attach(workoutStore: history, activeWorkoutStore: active, restTimers: inertRestTimers())
+        XCTAssertEqual(handle.updates.last?.canRecord, false, "cold attach must not republish canRecord: true")
+        let revisionBefore = active.draft?.revision
+
+        LiveActivityActionBridge.recordCurrentSet?(draft.id, setID)
+
+        XCTAssertEqual(active.draft?.revision, revisionBefore)
+        XCTAssertNil(active.draft?.exercises.first?.sets.first?.completedAt)
+
+        // Room ended / left: the sidecar no longer attaches this draft.
+        try writePersistedLiveAttachment(for: history, draftID: nil)
+        controller.refresh()
+        let republished = expectation(description: "update delivered")
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            republished.fulfill()
+        }
+        wait(for: [republished], timeout: 1)
+        XCTAssertEqual(handle.updates.last?.canRecord, true, "refresh() re-reads the sidecar")
+        LiveActivityActionBridge.recordCurrentSet?(draft.id, setID)
+        XCTAssertNotNil(active.draft?.exercises.first?.sets.first?.completedAt)
+    }
+
+    func testPersistedAttachmentForAnotherDraftDoesNotBlockRecord() throws {
+        let (history, active, exercise) = try makeStores(account: "bridge-persisted-other-draft")
+        let setID = UUID()
+        let draft = try active.start(
+            workoutDate: Date(),
+            note: nil,
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: exercise.id,
+                    exerciseName: exercise.name,
+                    exerciseCatalogKey: exercise.catalogKey,
+                    sets: [ActiveWorkoutSet(id: setID, weight: 60, reps: 8)]
+                )
+            ],
+            workoutStore: history,
+            now: Date()
+        )
+        try writePersistedLiveAttachment(for: history, draftID: UUID())
+        let controller = WorkoutLiveActivityController(requester: FakeLiveActivityRequester())
+        controller.attach(workoutStore: history, activeWorkoutStore: active, restTimers: inertRestTimers())
+
+        LiveActivityActionBridge.recordCurrentSet?(draft.id, setID)
+
+        XCTAssertNotNil(active.draft?.exercises.first?.sets.first?.completedAt)
+    }
+
     func testMismatchedWorkoutIDNoOpsAndEndsTheStaleActivity() throws {
         let (history, active, exercise) = try makeStores(account: "bridge-mismatch")
         let setID = UUID()

@@ -467,14 +467,27 @@ final class ActiveWorkoutStore: ObservableObject {
         remainingSeconds: Int,
         now: Date = Date()
     ) throws -> ActiveWorkoutDraft {
-        try mutate(
+        guard (1 ... Self.maximumRestSeconds).contains(remainingSeconds) else {
+            throw ActiveWorkoutStoreError.invalidDraft
+        }
+        // No running rest and nothing for normalization to fold into active time:
+        // a true no-op. Return the stored draft without a revision bump or write,
+        // so it cannot make an in-flight Log/undo (holding this revision) go stale.
+        // An expired-but-stored rest still goes through `mutate` below, because
+        // folding it into active time changes the persisted timing.
+        if !writesBlocked,
+           let current = draft,
+           current.id == draftID,
+           current.revision == expectedRevision,
+           current.commitIntent == nil,
+           current.timing?.restingUntil == nil {
+            return current
+        }
+        return try mutate(
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
         ) { candidate in
-            guard (1 ... Self.maximumRestSeconds).contains(remainingSeconds) else {
-                throw ActiveWorkoutStoreError.invalidDraft
-            }
             var timing = Self.normalizedTiming(in: candidate, at: now)
             // No running rest (it just ended): adjusting is a quiet no-op, like Android.
             // The expired deadline is already folded back into active time by normalization.

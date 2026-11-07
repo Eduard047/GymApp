@@ -187,6 +187,11 @@ struct ActiveWorkoutView: View {
     @State private var collapsedExerciseIDs = Set<UUID>()
     @State private var expandedSetIDs = Set<UUID>()
     @FocusState private var focusedWeightSetID: UUID?
+    /// The set whose Log tap is waiting for the weight field's commit (see
+    /// `recordSet`). A second tap on the same set while this is set is ignored:
+    /// it would otherwise take the synchronous path with the stale render-time
+    /// set (old weight) before the deferred task records the committed one.
+    @State private var pendingRecordSetID: UUID?
     @State private var liveParticipantSelection: LiveParticipantSelection = .current
 
     // Voice set-logging (in-workout commands): mirrors AddWorkoutView's own
@@ -2807,6 +2812,9 @@ struct ActiveWorkoutView: View {
         exerciseName: String,
         draft: ActiveWorkoutDraft
     ) {
+        // A Log tap is already waiting for this set's weight commit; the
+        // deferred task records the committed set, so this tap is a duplicate.
+        guard pendingRecordSetID != set.id else { return }
         // A weight field commits its typed text only when it loses focus, and
         // tapping Log does not blur it. End editing first, then record the
         // set as it is after the commit, never the copy captured at render time.
@@ -2815,7 +2823,9 @@ struct ActiveWorkoutView: View {
             gymResignFirstResponder()
             let setID = set.id
             let exerciseID = exercise.id
+            pendingRecordSetID = setID
             Task { @MainActor in
+                defer { pendingRecordSetID = nil }
                 // Let the focus change and the field's commit land first.
                 await Task.yield()
                 guard let liveDraft = currentDraft,

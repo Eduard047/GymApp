@@ -447,6 +447,50 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         ) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .invalidDraft) }
     }
 
+    func testAdjustRestWithNoRunningRestDoesNotBumpRevisionOrWrite() throws {
+        let context = try makeContext(account: "active-rest-adjust-noop-revision")
+        let startedAt = Date()
+        let setID = UUID()
+        let started = try startSingleSet(
+            context,
+            setID: setID,
+            weight: 60,
+            reps: 8,
+            now: startedAt
+        )
+        XCTAssertNil(started.timing?.restingUntil)
+
+        let adjusted = try context.active.adjustRest(
+            draftID: started.id,
+            expectedRevision: started.revision,
+            remainingSeconds: 15,
+            now: startedAt.addingTimeInterval(5)
+        )
+        XCTAssertEqual(adjusted, started)
+        XCTAssertEqual(adjusted.revision, started.revision)
+        XCTAssertEqual(context.active.draft?.revision, started.revision)
+
+        // The revision is untouched, so an in-flight record holding it still lands.
+        let recorded = try context.active.recordSet(
+            draftID: started.id,
+            setID: setID,
+            expectedRevision: started.revision,
+            restSeconds: 30,
+            now: startedAt.addingTimeInterval(6)
+        )
+        XCTAssertEqual(recorded.revision, started.revision + 1)
+
+        // A stale revision is still refused on the no-op path.
+        XCTAssertThrowsError(
+            try context.active.adjustRest(
+                draftID: started.id,
+                expectedRevision: started.revision,
+                remainingSeconds: 15,
+                now: startedAt.addingTimeInterval(7)
+            )
+        ) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .staleDraft) }
+    }
+
     func testRestProjectionReconcilesStartAdjustAndStopCrashWindows() throws {
         let context = try makeContext(account: "active-rest-reconciliation")
         let base = Date()

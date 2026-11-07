@@ -19327,6 +19327,16 @@ final class CoreParityTests: XCTestCase {
         XCTAssertLessThan(reread.lowerBound, record.lowerBound)
         XCTAssertTrue(body.contains("gymResignFirstResponder()"))
         XCTAssertTrue(body.contains("!liveSet.isCompleted"))
+        // A second Log tap before the deferred record runs must be ignored (it would
+        // take the synchronous path with the stale render-time weight), and the
+        // pending marker must clear on every exit of the deferred task.
+        let guardTap = try XCTUnwrap(body.range(of: "guard pendingRecordSetID != set.id else { return }"))
+        let markPending = try XCTUnwrap(body.range(of: "pendingRecordSetID = setID"))
+        let clearPending = try XCTUnwrap(body.range(of: "defer { pendingRecordSetID = nil }"))
+        XCTAssertLessThan(guardTap.lowerBound, blur.lowerBound)
+        XCTAssertLessThan(blur.lowerBound, markPending.lowerBound)
+        XCTAssertLessThan(markPending.lowerBound, clearPending.lowerBound)
+        XCTAssertLessThan(clearPending.lowerBound, reread.lowerBound)
         for screen in ["WorkoutDetailView", "AddWorkoutView"] {
             let source = try iosSource("GymApp/UI/Screens/\(screen).swift")
             XCTAssertTrue(source.contains(".gymKeyboardDoneToolbar()"), screen)
