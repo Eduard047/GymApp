@@ -3138,7 +3138,11 @@ class CloudAuthManager internal constructor(
                     responseCode = responseCode,
                     errorCode = fields.code,
                     providerMessage = fields.message,
-                    safeMessage = friendlySupabaseError(responseCode, text)
+                    safeMessage = friendlySupabaseError(
+                        responseCode,
+                        text,
+                        passwordSignIn = isPasswordSignInPath(path)
+                    )
                 )
             }
             text.ifBlank { "[]" }
@@ -3147,7 +3151,11 @@ class CloudAuthManager internal constructor(
         }
     }
 
-    private fun friendlySupabaseError(responseCode: Int, text: String): String {
+    private fun friendlySupabaseError(
+        responseCode: Int,
+        text: String,
+        passwordSignIn: Boolean = false
+    ): String {
         val fields = parseSupabaseError(text)
         val code = fields.code
         val message = fields.message
@@ -3155,7 +3163,10 @@ class CloudAuthManager internal constructor(
         return when {
             isDisplayNameSafetyRejection(code, message) -> SIGN_UP_DISPLAY_NAME_RULES_ERROR
 
-            responseCode == 429 || code == "over_email_send_rate_limit" || message?.contains("rate limit", ignoreCase = true) == true ->
+            passwordSignIn && isRateLimitedResponse(responseCode, code, message) ->
+                SIGN_IN_RATE_LIMIT_ERROR
+
+            isRateLimitedResponse(responseCode, code, message) ->
                 "Too many authentication emails were requested. Try again later, or contact support if the newest email never arrives."
 
             isWeakPasswordError(code, message) -> WEAK_PASSWORD_SERVER_ERROR

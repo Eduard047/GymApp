@@ -13957,6 +13957,23 @@
         }
       }
     },
+    "Too many sign-in attempts. Wait a few minutes and try again." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Слишком много попыток входа. Подожди несколько минут и попробуй снова."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Забагато спроб входу. Зачекай кілька хвилин і спробуй знову."
+          }
+        }
+      }
+    },
     "Top muscle" : {
       "extractionState" : "stale",
       "localizations" : {

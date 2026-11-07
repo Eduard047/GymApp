@@ -11,6 +11,20 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import javax.net.ssl.SSLException
 
+internal const val SIGN_IN_RATE_LIMIT_ERROR =
+    "Too many login attempts. Wait a few minutes and try again."
+
+/** Password sign-in (and password re-check) goes through the password grant endpoint. */
+internal fun isPasswordSignInPath(path: String): Boolean =
+    path == "/auth/v1/token?grant_type=password"
+
+/** Supabase throttling: HTTP 429, a rate-limit error code, or the provider's rate-limit text. */
+internal fun isRateLimitedResponse(responseCode: Int, code: String?, message: String?): Boolean =
+    responseCode == 429 ||
+        code == "over_email_send_rate_limit" ||
+        code == "over_request_rate_limit" ||
+        message?.contains("rate limit", ignoreCase = true) == true
+
 internal fun requiresEmailConfirmation(error: Throwable): Boolean {
     return error.message in setOf(
         "Email confirmation may be required before login.",
@@ -28,6 +42,7 @@ internal fun authErrorText(
     val resource = when {
         message == "Too many authentication emails were requested. Try again later, or contact support if the newest email never arrives." ->
             R.string.auth_error_too_many_emails
+        message == SIGN_IN_RATE_LIMIT_ERROR -> R.string.auth_error_sign_in_rate_limited
         message == "An account with this email already exists. Log in instead." ->
             R.string.auth_error_account_exists
         message == "Email or password is incorrect." -> R.string.auth_error_invalid_credentials

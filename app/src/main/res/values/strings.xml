@@ -309,6 +309,7 @@
     <string name="auth_message_email_confirmed">Email confirmed. You are logged in.</string>
     <string name="auth_message_callback_failed">Authentication link failed. Request a new email and try again.</string>
     <string name="auth_error_too_many_emails">Too many authentication emails were requested. Try again later, or contact support if the newest email never arrives.</string>
+    <string name="auth_error_sign_in_rate_limited">Too many login attempts. Wait a few minutes and try again.</string>
     <string name="auth_error_account_exists">An account with this email already exists. Log in instead.</string>
     <string name="auth_error_invalid_credentials">Email or password is incorrect.</string>
     <string name="auth_error_email_unconfirmed">Confirm your email first, then log in.</string>

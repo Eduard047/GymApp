@@ -309,6 +309,7 @@
     <string name="auth_message_email_confirmed">Электронная почта подтверждена. Вход выполнен.</string>
     <string name="auth_message_callback_failed">Не удалось обработать ссылку для входа. Запроси новое письмо и попробуй ещё раз.</string>
     <string name="auth_error_too_many_emails">Запрошено слишком много писем для входа. Попробуй позже или обратись в поддержку, если самое новое письмо не пришло.</string>
+    <string name="auth_error_sign_in_rate_limited">Слишком много попыток входа. Подожди несколько минут и попробуй снова.</string>
     <string name="auth_error_account_exists">Аккаунт с этой электронной почтой уже существует. Войди вместо регистрации.</string>
     <string name="auth_error_invalid_credentials">Неверная электронная почта или пароль.</string>
     <string name="auth_error_email_unconfirmed">Сначала подтверди электронную почту, а затем войди.</string>

@@ -309,6 +309,7 @@
     <string name="auth_message_email_confirmed">Електронну пошту підтверджено. Вхід виконано.</string>
     <string name="auth_message_callback_failed">Не вдалося обробити посилання входу. Запроси новий лист і спробуй ще раз.</string>
     <string name="auth_error_too_many_emails">Запитано забагато листів для входу. Спробуй пізніше або звернися до підтримки, якщо найновіший лист не надійшов.</string>
+    <string name="auth_error_sign_in_rate_limited">Забагато спроб входу. Зачекай кілька хвилин і спробуй знову.</string>
     <string name="auth_error_account_exists">Обліковий запис із цією адресою вже існує. Увійди натомість.</string>
     <string name="auth_error_invalid_credentials">Неправильна електронна пошта або пароль.</string>
     <string name="auth_error_email_unconfirmed">Спочатку підтвердь електронну пошту, а потім увійди.</string>

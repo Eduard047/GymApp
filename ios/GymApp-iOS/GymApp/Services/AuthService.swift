@@ -1524,7 +1524,11 @@ final class AuthService: ObservableObject {
             }
             throw AuthServiceError.requestFailed(
                 status: http.statusCode,
-                message: Self.errorMessage(status: http.statusCode, object: object)
+                message: Self.errorMessage(
+                    status: http.statusCode,
+                    object: object,
+                    passwordSignIn: Self.isPasswordSignInPath(path)
+                )
             )
         }
         return object
@@ -1658,7 +1662,16 @@ final class AuthService: ObservableObject {
         gymSafeEnglishErrorMessage(error)
     }
 
-    private static func errorMessage(status: Int, object: [String: Any]) -> String {
+    /// Password sign-in goes through the password grant endpoint.
+    static func isPasswordSignInPath(_ path: String) -> Bool {
+        path == "/auth/v1/token?grant_type=password"
+    }
+
+    static func errorMessage(
+        status: Int,
+        object: [String: Any],
+        passwordSignIn: Bool = false
+    ) -> String {
         let raw = (object["msg"] as? String)
             ?? (object["message"] as? String)
             ?? (object["error_description"] as? String)
@@ -1670,6 +1683,12 @@ final class AuthService: ObservableObject {
         // Same mapping as Android's CloudAuthManager.
         let code = ((object["error_code"] as? String) ?? (object["code"] as? String))?
             .lowercased()
+        let isRateLimited = status == 429
+            || code == "over_email_send_rate_limit"
+            || code == "over_request_rate_limit"
+        if passwordSignIn, isRateLimited {
+            return GymAuthServerMessages.signInRateLimited
+        }
         if status == 429 || code == "over_email_send_rate_limit" {
             return GymAuthServerMessages.tooManyEmails
         }

@@ -10,6 +10,7 @@ class AuthUiMessagesTest {
         val cases = listOf(
             "Too many authentication emails were requested. Try again later, or contact support if the newest email never arrives." to
                 R.string.auth_error_too_many_emails,
+            SIGN_IN_RATE_LIMIT_ERROR to R.string.auth_error_sign_in_rate_limited,
             "An account with this email already exists. Log in instead." to
                 R.string.auth_error_account_exists,
             "Email or password is incorrect." to R.string.auth_error_invalid_credentials,
@@ -147,5 +148,19 @@ class AuthUiMessagesTest {
             false,
             requiresEmailConfirmation(IllegalStateException("Email or password is incorrect."))
         )
+    }
+
+    @Test
+    fun rateLimitDetectionCoversStatusAndCodesAndPasswordPathIsExact() {
+        assertEquals(true, isRateLimitedResponse(429, null, null))
+        assertEquals(true, isRateLimitedResponse(400, "over_request_rate_limit", null))
+        assertEquals(true, isRateLimitedResponse(400, "over_email_send_rate_limit", null))
+        assertEquals(true, isRateLimitedResponse(400, null, "Email rate limit exceeded"))
+        assertEquals(false, isRateLimitedResponse(400, "invalid_credentials", "Invalid login credentials"))
+        assertEquals(true, isPasswordSignInPath("/auth/v1/token?grant_type=password"))
+        assertEquals(false, isPasswordSignInPath("/auth/v1/token?grant_type=refresh_token"))
+        assertEquals(false, isPasswordSignInPath("/auth/v1/signup?redirect_to=x"))
+        assertEquals(false, isPasswordSignInPath("/auth/v1/recover?redirect_to=x"))
+        assertEquals(false, isPasswordSignInPath("/auth/v1/resend?redirect_to=x"))
     }
 }
