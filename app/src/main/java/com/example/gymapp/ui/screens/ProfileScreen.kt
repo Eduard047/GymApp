@@ -167,6 +167,7 @@ internal fun ProfileScreen(
     onShowTutorial: () -> Unit,
     onCloseImport: () -> Unit,
     onImportJsonChange: (String) -> Unit,
+    onImportFile: (open: () -> java.io.InputStream?) -> Unit,
     onImportBackup: () -> Unit,
     onLogout: () -> Unit,
     isAccountActionLoading: Boolean,
@@ -358,6 +359,7 @@ internal fun ProfileScreen(
         onClearBackup = onClearBackup,
         onCloseImport = onCloseImport,
         onImportJsonChange = onImportJsonChange,
+        onImportFile = onImportFile,
         onImportBackup = onImportBackup
     )
 

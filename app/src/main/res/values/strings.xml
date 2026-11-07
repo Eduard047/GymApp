@@ -1069,6 +1069,8 @@
     <string name="backup_import_title">Import backup</string>
     <string name="backup_import_placeholder">Paste exported GymApp JSON here</string>
     <string name="backup_import_action">Import</string>
+    <string name="backup_import_choose_file">Choose file</string>
+    <string name="backup_file_read_failed">Could not read the backup file.</string>
     <string name="backup_export_failed">Backup could not be exported.</string>
     <string name="backup_diagnostics_export_failed">Diagnostics could not be exported.</string>
     <string name="backup_file_too_large">Backup exceeds the file size limit.</string>
@@ -1089,6 +1091,14 @@
     <string name="backup_report_exercises_count">Exercises: %1$d</string>
     <string name="backup_report_workouts_count">Workouts: %1$d</string>
     <string name="backup_report_sets_count">Sets: %1$d</string>
+    <string name="backup_report_environment_heading">Environment</string>
+    <string name="backup_report_app_version">App version: %1$s (build %2$s)</string>
+    <string name="backup_report_system">System: %1$s</string>
+    <string name="backup_report_locale">Locale: %1$s</string>
+    <string name="backup_report_mappings_count">Manual muscle mappings: %1$d</string>
+    <string name="backup_report_cloud_sync">Cloud sync: %1$s; successful sync: %2$s; error: %3$s</string>
+    <string name="backup_report_yes">yes</string>
+    <string name="backup_report_no">no</string>
     <string name="backup_report_diagnostics_notice">This diagnostic snapshot contains aggregate counts only.</string>
     <string name="backup_report_diagnostics_exclusions">It excludes account identifiers, exercise names, notes, dates, and set values.</string>
     <string name="backup_report_exercises_heading">Exercises</string>

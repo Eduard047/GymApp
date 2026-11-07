@@ -1101,6 +1101,8 @@
     <string name="backup_import_title">Імпорт backup</string>
     <string name="backup_import_placeholder">Встав сюди експортований GymApp JSON</string>
     <string name="backup_import_action">Імпорт</string>
+    <string name="backup_import_choose_file">Вибрати файл</string>
+    <string name="backup_file_read_failed">Не вдалося прочитати файл резервної копії.</string>
     <string name="backup_export_failed">Не вдалося експортувати резервну копію.</string>
     <string name="backup_diagnostics_export_failed">Не вдалося експортувати діагностику.</string>
     <string name="backup_file_too_large">Резервна копія перевищує допустимий розмір файлу.</string>
@@ -1121,6 +1123,14 @@
     <string name="backup_report_exercises_count">Вправ: %1$d</string>
     <string name="backup_report_workouts_count">Тренувань: %1$d</string>
     <string name="backup_report_sets_count">Підходів: %1$d</string>
+    <string name="backup_report_environment_heading">Середовище</string>
+    <string name="backup_report_app_version">Версія застосунку: %1$s (збірка %2$s)</string>
+    <string name="backup_report_system">Система: %1$s</string>
+    <string name="backup_report_locale">Локаль: %1$s</string>
+    <string name="backup_report_mappings_count">Ручні зіставлення м\'язів: %1$d</string>
+    <string name="backup_report_cloud_sync">Хмарна синхронізація: %1$s; успішна синхронізація: %2$s; помилка: %3$s</string>
+    <string name="backup_report_yes">так</string>
+    <string name="backup_report_no">ні</string>
     <string name="backup_report_diagnostics_notice">Цей діагностичний знімок містить лише зведені лічильники.</string>
     <string name="backup_report_diagnostics_exclusions">Він не містить ідентифікаторів облікового запису, назв вправ, нотаток, дат і значень підходів.</string>
     <string name="backup_report_exercises_heading">Вправи</string>

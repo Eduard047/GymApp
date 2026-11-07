@@ -7,6 +7,8 @@ import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import android.text.format.DateFormat as AndroidDateFormat
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.ui.draw.rotate
@@ -184,6 +186,7 @@ internal fun AccountBackupSheets(
     onClearBackup: () -> Unit,
     onCloseImport: () -> Unit,
     onImportJsonChange: (String) -> Unit,
+    onImportFile: (open: () -> java.io.InputStream?) -> Unit,
     onImportBackup: () -> Unit
 ) {
     val backupJson = uiState.backupJson
@@ -208,6 +211,7 @@ internal fun AccountBackupSheets(
                 importJson = uiState.importJson,
                 importMessage = uiState.importMessage,
                 onImportJsonChange = onImportJsonChange,
+                onImportFile = onImportFile,
                 onImportBackup = onImportBackup,
                 onDismiss = onCloseImport
             )
@@ -2285,14 +2289,27 @@ internal fun BackupJsonBottomSheetContent(
     }
 }
 
+private val BACKUP_FILE_MIME_TYPES =
+    arrayOf("application/json", "text/plain", "application/octet-stream")
+
 @Composable
 internal fun ImportBackupBottomSheetContent(
     importJson: String,
     importMessage: LocalizedText?,
     onImportJsonChange: (String) -> Unit,
+    onImportFile: (open: () -> java.io.InputStream?) -> Unit,
     onImportBackup: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val resolver = context.applicationContext.contentResolver
+            onImportFile { resolver.openInputStream(uri) }
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2311,6 +2328,12 @@ internal fun ImportBackupBottomSheetContent(
             maxLines = 12,
             placeholder = { Text(stringResource(R.string.backup_import_placeholder)) }
         )
+        OutlinedButton(
+            onClick = { filePicker.launch(BACKUP_FILE_MIME_TYPES) },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(stringResource(R.string.backup_import_choose_file))
+        }
         if (importMessage != null) {
             Text(
                 text = importMessage.asString(),
@@ -2570,7 +2593,8 @@ internal fun clearPrivateBackupShareArtifacts(shareRoot: File, ownerKey: String)
 
 private fun backupReportLines(context: Context, json: String): List<String> {
     val root = JSONObject(json)
-    val diagnosticsOnly = root.optBoolean("diagnostics", false)
+    val diagnosticsOnly = root.optBoolean("diagnostics", false) ||
+        root.optString("reportType") == "diagnostics"
     val locale = context.resources.configuration.locales[0]
     val exportedAt = DateFormat.getDateTimeInstance(
         DateFormat.MEDIUM,
@@ -2580,7 +2604,7 @@ private fun backupReportLines(context: Context, json: String): List<String> {
         .format(Date(root.optLong("exportedAt", System.currentTimeMillis())))
     val exercises = root.optJSONArray("exercises")
     val sessions = root.optJSONArray("sessions")
-    val summary = root.optJSONObject("summary")
+    val summary = root.optJSONObject("summary") ?: root.optJSONObject("workoutData")
     val lines = mutableListOf<String>()
 
     lines += if (diagnosticsOnly) {
@@ -2611,6 +2635,39 @@ private fun backupReportLines(context: Context, json: String): List<String> {
     }
 
     if (diagnosticsOnly) {
+        val application = root.optJSONObject("application")
+        if (application != null) {
+            lines += context.safeGetString(
+                R.string.backup_report_mappings_count,
+                summary?.optInt("manualMuscleMappingCount") ?: 0
+            )
+            lines += ""
+            lines += "## ${context.getString(R.string.backup_report_environment_heading)}"
+            lines += context.safeGetString(
+                R.string.backup_report_app_version,
+                boundedPdfText(application.optString("version")),
+                boundedPdfText(application.optString("build"))
+            )
+            lines += context.safeGetString(
+                R.string.backup_report_system,
+                boundedPdfText(application.optString("operatingSystemVersion"))
+            )
+            lines += context.safeGetString(
+                R.string.backup_report_locale,
+                boundedPdfText(application.optString("localeIdentifier"))
+            )
+        }
+        root.optJSONObject("cloudSync")?.let { cloud ->
+            fun flag(key: String) = context.getString(
+                if (cloud.optBoolean(key, false)) R.string.backup_report_yes else R.string.backup_report_no
+            )
+            lines += context.safeGetString(
+                R.string.backup_report_cloud_sync,
+                flag("enabled"),
+                flag("hasSuccessfulSync"),
+                flag("hasError")
+            )
+        }
         lines += ""
         lines += context.getString(R.string.backup_report_diagnostics_notice)
         lines += context.getString(R.string.backup_report_diagnostics_exclusions)

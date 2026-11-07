@@ -10,7 +10,10 @@ import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.CloudAuthManager
 import com.example.gymapp.auth.localDatabaseLogicalName
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
+import com.example.gymapp.data.repository.BackupFileReader
+import com.example.gymapp.data.repository.BackupFileTooLargeException
 import com.example.gymapp.data.repository.BackupOwner
+import com.example.gymapp.data.repository.DiagnosticsContext
 import com.example.gymapp.data.repository.ExerciseDeletionSnapshot
 import com.example.gymapp.data.repository.ExerciseLoadDirection
 import com.example.gymapp.data.repository.ExerciseLoadProfile
@@ -37,6 +40,8 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.InputStream
 
 data class ExerciseListUiState(
     val isLoading: Boolean = false,
@@ -746,10 +751,10 @@ class ExerciseListViewModel(
         }
     }
 
-    fun exportDiagnostics() {
+    fun exportDiagnostics(context: DiagnosticsContext) {
         viewModelScope.launch {
             runCatching {
-                repository.exportDiagnosticsJson()
+                repository.exportDiagnosticsJson(context)
             }.onSuccess { json ->
                 generatedExport.value = GeneratedExerciseExport(
                     json = json,
@@ -784,6 +789,33 @@ class ExerciseListViewModel(
         }
         importJson.value = value
         importMessage.value = null
+    }
+
+    /**
+     * Loads a user-chosen backup file into the import field. The read runs off the main thread
+     * with a hard byte cap; the text then goes through the same [updateImportJson] path as a
+     * paste, so validation and the normal import flow are unchanged.
+     */
+    fun loadImportFile(open: () -> InputStream?) {
+        viewModelScope.launch {
+            try {
+                val text = withContext(Dispatchers.IO) {
+                    open()?.use { BackupFileReader.readUtf8(it) }
+                }
+                if (text == null) {
+                    importMessage.value = LocalizedText(R.string.backup_file_read_failed)
+                } else {
+                    updateImportJson(text)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: BackupFileTooLargeException) {
+                importJson.value = ""
+                importMessage.value = LocalizedText(R.string.backup_file_too_large)
+            } catch (_: Throwable) {
+                importMessage.value = LocalizedText(R.string.backup_file_read_failed)
+            }
+        }
     }
 
     fun importBackup() {

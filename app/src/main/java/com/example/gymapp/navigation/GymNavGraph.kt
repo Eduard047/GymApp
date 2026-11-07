@@ -103,6 +103,7 @@ import com.example.gymapp.auth.requiresEmailConfirmation
 import com.example.gymapp.auth.shouldRetireCloudAccountDeletionJournal
 import com.example.gymapp.data.repository.BackupOwner
 import com.example.gymapp.data.repository.canonicalWorkoutPayloadDigest
+import com.example.gymapp.data.repository.currentDiagnosticsContext
 import com.example.gymapp.gymApplication
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.LiveWorkoutDraftSendReceipt
@@ -4241,7 +4242,17 @@ internal fun GymAppRoot(
                                     }
                                 },
                                 onExportBackup = profileViewModel::exportBackup,
-                                onExportDiagnostics = profileViewModel::exportDiagnostics,
+                                onExportDiagnostics = {
+                                    profileViewModel.exportDiagnostics(
+                                        currentDiagnosticsContext(
+                                            cloudSyncEnabled = cloudSession != null,
+                                            hasSuccessfulSync =
+                                                cloudSyncStatus?.lastSuccessAt != null,
+                                            hasError =
+                                                cloudSyncStatus?.phase == CloudSyncPhase.Error
+                                        )
+                                    )
+                                },
                                 onClearBackup = profileViewModel::clearBackupJson,
                                 onOpenImport = profileViewModel::openImport,
                                 onShowTutorial = {
@@ -4280,6 +4291,7 @@ internal fun GymAppRoot(
                                 },
                                 onCloseImport = profileViewModel::closeImport,
                                 onImportJsonChange = profileViewModel::updateImportJson,
+                                onImportFile = profileViewModel::loadImportFile,
                                 onImportBackup = profileViewModel::importBackup,
                                 onLogout = {
                                     if (accountActionsEnabled(

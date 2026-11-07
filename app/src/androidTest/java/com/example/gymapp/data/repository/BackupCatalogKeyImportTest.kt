@@ -593,16 +593,29 @@ class BackupCatalogKeyImportTest {
                 )
             )
 
-            val raw = repository.exportDiagnosticsJson()
+            val raw = repository.exportDiagnosticsJson(
+                DiagnosticsContext(
+                    version = "1.2.3",
+                    build = "456",
+                    operatingSystemVersion = "Android test",
+                    localeIdentifier = "en-US",
+                    cloudSyncEnabled = false,
+                    hasSuccessfulSync = false,
+                    hasError = false
+                )
+            )
             val root = JSONObject(raw)
-            val summary = root.getJSONObject("summary")
+            val summary = root.getJSONObject("workoutData")
 
             assertEquals(
-                setOf("schemaVersion", "exportedAt", "app", "diagnostics", "summary"),
+                setOf(
+                    "schemaVersion", "reportType", "exportedAt",
+                    "application", "workoutData", "cloudSync"
+                ),
                 root.keys().asSequence().toSet()
             )
             assertEquals(1, summary.getInt("exerciseCount"))
-            assertEquals(1, summary.getInt("sessionCount"))
+            assertEquals(1, summary.getInt("workoutCount"))
             assertEquals(1, summary.getInt("setCount"))
             assertFalse(raw.contains("Private exercise name"))
             assertFalse(raw.contains("Private workout note"))

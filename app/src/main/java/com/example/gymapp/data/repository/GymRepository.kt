@@ -1255,23 +1255,27 @@ class GymRepository(
      * Account identifiers, exercise names, notes, dates, set values, and raw database rows are
      * excluded. A user can share this aggregate safely without accidentally sharing a backup.
      */
-    suspend fun exportDiagnosticsJson(): String = withContext(Dispatchers.Default) {
-        val summary = database.withTransaction {
-            JSONObject()
-                .put("exerciseCount", exerciseDao.getExerciseCount())
-                .put("sessionCount", workoutDao.getSessionCount())
-                .put("setCount", setDao.getTotalSetCount())
+    suspend fun exportDiagnosticsJson(context: DiagnosticsContext): String =
+        withContext(Dispatchers.Default) {
+            val counts = database.withTransaction {
+                intArrayOf(
+                    exerciseDao.getExerciseCount(),
+                    workoutDao.getSessionCount(),
+                    setDao.getTotalSetCount(),
+                    muscleMappingDao.getMappedExerciseCount()
+                )
+            }
+            val serialized = DiagnosticsReportBuilder.build(
+                exportedAtMillis = System.currentTimeMillis(),
+                context = context,
+                exerciseCount = counts[0],
+                workoutCount = counts[1],
+                setCount = counts[2],
+                manualMuscleMappingCount = counts[3]
+            ).toString(2)
+            WorkoutDataLimits.requireSafeJsonEnvelope(serialized)
+            serialized
         }
-        val root = JSONObject()
-            .put("schemaVersion", 1)
-            .put("exportedAt", System.currentTimeMillis())
-            .put("app", "GymApp")
-            .put("diagnostics", true)
-            .put("summary", summary)
-        val serialized = root.toString(2)
-        WorkoutDataLimits.requireSafeJsonEnvelope(serialized)
-        serialized
-    }
 
     suspend fun buildBackupJson(
         includeDiagnostics: Boolean = false,

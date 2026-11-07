@@ -1101,6 +1101,8 @@
     <string name="backup_import_title">Импорт резервной копии</string>
     <string name="backup_import_placeholder">Вставь сюда экспортированный JSON из GymApp</string>
     <string name="backup_import_action">Импорт</string>
+    <string name="backup_import_choose_file">Выбрать файл</string>
+    <string name="backup_file_read_failed">Не удалось прочитать файл резервной копии.</string>
     <string name="backup_export_failed">Не удалось экспортировать резервную копию.</string>
     <string name="backup_diagnostics_export_failed">Не удалось экспортировать диагностику.</string>
     <string name="backup_file_too_large">Резервная копия превышает допустимый размер файла.</string>
@@ -1121,6 +1123,14 @@
     <string name="backup_report_exercises_count">Упражнений: %1$d</string>
     <string name="backup_report_workouts_count">Тренировок: %1$d</string>
     <string name="backup_report_sets_count">Подходов: %1$d</string>
+    <string name="backup_report_environment_heading">Окружение</string>
+    <string name="backup_report_app_version">Версия приложения: %1$s (сборка %2$s)</string>
+    <string name="backup_report_system">Система: %1$s</string>
+    <string name="backup_report_locale">Локаль: %1$s</string>
+    <string name="backup_report_mappings_count">Ручные сопоставления мышц: %1$d</string>
+    <string name="backup_report_cloud_sync">Облачная синхронизация: %1$s; успешная синхронизация: %2$s; ошибка: %3$s</string>
+    <string name="backup_report_yes">да</string>
+    <string name="backup_report_no">нет</string>
     <string name="backup_report_diagnostics_notice">Этот диагностический снимок содержит только сводные счётчики.</string>
     <string name="backup_report_diagnostics_exclusions">Он не содержит идентификаторов аккаунта, названий упражнений, заметок, дат и значений подходов.</string>
     <string name="backup_report_exercises_heading">Упражнения</string>
