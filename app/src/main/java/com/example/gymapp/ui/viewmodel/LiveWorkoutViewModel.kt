@@ -43,6 +43,10 @@ import com.example.gymapp.util.LocalizedText
 import java.time.OffsetDateTime
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -444,7 +448,8 @@ internal fun shouldReleaseParticipantLiveReservation(
 ): Boolean = !invitationStillWaiting && !responseInFlight ||
     invitationStillWaiting && role == "participant" && (ignoreInFlight || !responseInFlight)
 
-internal fun resolveLiveInboxRoom(
+/** Inline so the detach callback may call suspend sidecar IO from a suspend caller. */
+internal inline fun resolveLiveInboxRoom(
     boundRoomId: String?,
     inbox: LiveWorkoutInbox,
     isSessionGenerationActive: () -> Boolean,
@@ -751,13 +756,25 @@ private fun workoutHistoryMatchesLiveProgress(
     }
 }
 
+/**
+ * Runs sidecar disk work on [dispatcher]. NonCancellable lets the block run to completion, so a
+ * write is persisted even if the caller is cancelled meanwhile. The RESULT may still be dropped:
+ * on resume a cancelled caller receives a CancellationException instead of the return value.
+ * Callers that must act on the result regardless wrap the whole step in withContext(NonCancellable).
+ */
+internal class LiveWorkoutSidecarIo(private val dispatcher: CoroutineDispatcher) {
+    suspend fun <T> run(block: () -> T): T = withContext(dispatcher + NonCancellable) { block() }
+}
+
 internal class LiveWorkoutViewModel(
     private val applicationContext: Context,
     private val repository: GymRepository,
     private val authManager: CloudAuthManager,
-    private val session: AccountSession.Cloud?
+    private val session: AccountSession.Cloud?,
+    ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : ViewModel(), ActiveLiveWorkoutSync {
     private val sidecarStore = LiveWorkoutSidecarStore(applicationContext)
+    private val sidecarIo = LiveWorkoutSidecarIo(ioDispatcher)
     private val refreshMutex = Mutex()
     private val queueMutex = Mutex()
     private val inProcessPreparedMutationIds = mutableSetOf<String>()
@@ -800,11 +817,14 @@ internal class LiveWorkoutViewModel(
 
     init {
         if (session != null) {
-            restoreBinding()
-            refresh()
-            startPolling()
-            startRealtime()
-            drainQueue()
+            // Sidecar disk read runs off Main; the rest keeps its original order behind it.
+            viewModelScope.launch {
+                restoreBinding()
+                refresh()
+                startPolling()
+                startRealtime()
+                drainQueue()
+            }
         }
     }
 
@@ -836,7 +856,7 @@ internal class LiveWorkoutViewModel(
                             }
                         )
                     }
-                    val boundRoom = sidecarStore.load(cloudSession)?.roomId
+                    val boundRoom = loadSidecar(cloudSession)?.roomId
                     val activeRoom = resolveLiveInboxRoom(
                         boundRoomId = boundRoom,
                         inbox = inbox.copy(
@@ -845,7 +865,7 @@ internal class LiveWorkoutViewModel(
                         isSessionGenerationActive = {
                             authManager.isLiveSessionActive(cloudSession)
                         },
-                        detachBoundRoom = ::detachLiveWorkout
+                        detachBoundRoom = { detachLiveWorkout(it) }
                     )
                     if (activeRoom != null) refreshSnapshotLocked(activeRoom.roomId)
                 } catch (error: CancellationException) {
@@ -884,7 +904,7 @@ internal class LiveWorkoutViewModel(
                     val fresh = _uiState.value.snapshot?.takeIf { it.room.roomId == roomId }
                     val canOpenDraft = fresh?.room?.status == "active" &&
                         fresh.self.state == "joined" &&
-                        sidecarStore.load(cloudSession)?.roomId == roomId &&
+                        loadSidecar(cloudSession)?.roomId == roomId &&
                         repository.getActiveWorkoutSnapshot() != null
                     _uiState.update {
                         it.copy(
@@ -1166,7 +1186,7 @@ internal class LiveWorkoutViewModel(
                         expectedRoomId = roomId,
                         snapshotRoomId = snapshot?.room?.roomId,
                         snapshotStatus = snapshot?.room?.status,
-                        boundRoomId = sidecarStore.load(cloudSession)?.roomId,
+                        boundRoomId = loadSidecar(cloudSession)?.roomId,
                         hasLocalActiveWorkout = repository.getActiveWorkoutSnapshot() != null
                     )
                 } catch (error: CancellationException) {
@@ -1289,12 +1309,12 @@ internal class LiveWorkoutViewModel(
             inProcessPreparedMutationIds.remove(preparation.localMutationId)
             val cloudSession = session ?: return@withLock false
             if (!authManager.isLiveSessionActive(cloudSession)) return@withLock false
-            val binding = sidecarStore.load(cloudSession) ?: return@withLock false
+            val binding = loadSidecar(cloudSession) ?: return@withLock false
             if (binding.preparedMutation?.localMutationId != preparation.localMutationId) {
                 return@withLock false
             }
             val updated = promotePreparedLiveMutation(binding)
-            if (!sidecarStore.save(cloudSession, updated)) {
+            if (!saveSidecar(cloudSession, updated)) {
                 _uiState.update {
                     it.copy(error = LocalizedText(R.string.live_workout_queue_save_failed))
                 }
@@ -1312,7 +1332,7 @@ internal class LiveWorkoutViewModel(
         val recovery = queueMutex.withLock {
             inProcessPreparedMutationIds.remove(preparation.localMutationId)
             val cloudSession = session ?: return@withLock null
-            val binding = sidecarStore.load(cloudSession) ?: return@withLock null
+            val binding = loadSidecar(cloudSession) ?: return@withLock null
             if (binding.preparedMutation?.localMutationId != preparation.localMutationId) {
                 return@withLock null
             }
@@ -1355,7 +1375,7 @@ internal class LiveWorkoutViewModel(
             failClosedForInactiveSession()
             return@withLock LiveLocalMutationPreparation.Rejected
         }
-        val binding = sidecarStore.load(cloudSession) ?: return@withLock if (
+        val binding = loadSidecar(cloudSession) ?: return@withLock if (
             _uiState.value.activeRoomId == null
         ) {
             LiveLocalMutationPreparation.Standalone
@@ -1426,7 +1446,7 @@ internal class LiveWorkoutViewModel(
                 operations = operations
             )
         )
-        if (!sidecarStore.save(cloudSession, updated)) {
+        if (!saveSidecar(cloudSession, updated)) {
             _uiState.update {
                 it.copy(error = LocalizedText(R.string.live_workout_queue_save_failed))
             }
@@ -1438,7 +1458,7 @@ internal class LiveWorkoutViewModel(
         LiveLocalMutationPreparation.Prepared(preparedId)
     }
 
-    private fun rejectPreparedMutationMapping(roomId: String): LiveLocalMutationPreparation {
+    private suspend fun rejectPreparedMutationMapping(roomId: String): LiveLocalMutationPreparation {
         detachLiveWorkout(roomId)
         _uiState.update { it.copy(error = LocalizedText(R.string.live_workout_mapping_failed)) }
         return LiveLocalMutationPreparation.Rejected
@@ -1446,32 +1466,45 @@ internal class LiveWorkoutViewModel(
 
     override suspend fun afterLocalWorkoutDiscarded(): Boolean {
         val cloudSession = session ?: return false
-        val binding = sidecarStore.load(cloudSession) ?: return true
-        // Local discard is already durable. Detach synchronously so navigation never waits for
-        // the network and an old session cannot resume this workout; close the room best-effort.
-        detachLiveWorkout(binding.roomId)
-        viewModelScope.launch {
-            runCatching {
-                if (binding.role == "owner") {
-                    authManager.cancelLiveWorkout(
-                        cloudSession,
-                        binding.roomId,
-                        UUID.randomUUID().toString(),
-                        binding.roomRevision
-                    )
-                } else {
-                    authManager.leaveLiveWorkout(
-                        cloudSession,
-                        binding.roomId,
-                        UUID.randomUUID().toString(),
-                        binding.membershipRevision
-                    )
+        // The local discard is already durable: a cancelled caller (ActiveWorkout VM cleared)
+        // must still detach the sidecar and close the room, so none of this may be skipped.
+        return withContext(NonCancellable) {
+            val binding = loadSidecar(cloudSession) ?: return@withContext true
+            // Detach synchronously so navigation never waits for the network and an old session
+            // cannot resume this workout; close the room best-effort.
+            detachLiveWorkout(binding.roomId)
+            viewModelScope.launch {
+                runCatching {
+                    if (binding.role == "owner") {
+                        authManager.cancelLiveWorkout(
+                            cloudSession,
+                            binding.roomId,
+                            UUID.randomUUID().toString(),
+                            binding.roomRevision
+                        )
+                    } else {
+                        authManager.leaveLiveWorkout(
+                            cloudSession,
+                            binding.roomId,
+                            UUID.randomUUID().toString(),
+                            binding.membershipRevision
+                        )
+                    }
                 }
             }
+            true
         }
-        return true
     }
 
+
+    /** SharedPreferences decode/encode and `commit()` fsync must not run on Main. */
+    private suspend fun loadSidecar(cloudSession: AccountSession.Cloud): LiveWorkoutBinding? =
+        sidecarIo.run { sidecarStore.load(cloudSession) }
+
+    private suspend fun saveSidecar(
+        cloudSession: AccountSession.Cloud,
+        binding: LiveWorkoutBinding
+    ): Boolean = sidecarIo.run { sidecarStore.save(cloudSession, binding) }
 
     private fun drainQueue() {
         if (drainJob?.isActive == true) return
@@ -1479,7 +1512,7 @@ internal class LiveWorkoutViewModel(
             val cloudSession = session ?: return@launch
             while (authManager.isLiveSessionActive(cloudSession)) {
                 val queued = queueMutex.withLock {
-                    val binding = sidecarStore.load(cloudSession) ?: return@withLock null
+                    val binding = loadSidecar(cloudSession) ?: return@withLock null
                     val operation = binding.pendingOperations.firstOrNull()
                         ?: return@withLock null
                     binding to operation
@@ -1573,7 +1606,7 @@ internal class LiveWorkoutViewModel(
         }
     }
 
-    private fun saveQueueSuccess(
+    private suspend fun saveQueueSuccess(
         cloudSession: AccountSession.Cloud,
         binding: LiveWorkoutBinding,
         operation: LivePendingOperation,
@@ -1581,7 +1614,7 @@ internal class LiveWorkoutViewModel(
         roomRevision: Int,
         membershipRevision: Int = binding.membershipRevision
     ) {
-        val current = sidecarStore.load(cloudSession) ?: return
+        val current = loadSidecar(cloudSession) ?: return
         if (current.pendingOperations.firstOrNull()?.clientOperationId != operation.clientOperationId) {
             return
         }
@@ -1591,7 +1624,7 @@ internal class LiveWorkoutViewModel(
             progressRevision = progressRevision,
             pendingOperations = current.pendingOperations.drop(1)
         )
-        check(sidecarStore.save(cloudSession, updated)) {
+        check(saveSidecar(cloudSession, updated)) {
             "Live workout receipt could not be persisted."
         }
         updateBindingUi(updated)
@@ -1604,12 +1637,12 @@ internal class LiveWorkoutViewModel(
         val snapshot = authManager.loadLiveWorkoutSnapshot(cloudSession, roomId)
         _uiState.update { it.copy(snapshot = snapshot, peerProgress = peerProgress(snapshot)) }
         return queueMutex.withLock {
-            val current = sidecarStore.load(cloudSession)
+            val current = loadSidecar(cloudSession)
                 ?.takeIf { it.roomId == roomId }
                 ?: return@withLock false
             when (val result = reconcileLiveQueueWithSnapshot(current, snapshot)) {
                 is LiveQueueReconcileResult.Reconciled -> {
-                    if (!sidecarStore.save(cloudSession, result.binding)) {
+                    if (!saveSidecar(cloudSession, result.binding)) {
                         detachLiveWorkout(roomId)
                         false
                     } else {
@@ -1651,7 +1684,7 @@ internal class LiveWorkoutViewModel(
         if (snapshot.room.status != "active") return
         ensureReservationForSnapshot(cloudSession, snapshot)
 
-        var existingBinding = sidecarStore.load(cloudSession)
+        var existingBinding = loadSidecar(cloudSession)
         if (existingBinding?.preparedMutation != null) {
             existingBinding = recoverPreparedLocalMutation(cloudSession, existingBinding)
                 ?: return
@@ -1705,9 +1738,7 @@ internal class LiveWorkoutViewModel(
                     }
                 }
             } catch (error: Throwable) {
-                sidecarStore.load(cloudSession)
-                    ?.takeIf { it.roomId == roomId }
-                    ?.let { sidecarStore.clear(cloudSession) }
+                sidecarIo.run { sidecarStore.clearIfRoom(cloudSession, roomId) }
                 throw error
             }
             when (imported) {
@@ -1732,12 +1763,12 @@ internal class LiveWorkoutViewModel(
             }
         } else if (existingBinding.roomId == roomId) {
             queueMutex.withLock {
-                val latestBinding = sidecarStore.load(cloudSession)
+                val latestBinding = loadSidecar(cloudSession)
                     ?.takeIf { it.roomId == roomId }
                     ?: return@withLock
                 val reconciled = reconcileLiveQueueWithSnapshot(latestBinding, snapshot)
                 if (reconciled is LiveQueueReconcileResult.Reconciled &&
-                    sidecarStore.save(cloudSession, reconciled.binding)
+                    saveSidecar(cloudSession, reconciled.binding)
                 ) {
                     updateBindingUi(reconciled.binding)
                     drainQueue()
@@ -1792,7 +1823,7 @@ internal class LiveWorkoutViewModel(
         var shouldDrain = false
         val recovered = queueMutex.withLock {
             if (!authManager.isLiveSessionActive(cloudSession)) return@withLock null
-            val current = sidecarStore.load(cloudSession) ?: return@withLock null
+            val current = loadSidecar(cloudSession) ?: return@withLock null
             if (current.preparedMutation?.localMutationId != observedPrepared.localMutationId) {
                 return@withLock current
             }
@@ -1813,7 +1844,7 @@ internal class LiveWorkoutViewModel(
                     return@withLock null
                 }
             }
-            if (!sidecarStore.save(cloudSession, updated)) {
+            if (!saveSidecar(cloudSession, updated)) {
                 _uiState.update {
                     it.copy(error = LocalizedText(R.string.live_workout_queue_save_failed))
                 }
@@ -1835,7 +1866,7 @@ internal class LiveWorkoutViewModel(
             resultingSize <= Int.MAX_VALUE.toLong() - binding.progressRevision.toLong()
     }
 
-    private fun handleMissingBinding(): Boolean {
+    private suspend fun handleMissingBinding(): Boolean {
         val roomId = _uiState.value.activeRoomId ?: return true
         detachLiveWorkout(roomId)
         _uiState.update {
@@ -1913,7 +1944,7 @@ internal class LiveWorkoutViewModel(
         }
         val openRooms = initiallyOpenRooms.filterNot { it.roomId == blockedStaleRoomId }
         sidecarStore.sessionMismatchedReservation(cloudSession)?.let { previous ->
-            val boundRoomId = sidecarStore.load(cloudSession)?.roomId
+            val boundRoomId = loadSidecar(cloudSession)?.roomId
             val room = if (boundRoomId != null) {
                 null
             } else if (previous.phase == LiveWorkoutReservationPhase.Preparing) {
@@ -1949,7 +1980,7 @@ internal class LiveWorkoutViewModel(
         }
         val draftSendReceipt = sidecarStore.draftSend(cloudSession)
         var current = sidecarStore.reservation(cloudSession)
-        val boundRoomId = sidecarStore.load(cloudSession)?.roomId
+        val boundRoomId = loadSidecar(cloudSession)?.roomId
         if (draftSendReceipt != null) {
             val authoritativeRoom = resolveAuthoritativeLiveWorkoutDraftSendRoom(
                 receipt = draftSendReceipt,
@@ -2123,7 +2154,7 @@ internal class LiveWorkoutViewModel(
         }
         val roomId = snapshot.room.roomId
         val current = sidecarStore.reservation(cloudSession)
-        val bound = sidecarStore.load(cloudSession)?.roomId == roomId &&
+        val bound = loadSidecar(cloudSession)?.roomId == roomId &&
             repository.getActiveWorkoutSnapshot() != null
         if (bound) {
             current?.takeIf { it.roomId == roomId }?.let {
@@ -2173,9 +2204,9 @@ internal class LiveWorkoutViewModel(
     private fun liveTimestampMillis(value: String): Long =
         OffsetDateTime.parse(value).toInstant().toEpochMilli()
 
-    private fun restoreBinding() {
+    private suspend fun restoreBinding() {
         val cloudSession = session ?: return
-        val binding = sidecarStore.load(cloudSession) ?: return
+        val binding = loadSidecar(cloudSession) ?: return
         updateBindingUi(binding)
         if (binding.preparedMutation != null) {
             viewModelScope.launch {
@@ -2201,12 +2232,10 @@ internal class LiveWorkoutViewModel(
         }
     }
 
-    private fun detachLiveWorkout(roomId: String) {
+    private suspend fun detachLiveWorkout(roomId: String) {
         val cloudSession = session
         if (cloudSession != null) {
-            sidecarStore.load(cloudSession)?.takeIf { it.roomId == roomId }?.let {
-                sidecarStore.clear(cloudSession)
-            }
+            sidecarIo.run { sidecarStore.clearIfRoom(cloudSession, roomId) }
         }
         _uiState.update {
             it.copy(
@@ -2231,14 +2260,14 @@ internal class LiveWorkoutViewModel(
         )
     }
 
-    private fun handleRefreshError(error: Throwable) {
+    private suspend fun handleRefreshError(error: Throwable) {
         val cloudSession = session
         if (cloudSession == null || !authManager.isLiveSessionActive(cloudSession)) {
             failClosedForInactiveSession()
             return
         }
         if (error is LiveWorkoutGatewayException && error.isResourceUnavailable) {
-            _uiState.value.activeRoomId?.let(::detachLiveWorkout)
+            _uiState.value.activeRoomId?.let { detachLiveWorkout(it) }
         }
         _uiState.update {
             it.copy(

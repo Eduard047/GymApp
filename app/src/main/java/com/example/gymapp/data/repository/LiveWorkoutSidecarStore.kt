@@ -894,6 +894,13 @@ internal class LiveWorkoutSidecarStore(context: Context) {
         return cleared
     }
 
+    /** Check-and-clear in one locked step: never wipes a binding saved for another room. */
+    @Synchronized
+    fun clearIfRoom(session: AccountSession.Cloud, roomId: String): Boolean {
+        if (load(session)?.roomId != roomId) return false
+        return clear(session)
+    }
+
     /** Removes only durable live state owned by the deleted cloud account. */
     @Synchronized
     fun clearCloudAccountLocalState(userId: String): Boolean {

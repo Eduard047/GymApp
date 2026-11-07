@@ -454,6 +454,17 @@ class RestTimerService : Service() {
 /** Posts the "rest finished" alert for a rest that outlived the short foreground service. */
 class RestTimerAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        RestTimerService.postFinished(context.applicationContext)
+        // Preference reads and the notification build stay off the main thread.
+        val pending = goAsync()
+        val appContext = context.applicationContext
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                RestTimerService.postFinished(appContext)
+            } catch (_: Exception) {
+                // A failed alert must not crash the receiver; the app shows the current state.
+            } finally {
+                pending.finish()
+            }
+        }
     }
 }
