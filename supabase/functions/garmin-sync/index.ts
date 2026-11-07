@@ -279,12 +279,28 @@ function authenticatedClient(
   });
 }
 
+const RPC_TIMEOUT_MS = 10_000;
+
 function capabilityClient(
   supabaseUrl: string,
   databaseSecretKey: string,
 ) {
   return createClient(supabaseUrl, databaseSecretKey, {
     auth: { persistSession: false, autoRefreshToken: false },
+    // supabase-js has no request timeout; a stalled PostgREST call would hold
+    // the Edge invocation. An abort surfaces as an `error` result, which each
+    // caller already maps to its generic failure response.
+    global: {
+      fetch: (input, init) => {
+        const timeout = AbortSignal.timeout(RPC_TIMEOUT_MS);
+        return fetch(input, {
+          ...init,
+          signal: init?.signal
+            ? AbortSignal.any([init.signal, timeout])
+            : timeout,
+        });
+      },
+    },
   });
 }
 
