@@ -694,6 +694,29 @@ struct GymStepCapsule: View {
     }
 }
 
+/// Rep stepping shared by every reps capsule: never below 1, never above the
+/// same cap the stores validate (`ActiveWorkoutStore.maximumReps`, like Android).
+enum GymRepsStep {
+    static let minimum = 1
+    static let maximum = ActiveWorkoutStore.maximumReps
+
+    static func canStepDown(_ reps: Int) -> Bool { reps > minimum }
+    static func canStepUp(_ reps: Int) -> Bool { reps < maximum }
+    static func steppedDown(_ reps: Int) -> Int { max(minimum, reps - 1) }
+    static func steppedUp(_ reps: Int) -> Int { min(maximum, reps + 1) }
+}
+
+/// The step shown for a weight direction that cannot move: the default 2.5 kg, or
+/// the smallest gap between a machine's allowed weights. Non-finite or
+/// non-positive gaps (duplicates, unsorted lists) are ignored.
+func gymNominalWeightStep(allowedWeights: [Double]) -> Double {
+    guard allowedWeights.count >= 2 else { return 2.5 }
+    let gaps = zip(allowedWeights, allowedWeights.dropFirst())
+        .map { $1 - $0 }
+        .filter { $0.isFinite && $0 > 0 }
+    return gaps.min() ?? 2.5
+}
+
 /// "−2,5   вес   +2,5" capsule: honors a machine's allowed weights and shows
 /// the nominal step even when that direction is blocked.
 struct GymWeightStepCapsule: View {
@@ -712,11 +735,7 @@ struct GymWeightStepCapsule: View {
         // 0 kg or at the machine's lowest stop): the default 2.5 kg
         // increment, or the smallest gap between the machine's allowed
         // weights when it has one.
-        let nominalStep: Double = {
-            guard allowedWeights.count >= 2 else { return 2.5 }
-            let gaps = zip(allowedWeights, allowedWeights.dropFirst()).map { $1 - $0 }
-            return gaps.min() ?? 2.5
-        }()
+        let nominalStep = gymNominalWeightStep(allowedWeights: allowedWeights)
         let minusWeight = TrainingTools.stepWeight(weight, direction: -1, allowed: allowedWeights)
         let minusCanMove = minusWeight != weight
         let minusDelta = minusCanMove ? abs(minusWeight - weight) : nominalStep
@@ -752,27 +771,22 @@ struct GymRepsStepCapsule: View {
     @Binding var reps: Int
     var disabled = false
 
-    /// Same limit the active-workout store enforces.
-    private static let maxReps = ActiveWorkoutStore.maximumReps
-
-    private static func steppedUp(_ reps: Int) -> Int { min(maxReps, reps + 1) }
-
     var body: some View {
         GymStepCapsule(
             minusLabel: "minus",
-            minusDisabled: disabled || reps <= 1,
-            minusAction: { reps = max(1, reps - 1) },
+            minusDisabled: disabled || !GymRepsStep.canStepDown(reps),
+            minusAction: { reps = GymRepsStep.steppedDown(reps) },
             centerLabel: gymText("reps", "повт.", "повт.", languageCode: gymCurrentLanguageCode()),
             plusLabel: "plus",
-            plusDisabled: disabled || reps >= Self.maxReps,
-            plusAction: { reps = Self.steppedUp(reps) },
+            plusDisabled: disabled || !GymRepsStep.canStepUp(reps),
+            plusAction: { reps = GymRepsStep.steppedUp(reps) },
             accessibilityLabelText: gymText("Reps", "Повторення", "Повторы", languageCode: gymCurrentLanguageCode()),
             accessibilityValueText: reps.formatted(.number.locale(gymAppLocale())),
             useSymbolGlyphs: true,
             adjustableAction: { direction in
                 switch direction {
-                case .increment: reps = Self.steppedUp(reps)
-                case .decrement: reps = max(1, reps - 1)
+                case .increment: reps = GymRepsStep.steppedUp(reps)
+                case .decrement: reps = GymRepsStep.steppedDown(reps)
                 @unknown default: break
                 }
             }
@@ -793,11 +807,7 @@ func gymWeightStepTargets(
     weight: Double,
     allowedWeights: [Double]
 ) -> (minus: Double, minusDelta: Double, plus: Double, plusDelta: Double) {
-    let nominalStep: Double = {
-        guard allowedWeights.count >= 2 else { return 2.5 }
-        let gaps = zip(allowedWeights, allowedWeights.dropFirst()).map { $1 - $0 }
-        return gaps.min() ?? 2.5
-    }()
+    let nominalStep = gymNominalWeightStep(allowedWeights: allowedWeights)
     let minus = TrainingTools.stepWeight(weight, direction: -1, allowed: allowedWeights)
     let plus = TrainingTools.stepWeight(weight, direction: 1, allowed: allowedWeights)
     return (
@@ -950,15 +960,15 @@ struct GymSetEditorCapsules: View {
     private var repsCapsule: some View {
         GymSetValueCapsule(
             minusSystemImage: "minus",
-            minusDisabled: disabled || reps <= 1,
-            minusAction: { reps = max(1, reps - 1) },
+            minusDisabled: disabled || !GymRepsStep.canStepDown(reps),
+            minusAction: { reps = GymRepsStep.steppedDown(reps) },
             minusAccessibilityLabel: gymText(
                 "Decrease reps", "Зменшити повторення", "Уменьшить повторения",
                 languageCode: gymCurrentLanguageCode()
             ),
             plusSystemImage: "plus",
-            plusDisabled: disabled,
-            plusAction: { reps += 1 },
+            plusDisabled: disabled || !GymRepsStep.canStepUp(reps),
+            plusAction: { reps = GymRepsStep.steppedUp(reps) },
             plusAccessibilityLabel: gymText(
                 "Increase reps", "Збільшити повторення", "Увеличить повторения",
                 languageCode: gymCurrentLanguageCode()
