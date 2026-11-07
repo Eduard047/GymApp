@@ -752,6 +752,11 @@ struct GymRepsStepCapsule: View {
     @Binding var reps: Int
     var disabled = false
 
+    /// Same limit the active-workout store enforces.
+    private static let maxReps = ActiveWorkoutStore.maximumReps
+
+    private static func steppedUp(_ reps: Int) -> Int { min(maxReps, reps + 1) }
+
     var body: some View {
         GymStepCapsule(
             minusLabel: "minus",
@@ -759,14 +764,14 @@ struct GymRepsStepCapsule: View {
             minusAction: { reps = max(1, reps - 1) },
             centerLabel: gymText("reps", "повт.", "повт.", languageCode: gymCurrentLanguageCode()),
             plusLabel: "plus",
-            plusDisabled: disabled,
-            plusAction: { reps += 1 },
+            plusDisabled: disabled || reps >= Self.maxReps,
+            plusAction: { reps = Self.steppedUp(reps) },
             accessibilityLabelText: gymText("Reps", "Повторення", "Повторы", languageCode: gymCurrentLanguageCode()),
             accessibilityValueText: reps.formatted(.number.locale(gymAppLocale())),
             useSymbolGlyphs: true,
             adjustableAction: { direction in
                 switch direction {
-                case .increment: reps += 1
+                case .increment: reps = Self.steppedUp(reps)
                 case .decrement: reps = max(1, reps - 1)
                 @unknown default: break
                 }
@@ -914,7 +919,7 @@ struct GymSetEditorCapsules: View {
                 TextField(
                     "0",
                     value: $weight,
-                    format: .number.precision(.fractionLength(0 ... 2))
+                    format: GymWeightFieldFormat(languageCode: gymCurrentLanguageCode())
                 )
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.trailing)

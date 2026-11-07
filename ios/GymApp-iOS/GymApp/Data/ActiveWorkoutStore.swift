@@ -100,8 +100,8 @@ final class ActiveWorkoutStore: ObservableObject {
     private static let maximumCatalogKeyBytes = 256
     private static let maximumJSONNestingDepth = 16
     private static let maximumJSONContainers = 25_000
-    private static let maximumWeight = 1_000_000.0
-    private static let maximumReps = 10_000
+    nonisolated static let maximumWeight = 1_000_000.0
+    nonisolated static let maximumReps = 10_000
     private static let maximumRestSeconds = 30 * 60
     private static let minimumSupportedTimestampMilliseconds: Int64 = -62_135_769_600_000
     private static let maximumSupportedTimestampMilliseconds: Int64 = 64_092_211_200_000
