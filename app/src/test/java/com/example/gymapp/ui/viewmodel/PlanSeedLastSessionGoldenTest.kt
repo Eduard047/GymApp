@@ -42,6 +42,9 @@ class PlanSeedLastSessionGoldenTest {
         val editedReps = fresh.map { it.copy(sets = listOf(SetInputState(weight = "", reps = "6"))) }
         assertEquals(editedReps, withSeedSetsIfPristine(editedReps, 1L, seed))
         assertEquals(fresh, withSeedSetsIfPristine(fresh, 2L, seed))
+        // A legacy blank-weight default card is still pristine; a user-set non-default weight is not.
+        val blank = fresh.map { it.copy(sets = listOf(SetInputState(weight = "", reps = "10"))) }
+        assertEquals(seeded, withSeedSetsIfPristine(blank, 1L, seed).single().sets)
     }
 
     private fun JSONObject.toEntry(setId: Long) = ExerciseHistoryEntry(

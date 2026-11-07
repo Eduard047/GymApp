@@ -532,6 +532,19 @@ internal fun movedExerciseDraftTo(
 /** Reps a freshly added set starts with, matching the iPhone plan editor. */
 internal const val DEFAULT_PLANNED_REPS = "10"
 
+/** Weight a fresh set starts with when no previous or last-logged weight is known, like the iPhone editor (0 kg). */
+internal const val DEFAULT_PLANNED_WEIGHT = "0"
+
+/** True for the untouched default weight: blank (legacy drafts) or [DEFAULT_PLANNED_WEIGHT]. */
+internal fun isPristinePlannedWeight(weight: String): Boolean =
+    weight.isBlank() || weight == DEFAULT_PLANNED_WEIGHT
+
+/** The default single set: [DEFAULT_PLANNED_REPS] reps and the last known weight, or 0. */
+internal fun defaultPlannedSet(lastWeight: Double?): SetInputState = SetInputState(
+    weight = lastWeight?.let(::formatPlannedWeight) ?: DEFAULT_PLANNED_WEIGHT,
+    reps = DEFAULT_PLANNED_REPS
+)
+
 /**
  * New exercise cards are appended, so the first added stays first (insertion order). The card
  * starts with one set of [DEFAULT_PLANNED_REPS] reps; its weight is seeded by [withInitialWeightIfBlank].
@@ -543,7 +556,7 @@ internal fun appendExerciseDraft(
 ): List<ExerciseInputState> = current + ExerciseInputState(
     draftId = draftId,
     exerciseId = exerciseId,
-    sets = listOf(SetInputState(reps = DEFAULT_PLANNED_REPS))
+    sets = listOf(SetInputState(weight = DEFAULT_PLANNED_WEIGHT, reps = DEFAULT_PLANNED_REPS))
 )
 
 /**
@@ -556,7 +569,7 @@ internal fun withInitialWeightIfBlank(
     lastWeight: Double
 ): List<ExerciseInputState> = current.map { draft ->
     val onlySet = draft.sets.singleOrNull()
-    if (draft.draftId == draftId && onlySet != null && onlySet.weight.isBlank() &&
+    if (draft.draftId == draftId && onlySet != null && isPristinePlannedWeight(onlySet.weight) &&
         (onlySet.reps.isBlank() || onlySet.reps == DEFAULT_PLANNED_REPS)
     ) {
         draft.copy(sets = listOf(onlySet.copy(weight = formatPlannedWeight(lastWeight))))
@@ -570,7 +583,8 @@ internal fun withInitialWeightIfBlank(
  * known weight and [DEFAULT_PLANNED_REPS] when there is no previous set (or its field is blank).
  */
 internal fun nextSetInput(previous: SetInputState?, lastWeight: Double?): SetInputState = SetInputState(
-    weight = previous?.weight?.takeIf { it.isNotBlank() } ?: lastWeight?.let(::formatPlannedWeight).orEmpty(),
+    weight = previous?.weight?.takeIf { it.isNotBlank() }
+        ?: lastWeight?.let(::formatPlannedWeight) ?: DEFAULT_PLANNED_WEIGHT,
     reps = previous?.reps?.takeIf { it.isNotBlank() } ?: DEFAULT_PLANNED_REPS
 )
 
@@ -727,7 +741,7 @@ internal fun lastSessionSetSeed(history: List<ExerciseHistoryEntry>, exerciseId:
 
 /**
  * Replaces the sets of a freshly added card with [seed], but only while the card is still the
- * untouched default (one set, blank weight, default or blank reps); never overwrites user edits.
+ * untouched default (one set, blank or 0 weight, default or blank reps); never overwrites user edits.
  */
 internal fun withSeedSetsIfPristine(
     current: List<ExerciseInputState>,
@@ -735,7 +749,7 @@ internal fun withSeedSetsIfPristine(
     seed: List<SetSeed>
 ): List<ExerciseInputState> = current.map { draft ->
     val onlySet = draft.sets.singleOrNull()
-    if (seed.isNotEmpty() && draft.draftId == draftId && onlySet != null && onlySet.weight.isBlank() &&
+    if (seed.isNotEmpty() && draft.draftId == draftId && onlySet != null && isPristinePlannedWeight(onlySet.weight) &&
         (onlySet.reps.isBlank() || onlySet.reps == DEFAULT_PLANNED_REPS)
     ) {
         draft.copy(sets = seed.map { SetInputState(weight = formatPlannedWeight(it.weight), reps = it.reps.toString()) })
@@ -1095,7 +1109,7 @@ class AddWorkoutViewModel internal constructor(
                     )
                     workoutDateExplicit.value = restored.workoutDateExplicit
                     note.value = restored.note
-                    exerciseDrafts.value = restored.exerciseDrafts
+                    replaceExerciseDrafts(restored.exerciseDrafts)
                     smartWorkoutEffort.value = restored.smartWorkoutEffort
                     isDirty.value = restored.isDirty
                     nextDraftId = (restored.exerciseDrafts.maxOfOrNull { it.draftId } ?: 0L) + 1L
@@ -1401,7 +1415,7 @@ class AddWorkoutViewModel internal constructor(
             workoutDate.value = System.currentTimeMillis()
             workoutDateExplicit.value = false
             note.value = ""
-            exerciseDrafts.value = normalizedPlan.exercises.zip(exerciseIds).map { (exercise, id) ->
+            replaceExerciseDrafts(normalizedPlan.exercises.zip(exerciseIds).map { (exercise, id) ->
                 ExerciseInputState(
                     draftId = nextDraftId++,
                     exerciseId = id,
@@ -1412,7 +1426,7 @@ class AddWorkoutViewModel internal constructor(
                         )
                     }
                 )
-            }
+            })
             isDirty.value = false
             hasValidationError.value = false
             true
@@ -1484,7 +1498,7 @@ class AddWorkoutViewModel internal constructor(
 
     private fun applyLaunchPlanUnchecked(plan: SmartWorkoutLaunchPlan): Boolean {
         resetWatchPlanSyncResult()
-        exerciseDrafts.value = plan.exercises.map { exercise ->
+        replaceExerciseDrafts(plan.exercises.map { exercise ->
             ExerciseInputState(
                 draftId = nextDraftId++,
                 exerciseId = exercise.exerciseId,
@@ -1495,7 +1509,7 @@ class AddWorkoutViewModel internal constructor(
                     )
                 }
             )
-        }
+        })
         smartWorkoutEffort.value = plan.requestedEffort
         generatedSmartPlan.value = SmartWorkoutPlanSummaryUiModel(
             focus = plan.focus,
@@ -1606,7 +1620,7 @@ class AddWorkoutViewModel internal constructor(
         resetWatchPlanSyncResult()
         markDraftDirty()
         hasValidationError.value = false
-        exerciseDrafts.value = plan.exercises.map { plannedExercise ->
+        replaceExerciseDrafts(plan.exercises.map { plannedExercise ->
             ExerciseInputState(
                 draftId = nextDraftId++,
                 exerciseId = plannedExercise.exercise.id,
@@ -1617,7 +1631,7 @@ class AddWorkoutViewModel internal constructor(
                     )
                 }
             )
-        }
+        })
         generatedSmartPlan.value = SmartWorkoutPlanSummaryUiModel(
             focus = plan.focus,
             variant = plan.variant,
@@ -1818,6 +1832,14 @@ class AddWorkoutViewModel internal constructor(
         }
         val draftId = addedDraftId ?: return
         hasValidationError.value = false
+        seedPristineCard(draftId, exerciseId)
+    }
+
+    /**
+     * Seeds a freshly added or just-picked card: the sets of the exercise's last completed session,
+     * else the last known weight; both apply only while the card is still pristine.
+     */
+    private fun seedPristineCard(draftId: Long, exerciseId: Long) {
         val loadedSeed = lastSessionSetSeed(exerciseHistory.value, exerciseId)
         if (loadedSeed != null) {
             exerciseDrafts.update { current -> withSeedSetsIfPristine(current, draftId, loadedSeed) }
@@ -1846,19 +1868,31 @@ class AddWorkoutViewModel internal constructor(
         }
     }
 
+    /**
+     * Replaces the whole exercise list (smart plan, template, preset, voice replace, restore). A
+     * pending "Undo" for a removed card refers to the old plan, so it is dropped here.
+     */
+    private fun replaceExerciseDrafts(drafts: List<ExerciseInputState>) {
+        exerciseDrafts.value = drafts
+        removedExercise.value = null
+    }
+
     fun removeExerciseDraft(draftId: Long) {
         resetWatchPlanSyncResult()
         generatedSmartPlan.value = null
         smartAlternativePicker.value = null
         clearStartFieldErrors()
+        var removal: RemovedExerciseDraft? = null
         exerciseDrafts.update { current ->
             val result = withExerciseRemoved(current, draftId, nextRemovalToken)
                 ?: return@update current
-            nextRemovalToken += 1L
-            removedExercise.value = result.second
-            markDraftDirty()
+            removal = result.second
             result.first
         }
+        val removed = removal ?: return
+        nextRemovalToken += 1L
+        removedExercise.value = removed
+        markDraftDirty()
     }
 
     /**
@@ -1944,21 +1978,30 @@ class AddWorkoutViewModel internal constructor(
             return false
         }
         val current = exerciseDrafts.value
-        if ((if (replace) 0 else current.size) + drafts.size > WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) {
+        val plannedIds = if (replace) emptySet() else current.mapNotNull { it.exerciseId }.toSet()
+        val accepted = drafts.filter { it.exerciseId !in plannedIds }.distinctBy { it.exerciseId }
+        if (accepted.isEmpty()) {
+            presetMessage.value = WorkoutPresetMessage(
+                R.string.plan_editor_exercise_already_added,
+                isError = true
+            )
+            return false
+        }
+        if ((if (replace) 0 else current.size) + accepted.size > WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) {
             hasValidationError.value = true
             return false
         }
         resetWatchPlanSyncResult()
         generatedSmartPlan.value = null
         smartAlternativePicker.value = null
-        val added = drafts.map { draft ->
+        val added = accepted.map { draft ->
             ExerciseInputState(
                 draftId = nextDraftId++,
                 exerciseId = draft.exerciseId,
                 sets = draft.sets.map { SetInputState(VoiceWorkoutDraftParser.formatWeight(it.weight), it.reps.toString()) }
             )
         }
-        exerciseDrafts.value = if (replace) added else current + added
+        if (replace) replaceExerciseDrafts(added) else exerciseDrafts.value = current + added
         hasValidationError.value = false
         markDraftDirty()
         return true
@@ -1969,25 +2012,36 @@ class AddWorkoutViewModel internal constructor(
             hasValidationError.value = true
             return
         }
+        if (exerciseDrafts.value.any { it.exerciseId == exerciseId && it.draftId != draftId }) {
+            presetMessage.value = WorkoutPresetMessage(
+                R.string.plan_editor_exercise_already_added,
+                isError = true
+            )
+            return
+        }
         hasValidationError.value = false
         resetWatchPlanSyncResult()
         generatedSmartPlan.value = null
         smartAlternativePicker.value = null
+        val knownWeight = uiState.value.lastWeights[exerciseId]
+        var changed = false
         exerciseDrafts.update { current ->
             current.map { draft ->
                 if (draft.draftId == draftId && draft.exerciseId != exerciseId) {
+                    changed = true
                     markDraftDirty()
                     draft.copy(
                         exerciseId = exerciseId,
                         // A load from another movement (for example barbell bench to dumbbells)
-                        // is never transferable. Keep manual selection explicit and safe.
-                        sets = listOf(SetInputState())
+                        // is never transferable; start from the default set with the last weight, or 0.
+                        sets = listOf(defaultPlannedSet(knownWeight))
                     )
                 } else {
                     draft
                 }
             }
         }
+        if (changed) seedPristineCard(draftId, exerciseId)
     }
 
     fun addSet(draftId: Long) {
@@ -2077,6 +2131,7 @@ class AddWorkoutViewModel internal constructor(
     fun removeSet(draftId: Long, setIndex: Int) {
         clearStartFieldErrors()
         resetWatchPlanSyncResult()
+        val lastWeightsSnapshot = uiState.value.lastWeights
         exerciseDrafts.update { current ->
             current.map { draft ->
                 if (draft.draftId != draftId) {
@@ -2085,7 +2140,11 @@ class AddWorkoutViewModel internal constructor(
                     val updatedSets = draft.sets.filterIndexed { index, _ -> index != setIndex }
                     if (updatedSets.size == draft.sets.size) return@map draft
                     markDraftDirty()
-                    draft.copy(sets = if (updatedSets.isEmpty()) listOf(SetInputState()) else updatedSets)
+                    draft.copy(
+                        sets = updatedSets.ifEmpty {
+                            listOf(defaultPlannedSet(draft.exerciseId?.let { lastWeightsSnapshot[it] }))
+                        }
+                    )
                 }
             }
         }
@@ -2338,7 +2397,7 @@ class AddWorkoutViewModel internal constructor(
             )
             return
         }
-        exerciseDrafts.value = latest.workoutExercises.map { exerciseDetails ->
+        replaceExerciseDrafts(latest.workoutExercises.map { exerciseDetails ->
             val loweredSets = exerciseDetails.sets.map { set ->
                 SetInputState(
                     weight = formatWeight(deloadWeight(set.weight)),
@@ -2350,7 +2409,7 @@ class AddWorkoutViewModel internal constructor(
                 exerciseId = exerciseDetails.workoutExercise.exerciseId,
                 sets = loweredSets.ifEmpty { listOf(SetInputState()) }
             )
-        }
+        })
         note.value = deloadNote(note.value, deloadLabel)
         markDraftDirty()
         presetMessage.value = WorkoutPresetMessage(
@@ -2377,7 +2436,7 @@ class AddWorkoutViewModel internal constructor(
             )
             return
         }
-        exerciseDrafts.value = picked.map { exercise ->
+        replaceExerciseDrafts(picked.map { exercise ->
             val exerciseHistoryEntries = history.filter { it.exerciseId == exercise.id }
             val recommendation = WorkoutRecommendationEngine.buildForExercise(
                 exerciseId = exercise.id,
@@ -2397,7 +2456,7 @@ class AddWorkoutViewModel internal constructor(
                     )
                 }.ifEmpty { listOf(SetInputState()) }
             )
-        }
+        })
         markDraftDirty()
         presetMessage.value = WorkoutPresetMessage(
             R.string.add_workout_preset_loaded,
@@ -2492,7 +2551,7 @@ class AddWorkoutViewModel internal constructor(
             )
         }
 
-        exerciseDrafts.value = drafts
+        replaceExerciseDrafts(drafts)
         hasValidationError.value = false
     }
 

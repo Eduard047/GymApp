@@ -105,8 +105,15 @@ class WorkoutSetChipActionsTest {
     }
 
     @Test
-    fun applyToAllKeepsBlankFieldsOfTheChosenSet() {
-        val result = sets.withAllSetsLike(1)
-        assertEquals(List(3) { SetInputState("", "10") }, result)
+    fun applyToAllIsUnavailableWhenTheChosenSetHasBlankOrInvalidFields() {
+        assertNull(sets.withAllSetsLike(1))
+        val partial = listOf(SetInputState("60", ""), SetInputState("50", "8"))
+        assertNull(partial.withAllSetsLike(0))
+        val noWeight = listOf(SetInputState("", "8"), SetInputState("50", "8"))
+        assertNull(noWeight.withAllSetsLike(0))
+        val bad = listOf(SetInputState("abc", "8"), SetInputState("50", "8"))
+        assertNull(bad.withAllSetsLike(0))
+        val zeroReps = listOf(SetInputState("60", "0"), SetInputState("50", "8"))
+        assertNull(zeroReps.withAllSetsLike(0))
     }
 }

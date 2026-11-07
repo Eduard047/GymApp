@@ -213,9 +213,9 @@ class AddWorkoutViewModelTest {
     }
 
     @Test
-    fun newExerciseCardStartsWithOneSetOfTenRepsAndBlankWeight() {
+    fun newExerciseCardStartsWithOneSetOfTenRepsAndZeroWeight() {
         val set = appendExerciseDraft(emptyList(), draftId = 1L, exerciseId = 5L).single().sets.single()
-        assertEquals("", set.weight)
+        assertEquals("0", set.weight)
         assertEquals("10", set.reps)
     }
 
@@ -233,6 +233,15 @@ class AddWorkoutViewModelTest {
     }
 
     @Test
+    fun defaultPlannedSetUsesTheLastWeightOrZero() {
+        assertEquals(SetInputState(weight = "0", reps = "10"), defaultPlannedSet(null))
+        assertEquals(SetInputState(weight = "62.5", reps = "10"), defaultPlannedSet(62.5))
+        assertTrue(isPristinePlannedWeight(""))
+        assertTrue(isPristinePlannedWeight("0"))
+        assertFalse(isPristinePlannedWeight("0.5"))
+    }
+
+    @Test
     fun addSetCopiesThePreviousSetWeightAndReps() {
         val next = nextSetInput(SetInputState(weight = "80", reps = "5"), lastWeight = 60.0)
         assertEquals(SetInputState(weight = "80", reps = "5"), next)
@@ -242,7 +251,7 @@ class AddWorkoutViewModelTest {
     fun addSetWithoutAPreviousSetUsesLastWeightAndTenReps() {
         assertEquals(SetInputState(weight = "60", reps = "10"), nextSetInput(null, lastWeight = 60.0))
         assertEquals(SetInputState(weight = "62.5", reps = "10"), nextSetInput(null, lastWeight = 62.5))
-        assertEquals(SetInputState(weight = "", reps = "10"), nextSetInput(null, lastWeight = null))
+        assertEquals(SetInputState(weight = "0", reps = "10"), nextSetInput(null, lastWeight = null))
     }
 
     @Test
@@ -252,7 +261,7 @@ class AddWorkoutViewModelTest {
             nextSetInput(SetInputState(weight = "", reps = ""), lastWeight = 60.0)
         )
         assertEquals(
-            SetInputState(weight = "", reps = "8"),
+            SetInputState(weight = "0", reps = "8"),
             nextSetInput(SetInputState(weight = "", reps = "8"), lastWeight = null)
         )
     }

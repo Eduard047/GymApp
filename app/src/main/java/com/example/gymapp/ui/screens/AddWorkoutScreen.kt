@@ -478,6 +478,7 @@ fun AddWorkoutScreen(
                 frequentExerciseIds = uiState.frequentExerciseIds,
                 exerciseWorkoutCounts = uiState.exerciseWorkoutCounts,
                 exerciseMuscleIds = uiState.exerciseMuscleIds,
+                addedExerciseIds = uiState.exerciseDrafts.mapNotNull { it.exerciseId }.toSet(),
                 lastWeight = draft.exerciseId?.let { uiState.lastWeights[it] },
                 invalidFields = startFeedback.invalidFields,
                 allowedWeights = draft.exerciseId
@@ -1368,6 +1369,7 @@ private fun ExerciseDraftCard(
     frequentExerciseIds: List<Long>,
     exerciseWorkoutCounts: Map<Long, Int>,
     exerciseMuscleIds: Map<String, Set<String>>,
+    addedExerciseIds: Set<Long>,
     lastWeight: Double?,
     invalidFields: Set<SetFieldKey>,
     allowedWeights: List<Double>,
@@ -1467,6 +1469,7 @@ private fun ExerciseDraftCard(
             val selectExerciseLabel = stringResource(R.string.label_select_exercise)
             ExerciseCatalogSelector(
                 selectedExerciseId = draft.exerciseId,
+                addedExerciseIds = addedExerciseIds,
                 exercises = exercises,
                 frequentExerciseIds = frequentExerciseIds,
                 exerciseWorkoutCounts = exerciseWorkoutCounts,
@@ -1520,7 +1523,8 @@ private fun ExerciseDraftCard(
                         onApplyLastWeight = { onApplyLastWeightToSet(setIndex) },
                         onCopyPrevious = { onCopyPreviousSet(setIndex) },
                         onDuplicate = { onDuplicateSet(setIndex) },
-                        canApplyToAll = draft.sets.size > 1,
+                        canApplyToAll = draft.sets.size > 1 &&
+                            isValidWeightInput(set.weight) && isValidRepsInput(set.reps),
                         onApplyToAll = { onApplySetToAllSets(setIndex) },
                         onDelete = { onRemoveSet(setIndex) }
                     )
