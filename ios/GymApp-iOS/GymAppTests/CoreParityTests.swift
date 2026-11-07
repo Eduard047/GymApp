@@ -17911,6 +17911,42 @@ final class CoreParityTests: XCTestCase {
         )
     }
 
+    func testGarminPhoneDuplicateDeviceUUIDsInSelectionResponseAreRejected() throws {
+        let defaults = temporaryDefaults(named: "garmin-phone-duplicate-uuid")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let account = AppAccountSession.local(
+            id: "00000000-0000-4000-8000-000000000301",
+            displayName: "Duplicate UUID"
+        )
+        try auth.installSessionForTesting(account)
+        let transport = FakeGarminPhoneConnectIQTransport()
+        let deviceID = UUID(uuidString: "11111111-2222-3333-4444-555555555556")!
+        let first = try XCTUnwrap(IQDevice(id: deviceID, modelName: "Venu 3", friendlyName: "Watch A"))
+        let second = try XCTUnwrap(IQDevice(id: deviceID, modelName: "Venu 3", friendlyName: "Watch B"))
+        transport.selectionResponse = [first, second]
+        let service = GarminPhoneSyncService(auth: auth, defaults: defaults, connectIQ: transport)
+        service.selectDevices()
+        XCTAssertTrue(
+            service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
+        )
+        XCTAssertTrue(service.statusIsError)
+        XCTAssertTrue(service.devices.isEmpty)
+        XCTAssertTrue(transport.sent.isEmpty)
+    }
+
+    func testGymClampedSecondsNeverTrapsOnCorruptIntervals() {
+        XCTAssertEqual(gymClampedSeconds(1e300, max: 1_800), 1_800)
+        XCTAssertEqual(gymClampedSeconds(-5, max: 1_800), 0)
+        XCTAssertEqual(gymClampedSeconds(.nan, max: 1_800), 0)
+        XCTAssertEqual(gymClampedSeconds(.infinity, max: 1_800), 0)
+        XCTAssertEqual(gymClampedSeconds(-.infinity, max: 1_800), 0)
+        XCTAssertEqual(gymClampedSeconds(90.2, max: 1_800), 91)
+        XCTAssertEqual(gymClampedSeconds(1_800.0, max: 1_800), 1_800)
+        XCTAssertEqual(gymElapsedWholeSeconds(from: Date(timeIntervalSince1970: 0), to: Date(timeIntervalSince1970: 90.9)), 90)
+        XCTAssertEqual(gymElapsedWholeSeconds(from: Date(timeIntervalSince1970: 0), to: Date(timeIntervalSince1970: -10)), 0)
+        XCTAssertEqual(gymElapsedWholeSeconds(from: .distantPast, to: .distantFuture), 604_800)
+    }
+
     func testGarminPhoneSelectionConnectionAndAccountChangeSynchronizeProactively() async throws {
         let defaults = temporaryDefaults(named: "garmin-phone-proactive-sync")
         let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)

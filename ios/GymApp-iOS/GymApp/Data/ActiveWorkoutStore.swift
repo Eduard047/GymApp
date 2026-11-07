@@ -1276,7 +1276,7 @@ final class ActiveWorkoutStore: ObservableObject {
         }
         if let duration = intent.durationSeconds {
             guard (0 ... 7 * 24 * 60 * 60).contains(duration),
-                  duration == max(0, Int(intent.preparedAt.timeIntervalSince(draft.startedAt))) else {
+                  duration == gymElapsedWholeSeconds(from: draft.startedAt, to: intent.preparedAt) else {
                 throw ActiveWorkoutStoreError.invalidDraft
             }
         }
@@ -1475,7 +1475,7 @@ final class ActiveWorkoutStore: ObservableObject {
             workoutDate: draft.workoutDate,
             note: draft.note,
             preparedAt: preparedAt,
-            durationSeconds: max(0, Int(preparedAt.timeIntervalSince(draft.startedAt))),
+            durationSeconds: gymElapsedWholeSeconds(from: draft.startedAt, to: preparedAt),
             exercises: completedExercises
         )
     }

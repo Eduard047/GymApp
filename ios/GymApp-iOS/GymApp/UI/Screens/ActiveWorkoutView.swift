@@ -3273,7 +3273,7 @@ struct ActiveWorkoutView: View {
         guard let draft = currentDraft else { return }
         let now = Date()
         let currentRemaining = draft.timing?.restingUntil.map {
-            max(0, Int(ceil($0.timeIntervalSince(now))))
+            gymClampedSeconds($0.timeIntervalSince(now), max: 30 * 60)
         } ?? 0
         let adjusted = currentRemaining + deltaSeconds
         if adjusted <= 0 {

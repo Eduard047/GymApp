@@ -2034,6 +2034,10 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             publishStatus("Garmin returned too many watches. Select at most eight.", isError: true)
             return true
         }
+        guard Set(selected.map { $0.uuid as UUID }).count == selected.count else {
+            publishStatus("Garmin returned the same watch more than once. Start the selection again in GymApp.", isError: true)
+            return true
+        }
         guard consumePendingDeviceSelection() else {
             publishStatus("This Garmin device selection is no longer valid. Start it again in GymApp.", isError: true)
             return true
