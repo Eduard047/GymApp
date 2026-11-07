@@ -148,6 +148,66 @@ enum ExportService {
         return url
     }
 
+    /// Workout report PDF: `WorkoutReport.lines` drawn with measured wrapping and height-based
+    /// pagination, capped at `WorkoutReport.maxPages` like Android.
+    static func writeWorkoutPDF(lines: [String], name: String = "GymApp-workouts") throws -> URL {
+        let url = temporaryURL(name: name, extension: "pdf")
+        let page = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let renderer = UIGraphicsPDFRenderer(bounds: page)
+        let marginX: CGFloat = 44
+        let top: CGFloat = 48
+        let bottom: CGFloat = page.height - 44
+        let lineHeight: CGFloat = 16
+        let maxWidth = page.width - marginX * 2
+        let ink = UIColor(red: 20 / 255, green: 32 / 255, blue: 44 / 255, alpha: 1)
+        let bodyInk = UIColor(red: 45 / 255, green: 56 / 255, blue: 70 / 255, alpha: 1)
+        let titleAttributes: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: 18), .foregroundColor: ink]
+        let headingAttributes: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: 12), .foregroundColor: ink]
+        let bodyAttributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 10), .foregroundColor: bodyInk]
+
+        try renderer.writePDF(to: url) { context in
+            var pageNumber = 1
+            var y = top
+            var pageLimitReached = false
+            context.beginPage()
+
+            func drawWrapped(_ text: String, attributes: [NSAttributedString.Key: Any]) {
+                if pageLimitReached { return }
+                let wrapped = WorkoutReport.wrap(text, maxWidth: maxWidth) {
+                    ($0 as NSString).size(withAttributes: attributes).width
+                }
+                for line in wrapped {
+                    if y + lineHeight > bottom {
+                        if pageNumber >= WorkoutReport.maxPages {
+                            pageLimitReached = true
+                            return
+                        }
+                        context.beginPage()
+                        pageNumber += 1
+                        y = top
+                    }
+                    (line as NSString).draw(at: CGPoint(x: marginX, y: y), withAttributes: attributes)
+                    y += lineHeight
+                }
+            }
+
+            for (index, line) in lines.enumerated() {
+                if index == 0 {
+                    drawWrapped(line, attributes: titleAttributes)
+                    y += 8
+                } else if line.hasPrefix("## ") {
+                    y += 6
+                    drawWrapped(String(line.dropFirst(3)), attributes: headingAttributes)
+                    y += 2
+                } else {
+                    drawWrapped(line, attributes: bodyAttributes)
+                }
+            }
+        }
+        try (url as NSURL).setResourceValue(URLFileProtection.completeUnlessOpen, forKey: .fileProtectionKey)
+        return url
+    }
+
     private static func temporaryURL(name: String, extension fileExtension: String) -> URL {
         let cleanName = name
             .replacingOccurrences(of: #"[^A-Za-z0-9._-]"#, with: "-", options: .regularExpression)

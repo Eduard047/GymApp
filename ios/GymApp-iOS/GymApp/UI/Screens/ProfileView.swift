@@ -849,6 +849,23 @@ struct ProfileView: View {
                     }
                 }
 
+                Button {
+                    prepareWorkoutPDF()
+                } label: {
+                    Label(
+                        gymText("Share PDF report", "Поділитися PDF звітом", "Поделиться PDF отчетом", languageCode: languageCode),
+                        systemImage: "doc.richtext"
+                    )
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GymSecondaryButtonStyle())
+                .accessibilityHint(gymText(
+                    "Saves a readable PDF of your newest workouts using the Files picker. It contains private workout details.",
+                    "Зберігає читабельний PDF найновіших тренувань через вибір файлу. Містить приватні деталі тренувань.",
+                    "Сохраняет читаемый PDF последних тренировок через выбор файла. Содержит личные детали тренировок.",
+                    languageCode: languageCode
+                ))
+
                 Menu {
                     Button {
                         prepareDiagnosticsJSON()
@@ -1014,6 +1031,28 @@ struct ProfileView: View {
             exportDocument = ProfileExportDocument(data: data)
             exportContentType = .json
             exportFilename = "GymApp-backup"
+            showsExporter = true
+        } catch {
+            appState.show(message: gymErrorMessage(error), isError: true)
+        }
+    }
+
+    private func prepareWorkoutPDF() {
+        do {
+            guard appState.isAccountReady,
+                  store.accountStorageKey == appState.activeAccountStorageKey else {
+                throw WorkoutStoreError.storageAccountMismatch
+            }
+            let lines = WorkoutReport.lines(
+                exercises: store.exercises,
+                sessions: store.workouts,
+                languageCode: languageCode
+            )
+            let pdfURL = try ExportService.writeWorkoutPDF(lines: lines)
+            defer { try? FileManager.default.removeItem(at: pdfURL) }
+            exportDocument = ProfileExportDocument(data: try Data(contentsOf: pdfURL))
+            exportContentType = .pdf
+            exportFilename = "GymApp-workouts"
             showsExporter = true
         } catch {
             appState.show(message: gymErrorMessage(error), isError: true)
