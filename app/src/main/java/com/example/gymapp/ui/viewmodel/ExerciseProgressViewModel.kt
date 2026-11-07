@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
+import com.example.gymapp.data.repository.GymOneRepMax
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.MuscleContribution
 import com.example.gymapp.data.repository.muscleContributionsForExercise
@@ -40,7 +41,9 @@ data class ExerciseProgressPoint(
     val sessionDate: Long,
     val maxWeight: Double,
     val totalVolume: Double,
-    val totalReps: Int
+    val totalReps: Int,
+    /** Best estimated 1RM among this session's sets; null when no set has a positive weight. */
+    val estimatedOneRepMax: Double? = null
 )
 
 data class ExerciseProgressSpotlightUiModel(
@@ -68,7 +71,9 @@ data class ExerciseTrendChartPointUiModel(
     val repsLabel: String,
     val weightRatio: Float,
     val volumeRatio: Float,
-    val isLatest: Boolean = false
+    val isLatest: Boolean = false,
+    val estimatedOneRepMax: Double? = null,
+    val oneRepMaxRatio: Float = 0f
 )
 
 data class ExerciseTrendChartUiModel(
@@ -76,7 +81,12 @@ data class ExerciseTrendChartUiModel(
     val weightTrendLabel: String = "",
     val volumeTrendLabel: String = "",
     val peakWeightLabel: String = "--",
-    val averageVolumeLabel: String = "--"
+    val averageVolumeLabel: String = "--",
+    /** Sessions (of the visible window) with an estimated 1RM; empty when fewer than two have one. */
+    val oneRepMaxPoints: List<ExerciseTrendChartPointUiModel> = emptyList(),
+    val oneRepMaxTrendLabel: String = "",
+    /** Best estimated 1RM across all given sessions; null when none has one. */
+    val bestOneRepMaxLabel: String? = null
 )
 
 data class ExerciseProgressUiState(
@@ -179,6 +189,29 @@ internal inline fun resolveProgressExerciseSelection(
     return defaultId()
 }
 
+/**
+ * Best estimated 1RM among one session's sets, using the shared [GymOneRepMax] formula. A set
+ * without a positive weight (0 kg, bodyweight) has no estimate; null when no set qualifies.
+ */
+internal fun sessionEstimatedOneRepMax(entries: List<ExerciseHistoryEntry>): Double? =
+    entries.filter { it.weight > 0.0 }.maxOfOrNull { GymOneRepMax.estimate(it.weight, it.reps) }
+
+/** One point per session, oldest first. */
+internal fun List<ExerciseHistoryEntry>.toExerciseProgressPoints(): List<ExerciseProgressPoint> =
+    groupBy { it.sessionId }
+        .values
+        .map { entries ->
+            ExerciseProgressPoint(
+                sessionId = entries.first().sessionId,
+                sessionDate = entries.first().sessionDate,
+                maxWeight = entries.maxOfOrNull { it.weight } ?: 0.0,
+                totalVolume = entries.sumOf { it.weight * it.reps },
+                totalReps = entries.sumOf { it.reps },
+                estimatedOneRepMax = sessionEstimatedOneRepMax(entries)
+            )
+        }
+        .sortedBy { it.sessionDate }
+
 /** Builds the localized spotlight/trend text for one language; a new instance per emission. */
 internal class ExerciseProgressTextBuilder(
     private val languageTag: String,
@@ -239,6 +272,7 @@ internal class ExerciseProgressTextBuilder(
         val visiblePoints = points.takeLast(8)
         val maxWeight = visiblePoints.maxOfOrNull { it.maxWeight }?.coerceAtLeast(1.0) ?: 1.0
         val maxVolume = visiblePoints.maxOfOrNull { it.totalVolume }?.coerceAtLeast(1.0) ?: 1.0
+        val maxOneRepMax = visiblePoints.mapNotNull { it.estimatedOneRepMax }.maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
 
         val chartPoints = visiblePoints.mapIndexed { index, point ->
             ExerciseTrendChartPointUiModel(
@@ -258,9 +292,21 @@ internal class ExerciseProgressTextBuilder(
                 },
                 weightRatio = (point.maxWeight / maxWeight).toFloat().coerceIn(0f, 1f),
                 volumeRatio = (point.totalVolume / maxVolume).toFloat().coerceIn(0f, 1f),
-                isLatest = index == visiblePoints.lastIndex
+                isLatest = index == visiblePoints.lastIndex,
+                estimatedOneRepMax = point.estimatedOneRepMax,
+                oneRepMaxRatio = ((point.estimatedOneRepMax ?: 0.0) / maxOneRepMax).toFloat().coerceIn(0f, 1f)
             )
         }
+        // The 1RM chart needs two sessions with an estimate, like any other trend.
+        val oneRepMaxPoints = chartPoints
+            .filter { it.estimatedOneRepMax != null }
+            .let { withEstimate ->
+                if (withEstimate.size >= 2) {
+                    withEstimate.mapIndexed { index, point -> point.copy(isLatest = index == withEstimate.lastIndex) }
+                } else {
+                    emptyList()
+                }
+            }
 
         // A trend needs at least two sessions; one point has nothing to compare against.
         val hasTrend = visiblePoints.size >= 2
@@ -287,7 +333,18 @@ internal class ExerciseProgressTextBuilder(
                 noTrendLabel
             },
             peakWeightLabel = formatWeight(points.maxOfOrNull { it.maxWeight } ?: 0.0),
-            averageVolumeLabel = visiblePoints.map { it.totalVolume }.average().roundToInt().toString()
+            averageVolumeLabel = visiblePoints.map { it.totalVolume }.average().roundToInt().toString(),
+            oneRepMaxPoints = oneRepMaxPoints,
+            oneRepMaxTrendLabel = if (oneRepMaxPoints.size >= 2) {
+                trendLabel(
+                    start = oneRepMaxPoints.first().estimatedOneRepMax ?: 0.0,
+                    end = oneRepMaxPoints.last().estimatedOneRepMax ?: 0.0,
+                    unit = t(en = "kg", uk = "кг")
+                )
+            } else {
+                noTrendLabel
+            },
+            bestOneRepMaxLabel = points.mapNotNull { it.estimatedOneRepMax }.maxOrNull()?.let(::formatWeight)
         )
     }
 
@@ -488,20 +545,8 @@ class ExerciseProgressViewModel(
         monthOffset.value = 0
     }
 
-    private fun List<ExerciseHistoryEntry>.toProgressPoints(): List<ExerciseProgressPoint> {
-        return groupBy { it.sessionId }
-            .values
-            .map { entries ->
-                ExerciseProgressPoint(
-                    sessionId = entries.first().sessionId,
-                    sessionDate = entries.first().sessionDate,
-                    maxWeight = entries.maxOfOrNull { it.weight } ?: 0.0,
-                    totalVolume = entries.sumOf { it.weight * it.reps },
-                    totalReps = entries.sumOf { it.reps }
-                )
-            }
-            .sortedBy { it.sessionDate }
-    }
+    private fun List<ExerciseHistoryEntry>.toProgressPoints(): List<ExerciseProgressPoint> =
+        toExerciseProgressPoints()
 
     companion object {
         fun factory(repository: GymRepository): ViewModelProvider.Factory = viewModelFactory {

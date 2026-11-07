@@ -1251,6 +1251,8 @@ struct ExerciseProgressPoint: Identifiable, Hashable {
     let maxWeight: Double
     let totalVolume: Double
     let totalReps: Int
+    /// Best estimated 1RM among this session's sets; nil when no set has a positive weight.
+    let estimatedOneRepMax: Double?
 
     static func make(from history: [ExerciseHistoryEntry]) -> [ExerciseProgressPoint] {
         Dictionary(grouping: history, by: \.workoutID)
@@ -1262,10 +1264,32 @@ struct ExerciseProgressPoint: Identifiable, Hashable {
                     date: first.sessionDate,
                     maxWeight: entries.map(\.weight).max() ?? 0,
                     totalVolume: entries.reduce(0) { $0 + $1.volume },
-                    totalReps: entries.reduce(0) { $0 + $1.reps }
+                    totalReps: entries.reduce(0) { $0 + $1.reps },
+                    estimatedOneRepMax: sessionEstimatedOneRepMax(entries)
                 )
             }
             .sorted { $0.date < $1.date }
+    }
+
+    /// Best estimated 1RM among one session's sets, from the shared `GymOneRepMax` formula.
+    /// A set without a positive weight (0 kg, bodyweight) has no estimate.
+    static func sessionEstimatedOneRepMax(_ entries: [ExerciseHistoryEntry]) -> Double? {
+        entries
+            .filter { $0.weight > 0 }
+            .map { GymOneRepMax.estimate(weight: $0.weight, reps: $0.reps) }
+            .max()
+    }
+
+    /// Sessions of the latest `window` with an estimated 1RM, oldest first. Empty when fewer
+    /// than two have one, because a trend needs two sessions.
+    static func oneRepMaxSeries(in points: [ExerciseProgressPoint], window: Int = 8) -> [ExerciseProgressPoint] {
+        let withEstimate = points.suffix(window).filter { $0.estimatedOneRepMax != nil }
+        return withEstimate.count >= 2 ? withEstimate : []
+    }
+
+    /// Best estimated 1RM across every given session (the whole month, not just the chart window).
+    static func bestOneRepMax(in points: [ExerciseProgressPoint]) -> Double? {
+        points.compactMap(\.estimatedOneRepMax).max()
     }
 
     /// Heaviest set across every given session (the whole month, not just the chart window).
@@ -1360,6 +1384,7 @@ private struct ExerciseProgressChartsCard: View {
     let locale: Locale
 
     private var chartPoints: [ExerciseProgressPoint] { Array(points.suffix(8)) }
+    private var oneRepMaxPoints: [ExerciseProgressPoint] { ExerciseProgressPoint.oneRepMaxSeries(in: points) }
     private var latestPointID: UUID? { chartPoints.last?.id }
 
     var body: some View {
@@ -1381,6 +1406,9 @@ private struct ExerciseProgressChartsCard: View {
                 } else {
                     weightChart
                     volumeChart
+                    if !oneRepMaxPoints.isEmpty {
+                        oneRepMaxChart
+                    }
 
                     LazyVGrid(
                         columns: [GridItem(.adaptive(minimum: 130), spacing: 8)],
@@ -1397,6 +1425,12 @@ private struct ExerciseProgressChartsCard: View {
                                     Double(max(1, chartPoints.count))
                             )
                         )
+                        if let bestOneRepMax = ExerciseProgressPoint.bestOneRepMax(in: points) {
+                            GymMetricTile(
+                                label: t("Best est. 1RM", "Найкр. розрах. 1ПМ", "Лучш. расчётный 1ПМ"),
+                                value: formatWeight(bestOneRepMax)
+                            )
+                        }
                     }
                 }
             }
@@ -1404,24 +1438,53 @@ private struct ExerciseProgressChartsCard: View {
     }
 
     private var weightChart: some View {
+        lineChart(
+            title: t("Max Weight Trend", "Тренд максимальної ваги", "Динамика максимального веса"),
+            trendLabel: weightTrendLabel,
+            valueName: t("Max weight", "Максимальна вага", "Максимальный вес"),
+            chartLabel: t("Maximum weight chart", "Графік максимальної ваги", "График максимального веса"),
+            points: chartPoints,
+            value: \.maxWeight
+        )
+    }
+
+    private var oneRepMaxChart: some View {
+        lineChart(
+            title: t("Estimated 1RM", "Розрахунковий 1ПМ", "Расчётный 1ПМ"),
+            trendLabel: oneRepMaxTrendLabel,
+            valueName: t("Estimated 1RM", "Розрахунковий 1ПМ", "Расчётный 1ПМ"),
+            chartLabel: t("Estimated 1RM chart", "Графік розрахункового 1ПМ", "График расчётного 1ПМ"),
+            points: oneRepMaxPoints,
+            value: { $0.estimatedOneRepMax ?? 0 }
+        )
+    }
+
+    private func lineChart(
+        title: String,
+        trendLabel: String,
+        valueName: String,
+        chartLabel: String,
+        points: [ExerciseProgressPoint],
+        value: @escaping (ExerciseProgressPoint) -> Double
+    ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(t("Max Weight Trend", "Тренд максимальної ваги", "Динамика максимального веса"))
+            Text(title)
                 .font(.subheadline.weight(.semibold))
-            Text(weightTrendLabel)
+            Text(trendLabel)
                 .font(.caption)
                 .foregroundStyle(GymTheme.textSecondary)
 
-            Chart(chartPoints) { point in
+            Chart(points) { point in
                 AreaMark(
                     x: .value(t("Session", "Тренування", "Тренировка"), point.date),
                     yStart: .value(t("Baseline", "Основа", "Базовый уровень"), 0),
-                    yEnd: .value(t("Max weight", "Максимальна вага", "Максимальный вес"), point.maxWeight)
+                    yEnd: .value(valueName, value(point))
                 )
                 .foregroundStyle(GymTheme.primary.opacity(0.1))
 
                 LineMark(
                     x: .value(t("Session", "Тренування", "Тренировка"), point.date),
-                    y: .value(t("Max weight", "Максимальна вага", "Максимальный вес"), point.maxWeight)
+                    y: .value(valueName, value(point))
                 )
                 .interpolationMethod(.catmullRom)
                 .foregroundStyle(GymTheme.primary)
@@ -1429,16 +1492,16 @@ private struct ExerciseProgressChartsCard: View {
 
                 PointMark(
                     x: .value(t("Session", "Тренування", "Тренировка"), point.date),
-                    y: .value(t("Max weight", "Максимальна вага", "Максимальный вес"), point.maxWeight)
+                    y: .value(valueName, value(point))
                 )
                 .foregroundStyle(GymTheme.heroAccent)
-                .symbolSize(point.id == latestPointID ? 75 : 40)
+                .symbolSize(point.id == points.last?.id ? 75 : 40)
                 .accessibilityLabel(gymFormattedDate(point.date, date: .long, time: .omitted))
-                .accessibilityValue(formatWeight(point.maxWeight))
+                .accessibilityValue(formatWeight(value(point)))
             }
             .chartYScale(domain: .automatic(includesZero: true))
             .chartXAxis {
-                AxisMarks(values: .automatic(desiredCount: min(4, chartPoints.count))) {
+                AxisMarks(values: .automatic(desiredCount: min(4, points.count))) {
                     AxisGridLine().foregroundStyle(GymTheme.outline.opacity(0.25))
                     AxisValueLabel(format: .dateTime.month(.abbreviated).day())
                 }
@@ -1451,8 +1514,8 @@ private struct ExerciseProgressChartsCard: View {
             }
             .frame(minHeight: 210)
             .environment(\.locale, locale)
-            .accessibilityLabel(t("Maximum weight chart", "Графік максимальної ваги", "График максимального веса"))
-            .accessibilityValue(weightTrendLabel)
+            .accessibilityLabel(chartLabel)
+            .accessibilityValue(trendLabel)
         }
     }
 
@@ -1512,6 +1575,15 @@ private struct ExerciseProgressChartsCard: View {
         )
     }
 
+    private var oneRepMaxTrendLabel: String {
+        trendLabel(
+            start: oneRepMaxPoints.first?.estimatedOneRepMax,
+            end: oneRepMaxPoints.last?.estimatedOneRepMax,
+            unit: t("kg", "кг", "кг"),
+            pointCount: oneRepMaxPoints.count
+        )
+    }
+
     private var volumeTrendLabel: String {
         trendLabel(
             start: chartPoints.first?.totalVolume,
@@ -1520,8 +1592,8 @@ private struct ExerciseProgressChartsCard: View {
         )
     }
 
-    private func trendLabel(start: Double?, end: Double?, unit: String) -> String {
-        switch ExerciseProgressTrend.classify(start: start, end: end, pointCount: chartPoints.count) {
+    private func trendLabel(start: Double?, end: Double?, unit: String, pointCount: Int? = nil) -> String {
+        switch ExerciseProgressTrend.classify(start: start, end: end, pointCount: pointCount ?? chartPoints.count) {
         case .none:
             return t("No trend yet", "Тренду ще немає", "Пока нет тренда")
         case .steady:

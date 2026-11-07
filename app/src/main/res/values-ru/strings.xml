@@ -1080,6 +1080,8 @@
     <string name="progress_spotlight_all_time_best">Лучший результат</string>
     <string name="progress_spotlight_consistency">Регулярность</string>
     <string name="progress_peak_weight">Пиковый вес</string>
+    <string name="progress_e1rm_chart_title">Расчётный 1ПМ</string>
+    <string name="progress_e1rm_best">Лучш. расчётный 1ПМ</string>
     <string name="progress_average_volume">Сред. объём</string>
     <string name="progress_weight_value">%1$s кг</string>
     <string name="progress_reps_value">%1$d повт</string>

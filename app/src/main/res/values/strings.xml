@@ -1048,6 +1048,8 @@
     <string name="progress_spotlight_all_time_best">All-time best</string>
     <string name="progress_spotlight_consistency">Consistency</string>
     <string name="progress_peak_weight">Peak weight</string>
+    <string name="progress_e1rm_chart_title">Estimated 1RM</string>
+    <string name="progress_e1rm_best">Best est. 1RM</string>
     <string name="progress_average_volume">Avg volume</string>
     <string name="progress_weight_value">%1$s kg</string>
     <string name="progress_reps_value">%1$d reps</string>

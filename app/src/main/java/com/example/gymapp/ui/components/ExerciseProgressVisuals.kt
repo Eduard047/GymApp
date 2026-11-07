@@ -5,6 +5,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -175,6 +176,27 @@ fun ExerciseTrendChartsCard(
                     )
                 }
 
+                if (chart.oneRepMaxPoints.isNotEmpty()) {
+                    ChartSection(
+                        title = stringResource(R.string.progress_e1rm_chart_title),
+                        summary = chart.oneRepMaxTrendLabel
+                    ) {
+                        WeightTrendChart(
+                            points = chart.oneRepMaxPoints,
+                            description = trendChartDescription(
+                                title = stringResource(R.string.progress_e1rm_chart_title),
+                                trend = chart.oneRepMaxTrendLabel,
+                                range = trendChartRangeSummary(
+                                    chart.oneRepMaxPoints,
+                                    { point -> point.estimatedOneRepMax ?: 0.0 },
+                                    ::formatWeightDisplay
+                                )
+                            ),
+                            ratio = ExerciseTrendChartPointUiModel::oneRepMaxRatio
+                        )
+                    }
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -192,6 +214,19 @@ fun ExerciseTrendChartsCard(
                             ?: chart.averageVolumeLabel,
                         modifier = Modifier.weight(1f)
                     )
+                }
+                chart.bestOneRepMaxLabel?.let { bestOneRepMax ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        MetricTile(
+                            label = stringResource(R.string.progress_e1rm_best),
+                            value = bestOneRepMax,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
                 }
             }
         }
@@ -219,7 +254,11 @@ private fun ChartSection(
 }
 
 @Composable
-private fun WeightTrendChart(points: List<ExerciseTrendChartPointUiModel>, description: String) {
+private fun WeightTrendChart(
+    points: List<ExerciseTrendChartPointUiModel>,
+    description: String,
+    ratio: (ExerciseTrendChartPointUiModel) -> Float = ExerciseTrendChartPointUiModel::weightRatio
+) {
     val lineColor = accentMarkColor()
     val fillColor = lineColor.copy(alpha = 0.12f)
     val guideColor = MaterialTheme.colorScheme.outlineVariant
@@ -252,7 +291,7 @@ private fun WeightTrendChart(points: List<ExerciseTrendChartPointUiModel>, descr
 
         points.forEachIndexed { index, point ->
             val x = stepX * index
-            val y = baseline - (point.weightRatio * (chartHeight - 12.dp.toPx()))
+            val y = baseline - (ratio(point) * (chartHeight - 12.dp.toPx()))
             if (index == 0) {
                 path.moveTo(x, y)
                 fillPath.moveTo(x, baseline)
@@ -275,7 +314,7 @@ private fun WeightTrendChart(points: List<ExerciseTrendChartPointUiModel>, descr
 
         points.forEachIndexed { index, point ->
             val x = stepX * index
-            val y = baseline - (point.weightRatio * (chartHeight - 12.dp.toPx()))
+            val y = baseline - (ratio(point) * (chartHeight - 12.dp.toPx()))
             drawCircle(
                 color = if (point.isLatest) latestPointColor else lineColor,
                 radius = if (point.isLatest) 6.dp.toPx() else 4.dp.toPx(),
