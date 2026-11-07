@@ -129,11 +129,11 @@ class AdaptiveMissionBoardSourceTest {
         assertEquals("тренування", threeWorkouts.unitUk)
 
         val threeExercises = requireNotNull(catalog["daily-exercises-3"])
-        assertEquals("Збалансована сесія", threeExercises.titleUk)
+        assertEquals("Збалансоване тренування", threeExercises.titleUk)
         assertEquals("Виконай реалістичну кількість вправ сьогодні.", threeExercises.summaryUk)
         assertEquals("вправи", threeExercises.unitUk)
         assertEquals("упражнения", threeExercises.unitRu)
-        assertEquals("Сбалансированная сессия", RussianText.translate(threeExercises.titleEn))
+        assertEquals("Сбалансированная тренировка", RussianText.translate(threeExercises.titleEn))
         assertEquals(
             "Выполни реалистичное количество упражнений сегодня.",
             RussianText.translate(threeExercises.summaryEn)

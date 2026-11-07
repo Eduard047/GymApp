@@ -28,8 +28,8 @@ const canonicalCopy = [
   },
   {
     enTitle: "Balanced session",
-    ukTitle: "Збалансована сесія",
-    ruTitle: "Сбалансированная сессия",
+    ukTitle: "Збалансоване тренування",
+    ruTitle: "Сбалансированная тренировка",
     enDescription: "Train a realistic number of exercises today.",
     ukDescription: "Виконай реалістичну кількість вправ сьогодні.",
     ruDescription: "Выполни реалистичное количество упражнений сегодня."

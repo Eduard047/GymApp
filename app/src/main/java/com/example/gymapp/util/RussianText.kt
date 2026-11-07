@@ -7,7 +7,7 @@ object RussianText {
         "Accumulate a realistic number of working sets this month." to
             "Набери реалистичное количество рабочих подходов в этом месяце.",
         "Active days" to "Активные дни",
-        "Balanced session" to "Сбалансированная сессия",
+        "Balanced session" to "Сбалансированная тренировка",
         "Build a typical recent week's number of working sets." to
             "Выполни типичное для недавней недели количество рабочих подходов.",
         "Build on a sustainable recent month of workouts." to

@@ -108,12 +108,10 @@ test("native visible date surfaces use weekday formatters and preserve explicit 
   assert.doesNotMatch(source("app/src/main/java/com/example/gymapp/ui/viewmodel/ExerciseProgressViewModel.kt"), /EEEEE/);
   assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/AccountSettingsSheet.kt"), /DateFormat\.getDateTimeInstance/);
 
-  for (const path of [
-    "ios/GymApp-iOS/GymApp/UI/Screens/ProgressView.swift",
-    "ios/GymApp-iOS/GymApp/UI/Screens/ExercisesView.swift"
-  ]) {
-    assert.match(source(path), /gymFormattedDate\(/);
-  }
+  assert.match(source("ios/GymApp-iOS/GymApp/UI/Screens/ProgressView.swift"), /gymFormattedDate\(/);
+  // Exercise history rows are grouped by workout and use the weekday-aware short date + time
+  // formatter ("EEE d MMM", see gymShortDate) shared with the Android history rows.
+  assert.match(source("ios/GymApp-iOS/GymApp/UI/Screens/ExercisesView.swift"), /gymShortDateTime\(/);
   // DESIGN.md "Post-workout summary": the hero subtitle now uses the shared
   // short weekday/date formatter (same one workout-detail's hero uses)
   // instead of the long-form gymFormattedDate.

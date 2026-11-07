@@ -26,15 +26,15 @@ test("Android App Link claims only the canonical shared-workout landing path", (
 });
 
 test("shared-workout consent cannot survive process-local inbox generations", () => {
-  const consentStart = navigation.indexOf("var approvedSharedWorkoutId");
-  const consentEnd = navigation.indexOf("var preferredShareFriendProfileId", consentStart);
+  const consentStart = navigation.indexOf("var approvedSharedWorkout by");
+  const consentEnd = navigation.indexOf("var profileFocusRequest", consentStart);
   const consentState = navigation.slice(consentStart, consentEnd);
 
   assert.ok(
     consentStart >= 0 && consentEnd > consentStart,
     "shared-workout approval state is missing"
   );
-  assert.match(consentState, /remember\s*\{\s*mutableStateOf<Long\?>\(null\)\s*}/);
+  assert.match(consentState, /remember\s*\{\s*mutableStateOf<PendingSharedWorkout\?>\(null\)\s*}/);
   assert.doesNotMatch(consentState, /rememberSaveable/);
 });
 

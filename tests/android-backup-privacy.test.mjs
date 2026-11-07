@@ -11,6 +11,7 @@ const [
   viewModel,
   repository,
   clipboardHelper,
+  diagnosticsReport,
   stringsEn,
   stringsUk,
   stringsRu,
@@ -34,6 +35,10 @@ const [
     ),
     readFile(
       "app/src/main/java/com/example/gymapp/ui/util/SensitiveClipboard.kt",
+      "utf8"
+    ),
+    readFile(
+      "app/src/main/java/com/example/gymapp/data/repository/DiagnosticsReport.kt",
       "utf8"
     ),
     readFile("app/src/main/res/values/strings.xml", "utf8"),
@@ -267,7 +272,7 @@ test("FileProvider exposes only the dedicated ephemeral report directory", () =>
 });
 
 test("diagnostics export is aggregate-only rather than a mislabeled private backup", () => {
-  assert.match(viewModel, /repository\.exportDiagnosticsJson\(\)/);
+  assert.match(viewModel, /repository\.exportDiagnosticsJson\(context\)/);
   assert.doesNotMatch(
     viewModel,
     /exportBackupJson\(includeDiagnostics\s*=\s*true/
@@ -277,8 +282,18 @@ test("diagnostics export is aggregate-only rather than a mislabeled private back
   const end = repository.indexOf("suspend fun buildBackupJson", start);
   assert.ok(start >= 0 && end > start, "redacted diagnostics method is missing");
   const diagnosticsMethod = repository.slice(start, end);
+  assert.match(diagnosticsMethod, /DiagnosticsReportBuilder\.build/);
   assert.match(diagnosticsMethod, /exerciseCount/);
-  assert.match(diagnosticsMethod, /sessionCount/);
+  assert.match(diagnosticsMethod, /getSessionCount/);
   assert.match(diagnosticsMethod, /setCount/);
   assert.doesNotMatch(diagnosticsMethod, /owner|email|userId|exercises|sessions|notes?/);
+
+  // The environment context mirrors the iPhone report: versions, a locale tag and three
+  // cloud-sync booleans only, never account ids, emails or workout content.
+  const contextStart = diagnosticsReport.indexOf("data class DiagnosticsContext");
+  const contextEnd = diagnosticsReport.indexOf(")", contextStart);
+  const contextFields = diagnosticsReport.slice(contextStart, contextEnd);
+  assert.doesNotMatch(contextFields, /owner|email|userId|account|name|note/i);
+  const builder = diagnosticsReport.slice(diagnosticsReport.indexOf("object DiagnosticsReportBuilder"));
+  assert.doesNotMatch(builder, /owner|email|userId|account|exerciseName|notes?\b/i);
 });
