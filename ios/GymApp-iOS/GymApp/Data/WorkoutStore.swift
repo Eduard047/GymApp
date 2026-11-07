@@ -1515,9 +1515,9 @@ public final class WorkoutStore: ObservableObject {
                    previousStartedAt != newStartedAt {
                     // Activity metrics are keyed by the workout start time, so a date edit
                     // must move the sidecar item in the same commit (same rule as Android).
-                    guard !state.workouts.contains(where: {
-                        $0.id != id && $0.date.gymEpochMilliseconds == newStartedAt
-                    }) else {
+                    guard !Self.hasOtherWorkout(
+                        in: state, at: newStartedAt, excluding: id
+                    ) else {
                         throw WorkoutStoreError.invalidWorkout(
                             "Activity-only workout timestamp already exists."
                         )
@@ -1545,6 +1545,22 @@ public final class WorkoutStore: ObservableObject {
                 }
                 state.workouts[index].date = date
                 state.workouts[index].note = validatedNote
+                if !Self.isActivityOnlyWorkout(state.workouts[index]),
+                   previousStartedAt != newStartedAt {
+                    // Same rule as Android updateWorkoutSession: a workout with exercises moves
+                    // alone. Its private activity stays at the old start, whose mirror is
+                    // restored unless something else already occupies it, and a hidden empty
+                    // mirror at the new start is shadowed by the moved workout.
+                    if activityOnlyCloudItems.contains(where: { $0.workoutStartedAt == newStartedAt }) {
+                        state.workouts.removeAll {
+                            $0.id != id && $0.exercises.isEmpty &&
+                                $0.date.gymEpochMilliseconds == newStartedAt
+                        }
+                    }
+                    try restoreActivityOnlyMirrorIfUnshadowed(
+                        in: &state, startedAt: previousStartedAt
+                    )
+                }
             }
         } catch {
             activityOnlyCloudItems = previousCloudItems
@@ -4773,6 +4789,38 @@ public final class WorkoutStore: ObservableObject {
             durationSeconds: durationSeconds,
             exercises: []
         )
+    }
+
+    private static func hasOtherWorkout(
+        in state: WorkoutDataSnapshot,
+        at startedAt: Int64,
+        excluding id: UUID
+    ) -> Bool {
+        state.workouts.contains {
+            $0.id != id && $0.date.gymEpochMilliseconds == startedAt
+        }
+    }
+
+    /// Re-creates the metrics-only workout for a cached activity once no workout with
+    /// exercises (or other activity) occupies its start time (Android
+    /// `restoreActivityOnlyMirrorIfUnshadowed`).
+    private func restoreActivityOnlyMirrorIfUnshadowed(
+        in state: inout WorkoutDataSnapshot,
+        startedAt: Int64
+    ) throws {
+        guard let stored = activityOnlyCloudItems.first(where: { $0.workoutStartedAt == startedAt }),
+              !state.workouts.contains(where: { $0.date.gymEpochMilliseconds == startedAt })
+        else { return }
+        guard state.workouts.count < BackupImportLimits.standard.maximumSessions else {
+            throw WorkoutStoreError.invalidWorkout(
+                "Activity-only workout history exceeds the local workout limit."
+            )
+        }
+        state.workouts.append(try Self.makeActivityOnlyWorkout(
+            date: Date(gymEpochMilliseconds: stored.workoutStartedAt),
+            note: stored.note,
+            durationSeconds: stored.durationSeconds
+        ))
     }
 
     private static func isActivityOnlyWorkout(_ workout: WorkoutSession) -> Bool {

@@ -547,6 +547,94 @@ final class ActivityOnlyWorkoutCloudSidecarTests: XCTestCase {
         try assertMoved(try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory))
     }
 
+    func testDateEditOfEnrichedWorkoutRestoresMetricsMirrorAtOldStartAcrossReopen() throws {
+        let directory = try temporaryDirectory(named: "date-edit-enriched")
+        let storageKey = "activity-date-edit-enriched-owner"
+        let oldTimestamp: Int64 = 1_750_000_000_000
+        let newTimestamp: Int64 = 1_750_003_600_000
+        let original = try item(timestamp: oldTimestamp, duration: 754, gymCalories: 45.125,
+                                garminCalories: 50, averageHeartRate: 120, maximumHeartRate: 155,
+                                endingHeartRateZone: 3, note: "Watch activity")
+        let store = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        _ = try store.applyActivityOnlyCloudItems([original], expectedLocalItems: [])
+        let workout = try XCTUnwrap(store.workouts.first)
+        let exercise = try store.addExercise(name: "Bench Press")
+        _ = try store.addExercise(toWorkout: workout.id, exerciseID: exercise.id,
+                                  initialSet: WorkoutSetDraft(weight: 55, reps: 12))
+
+        // Same rule as Android updateWorkoutSession: a workout that now has exercises moves
+        // alone; the private activity stays at its start time and its mirror is restored.
+        try store.updateWorkout(
+            id: workout.id,
+            date: Date(gymEpochMilliseconds: newTimestamp),
+            note: "moved note"
+        )
+
+        func assertRestored(_ candidate: WorkoutStore) throws {
+            XCTAssertEqual(candidate.workouts.count, 2)
+            let core = try XCTUnwrap(candidate.workout(id: workout.id))
+            XCTAssertEqual(core.date.gymEpochMilliseconds, newTimestamp)
+            XCTAssertEqual(core.exercises.count, 1)
+            XCTAssertEqual(core.note, "moved note")
+            let mirror = try XCTUnwrap(candidate.workouts.first {
+                $0.id != workout.id
+            })
+            XCTAssertEqual(mirror.date.gymEpochMilliseconds, oldTimestamp)
+            XCTAssertTrue(mirror.exercises.isEmpty)
+            XCTAssertEqual(mirror.durationSeconds, 754)
+            XCTAssertEqual(mirror.note, "Watch activity")
+            XCTAssertEqual(candidate.activityOnlyCloudItems, [original])
+            XCTAssertEqual(try candidate.activityOnlyCloudSnapshotItems(), [original])
+        }
+        try assertRestored(store)
+        try assertRestored(try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory))
+    }
+
+    func testDateEditOfEnrichedWorkoutOntoActivityStartShadowsThatMirror() throws {
+        let directory = try temporaryDirectory(named: "date-edit-enriched-shadow")
+        let firstTimestamp: Int64 = 1_750_000_000_000
+        let secondTimestamp: Int64 = 1_750_003_600_000
+        let first = try item(timestamp: firstTimestamp, duration: 600, gymCalories: 10,
+                             garminCalories: 12, averageHeartRate: 120, maximumHeartRate: 150,
+                             endingHeartRateZone: 2, note: "first")
+        let second = try item(timestamp: secondTimestamp, duration: 700, gymCalories: 11,
+                              garminCalories: 13, averageHeartRate: 121, maximumHeartRate: 151,
+                              endingHeartRateZone: 3, note: "second")
+        let store = try WorkoutStore(accountStorageKey: "shadow-owner", directoryURL: directory)
+        _ = try store.applyActivityOnlyCloudItems([first, second], expectedLocalItems: [])
+        let firstWorkout = try XCTUnwrap(store.workouts.first {
+            $0.date.gymEpochMilliseconds == firstTimestamp
+        })
+        let exercise = try store.addExercise(name: "Squat")
+        _ = try store.addExercise(toWorkout: firstWorkout.id, exerciseID: exercise.id,
+                                  initialSet: WorkoutSetDraft(weight: 80, reps: 5))
+
+        try store.updateWorkout(
+            id: firstWorkout.id,
+            date: Date(gymEpochMilliseconds: secondTimestamp),
+            note: "moved"
+        )
+
+        func assertShadowed(_ candidate: WorkoutStore) throws {
+            // Core workout now owns the second start; the hidden empty mirror there is gone,
+            // while the first activity is restored at its own start.
+            let atSecond = candidate.workouts.filter {
+                $0.date.gymEpochMilliseconds == secondTimestamp
+            }
+            XCTAssertEqual(atSecond.map(\.id), [firstWorkout.id])
+            let atFirst = candidate.workouts.filter {
+                $0.date.gymEpochMilliseconds == firstTimestamp
+            }
+            XCTAssertEqual(atFirst.count, 1)
+            XCTAssertTrue(atFirst.first?.exercises.isEmpty == true)
+            XCTAssertEqual(candidate.workouts.count, 2)
+            XCTAssertEqual(candidate.activityOnlyCloudItems, [first, second])
+            XCTAssertEqual(try candidate.activityOnlyCloudSnapshotItems(), [first, second])
+        }
+        try assertShadowed(store)
+        try assertShadowed(try WorkoutStore(accountStorageKey: "shadow-owner", directoryURL: directory))
+    }
+
     func testDateEditRejectsTimestampOfAnotherWorkoutAndChangesNothing() throws {
         let directory = try temporaryDirectory(named: "date-edit-collision")
         let storageKey = "activity-date-collision-owner"
