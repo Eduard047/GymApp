@@ -1256,6 +1256,8 @@
     <string name="post_workout_metric_exercises">Exercises</string>
     <string name="post_workout_metrics_title">Training metrics</string>
     <string name="post_workout_metric_top_muscle">Top muscle</string>
+    <string name="post_workout_muscles_title">Loaded today</string>
+    <string name="post_workout_muscle_a11y">%1$s, %2$s, %3$s%%</string>
     <string name="post_workout_metric_sets">Sets</string>
     <string name="post_workout_metric_volume">Volume</string>
 

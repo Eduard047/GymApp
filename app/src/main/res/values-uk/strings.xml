@@ -1296,6 +1296,8 @@
     <string name="post_workout_metric_exercises">Вправи</string>
     <string name="post_workout_metrics_title">Показники тренування</string>
     <string name="post_workout_metric_top_muscle">Головний м’яз</string>
+    <string name="post_workout_muscles_title">Навантажено сьогодні</string>
+    <string name="post_workout_muscle_a11y">%1$s, %2$s, %3$s%%</string>
     <string name="post_workout_metric_sets">Підходи</string>
     <string name="post_workout_metric_volume">Обсяг</string>
 

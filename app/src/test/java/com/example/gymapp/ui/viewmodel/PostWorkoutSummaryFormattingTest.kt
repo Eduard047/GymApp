@@ -174,4 +174,31 @@ class PostWorkoutSummaryFormattingTest {
         val unmapped = listOf(today(bench, 60.0, 8)).map { it.copy(exerciseName = "Zzz unknown thing") }
         assertNull(topTrainedMuscleId(unmapped, emptyMap()))
     }
+
+    @Test
+    fun trainedMusclesAreRankedByLoadKeepCatalogOrderOnTiesAndDropUnloaded() {
+        val mappings = mapOf(
+            manual(bench, "chest" to 1.0, "triceps" to 0.5, "biceps" to 0.5),
+            manual(squat, "quads" to 1.0)
+        )
+        val ranked = rankedTrainedMuscles(
+            listOf(today(bench, 60.0, 8), today(squat, 100.0, 8)),
+            mappings
+        )
+        // quads 835 > chest 515 > biceps = triceps 257.5 (biceps first in the catalog); nothing else.
+        assertEquals(listOf("quads", "chest", "biceps", "triceps"), ranked.map { it.muscleId })
+        assertTrue(ranked.all { it.load > 0.0 })
+        assertEquals(ranked.sortedByDescending { it.load }, ranked)
+        assertEquals("quads", topTrainedMuscleId(listOf(today(bench, 60.0, 8), today(squat, 100.0, 8)), mappings))
+    }
+
+    @Test
+    fun trainedMusclesAreCappedAtEightAndEmptyWithoutMappedLoad() {
+        val muscles = listOf("chest", "shoulders", "biceps", "triceps", "forearms", "abs", "obliques", "lats", "upperBack", "lowerBack")
+        val mappings = mapOf(manual(bench, *muscles.map { it to 1.0 }.toTypedArray()))
+        val ranked = rankedTrainedMuscles(listOf(today(bench, 60.0, 8)), mappings)
+        assertEquals(TRAINED_MUSCLES_LIMIT, ranked.size)
+        assertEquals(muscles.take(8), ranked.map { it.muscleId })
+        assertTrue(rankedTrainedMuscles(emptyList(), emptyMap()).isEmpty())
+    }
 }

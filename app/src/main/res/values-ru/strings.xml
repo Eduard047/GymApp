@@ -1296,6 +1296,8 @@
     <string name="post_workout_metric_exercises">Упражнения</string>
     <string name="post_workout_metrics_title">Показатели тренировки</string>
     <string name="post_workout_metric_top_muscle">Главная мышца</string>
+    <string name="post_workout_muscles_title">Нагружено сегодня</string>
+    <string name="post_workout_muscle_a11y">%1$s, %2$s, %3$s%%</string>
     <string name="post_workout_metric_sets">Подходы</string>
     <string name="post_workout_metric_volume">Объём</string>
 

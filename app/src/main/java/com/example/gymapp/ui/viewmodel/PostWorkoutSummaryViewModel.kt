@@ -74,6 +74,8 @@ data class PostWorkoutSummaryUiState(
     val note: String? = null,
     /** Id of the most loaded muscle of this session (see [topTrainedMuscleId]), or null. */
     val topMuscleId: String? = null,
+    /** Muscles loaded in this session, most loaded first, at most [TRAINED_MUSCLES_LIMIT] (see [rankedTrainedMuscles]). */
+    val trainedMuscles: List<TrainedMuscleLoad> = emptyList(),
     val setCount: Int = 0,
     val volume: Double = 0.0,
     val xpGained: Int = 0,
@@ -211,7 +213,24 @@ private const val ESTIMATE_TOLERANCE = 1e-9
 internal fun topTrainedMuscleId(
     sessionEntries: List<ExerciseHistoryEntry>,
     manualMappings: Map<String, List<MuscleContribution>> = emptyMap()
-): String? {
+): String? = rankedTrainedMuscles(sessionEntries, manualMappings, limit = 1).firstOrNull()?.muscleId
+
+/** One row of the "Loaded today" list: a muscle id and its load in this session. */
+data class TrainedMuscleLoad(val muscleId: String, val load: Double)
+
+/** Rows shown in the "Loaded today" list, like the iPhone summary. */
+internal const val TRAINED_MUSCLES_LIMIT = 8
+
+/**
+ * Muscles that carried load in one session, most loaded first, like the iPhone's trained muscles
+ * ranking: every set adds its estimated load times each mapped muscle's weight, muscles without load
+ * are dropped, ties keep the catalog order, and at most [limit] rows are returned.
+ */
+internal fun rankedTrainedMuscles(
+    sessionEntries: List<ExerciseHistoryEntry>,
+    manualMappings: Map<String, List<MuscleContribution>> = emptyMap(),
+    limit: Int = TRAINED_MUSCLES_LIMIT
+): List<TrainedMuscleLoad> {
     val loadByMuscle = HashMap<String, Double>()
     sessionEntries.forEach { entry ->
         val load = entry.estimatedLoad()
@@ -221,10 +240,10 @@ internal fun topTrainedMuscleId(
         }
     }
     return MUSCLE_DEFINITIONS
-        .map { it.id to (loadByMuscle[it.id] ?: 0.0) }
-        .filter { (_, load) -> load > 0.0 }
-        .maxByOrNull { (_, load) -> load }
-        ?.first
+        .map { TrainedMuscleLoad(it.id, loadByMuscle[it.id] ?: 0.0) }
+        .filter { it.load > 0.0 }
+        .sortedByDescending { it.load }
+        .take(limit)
 }
 
 class PostWorkoutSummaryViewModel(
@@ -344,6 +363,10 @@ class PostWorkoutSummaryViewModel(
                 exerciseCount = workoutExerciseCount,
                 note = sessionDetails.session.note?.trim()?.takeIf { it.isNotEmpty() },
                 topMuscleId = topTrainedMuscleId(
+                    sessionEntries = sessionHistoryEntries,
+                    manualMappings = muscleMappings.toManualContributionMap()
+                ),
+                trainedMuscles = rankedTrainedMuscles(
                     sessionEntries = sessionHistoryEntries,
                     manualMappings = muscleMappings.toManualContributionMap()
                 ),

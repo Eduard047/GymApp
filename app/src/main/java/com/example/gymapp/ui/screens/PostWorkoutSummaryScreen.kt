@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -72,9 +73,11 @@ import com.example.gymapp.ui.viewmodel.CompletedMissionUiState
 import com.example.gymapp.ui.viewmodel.NewBadgeUiState
 import com.example.gymapp.ui.viewmodel.PostWorkoutPrUiState
 import com.example.gymapp.ui.viewmodel.PostWorkoutSummaryUiState
+import com.example.gymapp.ui.viewmodel.TrainedMuscleLoad
 import com.example.gymapp.util.DateTimeUtils
 import java.text.NumberFormat
 import java.util.Locale
+import kotlin.math.roundToInt
 import com.example.gymapp.util.formattedStringResource
 
 @Composable
@@ -130,6 +133,12 @@ fun PostWorkoutSummaryScreen(
                         selected = uiState.feedback,
                         onSelected = onFeedbackSelected
                     )
+                }
+
+                if (uiState.trainedMuscles.isNotEmpty()) {
+                    item {
+                        TrainedMusclesCard(muscles = uiState.trainedMuscles)
+                    }
                 }
 
                 if (uiState.personalRecords.isNotEmpty()) {
@@ -277,6 +286,58 @@ private fun TrainingMetricsCard(uiState: PostWorkoutSummaryUiState) {
                         MetricTile(label = exercisesLabel, value = exercisesValue, modifier = Modifier.fillMaxWidth())
                         MetricTile(label = topMuscleLabel, value = topMuscle, modifier = Modifier.fillMaxWidth())
                     }
+                }
+            }
+        }
+    }
+}
+
+/** Muscles loaded in the finished workout with bars scaled to the most loaded one, like the iPhone summary. */
+@Composable
+private fun TrainedMusclesCard(muscles: List<TrainedMuscleLoad>) {
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    val languageTag = currentAppLanguageTag()
+    val numberFormat = NumberFormat.getIntegerInstance(locale)
+    val maxLoad = maxOf(1.0, muscles.first().load)
+
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SectionHeading(text = stringResource(R.string.post_workout_muscles_title))
+            muscles.forEach { item ->
+                val name = localizedMuscleName(item.muscleId, languageTag)
+                val load = numberFormat.format(item.load)
+                val percent = numberFormat.format((item.load / maxLoad * 100.0).roundToInt())
+                val description = formattedStringResource(R.string.post_workout_muscle_a11y, name, load, percent)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clearAndSetSemantics { contentDescription = description },
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = name,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = load,
+                            style = MaterialTheme.typography.bodySmall.tabularDigits(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    GymProgressBar(
+                        progress = { (item.load / maxLoad).toFloat() },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         }
@@ -496,7 +557,7 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                     value = uiState.durationSeconds
                         ?.takeIf { it > 0L }
                         ?.let { DateTimeUtils.formatCompactDuration(it, locale) }
-                        ?: "--",
+                        ?: "—",
                     label = stringResource(R.string.post_workout_metric_duration),
                     color = onHero,
                     modifier = statModifier
