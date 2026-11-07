@@ -695,6 +695,55 @@ internal fun lastLoggedWeight(history: List<ExerciseHistoryEntry>, exerciseId: L
         ?.weight
 }
 
+/** One set of the last completed session of an exercise, used to seed a freshly picked card. */
+internal data class SetSeed(val weight: Double, val reps: Int)
+
+/** Most sets copied from the last session into a freshly picked card. */
+internal const val LAST_SESSION_SEED_MAX_SETS = 10
+
+/**
+ * Sets of the exercise's LAST completed session, for the picker's "add exercise" path
+ * (shared/plan-seed-last-session-v1.json). Last session = newest sessionDate, ties by highest
+ * sessionId. If the exercise has several blocks in it, only the FIRST block (lowest blockOrderIndex)
+ * counts. Sets go in setOrderIndex order, sets with reps <= 0 are skipped, weight 0 (bodyweight)
+ * is kept, and at most min([LAST_SESSION_SEED_MAX_SETS], MAX_SETS_PER_EXERCISE) sets are returned.
+ * Null when there is nothing to copy, so the caller keeps the default one-set card.
+ */
+internal fun lastSessionSetSeed(history: List<ExerciseHistoryEntry>, exerciseId: Long): List<SetSeed>? {
+    val entries = history.filter { it.exerciseId == exerciseId }
+    if (entries.isEmpty()) return null
+    val lastSession = entries.maxWith(compareBy({ it.sessionDate }, { it.sessionId }))
+    val inSession = entries.filter {
+        it.sessionDate == lastSession.sessionDate && it.sessionId == lastSession.sessionId
+    }
+    val firstBlock = inSession.minOf { it.blockOrderIndex }
+    val limit = minOf(LAST_SESSION_SEED_MAX_SETS, WorkoutDataLimits.MAX_SETS_PER_EXERCISE)
+    return inSession.filter { it.blockOrderIndex == firstBlock && it.reps > 0 }
+        .sortedBy { it.setOrderIndex }
+        .take(limit)
+        .map { SetSeed(weight = it.weight, reps = it.reps) }
+        .takeIf { it.isNotEmpty() }
+}
+
+/**
+ * Replaces the sets of a freshly added card with [seed], but only while the card is still the
+ * untouched default (one set, blank weight, default or blank reps); never overwrites user edits.
+ */
+internal fun withSeedSetsIfPristine(
+    current: List<ExerciseInputState>,
+    draftId: Long,
+    seed: List<SetSeed>
+): List<ExerciseInputState> = current.map { draft ->
+    val onlySet = draft.sets.singleOrNull()
+    if (seed.isNotEmpty() && draft.draftId == draftId && onlySet != null && onlySet.weight.isBlank() &&
+        (onlySet.reps.isBlank() || onlySet.reps == DEFAULT_PLANNED_REPS)
+    ) {
+        draft.copy(sets = seed.map { SetInputState(weight = formatPlannedWeight(it.weight), reps = it.reps.toString()) })
+    } else {
+        draft
+    }
+}
+
 /**
  * Catalog exercises a push/pull/legs/upper/lower preset loads, same rule as iPhone: rank by how many
  * of the preset's target muscles an exercise trains, then the longest-untrained first, then by name,
@@ -1736,8 +1785,8 @@ class AddWorkoutViewModel internal constructor(
     /**
      * Appends a new card for an exercise picked from the "Add exercise" picker. Nothing is added when
      * the exercise is unknown, already in the plan (a message is shown), or the per-workout exercise
-     * limit is reached. The first set starts with 10 reps and the last logged weight for that
-     * exercise when one exists.
+     * limit is reached. The card is seeded with the sets of the exercise's last completed session
+     * ([lastSessionSetSeed]); without history it has one set of 10 reps and the last weight, if known.
      */
     fun addExerciseDraftWithExercise(exerciseId: Long) {
         if (exerciseId <= 0L || exerciseCatalogState.value.exercises.none { it.id == exerciseId }) {
@@ -1769,14 +1818,27 @@ class AddWorkoutViewModel internal constructor(
         }
         val draftId = addedDraftId ?: return
         hasValidationError.value = false
+        val loadedSeed = lastSessionSetSeed(exerciseHistory.value, exerciseId)
+        if (loadedSeed != null) {
+            exerciseDrafts.update { current -> withSeedSetsIfPristine(current, draftId, loadedSeed) }
+            return
+        }
         val knownWeight = uiState.value.lastWeights[exerciseId]
-        if (knownWeight != null) {
+        if (knownWeight != null && exerciseHistory.value.isNotEmpty()) {
             exerciseDrafts.update { current ->
                 withInitialWeightIfBlank(current, draftId, knownWeight)
             }
             return
         }
         viewModelScope.launch {
+            // The history stream may not be loaded yet (it only runs while the screen collects it).
+            val history = exerciseHistory.value.ifEmpty {
+                runCatching { repository.observeAllExerciseHistory().first() }.getOrDefault(emptyList())
+            }
+            lastSessionSetSeed(history, exerciseId)?.let { seed ->
+                exerciseDrafts.update { current -> withSeedSetsIfPristine(current, draftId, seed) }
+                return@launch
+            }
             val lastWeight = runCatching {
                 repository.observeLastWeights(listOf(exerciseId)).first()[exerciseId]
             }.getOrNull() ?: return@launch

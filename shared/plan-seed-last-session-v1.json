@@ -1,0 +1,734 @@
+{
+  "version": 1,
+  "description": "Plan editor: sets used to seed a card when the user adds an exercise from the picker (T167). Implemented by lastSessionSetSeed on Android; iPhone must produce identical results.",
+  "scope": "Only the picker 'add exercise' path. Voice, templates, smart coach and repeat-last keep their explicit values. Without a seed (expected null) the card keeps today's default: one set, reps 10, last known weight or blank.",
+  "rules": [
+    "1. Only history rows of the requested exerciseId are considered. No rows -> null.",
+    "2. Last completed session = the session with the greatest date; if several sessions share that date, the one with the greatest sessionId. Older sessions are never used.",
+    "3. If the exercise appears in several blocks of that session, take ONLY the FIRST block (lowest blockOrderIndex). Blocks are NOT concatenated.",
+    "4. Within that block, sets go in ascending setOrderIndex order (input row order is irrelevant).",
+    "5. Sets with reps <= 0 are skipped. Weight 0 (bodyweight) is a valid weight and is kept.",
+    "6. Take at most 10 sets (after skipping), and never more than the app's max sets per exercise (100, so 10 is the binding cap).",
+    "7. Each seed set is {weight, reps} exactly as logged. If no set is left after the steps above the result is null (do not look at older sessions).",
+    "8. Applying the seed (not covered by cases): the card's sets are replaced only while the card is still the untouched default (one set, blank weight, reps blank or 10); user edits are never overwritten."
+  ],
+  "inputFields": {
+    "exerciseId": "exercise being added",
+    "history": "rows of one logged set each: exerciseId, sessionId, date (any comparable number, e.g. epoch ms), blockOrderIndex (position of the exercise block in the workout), setOrderIndex (position in the block), weight (kg), reps"
+  },
+  "outputField": "expected = ordered list of {weight, reps}, or null when there is nothing to copy",
+  "cases": [
+    {
+      "id": "no-history",
+      "name": "No history at all -> null (keep the default card)",
+      "exerciseId": 1,
+      "history": [],
+      "expected": null
+    },
+    {
+      "id": "other-exercise-only",
+      "name": "History exists only for other exercises -> null",
+      "exerciseId": 1,
+      "history": [
+        {
+          "exerciseId": 2,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 50,
+          "reps": 8
+        }
+      ],
+      "expected": null
+    },
+    {
+      "id": "single-session",
+      "name": "One session: every set copied in order",
+      "exerciseId": 1,
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 60,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 60,
+          "reps": 8
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 2,
+          "weight": 55.5,
+          "reps": 6
+        }
+      ],
+      "expected": [
+        {
+          "weight": 60,
+          "reps": 10
+        },
+        {
+          "weight": 60,
+          "reps": 8
+        },
+        {
+          "weight": 55.5,
+          "reps": 6
+        }
+      ]
+    },
+    {
+      "id": "set-order-by-index",
+      "name": "Sets are ordered by setOrderIndex, not by the order of the input rows",
+      "exerciseId": 1,
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 2,
+          "weight": 50,
+          "reps": 5
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 70,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 60,
+          "reps": 8
+        }
+      ],
+      "expected": [
+        {
+          "weight": 70,
+          "reps": 10
+        },
+        {
+          "weight": 60,
+          "reps": 8
+        },
+        {
+          "weight": 50,
+          "reps": 5
+        }
+      ]
+    },
+    {
+      "id": "latest-date-wins",
+      "name": "The session with the newest date wins even if its id is smaller",
+      "exerciseId": 1,
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 20,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 40,
+          "reps": 12
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 2000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 80,
+          "reps": 5
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 2000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 80,
+          "reps": 4
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 30,
+          "date": 500,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        }
+      ],
+      "expected": [
+        {
+          "weight": 80,
+          "reps": 5
+        },
+        {
+          "weight": 80,
+          "reps": 4
+        }
+      ]
+    },
+    {
+      "id": "date-tie-higher-session-id-wins",
+      "name": "Same date: the session with the higher id wins",
+      "exerciseId": 1,
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 7,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 50,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 7,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 50,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 9,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 65,
+          "reps": 6
+        }
+      ],
+      "expected": [
+        {
+          "weight": 65,
+          "reps": 6
+        }
+      ]
+    },
+    {
+      "id": "exercise-twice-first-block-only",
+      "name": "Exercise appears in two blocks of the last session: only the FIRST block (lowest blockOrderIndex) is used, blocks are not concatenated",
+      "exerciseId": 1,
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 2,
+          "setOrderIndex": 0,
+          "weight": 30,
+          "reps": 15
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 2,
+          "setOrderIndex": 1,
+          "weight": 30,
+          "reps": 15
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 60,
+          "reps": 8
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 60,
+          "reps": 7
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 1,
+          "setOrderIndex": 0,
+          "weight": 99,
+          "reps": 1
+        }
+      ],
+      "expected": [
+        {
+          "weight": 60,
+          "reps": 8
+        },
+        {
+          "weight": 60,
+          "reps": 7
+        }
+      ]
+    },
+    {
+      "id": "cap-ten-sets",
+      "name": "More than 10 sets: only the first 10 (by setOrderIndex) are copied",
+      "exerciseId": 1,
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 50,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 51,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 2,
+          "weight": 52,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 3,
+          "weight": 53,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 4,
+          "weight": 54,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 5,
+          "weight": 55,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 6,
+          "weight": 56,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 7,
+          "weight": 57,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 8,
+          "weight": 58,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 9,
+          "weight": 59,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 10,
+          "weight": 60,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 11,
+          "weight": 61,
+          "reps": 10
+        }
+      ],
+      "expected": [
+        {
+          "weight": 50,
+          "reps": 10
+        },
+        {
+          "weight": 51,
+          "reps": 10
+        },
+        {
+          "weight": 52,
+          "reps": 10
+        },
+        {
+          "weight": 53,
+          "reps": 10
+        },
+        {
+          "weight": 54,
+          "reps": 10
+        },
+        {
+          "weight": 55,
+          "reps": 10
+        },
+        {
+          "weight": 56,
+          "reps": 10
+        },
+        {
+          "weight": 57,
+          "reps": 10
+        },
+        {
+          "weight": 58,
+          "reps": 10
+        },
+        {
+          "weight": 59,
+          "reps": 10
+        }
+      ]
+    },
+    {
+      "id": "reps-zero-skipped-before-cap",
+      "name": "Sets with reps <= 0 are skipped (before the cap is applied); the rest keep their order",
+      "exerciseId": 1,
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 50,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 50,
+          "reps": 0
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 2,
+          "weight": 50,
+          "reps": -3
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 3,
+          "weight": 55,
+          "reps": 8
+        }
+      ],
+      "expected": [
+        {
+          "weight": 50,
+          "reps": 10
+        },
+        {
+          "weight": 55,
+          "reps": 8
+        }
+      ]
+    },
+    {
+      "id": "skip-then-cap",
+      "name": "12 rows, 3 of them with reps 0: 9 valid sets remain, all copied",
+      "exerciseId": 1,
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 40,
+          "reps": 5
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 41,
+          "reps": 0
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 2,
+          "weight": 42,
+          "reps": 5
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 3,
+          "weight": 43,
+          "reps": 5
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 4,
+          "weight": 44,
+          "reps": 0
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 5,
+          "weight": 45,
+          "reps": 5
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 6,
+          "weight": 46,
+          "reps": 5
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 7,
+          "weight": 47,
+          "reps": 0
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 8,
+          "weight": 48,
+          "reps": 5
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 9,
+          "weight": 49,
+          "reps": 5
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 10,
+          "weight": 50,
+          "reps": 5
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 11,
+          "weight": 51,
+          "reps": 5
+        }
+      ],
+      "expected": [
+        {
+          "weight": 40,
+          "reps": 5
+        },
+        {
+          "weight": 42,
+          "reps": 5
+        },
+        {
+          "weight": 43,
+          "reps": 5
+        },
+        {
+          "weight": 45,
+          "reps": 5
+        },
+        {
+          "weight": 46,
+          "reps": 5
+        },
+        {
+          "weight": 48,
+          "reps": 5
+        },
+        {
+          "weight": 49,
+          "reps": 5
+        },
+        {
+          "weight": 50,
+          "reps": 5
+        },
+        {
+          "weight": 51,
+          "reps": 5
+        }
+      ]
+    },
+    {
+      "id": "all-reps-invalid-null",
+      "name": "Last session has only reps <= 0 sets -> null (keep the default card; do NOT fall back to an older session)",
+      "exerciseId": 1,
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 50,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 11,
+          "date": 2000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 50,
+          "reps": 0
+        }
+      ],
+      "expected": null
+    },
+    {
+      "id": "bodyweight-zero-kept",
+      "name": "Weight 0 (bodyweight) is kept as a real weight",
+      "exerciseId": 1,
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 0,
+          "reps": 15
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 0,
+          "reps": 12
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 2,
+          "weight": 0,
+          "reps": 10
+        }
+      ],
+      "expected": [
+        {
+          "weight": 0,
+          "reps": 15
+        },
+        {
+          "weight": 0,
+          "reps": 12
+        },
+        {
+          "weight": 0,
+          "reps": 10
+        }
+      ]
+    }
+  ]
+}
