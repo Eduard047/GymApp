@@ -16,7 +16,7 @@ class ActiveWorkoutHeroPresentationTest {
     fun timerAndStartedAtUseUnambiguousClockFormats() {
         assertEquals("00:00", formatActiveWorkoutTime(-1, Locale.US))
         assertEquals("59:59", formatActiveWorkoutTime(3_599, Locale.US))
-        assertEquals("01:00:00", formatActiveWorkoutTime(3_600, Locale.US))
+        assertEquals("1:00:00", formatActiveWorkoutTime(3_600, Locale.US))
         assertEquals(
             "14:05",
             formatActiveWorkoutStartedAt(

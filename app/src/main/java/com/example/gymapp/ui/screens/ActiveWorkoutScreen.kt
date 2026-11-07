@@ -2995,7 +2995,7 @@ internal fun formatActiveWorkoutTime(
     val minutes = (bounded % 3_600L) / 60L
     val seconds = bounded % 60L
     return if (hours > 0L) {
-        String.format(locale, "%02d:%02d:%02d", hours, minutes, seconds)
+        String.format(locale, "%d:%02d:%02d", hours, minutes, seconds)
     } else {
         String.format(locale, "%02d:%02d", minutes, seconds)
     }

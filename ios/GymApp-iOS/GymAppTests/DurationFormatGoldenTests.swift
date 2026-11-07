@@ -61,7 +61,7 @@ final class DurationFormatGoldenTests: XCTestCase {
     private func checkPlain(_ name: String, format: (Int) -> String) throws {
         for item in try cases(name) {
             let seconds = try XCTUnwrap(item["seconds"] as? Int)
-            let expected = try XCTUnwrap((item["expected"] ?? item["ios"]) as? String)
+            let expected = try XCTUnwrap(item["expected"] as? String)
             XCTAssertEqual(format(seconds), expected, "\(name) \(seconds)")
         }
     }

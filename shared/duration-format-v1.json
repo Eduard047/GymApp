@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Shared duration/time formatter vectors run by Android DurationFormatGoldenTest and iOS DurationFormatGoldenTests. Localized formatters give one string per language; others give one 'expected' string. A case carries 'android'/'ios' instead of 'expected' only where the platforms differ today (see knownDifferences).",
+  "description": "Shared duration/time formatter vectors run by Android DurationFormatGoldenTest and iOS DurationFormatGoldenTests. Localized formatters give one string per language; others give one 'expected' string. A case may carry 'android'/'ios' instead of 'expected' only where the platforms differ (see knownDifferences).",
   "languages": [
     "en",
     "uk",
@@ -200,7 +200,7 @@
     "elapsedTimer": {
       "android": "formatActiveWorkoutTime",
       "ios": "ActiveWorkoutView.clock",
-      "note": "Active workout elapsed timer, not localized. Under one hour both are mm:ss. From one hour Android zero-pads the hours (01:00:00), iPhone does not (1:00:00).",
+      "note": "Active workout elapsed timer, not localized. Under one hour both are mm:ss. From one hour the hours are not zero-padded on either platform (1:00:00).",
       "cases": [
         {
           "seconds": 0,
@@ -232,13 +232,11 @@
         },
         {
           "seconds": 3600,
-          "android": "01:00:00",
-          "ios": "1:00:00"
+          "expected": "1:00:00"
         },
         {
           "seconds": 3661,
-          "android": "01:01:01",
-          "ios": "1:01:01"
+          "expected": "1:01:01"
         },
         {
           "seconds": 36000,
@@ -354,7 +352,6 @@
     }
   },
   "knownDifferences": [
-    "elapsedTimer from 3600 s: Android pads hours to two digits (01:00:00), iPhone does not (1:00:00).",
     "iPhone ActiveWorkoutView.compactRestControls shows the rest countdown through the elapsed-timer clock (mm:ss, 01:30) while every other rest surface on both platforms uses m:ss (1:30); restCountdown records the m:ss form."
   ]
 }
