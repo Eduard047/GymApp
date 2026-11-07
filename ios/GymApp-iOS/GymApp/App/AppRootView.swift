@@ -522,6 +522,7 @@ private struct MainTabShell: View {
     @State private var tutorialAutomaticPresentationSuppressedForSession = false
     @State private var tutorialTask: Task<Void, Never>?
     @State private var activeWorkoutOpenTimeoutTask: Task<Void, Never>?
+    @State private var startWorkoutShortcutTask: Task<Void, Never>?
     @State private var tutorialPrimaryActionGlobalFrame: CGRect?
 
     init(appState: AppState, nativePush: NativePushManager) {
@@ -1058,7 +1059,12 @@ private struct MainTabShell: View {
         }
         .onChange(of: activeWorkoutStore.draft?.id) { _, _ in
             openRequestedActiveWorkoutIfNeeded()
+            openRequestedStartWorkoutShortcutIfNeeded()
         }
+        .onReceive(NotificationCenter.default.publisher(for: StartWorkoutShortcut.requestedNotification)) { _ in
+            openRequestedStartWorkoutShortcutIfNeeded()
+        }
+        .task { openRequestedStartWorkoutShortcutIfNeeded() }
         .onChange(of: appState.activeAccountStorageKey) { _, _ in
             activeWorkoutOpenTimeoutTask?.cancel()
             activeWorkoutOpenTimeoutTask = nil
@@ -1474,6 +1480,54 @@ private struct MainTabShell: View {
             yieldTutorialToExternalNavigation()
             showsAddWorkout = false
             showsActiveWorkout = true
+        }
+    }
+
+    /// Home-screen "Start workout" quick action: active draft -> active workout, otherwise the
+    /// plan editor the Today button opens. A cold launch has no draft yet, so it settles briefly.
+    private func openRequestedStartWorkoutShortcutIfNeeded() {
+        let action = StartWorkoutShortcut.action(
+            requestPending: StartWorkoutShortcut.pendingSince != nil,
+            hasAccount: appState.isAccountReady,
+            hasDraft: activeWorkoutStore.draft != nil,
+            age: StartWorkoutShortcut.pendingAge
+        )
+        switch action {
+        case .none:
+            return
+        case .drop:
+            startWorkoutShortcutTask?.cancel()
+            startWorkoutShortcutTask = nil
+            StartWorkoutShortcut.consume()
+        case .wait:
+            guard startWorkoutShortcutTask == nil else { return }
+            let remaining = max(StartWorkoutShortcut.settleDelay - StartWorkoutShortcut.pendingAge, 0.05)
+            startWorkoutShortcutTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                startWorkoutShortcutTask = nil
+                openRequestedStartWorkoutShortcutIfNeeded()
+            }
+        case .openActiveWorkout:
+            startWorkoutShortcutTask?.cancel()
+            startWorkoutShortcutTask = nil
+            StartWorkoutShortcut.consume()
+            yieldTutorialToExternalNavigation()
+            showsAddWorkout = false
+            showsActiveWorkout = true
+        case .openWorkoutEditor:
+            startWorkoutShortcutTask?.cancel()
+            startWorkoutShortcutTask = nil
+            StartWorkoutShortcut.consume()
+            yieldTutorialToExternalNavigation()
+            selectedTab = .workouts
+            sharedWorkoutDraftSeed = []
+            workoutLaunchSeed = nil
+            workoutLaunchConsumerID = nil
+            workoutLaunchDrafts = nil
+            workoutEditorLiveRecipient = nil
+            showsActiveWorkout = false
+            showsAddWorkout = true
         }
     }
 

@@ -19,6 +19,8 @@ import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.data.repository.SharedWorkoutOfferResult
 import com.example.gymapp.navigation.GymAppRoot
 import com.example.gymapp.service.isOpenActiveWorkoutAction
+import com.example.gymapp.service.isStartWorkoutShortcutAction
+import com.example.gymapp.service.shouldRequestStartWorkoutShortcut
 import com.example.gymapp.service.shouldRequestOpenActiveWorkout
 import com.example.gymapp.ui.theme.GymAppTheme
 import com.example.gymapp.uiaudit.UiAuditHooks
@@ -107,6 +109,13 @@ class MainActivity : AppCompatActivity() {
             // intent and must not re-open the screen the user already left.
             if (shouldRequestOpenActiveWorkout(intent?.action, restoredInstance)) {
                 (application as GymApplication).activeWorkoutOpenInbox.request()
+            }
+            return
+        }
+        if (isStartWorkoutShortcutAction(intent?.action)) {
+            // Launcher shortcut: routed by the root UI (active workout / editor / plain launch).
+            if (shouldRequestStartWorkoutShortcut(intent?.action, restoredInstance)) {
+                (application as GymApplication).activeWorkoutOpenInbox.requestStartShortcut()
             }
             return
         }

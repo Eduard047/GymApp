@@ -2,3 +2,4 @@
 "NSBluetoothPeripheralUsageDescription" = "GymApp uses Bluetooth to exchange workout plans and completed workouts with your selected Garmin watch.";
 "NSMicrophoneUsageDescription" = "GymApp uses the microphone only when you tap the mic, to turn your speech into a workout plan or log a set. Audio stays on this device.";
 "NSSpeechRecognitionUsageDescription" = "GymApp uses on-device speech recognition only when you tap the mic, to create a workout plan or log a set from your voice. Nothing is sent off this device.";
+"Start workout" = "Start workout";

@@ -431,6 +431,8 @@
     <string name="focus_lens_volume">Обсяг</string>
     <string name="focus_lens_total_volume">Загальний обсяг</string>
     <string name="action_start_workout">Почати тренування</string>
+    <string name="shortcut_start_workout_short">Почати тренування</string>
+    <string name="shortcut_start_workout_long">Почати тренування</string>
     <string name="action_continue_workout">Продовжити тренування</string>
     <string name="continue_workout_bar_progress">%1$d / %2$d</string>
     <string name="continue_workout_bar_discard">Відкинути активне тренування</string>

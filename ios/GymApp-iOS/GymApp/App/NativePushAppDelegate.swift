@@ -17,6 +17,24 @@ final class NativePushAppDelegate: NSObject, UIApplicationDelegate,
         return true
     }
 
+    /// Cold launch from a quick action delivers the item here; warm actions reach
+    /// `StartWorkoutShortcutSceneDelegate`.
+    func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        if let item = options.shortcutItem {
+            StartWorkoutShortcut.handle(item)
+        }
+        let configuration = UISceneConfiguration(
+            name: nil,
+            sessionRole: connectingSceneSession.role
+        )
+        configuration.delegateClass = StartWorkoutShortcutSceneDelegate.self
+        return configuration
+    }
+
     func application(
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data

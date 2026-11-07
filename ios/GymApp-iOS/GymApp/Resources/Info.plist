@@ -57,6 +57,17 @@
 	<string>GymApp uses the microphone only when you tap the mic, to turn your speech into a workout plan or log a set. Audio stays on this device.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>GymApp uses on-device speech recognition only when you tap the mic, to create a workout plan or log a set from your voice. Nothing is sent off this device.</string>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>play.fill</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Start workout</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.setforge.gymapp.ios.shortcut.start-workout</string>
+		</dict>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>

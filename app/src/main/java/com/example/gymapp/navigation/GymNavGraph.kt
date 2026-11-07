@@ -1506,6 +1506,40 @@ internal fun GymAppRoot(
             activeWorkoutOpenInbox.consume(requestId)
         }
     }
+    val pendingStartShortcut by activeWorkoutOpenInbox.startShortcutPending
+        .collectAsStateWithLifecycle()
+    LaunchedEffect(pendingStartShortcut, activeWorkout != null, authState.session != null) {
+        val requestId = pendingStartShortcut ?: return@LaunchedEffect
+        val route = com.example.gymapp.service.startWorkoutShortcutRoute(
+            hasSession = authState.session != null,
+            hasActiveWorkout = activeWorkout != null
+        )
+        when (route) {
+            com.example.gymapp.service.StartWorkoutShortcutRoute.OpenApp -> {
+                // Signed out (or the session is still restoring): keep it briefly, then drop it.
+                kotlinx.coroutines.delay(com.example.gymapp.service.OPEN_ACTIVE_WORKOUT_GRACE_MILLIS)
+                activeWorkoutOpenInbox.consumeStartShortcut(requestId)
+            }
+            com.example.gymapp.service.StartWorkoutShortcutRoute.OpenActiveWorkout -> {
+                runCatching {
+                    navController.navigate(AppDestination.ActiveWorkout.route) {
+                        launchSingleTop = true
+                    }
+                }
+                activeWorkoutOpenInbox.consumeStartShortcut(requestId)
+            }
+            com.example.gymapp.service.StartWorkoutShortcutRoute.OpenWorkoutEditor -> {
+                // The draft flow starts empty on a cold launch; re-keying on it cancels this wait.
+                kotlinx.coroutines.delay(com.example.gymapp.service.START_WORKOUT_SHORTCUT_SETTLE_MILLIS)
+                runCatching {
+                    navController.navigate(AppDestination.AddWorkout.route) {
+                        launchSingleTop = true
+                    }
+                }
+                activeWorkoutOpenInbox.consumeStartShortcut(requestId)
+            }
+        }
+    }
     LaunchedEffect(liveWorkoutState.shouldOpenActiveWorkout, activeWorkout != null) {
         if (liveWorkoutState.shouldOpenActiveWorkout && activeWorkout != null) {
             navController.navigate(AppDestination.ActiveWorkout.route) {

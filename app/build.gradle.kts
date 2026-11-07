@@ -179,6 +179,8 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["authCallbackScheme"] = "com.setforge.gymapp"
+        // Static shortcuts cannot use ${applicationId}; keep this equal to the variant's id.
+        resValue("string", "shortcut_target_package", "com.setforge.gymapp")
         buildConfigField("String", "AUTH_CALLBACK_SCHEME", "\"com.setforge.gymapp\"")
         buildConfigField("String", "AUTH_BRIDGE_VARIANT_QUERY", "\"\"")
         buildConfigField("boolean", "FIREBASE_CONFIGURED", "false")
@@ -204,6 +206,7 @@ android {
             if (useDevApplicationIdSuffix) {
                 applicationIdSuffix = ".dev"
                 versionNameSuffix = "-dev"
+                resValue("string", "shortcut_target_package", "com.setforge.gymapp.dev")
             }
             manifestPlaceholders["authCallbackScheme"] = "com.setforge.gymapp.dev"
             buildConfigField("String", "AUTH_CALLBACK_SCHEME", "\"com.setforge.gymapp.dev\"")
@@ -279,6 +282,7 @@ android {
             initWith(getByName("release"))
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-qa"
+            resValue("string", "shortcut_target_package", "com.setforge.gymapp.dev")
             isDebuggable = false
             signingConfig = signingConfigs.getByName("debug")
             manifestPlaceholders["authCallbackScheme"] = "com.setforge.gymapp.dev"
@@ -320,6 +324,7 @@ android {
     buildFeatures {
         buildConfig = true
         compose = true
+        resValues = true
     }
     androidResources {
         // aapt ignore syntax is colon-delimited and matched against each asset
