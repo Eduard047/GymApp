@@ -399,15 +399,16 @@ final class TodayScreenProjectionCache: ObservableObject {
 /// open, so screens that cache "today" can re-read the clock (`scenePhase` does not change
 /// in either case).
 enum GymDayChange {
-    static var publisher: AnyPublisher<Void, Never> {
+    static let publisher: AnyPublisher<Void, Never> = {
         let center = NotificationCenter.default
         return Publishers.Merge(
             center.publisher(for: .NSCalendarDayChanged),
             center.publisher(for: NSNotification.Name.NSSystemTimeZoneDidChange)
         )
         .map { _ in () }
+        .receive(on: DispatchQueue.main)
         .eraseToAnyPublisher()
-    }
+    }()
 }
 
 @MainActor

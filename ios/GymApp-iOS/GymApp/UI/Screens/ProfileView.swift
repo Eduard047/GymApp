@@ -45,6 +45,7 @@ struct ProfileView: View {
     @State private var showsAccountSettings = false
     @State private var showsImporter = false
     @State private var showsExporter = false
+    @State private var isPreparingWorkoutPDF = false
     @State private var pendingImportData: Data?
     @State private var exportDocument: ProfileExportDocument?
     @State private var exportContentType: UTType = .json
@@ -859,6 +860,7 @@ struct ProfileView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(GymSecondaryButtonStyle())
+                .disabled(isPreparingWorkoutPDF)
                 .accessibilityHint(gymText(
                     "Saves a readable PDF of your newest workouts using the Files picker. It contains private workout details.",
                     "Зберігає читабельний PDF найновіших тренувань через вибір файлу. Містить приватні деталі тренувань.",
@@ -1038,24 +1040,45 @@ struct ProfileView: View {
     }
 
     private func prepareWorkoutPDF() {
+        guard !isPreparingWorkoutPDF else { return }
+        let lines: [String]
         do {
             guard appState.isAccountReady,
                   store.accountStorageKey == appState.activeAccountStorageKey else {
                 throw WorkoutStoreError.storageAccountMismatch
             }
-            let lines = WorkoutReport.lines(
+            lines = WorkoutReport.lines(
                 exercises: store.exercises,
                 sessions: store.workouts,
                 languageCode: languageCode
             )
-            let pdfURL = try ExportService.writeWorkoutPDF(lines: lines)
-            defer { try? FileManager.default.removeItem(at: pdfURL) }
-            exportDocument = ProfileExportDocument(data: try Data(contentsOf: pdfURL))
-            exportContentType = .pdf
-            exportFilename = "GymApp-workouts"
-            showsExporter = true
         } catch {
             appState.show(message: gymErrorMessage(error), isError: true)
+            return
+        }
+        isPreparingWorkoutPDF = true
+        let accountKey = store.accountStorageKey
+        Task {
+            defer { isPreparingWorkoutPDF = false }
+            do {
+                // Rendering and reading the file stay off the main thread.
+                let data = try await Task.detached(priority: .userInitiated) {
+                    let pdfURL = try ExportService.writeWorkoutPDF(lines: lines)
+                    defer { try? FileManager.default.removeItem(at: pdfURL) }
+                    return try Data(contentsOf: pdfURL)
+                }.value
+                guard appState.isAccountReady,
+                      store.accountStorageKey == accountKey,
+                      store.accountStorageKey == appState.activeAccountStorageKey else {
+                    throw WorkoutStoreError.storageAccountMismatch
+                }
+                exportDocument = ProfileExportDocument(data: data)
+                exportContentType = .pdf
+                exportFilename = "GymApp-workouts"
+                showsExporter = true
+            } catch {
+                appState.show(message: gymErrorMessage(error), isError: true)
+            }
         }
     }
 
