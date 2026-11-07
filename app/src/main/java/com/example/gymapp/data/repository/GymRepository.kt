@@ -539,8 +539,8 @@ class GymRepository(
         }
         return database.withTransaction {
             val existingExercises = exerciseDao.getExercisesSnapshot()
-            require(existingExercises.size < WorkoutDataLimits.MAX_EXERCISES) {
-                "This account has reached the exercise limit."
+            if (existingExercises.size >= WorkoutDataLimits.MAX_EXERCISES) {
+                throw ExerciseLimitReachedException()
             }
             if (existingExercises.any { existing -> exerciseNamesConflict(existing.name, cleanedName) }) {
                 throw DuplicateExerciseNameException()
@@ -4456,6 +4456,10 @@ private fun String.toExerciseMappingKey(): String {
 /** Thrown by [GymRepository.addExercise] when the name resolves to an existing exercise identity. */
 internal class DuplicateExerciseNameException :
     IllegalArgumentException("An exercise with this name already exists.")
+
+/** Thrown by [GymRepository.addExercise] when the account already holds [WorkoutDataLimits.MAX_EXERCISES]. */
+internal class ExerciseLimitReachedException :
+    IllegalArgumentException("This account has reached the exercise limit.")
 
 private fun exerciseNamesConflict(existingName: String, candidateName: String): Boolean {
     if (existingName.normalizedExerciseName() == candidateName.normalizedExerciseName()) {

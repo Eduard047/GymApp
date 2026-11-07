@@ -1300,6 +1300,7 @@
     <string name="exercise_picker_create_action">Create and add</string>
     <string name="exercise_picker_create_error_invalid">Enter a valid exercise name.</string>
     <string name="exercise_picker_create_error_duplicate">An exercise with this name already exists.</string>
+    <string name="exercise_picker_create_error_limit">You\'ve reached the exercise limit.</string>
     <string name="exercise_search_no_results">No matching exercises</string>
     <string name="exercise_search_no_results_supporting">Try another name, body area, or muscle group.</string>
     <string name="exercise_search_result_count">%1$d exercises</string>

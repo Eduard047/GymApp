@@ -455,6 +455,10 @@ class ExerciseSearchLocalizationTest {
             newExerciseErrorFor(com.example.gymapp.data.repository.DuplicateExerciseNameException())
         )
         assertEquals(
+            NewExerciseError.LimitReached,
+            newExerciseErrorFor(com.example.gymapp.data.repository.ExerciseLimitReachedException())
+        )
+        assertEquals(
             NewExerciseError.Invalid,
             newExerciseErrorFor(IllegalArgumentException("Exercise name is outside the supported length."))
         )

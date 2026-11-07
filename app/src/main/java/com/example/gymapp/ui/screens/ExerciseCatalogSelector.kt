@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.rememberCoroutineScope
 import com.example.gymapp.data.repository.DuplicateExerciseNameException
+import com.example.gymapp.data.repository.ExerciseLimitReachedException
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.ui.theme.Button
 import kotlinx.coroutines.CancellationException
@@ -333,11 +334,15 @@ internal fun ExerciseCatalogSelector(
 }
 
 /** Inline validation outcome of the picker's "Create exercise" panel (iOS invalid / duplicate name). */
-internal enum class NewExerciseError { Invalid, Duplicate }
+internal enum class NewExerciseError { Invalid, Duplicate, LimitReached }
 
 /** Maps a failed [com.example.gymapp.data.repository.GymRepository.addExercise] to its inline message. */
 internal fun newExerciseErrorFor(error: Throwable): NewExerciseError =
-    if (error is DuplicateExerciseNameException) NewExerciseError.Duplicate else NewExerciseError.Invalid
+    when (error) {
+        is DuplicateExerciseNameException -> NewExerciseError.Duplicate
+        is ExerciseLimitReachedException -> NewExerciseError.LimitReached
+        else -> NewExerciseError.Invalid
+    }
 
 /**
  * Name field + "Create and add" at the top of the picker list, always present in Add mode (iOS puts
@@ -392,10 +397,10 @@ private fun CreateExercisePanel(
             error?.let { current ->
                 Text(
                     text = stringResource(
-                        if (current == NewExerciseError.Duplicate) {
-                            R.string.exercise_picker_create_error_duplicate
-                        } else {
-                            R.string.exercise_picker_create_error_invalid
+                        when (current) {
+                            NewExerciseError.Duplicate -> R.string.exercise_picker_create_error_duplicate
+                            NewExerciseError.LimitReached -> R.string.exercise_picker_create_error_limit
+                            NewExerciseError.Invalid -> R.string.exercise_picker_create_error_invalid
                         }
                     ),
                     color = androidx.compose.material3.MaterialTheme.colorScheme.error,

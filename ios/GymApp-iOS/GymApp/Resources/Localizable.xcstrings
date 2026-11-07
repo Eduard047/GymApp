@@ -15434,6 +15434,23 @@
         }
       }
     },
+    "You've reached the exercise limit." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Достигнут лимит упражнений."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Досягнуто ліміту вправ."
+          }
+        }
+      }
+    },
     "You will first confirm the warning, then type DELETE before anything is removed." : {
       "extractionState" : "stale",
       "localizations" : {

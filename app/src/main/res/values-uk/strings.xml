@@ -1340,6 +1340,7 @@
     <string name="exercise_picker_create_action">Створити й додати</string>
     <string name="exercise_picker_create_error_invalid">Введи коректну назву вправи.</string>
     <string name="exercise_picker_create_error_duplicate">Вправа з такою назвою вже існує.</string>
+    <string name="exercise_picker_create_error_limit">Досягнуто ліміту вправ.</string>
     <string name="exercise_search_no_results">Вправ не знайдено</string>
     <string name="exercise_search_no_results_supporting">Спробуй іншу назву, частину тіла або групу м’язів.</string>
     <string name="exercise_search_result_count">Вправ: %1$d</string>

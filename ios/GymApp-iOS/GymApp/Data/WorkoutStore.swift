@@ -9,6 +9,7 @@ public enum WorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
     case storageAccountMismatch
     case invalidExerciseName
     case duplicateExerciseName
+    case exerciseLimitReached
     case exerciseNotFound
     case exerciseInUse
     case builtInExerciseReadOnly
@@ -36,6 +37,8 @@ public enum WorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
             return "Enter a valid exercise name."
         case .duplicateExerciseName:
             return "An exercise with this name already exists."
+        case .exerciseLimitReached:
+            return "You've reached the exercise limit."
         case .exerciseNotFound:
             return "The exercise no longer exists."
         case .exerciseInUse:
@@ -1059,6 +1062,9 @@ public final class WorkoutStore: ObservableObject {
         let cleaned = try Self.validatedExerciseName(name)
         var created: Exercise?
         try mutate { state in
+            guard state.exercises.count < BackupImportLimits.standard.maximumExercises else {
+                throw WorkoutStoreError.exerciseLimitReached
+            }
             guard !state.exercises.contains(where: {
                 Self.exerciseIdentityConflicts($0, candidateName: cleaned)
             }) else {

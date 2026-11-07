@@ -487,6 +487,7 @@ func gymSafeEnglishErrorMessage(_ error: Error) -> String {
              .storageAccountMismatch,
              .invalidExerciseName,
              .duplicateExerciseName,
+             .exerciseLimitReached,
              .exerciseNotFound,
              .exerciseInUse,
              .builtInExerciseReadOnly,

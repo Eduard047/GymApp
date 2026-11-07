@@ -9,6 +9,28 @@ import XCTest
 
 @MainActor
 final class CoreParityTests: XCTestCase {
+    func testAddExerciseAtAccountLimitThrowsExerciseLimitReached() throws {
+        let storageKey = "exercise-limit-account"
+        let store = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: try temporaryDirectory(named: storageKey)
+        )
+        let limit = BackupImportLimits.standard.maximumExercises
+        var index = 0
+        while store.exercises.count < limit {
+            _ = try store.addExercise(name: "Limit probe \(index)")
+            index += 1
+        }
+        XCTAssertThrowsError(try store.addExercise(name: "One too many")) { error in
+            XCTAssertEqual(error as? WorkoutStoreError, .exerciseLimitReached)
+        }
+        XCTAssertEqual(store.exercises.count, limit)
+        XCTAssertEqual(
+            WorkoutStoreError.exerciseLimitReached.errorDescription,
+            "You've reached the exercise limit."
+        )
+    }
+
     func testRestNotificationsCountAsDeniedOnlyWhenExplicitlyDenied() {
         XCTAssertTrue(RestTimerManager.notificationsDenied(for: .denied))
         XCTAssertFalse(RestTimerManager.notificationsDenied(for: .notDetermined))
