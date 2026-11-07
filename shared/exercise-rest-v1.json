@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "description": "Per-exercise custom rest time golden cases run by Android ExerciseRestTimeStoreTest and iOS ExerciseRestTimeTests. A custom rest is a device-local number of seconds pinned to an exercise identity (the friend-ghost key). normalized is the value kept for a stored input, or null when there is no custom rest: a missing or non-positive value is no custom rest, any other value is clamped to minSeconds..maxSeconds (not rounded to the step; the picker moves in stepSeconds). effectiveSeconds is the rest actually started after a set: the normalized custom value when there is one, else defaultSeconds (the unchanged role-based rest). All of it stays inside the active-rest limits 5..1800. usableIdentityKeys / unusableIdentityKeys use the exercise-cue identity rules: a key that is blank, holds a control character, or is `custom:` with no name after it gets no custom rest.",
+  "minSeconds": 15,
+  "maxSeconds": 600,
+  "stepSeconds": 15,
+  "maxEntries": 1000,
+  "usableIdentityKeys": ["catalog:bench_press", "custom:bench", "custom:жим"],
+  "unusableIdentityKeys": ["", "   ", "custom:", "custom:   ", "custom:\t", "k\u0000"],
+  "cases": [
+    { "id": "no-custom-uses-default", "stored": null, "defaultSeconds": 90, "normalized": null, "effectiveSeconds": 90 },
+    { "id": "custom-overrides-default", "stored": 120, "defaultSeconds": 90, "normalized": 120, "effectiveSeconds": 120 },
+    { "id": "custom-shorter-than-default", "stored": 45, "defaultSeconds": 180, "normalized": 45, "effectiveSeconds": 45 },
+    { "id": "minimum-kept", "stored": 15, "defaultSeconds": 180, "normalized": 15, "effectiveSeconds": 15 },
+    { "id": "maximum-kept", "stored": 600, "defaultSeconds": 75, "normalized": 600, "effectiveSeconds": 600 },
+    { "id": "below-minimum-raised", "stored": 10, "defaultSeconds": 90, "normalized": 15, "effectiveSeconds": 15 },
+    { "id": "five-seconds-raised", "stored": 5, "defaultSeconds": 90, "normalized": 15, "effectiveSeconds": 15 },
+    { "id": "above-maximum-lowered", "stored": 601, "defaultSeconds": 90, "normalized": 600, "effectiveSeconds": 600 },
+    { "id": "absurd-value-lowered", "stored": 100000, "defaultSeconds": 90, "normalized": 600, "effectiveSeconds": 600 },
+    { "id": "zero-is-no-custom", "stored": 0, "defaultSeconds": 90, "normalized": null, "effectiveSeconds": 90 },
+    { "id": "negative-is-no-custom", "stored": -30, "defaultSeconds": 90, "normalized": null, "effectiveSeconds": 90 },
+    { "id": "off-step-value-kept", "stored": 100, "defaultSeconds": 90, "normalized": 100, "effectiveSeconds": 100 }
+  ]
+}

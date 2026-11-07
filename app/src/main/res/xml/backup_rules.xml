@@ -35,6 +35,8 @@
     <exclude domain="sharedpref" path="gym_exercise_rest_timers.xml.bak" />
     <exclude domain="sharedpref" path="gym_exercise_cues_v1.xml" />
     <exclude domain="sharedpref" path="gym_exercise_cues_v1.xml.bak" />
+    <exclude domain="sharedpref" path="gym_exercise_rest_v1.xml" />
+    <exclude domain="sharedpref" path="gym_exercise_rest_v1.xml.bak" />
     <exclude domain="sharedpref" path="gym_active_workout_timer.xml" />
     <exclude domain="sharedpref" path="gym_active_workout_timer.xml.bak" />
     <exclude domain="sharedpref" path="gym_live_workout_sidecar.xml" />

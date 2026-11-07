@@ -40,6 +40,7 @@ import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.ActiveWorkoutTimerSnapshot
 import com.example.gymapp.util.RestTimerController
 import com.example.gymapp.util.activeWorkoutRestSecondsRemaining
+import com.example.gymapp.util.effectiveExerciseRestSeconds
 import com.example.gymapp.util.parseWeightInputOrNull
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
@@ -1076,15 +1077,29 @@ class ActiveWorkoutViewModel(
         if (activeWorkoutOperationInProgress()) return
         if (!recordGate.tryStart(setId)) return
 
-        val restExerciseName = snapshot.exercises
+        val restExercise = snapshot.exercises
             .firstOrNull { exercise -> exercise.sets.any { it.id == setId } }
             ?.activeWorkoutExercise
-            ?.exerciseName
-        val restDurationSeconds = restExerciseName
+        val restExerciseName = restExercise?.exerciseName
+        val defaultRestSeconds = restExerciseName
             ?.let(WorkoutRecommendationEngine::recommendedRestSeconds)
             ?: DEFAULT_ACTIVE_REST_SECONDS
         operationState.update { state -> state.copy(message = null, messageSetId = null) }
         viewModelScope.launch {
+            // The exercise's own custom rest (device-local) wins over the role default; read off the main thread.
+            val restDurationSeconds = if (restExercise == null) {
+                defaultRestSeconds
+            } else {
+                effectiveExerciseRestSeconds(
+                    withContext(Dispatchers.IO) {
+                        restTimerController.customRestSeconds(
+                            timerAccountKey,
+                            FriendGhosts.exerciseKey(catalogKey = restExercise.catalogKey, name = restExercise.exerciseName)
+                        )
+                    },
+                    defaultRestSeconds
+                )
+            }
             var preparation: LiveLocalMutationPreparation = LiveLocalMutationPreparation.Standalone
             var localCommitted = false
             try {

@@ -276,6 +276,18 @@ fun ActiveWorkoutScreen(
         value = exerciseMediaOwnerKey to withContext(Dispatchers.IO) { cueStore.cues(exerciseMediaOwnerKey) }
     }
     val cues = if (loadedCues.first == exerciseMediaOwnerKey) loadedCues.second else emptyMap()
+    // Device-local custom rest per exercise, loaded the same way (off the main thread, re-read after a save).
+    val restStore = remember(cueContext) { com.example.gymapp.util.ExerciseRestTimeStore.forContext(cueContext) }
+    var restRevision by remember { mutableIntStateOf(0) }
+    val loadedRestTimes by produceState(
+        initialValue = exerciseMediaOwnerKey to emptyMap<String, Int>(),
+        exerciseMediaOwnerKey,
+        restStore,
+        restRevision
+    ) {
+        value = exerciseMediaOwnerKey to withContext(Dispatchers.IO) { restStore.restTimes(exerciseMediaOwnerKey) }
+    }
+    val restTimes = if (loadedRestTimes.first == exerciseMediaOwnerKey) loadedRestTimes.second else emptyMap()
     val recordSetIds = uiState.exercises.asSequence()
         .flatMap { exercise -> exercise.sets.asSequence() }
         .filter { set -> set.isPersonalRecord }
@@ -716,6 +728,14 @@ fun ActiveWorkoutScreen(
                             cueStore.setCue(exerciseMediaOwnerKey, exercise.friendGhostKey, raw)
                         }
                         cueRevision++
+                        result
+                    },
+                    customRestSeconds = restTimes[exercise.friendGhostKey],
+                    onSaveRestSeconds = { seconds ->
+                        val result = withContext(Dispatchers.IO) {
+                            restStore.setRestSeconds(exerciseMediaOwnerKey, exercise.friendGhostKey, seconds)
+                        }
+                        restRevision++
                         result
                     },
                     onDeleteSet = onDeleteSet,
@@ -1344,6 +1364,10 @@ private fun ActiveWorkoutExerciseCard(
     canEditCue: Boolean = false,
     onSaveCue: suspend (String) -> com.example.gymapp.util.ExerciseCueSaveResult =
         { com.example.gymapp.util.ExerciseCueSaveResult.FAILED },
+    /** The exercise's own rest in seconds (device-local), or null to use the default. */
+    customRestSeconds: Int? = null,
+    onSaveRestSeconds: suspend (Int?) -> com.example.gymapp.util.ExerciseRestSaveResult =
+        { com.example.gymapp.util.ExerciseRestSaveResult.FAILED },
     reorderHandle: (@Composable () -> Unit)? = null,
     onDeleteSet: (String) -> Unit,
     onRecordSet: (String) -> Unit,
@@ -1367,6 +1391,12 @@ private fun ActiveWorkoutExerciseCard(
     var showRemoveDialog by remember(exercise.id) { mutableStateOf(false) }
     var showCueDialog by remember(exercise.id) { mutableStateOf(false) }
     var cueLimitReached by remember(exercise.id) { mutableStateOf(false) }
+    var showRestDialog by remember(exercise.id) { mutableStateOf(false) }
+    var restLimitReached by remember(exercise.id) { mutableStateOf(false) }
+    val effectiveRestSeconds = com.example.gymapp.util.effectiveExerciseRestSeconds(
+        customRestSeconds,
+        exercise.restDurationSeconds
+    )
     val cueScope = rememberCoroutineScope()
     var recordedSetToDeleteId by remember(exercise.id) { mutableStateOf<String?>(null) }
     val gymHaptics = rememberGymHaptics()
@@ -1440,6 +1470,11 @@ private fun ActiveWorkoutExerciseCard(
                                     closeMenu()
                                     cueLimitReached = false
                     showCueDialog = true
+                                }
+                                ExerciseRestTimeMenuItem {
+                                    closeMenu()
+                                    restLimitReached = false
+                                    showRestDialog = true
                                 }
                             }
                         }
@@ -1571,7 +1606,7 @@ private fun ActiveWorkoutExerciseCard(
                     canUndoOlderSet = canUndoOlderSets,
                     showsPlateCalculator = PlateCalculator.applies(exercise.catalogKey),
                     isBodyweight = isBodyweightCatalogKey(exercise.catalogKey),
-                    restDurationSeconds = exercise.restDurationSeconds,
+                    restDurationSeconds = effectiveRestSeconds,
                     restSecondsRemaining = if (set.id == latestCompletedSetId) {
                         restSecondsRemaining
                     } else {
@@ -1596,7 +1631,7 @@ private fun ActiveWorkoutExerciseCard(
                     onDismissMessage = onDismissMessage,
                     isRestActive = restSecondsRemaining > 0,
                     onRecorded = { weightText, repsText ->
-                        onSetRecorded(set.id, weightText, repsText, exercise.restDurationSeconds)
+                        onSetRecorded(set.id, weightText, repsText, effectiveRestSeconds)
                     },
                     onVoiceStarted = onVoiceStarted,
                     onVoiceCommandFeedback = onVoiceCommandFeedback
@@ -1646,6 +1681,24 @@ private fun ActiveWorkoutExerciseCard(
                 }
             },
             onDismiss = { showCueDialog = false }
+        )
+    }
+    if (showRestDialog) {
+        ExerciseRestTimeDialog(
+            customSeconds = customRestSeconds,
+            defaultSeconds = exercise.restDurationSeconds,
+            limitReached = restLimitReached,
+            onEdited = { restLimitReached = false },
+            onSave = { seconds ->
+                cueScope.launch {
+                    if (onSaveRestSeconds(seconds) == com.example.gymapp.util.ExerciseRestSaveResult.TOO_MANY) {
+                        restLimitReached = true
+                    } else {
+                        showRestDialog = false
+                    }
+                }
+            },
+            onDismiss = { showRestDialog = false }
         )
     }
     if (showRemoveDialog) {

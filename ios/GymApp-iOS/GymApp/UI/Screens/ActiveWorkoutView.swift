@@ -157,6 +157,9 @@ struct ActiveWorkoutView: View {
     @State private var cueEditTarget: ExerciseCueEditTarget?
     /// The account's cues, read once on appear and on account change, and again after a save.
     @State private var exerciseCues: [String: String] = [:]
+    /// The exercise whose custom rest is being edited, and the account's custom rests (read like the cues).
+    @State private var restEditTarget: ExerciseRestEditTarget?
+    @State private var exerciseRestTimes: [String: Int] = [:]
     private let restTimers: RestTimerManager
 
     private let draftID: UUID
@@ -660,6 +663,24 @@ struct ActiveWorkoutView: View {
                 onCancel: { cueEditTarget = nil }
             )
         }
+        .sheet(item: $restEditTarget) { target in
+            ExerciseRestTimeEditorSheet(
+                target: target,
+                onSave: { seconds in
+                    let result = ExerciseRestTimeStore().setRestSeconds(
+                        seconds,
+                        accountStorageKey: workoutStore.accountStorageKey,
+                        identityKey: target.identityKey
+                    )
+                    if result != .tooMany {
+                        exerciseRestTimes = ExerciseRestTimeStore().restTimes(accountStorageKey: workoutStore.accountStorageKey)
+                        restEditTarget = nil
+                    }
+                    return result
+                },
+                onCancel: { restEditTarget = nil }
+            )
+        }
         .sheet(isPresented: $showingAddExercisePicker) {
             ExercisePickerSheet(
                 exercises: addableExercises,
@@ -699,6 +720,7 @@ struct ActiveWorkoutView: View {
         }
         .task(id: workoutStore.accountStorageKey) {
             exerciseCues = ExerciseCueStore().cues(accountStorageKey: workoutStore.accountStorageKey)
+            exerciseRestTimes = ExerciseRestTimeStore().restTimes(accountStorageKey: workoutStore.accountStorageKey)
         }
         .onAppear {
             liveParticipantSelection = .current
@@ -1424,6 +1446,14 @@ struct ActiveWorkoutView: View {
         let cueTarget = cueKey.map {
             ExerciseCueEditTarget(identityKey: $0, exerciseName: exerciseName, currentCue: cue)
         }
+        let restTarget = cueKey.map {
+            ExerciseRestEditTarget(
+                identityKey: $0,
+                exerciseName: exerciseName,
+                customSeconds: exerciseRestTimes[$0],
+                defaultSeconds: defaultRestDurationSeconds(for: exercise)
+            )
+        }
         return GymExerciseCard(
             name: exerciseName,
             highlighted: isCurrent,
@@ -1499,11 +1529,12 @@ struct ActiveWorkoutView: View {
                     hasCommitIntent: draft.commitIntent != nil,
                     isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
                 ) {
-                    exerciseOverflowMenu(exercise, onMoveUp: onMoveUp, onMoveDown: onMoveDown, cueTarget: cueTarget)
+                    exerciseOverflowMenu(exercise, onMoveUp: onMoveUp, onMoveDown: onMoveDown, cueTarget: cueTarget, restTarget: restTarget)
                 } else if let cueTarget {
                     // Nothing to move or remove (a lone exercise, a live room): the menu only carries the cue.
                     Menu {
                         cueMenuButton(cueTarget)
+                        if let restTarget { restMenuButton(restTarget) }
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.body.weight(.semibold))
@@ -1667,13 +1698,15 @@ struct ActiveWorkoutView: View {
         _ exercise: ActiveWorkoutExercise,
         onMoveUp: (() -> Void)?,
         onMoveDown: (() -> Void)?,
-        cueTarget: ExerciseCueEditTarget? = nil
+        cueTarget: ExerciseCueEditTarget? = nil,
+        restTarget: ExerciseRestEditTarget? = nil
     ) -> some View {
         GymExerciseOverflowMenu(
             onRemove: { pendingRemoveExerciseID = exercise.id },
             extraItems: {
                 GymExerciseMoveMenuItems(onMoveUp: onMoveUp, onMoveDown: onMoveDown)
                 if let cueTarget { cueMenuButton(cueTarget) }
+                if let restTarget { restMenuButton(restTarget) }
             }
         )
     }
@@ -1688,6 +1721,18 @@ struct ActiveWorkoutView: View {
                     ? gymText("Add cue", "Додати підказку", "Добавить подсказку", languageCode: gymCurrentLanguageCode())
                     : gymText("Edit cue", "Змінити підказку", "Изменить подсказку", languageCode: gymCurrentLanguageCode()),
                 systemImage: "pin"
+            )
+        }
+    }
+
+    /// "Rest time…" item of the exercise menu; opens the rest picker sheet.
+    private func restMenuButton(_ target: ExerciseRestEditTarget) -> some View {
+        Button {
+            restEditTarget = target
+        } label: {
+            Label(
+                gymText("Rest time…", "Час відпочинку…", "Время отдыха…", languageCode: gymCurrentLanguageCode()),
+                systemImage: "timer"
             )
         }
     }
@@ -3453,7 +3498,14 @@ struct ActiveWorkoutView: View {
         }
     }
 
+    /// The exercise's own rest when the user set one, else the role-based default.
     private func restDurationSeconds(for exercise: ActiveWorkoutExercise) -> Int {
+        let stored = workoutStore.exercise(id: exercise.exerciseID)
+        let custom = cueIdentityKey(exercise, storedExercise: stored).flatMap { exerciseRestTimes[$0] }
+        return ExerciseRestTime.effectiveSeconds(stored: custom, defaultSeconds: defaultRestDurationSeconds(for: exercise))
+    }
+
+    private func defaultRestDurationSeconds(for exercise: ActiveWorkoutExercise) -> Int {
         let stored = workoutStore.exercise(id: exercise.exerciseID)
         return RecommendationEngine.restDurationSeconds(
             exerciseCatalogKey: stored?.catalogKey ?? exercise.exerciseCatalogKey,

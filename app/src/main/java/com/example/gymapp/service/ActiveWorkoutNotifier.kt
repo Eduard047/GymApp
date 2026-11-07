@@ -23,6 +23,9 @@ import com.example.gymapp.data.repository.LiveWorkoutSidecarStore
 import com.example.gymapp.data.repository.RecordActiveWorkoutSetResult
 import com.example.gymapp.data.repository.WorkoutRecommendationEngine
 import com.example.gymapp.gymApplication
+import com.example.gymapp.auth.FriendGhosts
+import com.example.gymapp.auth.databaseName
+import com.example.gymapp.util.effectiveExerciseRestSeconds
 import com.example.gymapp.util.restTimerAccountKey
 import com.example.gymapp.util.withAppLanguage
 import java.text.NumberFormat
@@ -321,8 +324,17 @@ class ActiveWorkoutNotificationReceiver : BroadcastReceiver() {
                     timer.startActiveWorkoutRest(
                         accountKey = accountKey,
                         sessionStartedAt = startedAt,
-                        seconds = WorkoutRecommendationEngine.recommendedRestSeconds(
-                            exercise.activeWorkoutExercise.exerciseName
+                        seconds = effectiveExerciseRestSeconds(
+                            timer.customRestSecondsFor(
+                                session.databaseName(),
+                                FriendGhosts.exerciseKey(
+                                    catalogKey = exercise.activeWorkoutExercise.catalogKey,
+                                    name = exercise.activeWorkoutExercise.exerciseName
+                                )
+                            ),
+                            WorkoutRecommendationEngine.recommendedRestSeconds(
+                                exercise.activeWorkoutExercise.exerciseName
+                            )
                         ),
                         exerciseName = exercise.activeWorkoutExercise.exerciseName
                     )

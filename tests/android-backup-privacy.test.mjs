@@ -71,6 +71,9 @@ const requiredExclusions = [
   // Device-local exercise cues: one shared file for all accounts, excluded by name.
   /<exclude\s+domain="sharedpref"\s+path="gym_exercise_cues_v1\.xml"\s*\/>/,
   /<exclude\s+domain="sharedpref"\s+path="gym_exercise_cues_v1\.xml\.bak"\s*\/>/,
+  // Device-local custom rest per exercise: one shared file for all accounts, excluded by name.
+  /<exclude\s+domain="sharedpref"\s+path="gym_exercise_rest_v1\.xml"\s*\/>/,
+  /<exclude\s+domain="sharedpref"\s+path="gym_exercise_rest_v1\.xml\.bak"\s*\/>/,
 ];
 
 function assertPrivateDataExcluded(rules, label) {

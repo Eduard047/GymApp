@@ -27,7 +27,11 @@ class RestTimerController internal constructor(
     private val stopService: () -> Unit,
     private val setFinishedExercise: (exerciseName: String?) -> Unit = {},
     /** Wipes the account's device-local exercise cues (by database name) when the account is deleted. */
-    private val clearExerciseCues: (databaseName: String) -> Boolean = { true }
+    private val clearExerciseCues: (databaseName: String) -> Boolean = { true },
+    /** Wipes the account's device-local custom exercise rest times (by database name) when the account is deleted. */
+    private val clearExerciseRestTimes: (databaseName: String) -> Boolean = { true },
+    /** Reads one custom rest (disk I/O: call off the main thread). */
+    private val readExerciseRestSeconds: (databaseName: String, identityKey: String) -> Int? = { _, _ -> null }
 ) {
     constructor(appContext: Context) : this(
         ExerciseRestTimerLedger(SharedPreferencesExerciseRestTimerPersistence(appContext)),
@@ -35,16 +39,20 @@ class RestTimerController internal constructor(
         { seconds -> RestTimerService.start(appContext, seconds) },
         { RestTimerService.stop(appContext) },
         { exerciseName -> RestTimerService.setFinishedExercise(appContext, exerciseName) },
-        ExerciseCueStore.forContext(appContext)::clearAccount
+        ExerciseCueStore.forContext(appContext)::clearAccount,
+        ExerciseRestTimeStore.forContext(appContext)::clearAccount,
+        ExerciseRestTimeStore.forContext(appContext)::restSeconds
     )
 
     private val accountSwitchTracker = RestTimerAccountSwitchTracker()
+    @Volatile private var boundDatabaseName: String? = null
     val remainingSeconds: StateFlow<Int> = RestTimerState.remainingSeconds
     internal val exerciseRestDeadlineMillis = exerciseTimers.deadlines
     internal val activeWorkoutTimerSnapshot = activeWorkoutTimer.snapshot
 
     internal fun switchAccount(session: com.example.gymapp.auth.AccountSession?) {
         val accountKey = restTimerAccountKey(session)
+        boundDatabaseName = if (accountKey != null) session?.databaseName() else null
         if (accountSwitchTracker.bind(accountKey)) {
             // The foreground countdown is process-global. Clear it synchronously before
             // exposing the next account so stale timer state cannot cross that boundary.
@@ -141,8 +149,23 @@ class RestTimerController internal constructor(
             true
         }
         val cuesCleared = runCatching { clearExerciseCues(databaseName) }.getOrDefault(false)
-        return exerciseCleared && activeWorkoutCleared && foregroundCleared && cuesCleared
+        val restTimesCleared = runCatching { clearExerciseRestTimes(databaseName) }.getOrDefault(false)
+        return exerciseCleared && activeWorkoutCleared && foregroundCleared && cuesCleared && restTimesCleared
     }
+
+    /**
+     * The exercise's custom rest for the account bound as [accountKey], or null (no custom rest, another
+     * account, or an unusable key). Disk I/O: call off the main thread.
+     */
+    internal fun customRestSeconds(accountKey: String, identityKey: String): Int? {
+        val databaseName = boundDatabaseName ?: return null
+        if (!accountSwitchTracker.isBoundTo(accountKey)) return null
+        return runCatching { readExerciseRestSeconds(databaseName, identityKey) }.getOrNull()
+    }
+
+    /** Same as above for a caller that already holds the account's [databaseName]. Disk I/O. */
+    internal fun customRestSecondsFor(databaseName: String, identityKey: String): Int? =
+        runCatching { readExerciseRestSeconds(databaseName, identityKey) }.getOrNull()
 
     internal fun clearAccount(session: com.example.gymapp.auth.AccountSession.Cloud): Boolean =
         clearAccount(session.databaseName(), session.sessionGeneration)
@@ -162,7 +185,8 @@ class RestTimerController internal constructor(
             true
         }
         val cuesCleared = runCatching { clearExerciseCues(databaseName) }.getOrDefault(false)
-        return exerciseCleared && activeWorkoutCleared && foregroundCleared && cuesCleared
+        val restTimesCleared = runCatching { clearExerciseRestTimes(databaseName) }.getOrDefault(false)
+        return exerciseCleared && activeWorkoutCleared && foregroundCleared && cuesCleared && restTimesCleared
     }
 
     internal fun startExercise(

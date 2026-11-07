@@ -544,6 +544,11 @@
     <string name="exercise_cue_placeholder">Seat 4, narrow grip</string>
     <string name="exercise_cue_clear">Clear</string>
     <string name="exercise_cue_too_many">Too many cues. Remove some first.</string>
+    <string name="exercise_rest_menu">Rest time…</string>
+    <string name="exercise_rest_title">Rest time</string>
+    <string name="exercise_rest_use_default">Use default</string>
+    <string name="exercise_rest_default_hint">Default: %1$s</string>
+    <string name="exercise_rest_too_many">Too many custom rest times. Reset some first.</string>
     <string name="active_workout_remove_exercise">Remove exercise</string>
     <string name="workout_exercise_move_up">Move up</string>
     <string name="workout_exercise_move_down">Move down</string>

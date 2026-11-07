@@ -318,11 +318,22 @@ final class WorkoutLiveActivityController: ObservableObject {
         }
         liveActivityControllerLog.info("recordCurrentSet: recording matched set")
         let (exercise, set) = location
-        let restSeconds = RecommendationEngine.restDurationSeconds(
-            exerciseCatalogKey: workoutStore.exercise(id: exercise.exerciseID)?.catalogKey
-                ?? exercise.exerciseCatalogKey,
-            exerciseName: workoutStore.exercise(id: exercise.exerciseID)?.name
-                ?? exercise.exerciseName ?? ""
+        let restCatalogKey = workoutStore.exercise(id: exercise.exerciseID)?.catalogKey
+            ?? exercise.exerciseCatalogKey
+        let restExerciseName = workoutStore.exercise(id: exercise.exerciseID)?.name
+            ?? exercise.exerciseName ?? ""
+        let defaultRestSeconds = RecommendationEngine.restDurationSeconds(
+            exerciseCatalogKey: restCatalogKey,
+            exerciseName: restExerciseName
+        )
+        // The exercise's own device-local rest wins, like on the workout screen.
+        let restIdentityKey = FriendGhosts.exerciseKey(catalogKey: restCatalogKey, name: restExerciseName)
+        let restSeconds = ExerciseRestTime.effectiveSeconds(
+            stored: ExerciseRestTimeStore().restSeconds(
+                accountStorageKey: workoutStore.accountStorageKey,
+                identityKey: restIdentityKey
+            ),
+            defaultSeconds: defaultRestSeconds
         )
         do {
             let updated = try activeWorkoutStore.recordSet(
