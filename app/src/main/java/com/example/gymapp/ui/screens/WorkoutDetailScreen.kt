@@ -630,29 +630,25 @@ private fun WorkoutHeaderCard(
     val summaryLine = if (isActivityOnly) {
         stringResource(R.string.garmin_free_workout_summary)
     } else {
-        buildList {
-            add(
-                formattedPluralStringResource(
-                    R.plurals.saved_workout_exercise_count,
-                    exerciseCount,
-                    exerciseCount
-                )
-            )
-            add(
-                formattedPluralStringResource(
-                    R.plurals.saved_workout_set_count,
-                    setCount,
-                    setCount
-                )
-            )
-            add(
-                formattedStringResource(
-                    R.string.today_history_volume_kg,
-                    formatVolumeTotal(volume, Locale.getDefault())
-                )
-            )
-            durationSeconds?.let { add(formatWorkoutDuration(it)) }
-        }.joinToString("\u00A0· ")
+        workoutHeaderMetricParts(
+            exerciseCountLabel = formattedPluralStringResource(
+                R.plurals.saved_workout_exercise_count,
+                exerciseCount,
+                exerciseCount
+            ),
+            setCountLabel = formattedPluralStringResource(
+                R.plurals.saved_workout_set_count,
+                setCount,
+                setCount
+            ),
+            volume = volume,
+            volumeLabel = formattedStringResource(
+                R.string.today_history_volume_kg,
+                formatVolumeTotal(volume, Locale.getDefault())
+            ),
+            durationSeconds = durationSeconds,
+            durationLabel = formatWorkoutDuration(durationSeconds ?: 0L)
+        ).joinToString("\u00A0· ")
     }
     val noteText = note?.takeIf { it.isNotBlank() && !isActivityOnly }
     HeroPanel(
@@ -716,6 +712,31 @@ private fun WorkoutHeaderCard(
             )
         }
     }
+}
+
+/** Header summary parts; volume is omitted when not positive and duration when null or not positive. */
+internal fun workoutHeaderMetricParts(
+    exerciseCountLabel: String,
+    setCountLabel: String,
+    volume: Double,
+    volumeLabel: String,
+    durationSeconds: Long?,
+    durationLabel: String
+): List<String> = buildList {
+    add(exerciseCountLabel)
+    add(setCountLabel)
+    if (volume > 0.0) add(volumeLabel)
+    if (durationSeconds != null && durationSeconds > 0L) add(durationLabel)
+}
+
+/** Per-exercise summary parts after the set count; volume is omitted when not positive. */
+internal fun savedExerciseSummaryParts(
+    repsLabel: String,
+    volume: Double,
+    volumeLabel: String
+): List<String> = buildList {
+    add(repsLabel)
+    if (volume > 0.0) add(volumeLabel)
 }
 
 @Composable
@@ -2031,10 +2052,12 @@ private fun SavedWorkoutExerciseCard(
     val repCount = sets.sumOf { it.reps }
     val setCountLabel = formattedPluralStringResource(R.plurals.saved_workout_set_count, setCount, setCount)
     val repsLabel = formattedPluralStringResource(R.plurals.saved_workout_rep_count, repCount, repCount)
+    val exerciseVolume = sets.sumOf { it.weight * it.reps }
     val volumeLabel = formattedStringResource(
         R.string.stats_volume,
-        formatVolumeTotal(sets.sumOf { it.weight * it.reps }, Locale.getDefault())
+        formatVolumeTotal(exerciseVolume, Locale.getDefault())
     )
+    val summaryParts = savedExerciseSummaryParts(repsLabel, exerciseVolume, volumeLabel)
     val removeLabel = stringResource(R.string.active_workout_remove_exercise)
     val removeAction = canRemoveExercise && controls.showRemoveExercise
     val deleteSetLabel = stringResource(R.string.active_workout_delete_set)
@@ -2071,7 +2094,7 @@ private fun SavedWorkoutExerciseCard(
         ) {
             if (isExpanded) {
                 Text(
-                    text = "$setCountLabel · $repsLabel · $volumeLabel",
+                    text = (listOf(setCountLabel) + summaryParts).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
@@ -2098,7 +2121,7 @@ private fun SavedWorkoutExerciseCard(
                     )
                 }
                 Text(
-                    text = "$repsLabel · $volumeLabel",
+                    text = summaryParts.joinToString(" · "),
                     style = MaterialTheme.typography.labelMedium.copy(
                         fontWeight = FontWeight.SemiBold
                     ),
