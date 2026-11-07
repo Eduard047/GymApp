@@ -19295,6 +19295,30 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(M.maxContentWidth(capsuleWidth: 92), 36)
         XCTAssertEqual(M.maxContentWidth(capsuleWidth: 40), 0)
     }
+
+    func testProgressPeakWeightUsesWholeMonthNotChartWindow() {
+        let exerciseID = UUID()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        // 10 sessions; the heaviest is the first, outside the last-8 chart window.
+        let weights: [Double] = [120, 80, 82, 84, 86, 88, 90, 92, 94, 96]
+        let history = weights.enumerated().map { index, weight in
+            ExerciseHistoryEntry(
+                setID: UUID(),
+                workoutID: UUID(),
+                sessionDate: start.addingTimeInterval(Double(index) * 86_400),
+                exerciseID: exerciseID,
+                exerciseName: "Bench Press",
+                weight: weight,
+                reps: 5,
+                setOrderIndex: 0
+            )
+        }
+        let points = ExerciseProgressPoint.make(from: history)
+        XCTAssertEqual(points.count, 10)
+        XCTAssertEqual(ExerciseProgressPoint.peakWeight(in: points), 120)
+        XCTAssertEqual(ExerciseProgressPoint.peakWeight(in: Array(points.suffix(8))), 96)
+        XCTAssertEqual(ExerciseProgressPoint.peakWeight(in: []), 0)
+    }
 }
 
 private final class FakeGarminPhoneConnectIQTransport: GarminPhoneConnectIQTransport {

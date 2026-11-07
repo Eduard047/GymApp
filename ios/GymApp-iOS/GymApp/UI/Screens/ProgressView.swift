@@ -404,7 +404,9 @@ struct ExerciseProgressView: View {
     }
 
     var body: some View {
-        GymBackground {
+        // One history pass per render; every section below reads this snapshot.
+        let snapshot = makeSnapshot()
+        return GymBackground {
             ScrollView {
                 LazyVStack(spacing: GymTheme.contentSpacing) {
                     if showsHeader {
@@ -429,16 +431,16 @@ struct ExerciseProgressView: View {
                     LazyVStack(spacing: GymTheme.contentSpacing) {
                         if let selectedExercise {
                             muscleBreakdown(for: selectedExercise)
-                            summaryCard
-                            if !monthHistory.isEmpty {
-                                spotlightCard(for: selectedExercise)
+                            summaryCard(snapshot)
+                            if !snapshot.monthHistory.isEmpty {
+                                spotlightCard(for: selectedExercise, snapshot)
                                 ExerciseProgressChartsCard(
-                                    points: visibleChartPoints,
+                                    points: snapshot.progressPoints,
                                     languageCode: languageCode,
                                     locale: appLocale
                                 )
                             }
-                            historySection
+                            historySection(snapshot)
                         } else {
                             noExerciseState
                         }
@@ -625,7 +627,7 @@ struct ExerciseProgressView: View {
         )
     }
 
-    private var summaryCard: some View {
+    private func summaryCard(_ snapshot: ExerciseProgressSnapshot) -> some View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 Text(t("Progress Summary", "Зведення прогресу", "Сводка прогресса"))
@@ -641,41 +643,41 @@ struct ExerciseProgressView: View {
                 ) {
                     GymMetricTile(
                         label: t("Sessions", "Сесії", "Сессии"),
-                        value: progressPoints.count.formatted(.number.locale(gymAppLocale()))
+                        value: snapshot.progressPoints.count.formatted(.number.locale(gymAppLocale()))
                     )
                     GymMetricTile(
                         label: t("Total Sets", "Підходи", "Всего подходов"),
-                        value: monthHistory.count.formatted(.number.locale(gymAppLocale()))
+                        value: snapshot.monthHistory.count.formatted(.number.locale(gymAppLocale()))
                     )
                     GymMetricTile(
                         label: t("Total Reps", "Повторів", "Всего повторений"),
-                        value: totalReps.formatted(.number.locale(gymAppLocale()))
+                        value: snapshot.totalReps.formatted(.number.locale(gymAppLocale()))
                     )
                     GymMetricTile(
                         label: t("Best Weight", "Найкраща вага", "Лучший вес"),
-                        value: bestWeight.map(formatWeight) ?? "—",
+                        value: snapshot.bestWeight.map(formatWeight) ?? "—",
                         emphasized: true
                     )
                     GymMetricTile(
                         label: t("Average Max", "Середній максимум", "Средний максимум"),
-                        value: averageMaximumWeight.map(formatWeight) ?? "—"
+                        value: snapshot.averageMaximumWeight.map(formatWeight) ?? "—"
                     )
                     GymMetricTile(
                         label: t("Total Volume", "Загальний обсяг", "Общий объём"),
-                        value: gymVolumeText(totalVolume, compact: true)
+                        value: gymVolumeText(snapshot.totalVolume, compact: true)
                     )
                 }
             }
         }
     }
 
-    private func spotlightCard(for exercise: Exercise) -> some View {
+    private func spotlightCard(for exercise: Exercise, _ snapshot: ExerciseProgressSnapshot) -> some View {
         GymHeroPanel {
             VStack(alignment: .leading, spacing: 14) {
                 Text(gymExerciseName(exercise))
                     .font(.title.bold())
                     .accessibilityAddTraits(.isHeader)
-                Text(spotlightSubtitle)
+                Text(spotlightSubtitle(snapshot))
                     .font(.subheadline)
                     .foregroundStyle(GymTheme.onHeroSecondary)
 
@@ -685,20 +687,20 @@ struct ExerciseProgressView: View {
                 ) {
                     GymMetricTile(
                         label: t("Month best", "Найкраще за місяць", "Лучшее за месяц"),
-                        value: bestWeight.map(formatWeight) ?? "—",
+                        value: snapshot.bestWeight.map(formatWeight) ?? "—",
                         emphasized: true,
                         onHero: true
                     )
                     GymMetricTile(
                         label: t("Month volume", "Обсяг за місяць", "Объём за месяц"),
-                        value: gymVolumeText(totalVolume, compact: true),
+                        value: gymVolumeText(snapshot.totalVolume, compact: true),
                         onHero: true
                     )
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    spotlightPill(weightDeltaLabel)
-                    spotlightPill(volumeDeltaLabel)
+                    spotlightPill(weightDeltaLabel(snapshot))
+                    spotlightPill(volumeDeltaLabel(snapshot))
                 }
 
                 LazyVGrid(
@@ -707,12 +709,12 @@ struct ExerciseProgressView: View {
                 ) {
                     GymMetricTile(
                         label: t("All-time PR", "Особистий рекорд", "Личный рекорд"),
-                        value: allTimeBestWeight.map { "PR \(formatWeight($0))" } ?? "PR —",
+                        value: snapshot.allTimeBestWeight.map { "PR \(formatWeight($0))" } ?? "PR —",
                         onHero: true
                     )
                     GymMetricTile(
                         label: t("Consistency", "Регулярність", "Регулярность"),
-                        value: t("\(progressPoints.count) this month", "\(progressPoints.count) цього місяця", "\(progressPoints.count) в этом месяце"),
+                        value: t("\(snapshot.progressPoints.count) this month", "\(snapshot.progressPoints.count) цього місяця", "\(snapshot.progressPoints.count) в этом месяце"),
                         onHero: true
                     )
                 }
@@ -732,8 +734,8 @@ struct ExerciseProgressView: View {
     }
 
     @ViewBuilder
-    private var historySection: some View {
-        if historyGroups.isEmpty {
+    private func historySection(_ snapshot: ExerciseProgressSnapshot) -> some View {
+        if snapshot.historyGroups.isEmpty {
             GymPanel {
                 GymContentUnavailableView {
                     Label(t("No progress this month", "Немає прогресу за цей місяць", "В этом месяце прогресса пока нет"), systemImage: "chart.xyaxis.line")
@@ -754,7 +756,7 @@ struct ExerciseProgressView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 4)
 
-            ForEach(historyGroups) { group in
+            ForEach(snapshot.historyGroups) { group in
                 historyCard(group)
             }
         }
@@ -863,62 +865,18 @@ struct ExerciseProgressView: View {
             DateInterval(start: calendar.startOfDay(for: previous), duration: 1)
     }
 
-    private var fullHistory: [ExerciseHistoryEntry] {
-        guard let selectedExerciseID else { return [] }
-        return store.exerciseHistory(exerciseID: selectedExerciseID)
+    private func makeSnapshot() -> ExerciseProgressSnapshot {
+        guard let selectedExerciseID else { return .empty }
+        return ExerciseProgressSnapshot(
+            fullHistory: store.exerciseHistory(exerciseID: selectedExerciseID),
+            monthInterval: selectedMonthInterval,
+            previousMonthInterval: previousMonthInterval
+        )
     }
 
-    private var monthHistory: [ExerciseHistoryEntry] {
-        fullHistory.filter { selectedMonthInterval.contains($0.sessionDate) }
-    }
-
-    private var previousMonthHistory: [ExerciseHistoryEntry] {
-        fullHistory.filter { previousMonthInterval.contains($0.sessionDate) }
-    }
-
-    private var progressPoints: [ExerciseProgressPoint] {
-        ExerciseProgressPoint.make(from: monthHistory)
-    }
-
-    private var previousMonthPoints: [ExerciseProgressPoint] {
-        ExerciseProgressPoint.make(from: previousMonthHistory)
-    }
-
-    private var visibleChartPoints: [ExerciseProgressPoint] {
-        Array(progressPoints.suffix(8))
-    }
-
-    private var historyGroups: [ExerciseHistoryGroup] {
-        Dictionary(grouping: monthHistory, by: \.workoutID)
-            .values
-            .compactMap(ExerciseHistoryGroup.init)
-            .sorted { $0.date > $1.date }
-    }
-
-    private var totalReps: Int {
-        monthHistory.reduce(0) { $0 + $1.reps }
-    }
-
-    private var totalVolume: Double {
-        monthHistory.reduce(0) { $0 + $1.volume }
-    }
-
-    private var bestWeight: Double? {
-        progressPoints.map(\.maxWeight).max()
-    }
-
-    private var averageMaximumWeight: Double? {
-        guard !progressPoints.isEmpty else { return nil }
-        return progressPoints.reduce(0) { $0 + $1.maxWeight } / Double(progressPoints.count)
-    }
-
-    private var allTimeBestWeight: Double? {
-        fullHistory.map(\.weight).max()
-    }
-
-    private var spotlightSubtitle: String {
+    private func spotlightSubtitle(_ snapshot: ExerciseProgressSnapshot) -> String {
         let sessionsPhrase = gymCount(
-            progressPoints.count,
+            snapshot.progressPoints.count,
             englishOne: "session",
             englishMany: "sessions",
             ukrainianOne: "сесія",
@@ -934,20 +892,19 @@ struct ExerciseProgressView: View {
         )
     }
 
-    private var weightDeltaLabel: String {
+    private func weightDeltaLabel(_ snapshot: ExerciseProgressSnapshot) -> String {
         deltaLabel(
-            current: bestWeight,
-            previous: previousMonthPoints.map(\.maxWeight).max(),
+            current: snapshot.bestWeight,
+            previous: snapshot.previousMonthPoints.map(\.maxWeight).max(),
             unit: t("kg", "кг", "кг"),
             metric: t("best weight", "найкраща вага", "лучший вес")
         )
     }
 
-    private var volumeDeltaLabel: String {
-        let previousVolume = previousMonthHistory.reduce(0) { $0 + $1.volume }
-        return deltaLabel(
-            current: monthHistory.isEmpty ? nil : totalVolume,
-            previous: previousMonthHistory.isEmpty ? nil : previousVolume,
+    private func volumeDeltaLabel(_ snapshot: ExerciseProgressSnapshot) -> String {
+        deltaLabel(
+            current: snapshot.monthHistory.isEmpty ? nil : snapshot.totalVolume,
+            previous: snapshot.previousMonthHistory.isEmpty ? nil : snapshot.previousVolume,
             unit: t("volume", "обсягу", "объёма"),
             metric: t("volume", "обсяг", "объём")
         )
@@ -1196,7 +1153,7 @@ private struct ExerciseMuscleContribution: Identifiable, Hashable {
     let weight: Double
 }
 
-private struct ExerciseProgressPoint: Identifiable, Hashable {
+struct ExerciseProgressPoint: Identifiable, Hashable {
     var id: UUID { workoutID }
 
     let workoutID: UUID
@@ -1219,6 +1176,59 @@ private struct ExerciseProgressPoint: Identifiable, Hashable {
                 )
             }
             .sorted { $0.date < $1.date }
+    }
+
+    /// Heaviest set across every given session (the whole month, not just the chart window).
+    static func peakWeight(in points: [ExerciseProgressPoint]) -> Double {
+        points.map(\.maxWeight).max() ?? 0
+    }
+}
+
+/// Everything the progress screen derives from the selected exercise's history
+/// and month, computed once per render.
+private struct ExerciseProgressSnapshot {
+    let monthHistory: [ExerciseHistoryEntry]
+    let previousMonthHistory: [ExerciseHistoryEntry]
+    let progressPoints: [ExerciseProgressPoint]
+    let previousMonthPoints: [ExerciseProgressPoint]
+    let historyGroups: [ExerciseHistoryGroup]
+    let totalReps: Int
+    let totalVolume: Double
+    let previousVolume: Double
+    let bestWeight: Double?
+    let averageMaximumWeight: Double?
+    let allTimeBestWeight: Double?
+
+    static let empty = ExerciseProgressSnapshot(
+        fullHistory: [],
+        monthInterval: DateInterval(start: .distantPast, duration: 0),
+        previousMonthInterval: DateInterval(start: .distantPast, duration: 0)
+    )
+
+    init(
+        fullHistory: [ExerciseHistoryEntry],
+        monthInterval: DateInterval,
+        previousMonthInterval: DateInterval
+    ) {
+        let month = fullHistory.filter { monthInterval.contains($0.sessionDate) }
+        let previous = fullHistory.filter { previousMonthInterval.contains($0.sessionDate) }
+        let points = ExerciseProgressPoint.make(from: month)
+        monthHistory = month
+        previousMonthHistory = previous
+        progressPoints = points
+        previousMonthPoints = ExerciseProgressPoint.make(from: previous)
+        historyGroups = Dictionary(grouping: month, by: \.workoutID)
+            .values
+            .compactMap(ExerciseHistoryGroup.init)
+            .sorted { $0.date > $1.date }
+        totalReps = month.reduce(0) { $0 + $1.reps }
+        totalVolume = month.reduce(0) { $0 + $1.volume }
+        previousVolume = previous.reduce(0) { $0 + $1.volume }
+        bestWeight = points.map(\.maxWeight).max()
+        averageMaximumWeight = points.isEmpty
+            ? nil
+            : points.reduce(0) { $0 + $1.maxWeight } / Double(points.count)
+        allTimeBestWeight = fullHistory.map(\.weight).max()
     }
 }
 
@@ -1274,7 +1284,7 @@ private struct ExerciseProgressChartsCard: View {
                     ) {
                         GymMetricTile(
                             label: t("Peak weight", "Пікова вага", "Пиковый вес"),
-                            value: formatWeight(chartPoints.map(\.maxWeight).max() ?? 0)
+                            value: formatWeight(ExerciseProgressPoint.peakWeight(in: points))
                         )
                         GymMetricTile(
                             label: t("Avg volume", "Сер. обсяг", "Сред. объём"),
