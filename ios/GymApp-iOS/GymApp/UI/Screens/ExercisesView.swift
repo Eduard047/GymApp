@@ -998,6 +998,70 @@ private struct ExerciseEditorSheet: View {
     }
 }
 
+/// Pure grouping of per-set history rows into month -> session -> ascending sets,
+/// matching the Android history sheet (one card per workout, newest first).
+enum ExerciseHistoryGrouping {
+    struct Session: Identifiable, Equatable {
+        let id: UUID
+        let date: Date
+        /// Ascending by `setOrderIndex`.
+        let sets: [ExerciseHistoryEntry]
+
+        var setCount: Int { sets.count }
+        var maxWeight: Double { sets.map(\.weight).max() ?? 0 }
+        var volume: Double { sets.reduce(0) { $0 + $1.volume } }
+    }
+
+    struct Month: Identifiable, Equatable {
+        let id: Int
+        let monthStart: Date
+        /// Newest first.
+        let sessions: [Session]
+    }
+
+    static func months(
+        from entries: [ExerciseHistoryEntry],
+        calendar: Calendar = .current
+    ) -> [Month] {
+        let sessions = Dictionary(grouping: entries, by: \.workoutID)
+            .map { workoutID, rows -> Session in
+                let sets = rows.sorted {
+                    $0.setOrderIndex != $1.setOrderIndex
+                        ? $0.setOrderIndex < $1.setOrderIndex
+                        : $0.setID.uuidString < $1.setID.uuidString
+                }
+                return Session(id: workoutID, date: sets[0].sessionDate, sets: sets)
+            }
+            .sorted {
+                $0.date != $1.date
+                    ? $0.date > $1.date
+                    : $0.id.uuidString < $1.id.uuidString
+            }
+        var months: [Month] = []
+        var currentKey: Int?
+        var currentStart = Date()
+        var bucket: [Session] = []
+        func flush() {
+            if let key = currentKey {
+                months.append(Month(id: key, monthStart: currentStart, sessions: bucket))
+            }
+        }
+        for session in sessions {
+            let parts = calendar.dateComponents([.year, .month], from: session.date)
+            let key = (parts.year ?? 0) * 100 + (parts.month ?? 0)
+            if key != currentKey {
+                flush()
+                currentKey = key
+                currentStart = calendar.date(from: parts) ?? session.date
+                bucket = []
+            }
+            bucket.append(session)
+        }
+        flush()
+        return months
+    }
+}
+
 @MainActor
 private struct ExerciseHistorySheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -1037,51 +1101,15 @@ private struct ExerciseHistorySheet: View {
                             .frame(maxWidth: .infinity)
                         }
                     } else {
-                        ForEach(history.sorted(by: historySort)) { entry in
-                            GymPanel {
-                                HStack(alignment: .top, spacing: 12) {
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text(gymShortDate(entry.sessionDate))
-                                            .font(.headline)
-                                        Text(
-                                            gymText(
-                                                "Set \(entry.setOrderIndex + 1)",
-                                                "Підхід \(entry.setOrderIndex + 1)",
-                                                "Подход \(entry.setOrderIndex + 1)",
-                                                languageCode: gymCurrentLanguageCode()
-                                            )
-                                        )
-                                            .font(.caption)
-                                            .foregroundStyle(GymTheme.textSecondary)
-                                    }
-                                    Spacer(minLength: 8)
-                                    VStack(alignment: .trailing, spacing: 5) {
-                                        Text(
-                                            "\(entry.weight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0...2)))) " +
-                                                "\(gymLocalized("kg")) × \(entry.reps)"
-                                        )
-                                            .font(.headline.monospacedDigit())
-                                        Text(
-                                            gymText(
-                                                "Volume \(entry.volume.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0...1)))) kg",
-                                                "Обсяг \(entry.volume.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0...1)))) кг",
-                                                "Объём \(entry.volume.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0...1)))) кг",
-                                                languageCode: gymCurrentLanguageCode()
-                                            )
-                                        )
-                                            .font(.caption)
-                                            .foregroundStyle(GymTheme.textSecondary)
-                                    }
-                                }
-                                .accessibilityElement(children: .combine)
-                                .accessibilityLabel(
-                                    gymText(
-                                        "\(gymFormattedDate(entry.sessionDate, date: .abbreviated, time: .omitted)), set \(entry.setOrderIndex + 1), \(entry.weight.formatted(.number.locale(gymAppLocale()))) kilograms, \(entry.reps) repetitions",
-                                        "\(gymFormattedDate(entry.sessionDate, date: .abbreviated, time: .omitted)), підхід \(entry.setOrderIndex + 1), \(entry.weight.formatted(.number.locale(gymAppLocale()))) кілограмів, повторень: \(entry.reps)",
-                                        "\(gymFormattedDate(entry.sessionDate, date: .abbreviated, time: .omitted)), подход \(entry.setOrderIndex + 1), вес: \(entry.weight.formatted(.number.locale(gymAppLocale()))) кг, повторений: \(entry.reps)",
-                                        languageCode: gymCurrentLanguageCode()
-                                    )
-                                )
+                        ForEach(ExerciseHistoryGrouping.months(from: history)) { month in
+                            Text(Self.monthTitle(month.monthStart))
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(GymTheme.textSecondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.top, 6)
+                                .accessibilityAddTraits(.isHeader)
+                            ForEach(month.sessions) { session in
+                                sessionCard(session)
                             }
                         }
                     }
@@ -1114,11 +1142,95 @@ private struct ExerciseHistorySheet: View {
         )
     }
 
-    private func historySort(_ lhs: ExerciseHistoryEntry, _ rhs: ExerciseHistoryEntry) -> Bool {
-        if lhs.sessionDate == rhs.sessionDate {
-            return lhs.setOrderIndex > rhs.setOrderIndex
+    private static func monthTitle(_ date: Date) -> String {
+        let locale = gymAppLocale()
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.setLocalizedDateFormatFromTemplate("LLLL yyyy")
+        let text = formatter.string(from: date)
+        guard let first = text.first else { return text }
+        return String(first).uppercased(with: locale) + text.dropFirst()
+    }
+
+    private func weightText(_ value: Double) -> String {
+        value.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0...2)))
+    }
+
+    private func volumeText(_ value: Double) -> String {
+        value.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0...1)))
+    }
+
+    private func sessionCard(_ session: ExerciseHistoryGrouping.Session) -> some View {
+        let language = gymCurrentLanguageCode()
+        let dateText = gymShortDateTime(session.date)
+        let maxText = weightText(session.maxWeight)
+        let volume = volumeText(session.volume)
+        let count = session.setCount
+        let kg = gymLocalized("kg")
+        let summary = gymText(
+            "Max \(maxText) \(kg) · Sets \(count) · Volume \(volume) \(kg)",
+            "Макс. \(maxText) \(kg) · Підходи \(count) · Обсяг \(volume) \(kg)",
+            "Макс. \(maxText) \(kg) · Подходы \(count) · Объём \(volume) \(kg)",
+            languageCode: language
+        )
+        let spokenSummary = gymText(
+            "maximum weight \(maxText) kilograms, \(count) sets, volume \(volume) kilograms",
+            "максимальна вага \(maxText) кілограмів, підходів: \(count), обсяг \(volume) кілограмів",
+            "максимальный вес \(maxText) кг, подходов: \(count), объём \(volume) кг",
+            languageCode: language
+        )
+        return GymPanel {
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(dateText)
+                        .font(.headline)
+                    Text(summary)
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(dateText), \(spokenSummary)")
+
+                ForEach(Array(session.sets.enumerated()), id: \.element.setID) { offset, entry in
+                    Divider()
+                    setRow(entry, number: offset + 1)
+                }
+            }
         }
-        return lhs.sessionDate > rhs.sessionDate
+    }
+
+    private func setRow(_ entry: ExerciseHistoryEntry, number: Int) -> some View {
+        let language = gymCurrentLanguageCode()
+        let weight = weightText(entry.weight)
+        let label = gymText("Set \(number)", "Підхід \(number)", "Подход \(number)", languageCode: language)
+        let value = "\(weight) \(gymLocalized("kg")) × \(entry.reps)"
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                Text(label)
+                    .font(.subheadline)
+                    .foregroundStyle(GymTheme.textSecondary)
+                Spacer(minLength: 8)
+                Text(value)
+                    .font(.headline.monospacedDigit())
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.subheadline)
+                    .foregroundStyle(GymTheme.textSecondary)
+                Text(value)
+                    .font(.headline.monospacedDigit())
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            gymText(
+                "Set \(number), \(weight) kilograms, \(entry.reps) repetitions",
+                "Підхід \(number), \(weight) кілограмів, повторень: \(entry.reps)",
+                "Подход \(number), вес: \(weight) кг, повторений: \(entry.reps)",
+                languageCode: language
+            )
+        )
     }
 }
 

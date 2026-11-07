@@ -17,6 +17,85 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(RestTimerManager.notificationsDenied(for: .ephemeral))
     }
 
+    func testExerciseHistoryGroupingKeepsSameDaySessionsApartWithAscendingSets() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let exerciseID = UUID()
+        let morningWorkout = UUID()
+        let eveningWorkout = UUID()
+        let morning = Date(timeIntervalSince1970: 1_760_000_000)
+        let evening = morning.addingTimeInterval(8 * 3_600)
+        func entry(_ workout: UUID, _ date: Date, _ index: Int, _ weight: Double, _ reps: Int) -> ExerciseHistoryEntry {
+            ExerciseHistoryEntry(
+                setID: UUID(),
+                workoutID: workout,
+                sessionDate: date,
+                exerciseID: exerciseID,
+                exerciseName: "Bench Press",
+                weight: weight,
+                reps: reps,
+                setOrderIndex: index
+            )
+        }
+        // Store order is descending within a session, like the previous sheet sort.
+        let months = ExerciseHistoryGrouping.months(
+            from: [
+                entry(morningWorkout, morning, 1, 60, 8),
+                entry(eveningWorkout, evening, 2, 70, 5),
+                entry(morningWorkout, morning, 0, 50, 10),
+                entry(eveningWorkout, evening, 0, 65, 6),
+                entry(eveningWorkout, evening, 1, 67.5, 5)
+            ],
+            calendar: calendar
+        )
+
+        XCTAssertEqual(months.count, 1)
+        let sessions = months[0].sessions
+        XCTAssertEqual(sessions.map(\.id), [eveningWorkout, morningWorkout])
+        XCTAssertEqual(sessions[0].sets.map(\.setOrderIndex), [0, 1, 2])
+        XCTAssertEqual(sessions[1].sets.map(\.setOrderIndex), [0, 1])
+        XCTAssertEqual(sessions[0].setCount, 3)
+        XCTAssertEqual(sessions[0].maxWeight, 70)
+        XCTAssertEqual(sessions[0].volume, 65 * 6 + 67.5 * 5 + 70 * 5, accuracy: 0.0001)
+        XCTAssertEqual(sessions[1].volume, 50 * 10 + 60 * 8, accuracy: 0.0001)
+    }
+
+    func testExerciseHistoryGroupingSplitsMonthsNewestFirst() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int) -> Date {
+            calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour))!
+        }
+        func entry(_ workout: UUID, _ when: Date) -> ExerciseHistoryEntry {
+            ExerciseHistoryEntry(
+                setID: UUID(),
+                workoutID: workout,
+                sessionDate: when,
+                exerciseID: UUID(),
+                exerciseName: "Squat",
+                weight: 100,
+                reps: 5,
+                setOrderIndex: 0
+            )
+        }
+        let december = UUID()
+        let lateNovember = UUID()
+        let earlyNovember = UUID()
+        let months = ExerciseHistoryGrouping.months(
+            from: [
+                entry(earlyNovember, date(2025, 11, 1, 0)),
+                entry(december, date(2025, 12, 1, 0)),
+                entry(lateNovember, date(2025, 11, 30, 23))
+            ],
+            calendar: calendar
+        )
+
+        XCTAssertEqual(months.map(\.id), [202_512, 202_511])
+        XCTAssertEqual(months[0].sessions.map(\.id), [december])
+        XCTAssertEqual(months[1].sessions.map(\.id), [lateNovember, earlyNovember])
+        XCTAssertTrue(ExerciseHistoryGrouping.months(from: [], calendar: calendar).isEmpty)
+    }
+
     func testBackupExerciseOrderingMatchesPortableSQLiteNoCaseAcrossScripts() {
         let input = [
             "тяга custom",
