@@ -1742,6 +1742,8 @@ struct ActiveWorkoutView: View {
                 Text(gymLocalized("kg"))
                     .gymScaledFont(size: 15, relativeTo: .subheadline)
                     .foregroundStyle(GymTheme.textSecondary)
+                    // The field's label already ends in the unit.
+                    .accessibilityHidden(true)
 
                 Text(verbatim: "×")
                     .gymScaledFont(size: 30, weight: .semibold, relativeTo: .title, maxScale: 1.5)
@@ -2659,9 +2661,9 @@ struct ActiveWorkoutView: View {
 
     private func weightAccessibilityLabel(position: Int) -> String {
         gymText(
-            "Weight for set \(position + 1)",
-            "Вага для підходу \(position + 1)",
-            "Вес для подхода \(position + 1)",
+            "Weight for set \(position + 1), kg",
+            "Вага для підходу \(position + 1), кг",
+            "Вес для подхода \(position + 1), кг",
             languageCode: gymCurrentLanguageCode()
         )
     }
@@ -2950,6 +2952,8 @@ struct ActiveWorkoutView: View {
               currentDraft?.timing?.restingUntil == deadline,
               Date().timeIntervalSince(deadline) < 1.5 else { return }
         restEndFeedbackTrigger &+= 1
+        // Same one-time transition as the haptic: not for a skipped/stopped rest or one that already ended.
+        announce(gymLocalized("Rest complete", languageCode: gymCurrentLanguageCode()))
     }
 
     /// "Записано: 40 кг × 10" — shared by the "Log set" button and every

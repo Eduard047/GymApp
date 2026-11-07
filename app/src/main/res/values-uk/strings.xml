@@ -562,7 +562,7 @@
         <item quantity="other">Повторити попередні, %1$d повторення з власною вагою</item>
     </plurals>
     <string name="active_workout_previous_hint">Двічі торкніться, щоб повторити цю вагу й повторення</string>
-    <string name="active_workout_weight_field_cd">Вага для підходу %1$d</string>
+    <string name="active_workout_weight_field_cd">Вага для підходу %1$d, кг</string>
     <string name="active_workout_reps_field_cd">Повторення для підходу %1$d</string>
     <string name="active_workout_step_weight_center">вага</string>
     <string name="active_workout_step_reps_center">повт.</string>

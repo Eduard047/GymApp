@@ -552,7 +552,7 @@
         <item quantity="other">Repeat previous, %1$d bodyweight reps</item>
     </plurals>
     <string name="active_workout_previous_hint">Double tap to reuse this weight and reps</string>
-    <string name="active_workout_weight_field_cd">Weight for set %1$d</string>
+    <string name="active_workout_weight_field_cd">Weight for set %1$d, kg</string>
     <string name="active_workout_reps_field_cd">Repetitions for set %1$d</string>
     <string name="active_workout_step_weight_center">weight</string>
     <string name="active_workout_step_reps_center">reps</string>

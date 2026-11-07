@@ -584,6 +584,8 @@ internal fun EditableSetRow(
     val currentOnExpandedChange by rememberUpdatedState(onExpandedChange)
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     val reduceMotion = rememberReduceMotion()
+    val expandedState = stringResource(R.string.state_expanded)
+    val collapsedState = stringResource(R.string.state_collapsed)
     // One chevron turned half a way round (spring-snappy); reduced motion turns it at once.
     val chevronRotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
@@ -627,7 +629,7 @@ internal fun EditableSetRow(
                         )
                         .semantics {
                             contentDescription = rowDescription
-                            stateDescription = if (expanded) "▲" else "▼"
+                            stateDescription = if (expanded) expandedState else collapsedState
                             if (canDelete) {
                                 customActions = listOf(
                                     CustomAccessibilityAction(deleteActionLabel) {
@@ -1132,7 +1134,10 @@ internal fun SetValueLine(
             text = stringResource(R.string.active_workout_unit_kg),
             fontSize = 15.sp,
             color = secondary,
-            modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
+            modifier = Modifier
+                .padding(start = 4.dp, bottom = 6.dp)
+                // The field's description already ends in the unit, so TalkBack must not read it twice.
+                .clearAndSetSemantics {}
         )
         Text(
             text = "×",

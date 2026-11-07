@@ -121,6 +121,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -301,6 +302,8 @@ fun ActiveWorkoutScreen(
     // The rest countdown reaching zero while this screen is up: one rest-end haptic and a short tint on the
     // rest controls. A stop or a shortening by the person ends the rest too, and must stay silent.
     val appContext = LocalContext.current
+    val rootView = LocalView.current
+    val restOverAnnouncement = stringResource(R.string.timer_notification_finished_title)
     var restEndedByUser by remember { mutableStateOf(false) }
     var restEndHighlight by remember { mutableStateOf(false) }
     var previousRestSeconds by remember { mutableIntStateOf(uiState.restSecondsRemaining) }
@@ -319,6 +322,9 @@ fun ActiveWorkoutScreen(
             // No in-app RestEnd haptic while RestTimerService's finished notification can vibrate (also in
             // the foreground): a second buzz would stack on it. With notifications off, nothing else will.
             if (restAlertsCurrentlyMuted(appContext)) gymHaptics.perform(GymHapticEvent.RestEnd)
+            // Screen readers get the same cue the sighted tint gives (a no-op when none is running).
+            @Suppress("DEPRECATION")
+            rootView.announceForAccessibility(restOverAnnouncement)
             restEndHighlight = true
             delay(REST_END_HIGHLIGHT_MS)
             restEndHighlight = false

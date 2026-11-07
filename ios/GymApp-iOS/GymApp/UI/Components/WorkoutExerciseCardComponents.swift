@@ -428,6 +428,11 @@ struct GymExpandableSetRow<Trailing: View, Editor: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabelText)
+        .accessibilityValue(
+            isExpanded
+                ? gymText("Expanded", "Розгорнуто", "Развёрнуто", languageCode: gymCurrentLanguageCode())
+                : gymText("Collapsed", "Згорнуто", "Свёрнуто", languageCode: gymCurrentLanguageCode())
+        )
         .accessibilityHint(accessibilityHintText)
 
         return VStack(alignment: .leading, spacing: 10) {
@@ -920,9 +925,9 @@ struct GymSetEditorCapsules: View {
                 .disabled(disabled)
                 .accessibilityLabel(
                     gymText(
-                        "Weight for set \(position + 1)",
-                        "Вага для підходу \(position + 1)",
-                        "Вес для подхода \(position + 1)",
+                        "Weight for set \(position + 1), kg",
+                        "Вага для підходу \(position + 1), кг",
+                        "Вес для подхода \(position + 1), кг",
                         languageCode: gymCurrentLanguageCode()
                     )
                 )
