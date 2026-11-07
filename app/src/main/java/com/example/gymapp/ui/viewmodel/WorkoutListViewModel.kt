@@ -358,11 +358,13 @@ class WorkoutListViewModel(
     private val trainingProfileManager: TrainingProfileManager,
     private val trainingGuidanceManager: TrainingGuidanceManager,
     private val savedStateHandle: SavedStateHandle,
-    private val surface: WorkoutListSurface = WorkoutListSurface.Today
+    private val surface: WorkoutListSurface = WorkoutListSurface.Today,
+    private val zoneProvider: () -> ZoneId = { ZoneId.systemDefault() }
 ) : ViewModel() {
     private val accountBinding = trainingGuidanceManager.activeBinding
     private val profileAccountBinding = trainingProfileManager.activeBinding
-    private val zoneId = ZoneId.systemDefault()
+    // Read per use (not cached) so a device timezone change is picked up on the next emission.
+    private val zoneId: ZoneId get() = zoneProvider()
     private val monthOffset = MutableStateFlow(0)
     private val weekOffset = MutableStateFlow(0)
     private val historyPeriod = MutableStateFlow(TrainingHistoryPeriod.Week)

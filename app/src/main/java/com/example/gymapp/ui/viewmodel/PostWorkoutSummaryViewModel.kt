@@ -250,10 +250,12 @@ class PostWorkoutSummaryViewModel(
     private val repository: GymRepository,
     private val sessionId: Long,
     private val trainingGuidanceManager: TrainingGuidanceManager,
-    trainingProfileManager: TrainingProfileManager
+    trainingProfileManager: TrainingProfileManager,
+    private val zoneProvider: () -> ZoneId = { ZoneId.systemDefault() }
 ) : ViewModel() {
     private val accountBinding = trainingGuidanceManager.activeBinding
-    private val zoneId = ZoneId.systemDefault()
+    // Read per use (not cached) so a device timezone change is picked up on the next emission.
+    private val zoneId: ZoneId get() = zoneProvider()
     private val sessions = repository.observeSessions().stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,

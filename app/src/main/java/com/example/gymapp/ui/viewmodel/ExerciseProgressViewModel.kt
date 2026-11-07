@@ -181,9 +181,11 @@ internal inline fun resolveProgressExerciseSelection(
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ExerciseProgressViewModel(
-    private val repository: GymRepository
+    private val repository: GymRepository,
+    private val zoneProvider: () -> ZoneId = { ZoneId.systemDefault() }
 ) : ViewModel() {
-    private val zoneId = ZoneId.systemDefault()
+    // Read per use (not cached) so a device timezone change is picked up on the next emission.
+    private val zoneId: ZoneId get() = zoneProvider()
     private val locale = AppCompatDelegate.getApplicationLocales().let { locales ->
         if (locales.isEmpty) Locale.getDefault() else locales[0] ?: Locale.getDefault()
     }
