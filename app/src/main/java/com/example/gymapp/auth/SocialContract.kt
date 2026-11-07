@@ -297,9 +297,27 @@ internal fun isValidSocialWorkoutInviteId(value: String): Boolean =
 internal fun isValidSocialClientRequestId(value: String): Boolean =
     socialClientRequestIdPattern.matches(value)
 
+// Same limit and trim set as the iPhone SocialFriendCode.normalize (Foundation
+// whitespacesAndNewlines), shared through shared/friend-code-v1.json.
+private const val SOCIAL_FRIEND_CODE_MAX_INPUT_BYTES = 64
+
+private fun Char.isSocialFriendCodeWhitespace(): Boolean =
+    this in '\u0009'..'\u000D' ||
+        this == '\u0085' ||
+        this == '\u200B' ||
+        Character.getType(this).let {
+            it == Character.SPACE_SEPARATOR.toInt() ||
+                it == Character.LINE_SEPARATOR.toInt() ||
+                it == Character.PARAGRAPH_SEPARATOR.toInt()
+        }
+
 internal fun normalizeSocialFriendCode(value: String): String? {
-    if (value.length > 128 || value.toByteArray(Charsets.UTF_8).size > 128) return null
-    val trimmed = value.trim()
+    if (value.length > SOCIAL_FRIEND_CODE_MAX_INPUT_BYTES ||
+        value.toByteArray(Charsets.UTF_8).size > SOCIAL_FRIEND_CODE_MAX_INPUT_BYTES
+    ) {
+        return null
+    }
+    val trimmed = value.trim { it.isSocialFriendCodeWhitespace() }
     val canonical = trimmed.lowercase()
     if (isValidSocialProfileId(canonical) || isValidSocialShortFriendCode(canonical)) {
         return canonical

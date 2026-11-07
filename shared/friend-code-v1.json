@@ -1,0 +1,248 @@
+{
+  "version": 1,
+  "description": "Friend-code entry golden cases run by Android FriendCodeGoldenTest and iOS FriendCodeGoldenTests. normalized is what the add-friend-by-code input becomes before it is sent to the social_send_friend_request RPC (null means the client rejects it as an invalid code and sends nothing). The server accepts only the canonical forms g_ plus 12 lowercase hex digits or p_ plus 32 lowercase hex digits; both clients also accept the display form GYM-XXXX-XXXX-XXXX in any case, ignore case and surrounding whitespace (Unicode spaces, newlines, U+0085, U+200B), and reject anything over 64 UTF-8 bytes, inner spaces or dashes, look-alike letters and full-width characters. display lists how a canonical code is shown to its owner.",
+  "normalizeCases": [
+    {
+      "id": "short-canonical",
+      "input": "g_a1b2c3d4e5f6",
+      "normalized": "g_a1b2c3d4e5f6"
+    },
+    {
+      "id": "short-uppercase",
+      "input": "G_A1B2C3D4E5F6",
+      "normalized": "g_a1b2c3d4e5f6"
+    },
+    {
+      "id": "short-surrounding-spaces",
+      "input": " G_A1B2C3D4E5F6 ",
+      "normalized": "g_a1b2c3d4e5f6"
+    },
+    {
+      "id": "short-surrounding-newlines",
+      "input": "\n\r\t g_a1b2c3d4e5f6\r\n",
+      "normalized": "g_a1b2c3d4e5f6"
+    },
+    {
+      "id": "short-nbsp-and-unicode-spaces",
+      "input": "\u00a0\u2003g_a1b2c3d4e5f6\u3000",
+      "normalized": "g_a1b2c3d4e5f6"
+    },
+    {
+      "id": "short-next-line-u0085",
+      "input": "\u0085g_a1b2c3d4e5f6\u0085",
+      "normalized": "g_a1b2c3d4e5f6"
+    },
+    {
+      "id": "short-line-paragraph-separators",
+      "input": "\u2028g_a1b2c3d4e5f6\u2029",
+      "normalized": "g_a1b2c3d4e5f6"
+    },
+    {
+      "id": "short-padded-to-64-bytes",
+      "input": "                         g_a1b2c3d4e5f6                         ",
+      "normalized": "g_a1b2c3d4e5f6"
+    },
+    {
+      "id": "short-padded-to-65-bytes",
+      "input": "                          g_a1b2c3d4e5f6                         ",
+      "normalized": null
+    },
+    {
+      "id": "human-display",
+      "input": "GYM-A1B2-C3D4-E5F6",
+      "normalized": "g_a1b2c3d4e5f6"
+    },
+    {
+      "id": "human-lowercase",
+      "input": "gym-a1b2-c3d4-e5f6",
+      "normalized": "g_a1b2c3d4e5f6"
+    },
+    {
+      "id": "human-mixed-case-padded",
+      "input": "  Gym-a1B2-c3D4-E5f6\n",
+      "normalized": "g_a1b2c3d4e5f6"
+    },
+    {
+      "id": "human-digits-only",
+      "input": "GYM-0123-4567-8901",
+      "normalized": "g_012345678901"
+    },
+    {
+      "id": "legacy-profile-id",
+      "input": "p_abcdefabcdefabcdefabcdefabcdefab",
+      "normalized": "p_abcdefabcdefabcdefabcdefabcdefab"
+    },
+    {
+      "id": "legacy-profile-id-uppercase",
+      "input": "P_ABCDEFABCDEFABCDEFABCDEFABCDEFAB",
+      "normalized": "p_abcdefabcdefabcdefabcdefabcdefab"
+    },
+    {
+      "id": "legacy-profile-id-padded",
+      "input": "\n p_abcdefabcdefabcdefabcdefabcdefab \n",
+      "normalized": "p_abcdefabcdefabcdefabcdefabcdefab"
+    },
+    {
+      "id": "empty",
+      "input": "",
+      "normalized": null
+    },
+    {
+      "id": "whitespace-only",
+      "input": " \n\t ",
+      "normalized": null
+    },
+    {
+      "id": "short-too-short",
+      "input": "g_a1b2c3d4e5f",
+      "normalized": null
+    },
+    {
+      "id": "short-too-long",
+      "input": "g_a1b2c3d4e5f67",
+      "normalized": null
+    },
+    {
+      "id": "short-trailing-text",
+      "input": "g_a1b2c3d4e5f6_extra",
+      "normalized": null
+    },
+    {
+      "id": "short-non-hex",
+      "input": "g_a1b2c3d4e5fg",
+      "normalized": null
+    },
+    {
+      "id": "short-letter-o-for-zero",
+      "input": "g_a1b2c3d4e5fo",
+      "normalized": null
+    },
+    {
+      "id": "human-too-few-groups",
+      "input": "GYM-A1B2-C3D4",
+      "normalized": null
+    },
+    {
+      "id": "human-too-many-groups",
+      "input": "GYM-A1B2-C3D4-E5F6-extra",
+      "normalized": null
+    },
+    {
+      "id": "human-non-hex",
+      "input": "GYM-A1B2-C3D4-E5FG",
+      "normalized": null
+    },
+    {
+      "id": "human-no-dashes",
+      "input": "GYMA1B2C3D4E5F6",
+      "normalized": null
+    },
+    {
+      "id": "human-spaces-instead-of-dashes",
+      "input": "GYM A1B2 C3D4 E5F6",
+      "normalized": null
+    },
+    {
+      "id": "human-internal-newline",
+      "input": "GYM-A1B2-C3D4\n-E5F6",
+      "normalized": null
+    },
+    {
+      "id": "short-dashed-grouping",
+      "input": "g_a1b2-c3d4-e5f6",
+      "normalized": null
+    },
+    {
+      "id": "short-internal-space",
+      "input": "g_a1b2 c3d4e5f6",
+      "normalized": null
+    },
+    {
+      "id": "human-en-dash",
+      "input": "GYM\u2013A1B2\u2013C3D4\u2013E5F6",
+      "normalized": null
+    },
+    {
+      "id": "short-cyrillic-a",
+      "input": "g_\u04301b2c3d4e5f6",
+      "normalized": null
+    },
+    {
+      "id": "short-cyrillic-ie",
+      "input": "g_a1b2c3d4e5\u04356",
+      "normalized": null
+    },
+    {
+      "id": "human-cyrillic-a",
+      "input": "GYM-\u04101B2-C3D4-E5F6",
+      "normalized": null
+    },
+    {
+      "id": "human-cyrillic-prefix",
+      "input": "\u0413\u0423\u041c-A1B2-C3D4-E5F6",
+      "normalized": null
+    },
+    {
+      "id": "short-cyrillic-o-for-zero",
+      "input": "g_a1b2c3d4e5f\u043e",
+      "normalized": null
+    },
+    {
+      "id": "short-fullwidth-letters",
+      "input": "\uff47_a1b2c3d4e5f6",
+      "normalized": null
+    },
+    {
+      "id": "short-fullwidth-digits",
+      "input": "g_a\uff11b2c3d4e5f6",
+      "normalized": null
+    },
+    {
+      "id": "short-zero-width-space-trimmed",
+      "input": "\u200bg_a1b2c3d4e5f6",
+      "normalized": "g_a1b2c3d4e5f6"
+    },
+    {
+      "id": "short-control-u001c",
+      "input": "\u001cg_a1b2c3d4e5f6",
+      "normalized": null
+    },
+    {
+      "id": "profile-id-too-short",
+      "input": "p_abcdef",
+      "normalized": null
+    },
+    {
+      "id": "profile-id-non-hex",
+      "input": "p_zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "normalized": null
+    },
+    {
+      "id": "oversize-input",
+      "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "normalized": null
+    },
+    {
+      "id": "multibyte-oversize",
+      "input": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
+      "normalized": null
+    }
+  ],
+  "displayCases": [
+    {
+      "id": "short",
+      "canonical": "g_a1b2c3d4e5f6",
+      "display": "GYM-A1B2-C3D4-E5F6"
+    },
+    {
+      "id": "short-digits",
+      "canonical": "g_012345678901",
+      "display": "GYM-0123-4567-8901"
+    },
+    {
+      "id": "legacy-profile-id-unchanged",
+      "canonical": "p_abcdefabcdefabcdefabcdefabcdefab",
+      "display": "p_abcdefabcdefabcdefabcdefabcdefab"
+    }
+  ]
+}
