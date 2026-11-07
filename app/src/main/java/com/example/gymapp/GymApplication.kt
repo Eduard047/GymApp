@@ -86,7 +86,22 @@ class GymApplication : Application() {
         val pendingAccountDeletions = cloudAccountDeletionJournal.pending()
         val pendingLocalProfileDeletion = authManager.pendingLocalProfileDeletion()
         applicationScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            var notificationAccountKey: String? = null
+            var hasNotificationAccount = false
             authManager.authState.collect { state ->
+                runGuarded("active workout notification") {
+                    val nextKey = com.example.gymapp.util.restTimerAccountKey(state.session)
+                    if (com.example.gymapp.service.shouldClearActiveWorkoutNotification(
+                            notificationAccountKey,
+                            hasNotificationAccount,
+                            nextKey
+                        )
+                    ) {
+                        com.example.gymapp.service.ActiveWorkoutNotifier.cancel(this@GymApplication)
+                    }
+                    notificationAccountKey = nextKey
+                    hasNotificationAccount = true
+                }
                 // Corrupt prefs or IO in one manager must not kill the collector (and the process).
                 runGuarded("profile switchAccount") { profileManager.switchAccount(state.session) }
                 runGuarded("guidance switchAccount") { guidanceManager.switchAccount(state.session) }

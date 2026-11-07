@@ -58,6 +58,18 @@ internal fun isLiveWorkout(context: Context, session: AccountSession?, details: 
 }
 
 /**
+ * Whether the ongoing "active workout" notification belongs to an account that is no longer
+ * active. A sign-out always clears it; a switch to another account clears it too, so the previous
+ * account's exercise name never lingers (the new account's own workout posts it again). The first
+ * account seen after process start keeps the notification a previous process may have posted.
+ */
+internal fun shouldClearActiveWorkoutNotification(
+    previousAccountKey: String?,
+    hasPreviousAccount: Boolean,
+    nextAccountKey: String?
+): Boolean = nextAccountKey == null || (hasPreviousAccount && previousAccountKey != nextAccountKey)
+
+/**
  * Posts and clears the ongoing "active workout" notification. It stays while a workout is
  * running and is cleared when the workout is finished or discarded.
  */
