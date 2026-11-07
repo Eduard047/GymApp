@@ -2,14 +2,14 @@
     <string name="app_name">Трекер тренувань</string>
 
     <string name="tab_workouts">Сьогодні</string>
-    <string name="tab_missions">Завдання</string>
+    <string name="tab_missions">Місії</string>
     <string name="tab_exercises">Вправи</string>
     <string name="tab_progress">Прогрес</string>
     <string name="tab_profile">Профіль</string>
 
     <string name="title_workouts">Тренування</string>
     <string name="workouts_screen_subtitle">Твоя історія тренувань і наступний найкращий крок.</string>
-    <string name="title_missions">Завдання</string>
+    <string name="title_missions">Місії</string>
     <string name="title_add_workout">План тренування</string>
     <string name="title_workout_plan">План тренування</string>
     <string name="title_workout_detail">Деталі тренування</string>
@@ -41,7 +41,7 @@
 
     <string name="friend_details_title">Дані друга</string>
     <string name="friends_hero_title">Твоє тренувальне коло</string>
-    <string name="friends_hero_supporting">Запрошення, приватний обмін тренуваннями й live-сесії з прийнятими друзями.</string>
+    <string name="friends_hero_supporting">Запрошення, приватний обмін тренуваннями й спільні тренування з прийнятими друзями.</string>
     <string name="friends_integrity_notice">Спільний прогрес записують самі користувачі.</string>
     <string name="friends_cloud_required_title">Потрібен вхід у хмарний акаунт</string>
     <string name="friends_cloud_required_supporting">Локальні тренування залишаються доступними. Увійди в хмарний акаунт, щоб додавати друзів і надсилати плани.</string>
@@ -84,14 +84,14 @@
     <string name="friend_metric_workouts">%1$d тренувань</string>
     <string name="friend_train_eyebrow">ТРЕНУВАТИСЯ РАЗОМ</string>
     <string name="friend_train_title">Почни з цього друга</string>
-    <string name="friend_train_supporting">Обери збережене тренування для надсилання або створи нову синхронізовану live-сесію.</string>
+    <string name="friend_train_supporting">Обери збережене тренування для надсилання або створи нове синхронізоване спільне тренування.</string>
     <string name="friend_choose_workout_action">Обрати збережене тренування</string>
     <string name="friend_workout_picker_title">Обрати тренування для %1$s</string>
-    <string name="friend_workout_picker_supporting">Поки нічого не надсилається. Обери збережене тренування, потім перевір варіанти посилання, копії та LIVE.</string>
+    <string name="friend_workout_picker_supporting">Поки нічого не надсилається. Обери збережене тренування, потім перевір варіанти посилання, копії та спільне тренування.</string>
     <string name="friend_workout_picker_empty_title">Немає збережених тренувань</string>
     <string name="friend_workout_picker_empty_supporting">Спочатку збережи тренування, потім повернися до цього друга.</string>
-    <string name="friend_build_live_action">Створити LIVE-тренування</string>
-    <string name="friend_create_live_action">Створити LIVE-тренування</string>
+    <string name="friend_build_live_action">Створити спільне тренування</string>
+    <string name="friend_create_live_action">Створити спільне тренування</string>
     <string name="friend_send_saved_action">Надіслати збережене</string>
     <string name="friend_activity_workouts">Тренування</string>
     <string name="friend_activity_records">Рекорди</string>
@@ -250,16 +250,16 @@
     <string name="auth_welcome_back">З поверненням</string>
     <string name="auth_sign_in_supporting">Увійди, щоб тренування синхронізувалися між твоїми пристроями.</string>
     <string name="auth_create_account_supporting">Створи хмарний обліковий запис, а потім підтвердь email, щоб почати синхронізацію.</string>
-    <string name="auth_confirmation_title">Перевірте електронну пошту</string>
-    <string name="auth_confirmation_body">Ми надіслали посилання для підтвердження на адресу нижче. Відкрийте найновіший лист від GymApp і натисніть «Підтвердити email». Потім поверніться до GymApp та увійдіть.</string>
+    <string name="auth_confirmation_title">Перевір електронну пошту</string>
+    <string name="auth_confirmation_body">Ми надіслали посилання для підтвердження на адресу нижче. Відкрий найновіший лист від GymApp і натисни «Підтвердити email». Потім повернись до GymApp та увійди.</string>
     <string name="auth_confirmation_sent_to">Посилання надіслано на адресу</string>
-    <string name="auth_confirmation_spam_hint">Якщо листа немає, перевірте папку «Спам».</string>
+    <string name="auth_confirmation_spam_hint">Якщо листа немає, перевір папку «Спам».</string>
     <string name="auth_confirmation_open_email">Відкрити пошту</string>
     <string name="auth_confirmation_resend">Надіслати лист ще раз</string>
     <string name="auth_confirmation_change_address">Використати іншу адресу</string>
     <string name="auth_confirmation_back_to_sign_in">Повернутися до входу</string>
     <string name="auth_confirmation_after_signup_hint">Після створення акаунта ми покажемо, на яку адресу надіслано лист для підтвердження.</string>
-    <string name="auth_email_app_unavailable">На цьому пристрої немає доступного поштового застосунку. Відкрийте пошту вручну.</string>
+    <string name="auth_email_app_unavailable">На цьому пристрої немає доступного поштового застосунку. Відкрий пошту вручну.</string>
     <string name="auth_create_account">Створити обліковий запис</string>
     <string name="auth_log_in">Увійти</string>
     <string name="auth_sign_up">Зареєструватися</string>
@@ -268,7 +268,7 @@
     <string name="auth_repeat_email">Повтори електронну пошту</string>
     <string name="auth_password">Пароль</string>
     <string name="auth_repeat_password">Повтори пароль</string>
-    <string name="auth_display_name">Імʼя користувача</string>
+    <string name="auth_display_name">Ім’я користувача</string>
     <string name="auth_password_requirements">Використай щонайменше 6 символів (до 72 байтів UTF-8).</string>
     <string name="auth_signup_requirements">Використай щонайменше 6 символів (до 72 байтів UTF-8). В імені дозволені літери, цифри, пробіли, крапка, дефіс і підкреслення.</string>
     <string name="auth_resend_confirmation">Надіслати підтвердження ще раз</string>
@@ -288,7 +288,7 @@
     <string name="auth_error_password_too_long">Пароль задовгий.</string>
     <string name="auth_error_repeat_email">Повтори електронну пошту.</string>
     <string name="auth_error_email_mismatch">Адреси електронної пошти не збігаються.</string>
-    <string name="auth_error_display_name_length">Імʼя має містити 2–32 символи.</string>
+    <string name="auth_error_display_name_length">Ім’я має містити 2–32 символи.</string>
     <string name="auth_error_password_minimum">Пароль має містити щонайменше 6 символів і займати не більше 72 байтів у UTF-8.</string>
     <string name="auth_error_password_mismatch">Паролі не збігаються.</string>
     <string name="auth_error_new_password_required">Введи новий пароль.</string>
@@ -401,15 +401,15 @@
     <string name="cloud_sync_retry_action">Повторити синхронізацію</string>
 
     <string name="label_note">Нотатка</string>
-    <string name="hint_note">Нотатка до сесії</string>
+    <string name="hint_note">Нотатка до тренування</string>
     <string name="label_workout_date">Дата</string>
     <string name="label_exercise">Вправа</string>
-    <string name="label_select_exercise">Оберіть вправу</string>
+    <string name="label_select_exercise">Обери вправу</string>
     <string name="label_last_weight">Остання: %1$.1f кг</string>
     <string name="label_set">Підхід %1$d</string>
     <string name="label_set_short">Підхід</string>
     <string name="label_weight_kg">Вага (кг)</string>
-    <string name="hint_optional">Необовʼязково</string>
+    <string name="hint_optional">Необов’язково</string>
     <string name="label_reps">Повтори</string>
     <string name="add_workout_intro_title">План тренування</string>
     <string name="add_workout_intro_title_past">Запиши минуле тренування</string>
@@ -472,7 +472,7 @@
     <string name="training_split_push_pull_legs">Жим / тяга / ноги</string>
     <string name="training_split_custom">Своя</string>
     <string name="training_goal_aesthetic_fat_loss">Естетика / сушка</string>
-    <string name="training_goal_muscle_gain">Набір мʼязів</string>
+    <string name="training_goal_muscle_gain">Набір м’язів</string>
     <string name="training_goal_strength">Сила</string>
     <string name="training_goal_balanced">Баланс</string>
     <string name="calorie_mode_deficit">Дефіцит</string>
@@ -533,7 +533,7 @@
     <string name="active_workout_delete_set">Видалити підхід</string>
     <string name="active_workout_delete_recorded_set_target">Підхід %1$d: %2$s</string>
     <string name="active_workout_delete_recorded_set_message">Підхід буде видалено з тренування.</string>
-    <string name="active_workout_last_set_message">У вправі має лишатися хоча б один підхід. Натомість видаліть вправу.</string>
+    <string name="active_workout_last_set_message">У вправі має лишатися хоча б один підхід. Натомість видали вправу.</string>
     <string name="active_workout_exercise_limit_reached">У цьому тренуванні досягнуто ліміту вправ.</string>
     <string name="active_workout_exercise_already_added">Ця вправа вже є в тренуванні.</string>
     <string name="active_workout_log_set_cd">Записати підхід %1$d</string>
@@ -562,7 +562,7 @@
         <item quantity="many">Повторити попередні, %1$d повторень з власною вагою</item>
         <item quantity="other">Повторити попередні, %1$d повторення з власною вагою</item>
     </plurals>
-    <string name="active_workout_previous_hint">Двічі торкніться, щоб повторити цю вагу й повторення</string>
+    <string name="active_workout_previous_hint">Двічі торкнись, щоб повторити цю вагу й повторення</string>
     <string name="active_workout_weight_field_cd">Вага для підходу %1$d, кг</string>
     <string name="active_workout_reps_field_cd">Повторення для підходу %1$d</string>
     <string name="active_workout_step_weight_center">вага</string>
@@ -575,7 +575,7 @@
     <string name="active_workout_decrease_reps">Зменшити повторення</string>
     <string name="active_workout_increase_reps">Збільшити повторення</string>
     <string name="active_workout_set_upcoming_cd">Підхід %1$d, %2$s</string>
-    <string name="active_workout_set_upcoming_hint">Двічі торкніться, щоб редагувати цей підхід</string>
+    <string name="active_workout_set_upcoming_hint">Двічі торкнись, щоб редагувати цей підхід</string>
     <string name="active_workout_set_recorded_cd">Підхід %1$d записано, %2$s</string>
     <string name="active_workout_set_recorded_record_cd">Підхід %1$d записано, %2$s, особистий рекорд</string>
     <string name="voice_command_typed_label">Введи команду</string>
@@ -590,7 +590,7 @@
     <string name="voice_command_no_previous_set">Немає попереднього підходу</string>
     <string name="voice_command_not_resting">Зараз немає відпочинку</string>
     <string name="voice_command_unknown">Не зрозумів: «%1$s»</string>
-    <string name="voice_command_busy">Зачекайте, триває збереження…</string>
+    <string name="voice_command_busy">Зачекай, триває збереження…</string>
     <string name="voice_command_missing_values">Не вистачає ваги або повторів для цього підходу</string>
     <string name="voice_command_stop_description">Зупинити голосову команду</string>
     <string name="voice_command_no_speech">Нічого не почув</string>
@@ -647,7 +647,7 @@
     <string name="timer_notification_running_title">Таймер відпочинку</string>
     <string name="timer_notification_running_text">Залишилось: %1$s</string>
     <string name="timer_notification_finished_title">Відпочинок завершено</string>
-    <string name="timer_notification_finished_text">Натисніть, щоб повернутися до тренування.</string>
+    <string name="timer_notification_finished_text">Натисни, щоб повернутися до тренування.</string>
     <string name="timer_notification_finished_body_exercise">Час наступного підходу: %1$s.</string>
     <string name="timer_channel_running_name">Таймер працює</string>
     <string name="timer_channel_running_description">Поточний відлік відпочинку.</string>
@@ -674,7 +674,7 @@
         <item quantity="other">%1$d вправи</item>
     </plurals>
     <string name="exercise_workout_count_compact">Тренувань: %1$d</string>
-    <string name="exercise_muscles_title">Задіяні мʼязи</string>
+    <string name="exercise_muscles_title">Задіяні м’язи</string>
     <string name="cd_collapse_exercise">Згорнути вправу</string>
     <string name="cd_expand_exercise">Розгорнути вправу</string>
 
@@ -684,10 +684,10 @@
     <string name="empty_progress">У цьому місяці історії немає.</string>
     <string name="empty_detail">Тренування не знайдено.</string>
 
-    <string name="message_validation_error">Заповніть усі обрані вправи та підходи.</string>
+    <string name="message_validation_error">Заповни усі обрані вправи та підходи.</string>
     <string name="message_plan_sync_success">План синхронізовано на годинник.</string>
     <string name="message_plan_sync_queued">План збережено на телефоні. Відкрий GymApp на годиннику, щоб отримати його.</string>
-    <string name="message_plan_sync_failed">Не вдалося синхронізувати план. Відкрийте GymApp на Garmin і перевірте Connect IQ/Bluetooth.</string>
+    <string name="message_plan_sync_failed">Не вдалося синхронізувати план. Відкрий GymApp на Garmin і перевір Connect IQ/Bluetooth.</string>
     <string name="message_workout_plan_empty">Додай хоча б один коректний підхід перед синхронізацією.</string>
     <string name="message_plan_outside_garmin_limits">План тренування виходить за обмеження Garmin.</string>
     <string name="message_garmin_plan_set_limit">План Garmin може містити не більше ніж 30 підходів.</string>
@@ -721,7 +721,7 @@
     <string name="message_add_set_failed">Не вдалося записати підхід. Таймер відпочинку не запущено.</string>
     <string name="message_add_exercise_failed">Не вдалося додати вправу. Онови тренування та спробуй ще раз.</string>
     <string name="message_rest_timer_save_failed">Підхід збережено, але не вдалося запустити таймер відпочинку.</string>
-    <string name="message_invalid_set_input">Введіть коректні вагу та повтори.</string>
+    <string name="message_invalid_set_input">Введи коректні вагу та повтори.</string>
     <string name="message_exercise_error">Не вдалося зберегти вправу. Назва може вже існувати.</string>
 
     <string name="stats_exercises">Вправ: %1$d</string>
@@ -741,8 +741,8 @@
     <string name="workout_switch_overview_title">Огляд</string>
     <string name="workout_switch_list_title">Список (%1$d)</string>
     <string name="workout_section_header_title">Список тренувань</string>
-    <string name="workout_section_header_empty">Нові сесії зʼявляться тут, щойно ти їх запишеш.</string>
-    <string name="workout_section_header_hint">Швидкий перехід до записаних сесій без прокрутки всього огляду.</string>
+    <string name="workout_section_header_empty">Нові тренування з’являться тут, щойно ти їх запишеш.</string>
+    <string name="workout_section_header_hint">Швидкий перехід до записаних тренувань без прокрутки всього огляду.</string>
     <string name="missions_daily_title">Щоденні місії</string>
     <string name="missions_daily_short">День</string>
     <string name="missions_daily_supporting">Малі перемоги на сьогодні.</string>
@@ -753,9 +753,9 @@
     <string name="missions_monthly_short">Місяць</string>
     <string name="missions_monthly_supporting">Довгі цілі на поточний місяць.</string>
     <string name="missions_board_supporting">Активні щоденні, тижневі та місячні місії ротуються з великої бази челенджів.</string>
-    <string name="missions_ranks_card_title">Шкала титулів</string>
-    <string name="missions_ranks_card_supporting">Відкрий повний список титулів і перевір наступні відкриття.</string>
-    <string name="action_view_ranks">Переглянути титули</string>
+    <string name="missions_ranks_card_title">Шкала рангів</string>
+    <string name="missions_ranks_card_supporting">Відкрий повний список рангів і перевір наступні відкриття.</string>
+    <string name="action_view_ranks">Переглянути ранги</string>
     <string name="missions_total_label">Усього</string>
     <string name="missions_completed_label">Виконано</string>
     <string name="missions_open_label">Відкрито</string>
@@ -767,7 +767,7 @@
     <string name="missions_section_progress">%1$d / %2$d виконано</string>
     <string name="missions_status_completed">Виконано</string>
     <string name="missions_status_in_progress">У процесі</string>
-    <string name="missions_empty_title">Поки що немає завдань</string>
+    <string name="missions_empty_title">Поки що немає місій</string>
     <string name="missions_empty_supporting">Записуй тренування, щоб відкрити щоденні та тижневі місії.</string>
     <string name="solo_progress_eyebrow">Особистий прогрес</string>
     <string name="solo_level_badge">Рівень %1$d</string>
@@ -794,8 +794,8 @@
     <string name="rank_level_from_xp">Рівень %1$d · від %2$s XP</string>
     <string name="rank_xp_to_go">ще %1$s XP</string>
     <string name="ranks_xp_to_next">%1$s XP до «%2$s»</string>
-    <string name="ranks_empty_title">Поки що немає титулів</string>
-    <string name="ranks_empty_supporting">Тут з’являться титули, коли буде доступна шкала прогресу.</string>
+    <string name="ranks_empty_title">Поки що немає рангів</string>
+    <string name="ranks_empty_supporting">Тут з’являться ранги, коли буде доступна шкала прогресу.</string>
     <string name="activity_heatmap_title">Теплова карта активності</string>
     <plurals name="activity_heatmap_active_days">
         <item quantity="one">%1$d активний день</item>
@@ -806,7 +806,7 @@
     <string name="activity_heatmap_legend">Чим насиченіший синій, тим більший обсяг тренувань за день.</string>
     <string name="activity_heatmap_less">Менше</string>
     <string name="activity_heatmap_more">Більше</string>
-    <string name="activity_heatmap_day_a11y">%1$s. Сесій: %2$d. Обсяг: %3$d кг.</string>
+    <string name="activity_heatmap_day_a11y">%1$s. Тренувань: %2$d. Обсяг: %3$d кг.</string>
     <string-array name="activity_heatmap_weekdays">
         <item>П</item>
         <item>В</item>
@@ -832,16 +832,16 @@
         <item quantity="other">%1$d групи</item>
     </plurals>
     <plurals name="progress_sessions_count">
-        <item quantity="one">%1$d сесія</item>
-        <item quantity="few">%1$d сесії</item>
-        <item quantity="many">%1$d сесій</item>
-        <item quantity="other">%1$d сесії</item>
+        <item quantity="one">%1$d тренування</item>
+        <item quantity="few">%1$d тренування</item>
+        <item quantity="many">%1$d тренувань</item>
+        <item quantity="other">%1$d тренування</item>
     </plurals>
     <plurals name="progress_logged_sessions_count">
-        <item quantity="one">%1$d записана сесія</item>
-        <item quantity="few">%1$d записані сесії</item>
-        <item quantity="many">%1$d записаних сесій</item>
-        <item quantity="other">%1$d записаної сесії</item>
+        <item quantity="one">%1$d записане тренування</item>
+        <item quantity="few">%1$d записані тренування</item>
+        <item quantity="many">%1$d записаних тренувань</item>
+        <item quantity="other">%1$d записаного тренування</item>
     </plurals>
     <plurals name="progress_sets_count">
         <item quantity="one">%1$d підхід</item>
@@ -869,8 +869,8 @@
     <string name="achievement_status_unlocked">Відкрито</string>
     <string name="achievement_status_unlocked_on">Відкрито %1$s</string>
     <string name="achievement_tile_a11y">%1$s, %2$s, %3$s</string>
-    <string name="muscle_heatmap_title">Карта мʼязів</string>
-    <string name="muscle_heatmap_supporting">Чим насиченіший синій, тим більше навантаження на групу мʼязів за вибраний період.</string>
+    <string name="muscle_heatmap_title">Карта м’язів</string>
+    <string name="muscle_heatmap_supporting">Чим насиченіший синій, тим більше навантаження на групу м’язів за вибраний період.</string>
     <string name="muscle_heatmap_sets">Підходи</string>
     <string name="muscle_heatmap_load">Навантаження</string>
     <string name="muscle_heatmap_mapped">Зіставлено</string>
@@ -889,18 +889,18 @@
     <string name="muscle_heatmap_exercise_detail">%1$s навант. • %2$s • %3$s</string>
     <string name="muscle_heatmap_unmapped_title">Нові / незіставлені вправи</string>
     <string name="muscle_heatmap_unmapped_detail">%1$s • %2$s</string>
-    <string name="muscle_heatmap_mappings_title">Зіставлення вправ із мʼязами</string>
+    <string name="muscle_heatmap_mappings_title">Зіставлення вправ із м’язами</string>
     <string name="muscle_heatmap_mapping_detail">%1$s • %2$s • %3$s</string>
     <string name="muscle_heatmap_mapping_unmapped_detail">Не зіставлено • %1$s • %2$s</string>
     <string name="muscle_heatmap_map_action">Групи м’язів</string>
     <string name="muscle_heatmap_manual_title">Групи м’язів</string>
-    <string name="exercise_mappings_title">Зіставлення вправ із мʼязами</string>
+    <string name="exercise_mappings_title">Зіставлення вправ із м’язами</string>
     <string name="exercise_mappings_unmapped">Не зіставлено</string>
     <string name="exercise_mappings_edit">Змінити</string>
     <string name="exercise_mappings_editor_title">Групи м’язів</string>
     <string name="exercise_mappings_use_automatic">Використати автоматичне</string>
     <string name="recommendations_title">Рекомендації</string>
-    <string name="recommendations_supporting">На основі навантаження мʼязів і пауз у тренуваннях.</string>
+    <string name="recommendations_supporting">На основі навантаження м’язів і пауз у тренуваннях.</string>
     <string name="smart_coach_title">Розумний тренер</string>
     <string name="smart_coach_light_weight">легко</string>
     <string name="smart_coach_weight_not_set">вагу не задано</string>
@@ -936,7 +936,7 @@
     <string name="today_continue_plan">Продовжити план</string>
     <string name="today_cancel_plan">Скасувати план</string>
     <string name="today_cancel_plan_title">Скасувати збережений план?</string>
-    <string name="today_cancel_plan_message">Збережений план і вибраний отримувач LIVE будуть видалені. Історія та активне тренування залишаться.</string>
+    <string name="today_cancel_plan_message">Збережений план і вибраний отримувач спільного тренування будуть видалені. Історія та активне тренування залишаться.</string>
     <string name="today_cancel_plan_keep">Залишити план</string>
     <string name="today_cancel_plan_confirm">Скасувати план</string>
     <string name="training_history_title">Історія тренувань</string>
@@ -1029,12 +1029,12 @@
     <string name="smart_kind_plateau_break">Плато</string>
     <string name="smart_coach_status_compact">%1$s · RIR %2$d–%3$d</string>
     <string name="smart_reason_no_history">Історії ще немає, тому це перша акуратна база.</string>
-    <string name="smart_reason_last_strong">Остання сесія була стабільною по підходах.</string>
+    <string name="smart_reason_last_strong">Останнє тренування було стабільним по підходах.</string>
     <string name="smart_reason_last_unstable">Повтори або обсяг просіли, тому план обережний.</string>
     <string name="smart_reason_recent_break">%1$d днів без цієї вправи, тому вагу скориговано вниз.</string>
     <string name="smart_reason_volume_up">Останній обсяг іде вгору.</string>
-    <string name="smart_reason_volume_dropped">Останній обсяг нижчий за попередню сесію.</string>
-    <string name="smart_reason_plateau">Кілька сесій тримались біля однієї максимальної ваги.</string>
+    <string name="smart_reason_volume_dropped">Останній обсяг нижчий за попереднє тренування.</string>
+    <string name="smart_reason_plateau">Кілька тренувань тримались біля однієї максимальної ваги.</string>
     <string name="smart_reason_near_best">Це близько до твоєї найкращої розрахункової сили у вправі.</string>
     <string name="smart_reason_conservative">Збільшення навмисно обережне.</string>
     <string name="smart_reason_load_boundary">Тренажер уже на найважчій із налаштованих ваг.</string>
@@ -1042,20 +1042,20 @@
     <string name="smart_coach_plan_needs_refresh">Профіль або зусилля змінилися. Онови план, перш ніж покладатися на його рекомендації.</string>
     <string name="smart_reason_aesthetic_goal">Ціль естетики: план більше тримається за чистий обсяг і техніку.</string>
     <string name="smart_reason_calorie_deficit">Дефіцит калорій: прогресія обережніша, щоб не вбити відновлення.</string>
-    <string name="smart_reason_upper_lower">Верх/низ 4 рази: навантаження лишає запас для наступної сесії.</string>
+    <string name="smart_reason_upper_lower">Верх/низ 4 рази: навантаження лишає запас для наступного тренування.</string>
     <string name="smart_reason_recovery_effort">Легке навантаження: вагу й обсяг навмисно знижено.</string>
     <string name="smart_reason_hard_effort">Важке навантаження: низький RIR застосовується лише до цієї підготовленої базової вправи.</string>
 
     <string name="progress_summary_title">Зведення прогресу</string>
     <string name="progress_summary_subtitle">Обсяг = вага × повтори в усіх виконаних підходах.</string>
     <string name="progress_history_title">Історія тренувань</string>
-    <string name="progress_recent_sessions_title">Останні сесії</string>
+    <string name="progress_recent_sessions_title">Останні тренування</string>
     <string name="progress_recent_sessions_subtitle">Список оновлюється для вибраного місяця і вправи.</string>
     <string name="progress_chart_max_weight">Тренд максимальної ваги</string>
-    <string name="progress_chart_volume">Обсяг по сесіях</string>
+    <string name="progress_chart_volume">Обсяг по тренуваннях</string>
     <string name="progress_visual_trends_title">Візуальні тренди</string>
     <string name="progress_visual_trends_subtitle">Останні %1$s у вибраному місяці.</string>
-    <string name="progress_stat_sessions">Сесії</string>
+    <string name="progress_stat_sessions">Тренування</string>
     <string name="progress_stat_total_sets">Підходи</string>
     <string name="progress_stat_best_weight">Найкраща вага</string>
     <string name="progress_stat_avg_weight">Середній максимум</string>
@@ -1069,12 +1069,12 @@
     <string name="progress_reps_value">%1$d повт</string>
     <string name="progress_session_max_weight_inline">Макс %1$s кг</string>
     <string name="progress_session_volume_inline">Обсяг %1$s кг</string>
-    <string name="chart_no_data">Додайте підходи, щоб побачити графік.</string>
+    <string name="chart_no_data">Додай підходи, щоб побачити графік.</string>
     <string name="splash_tagline">Розвивай силу з фокусом і системністю.</string>
     <string name="splash_wordmark">GymApp</string>
     <string name="splash_loading">Готуємо твою сесію…</string>
 
-    <string name="exercise_history_sessions">Сесії</string>
+    <string name="exercise_history_sessions">Тренування</string>
     <string name="exercise_history_max_weight">Макс. вага</string>
     <string name="exercise_history_volume">Загальний обсяг</string>
     <string name="exercise_history_empty">Для цієї вправи ще немає історії</string>
@@ -1087,12 +1087,12 @@
     <string name="exercise_mappings_eyebrow">Групи м’язів</string>
     <string name="exercise_mappings_supporting">Перевір групи м’язів, що використовуються для аналізу прогресу й навантаження.</string>
     <string name="backup_tools_eyebrow">Твої дані</string>
-    <string name="backup_tools_title">Бекап і діагностика</string>
-    <string name="backup_tools_supporting">Резервні копії об’єднуються з поточним профілем і пропускають дублікати сесій.</string>
+    <string name="backup_tools_title">Резервні копії та діагностика</string>
+    <string name="backup_tools_supporting">Резервні копії об’єднуються з поточним профілем і пропускають дублікати тренувань.</string>
     <string name="backup_export_json">Експорт JSON</string>
     <string name="backup_import_json">Імпорт JSON</string>
     <string name="backup_export_diagnostics">Експорт знеособленої діагностики</string>
-    <string name="backup_export_ready">Backup JSON готовий</string>
+    <string name="backup_export_ready">Резервна копія JSON готова</string>
     <string name="backup_diagnostics_ready">Знеособлена діагностика готова</string>
     <string name="backup_copy_json">Копіювати JSON</string>
     <string name="backup_copy_warning_title">Копіювати приватну резервну копію?</string>
@@ -1167,11 +1167,11 @@
     <string name="garmin_workout_synced_from">%1$s · синхронізовано з Garmin</string>
     <string name="garmin_workout_note_derived_from">%1$s · показники прочитано зі збереженої нотатки</string>
     <string name="garmin_metric_duration">Тривалість</string>
-    <string name="garmin_metric_watch_session">сесія з годинника</string>
+    <string name="garmin_metric_watch_session">тренування з годинника</string>
     <string name="garmin_metric_logged">Записано</string>
     <string name="garmin_metric_sets_value">%1$d підходів</string>
     <string name="garmin_metric_exercises_value">%1$d вправ</string>
-    <string name="garmin_synced_sets_hint">Синхронізовані підходи згруповані нижче. Відкрийте режим редагування, щоб виправити вагу чи повторення, додати вправу або видалити помилковий підхід.</string>
+    <string name="garmin_synced_sets_hint">Синхронізовані підходи згруповані нижче. Відкрий режим редагування, щоб виправити вагу чи повторення, додати вправу або видалити помилковий підхід.</string>
     <string name="garmin_note_derived_sets_hint">Імпортована або змінена нотатка не підтверджує походження з годинника. Збережені підходи згруповано нижче для перевірки.</string>
     <string name="garmin_metrics_title">Метрики силового Garmin</string>
     <string name="garmin_watch_metrics_section_title">Показники годинника</string>
@@ -1291,7 +1291,7 @@
     <string name="post_workout_unavailable_title">Підсумок тренування недоступний</string>
     <string name="post_workout_unavailable_supporting">Не вдалося завантажити це тренування.</string>
     <string name="post_workout_complete_title">Тренування завершено</string>
-    <string name="post_workout_session_xp">XP сесії</string>
+    <string name="post_workout_session_xp">XP тренування</string>
     <string name="post_workout_level_rank">Рівень %1$d · %2$s</string>
     <string name="post_workout_xp_to_level">%1$d XP до рівня %2$d</string>
     <string name="post_workout_records_title">Нові рекорди</string>
@@ -1341,7 +1341,7 @@
     <string name="exercise_picker_create_error_invalid">Введи коректну назву вправи.</string>
     <string name="exercise_picker_create_error_duplicate">Вправа з такою назвою вже існує.</string>
     <string name="exercise_search_no_results">Вправ не знайдено</string>
-    <string name="exercise_search_no_results_supporting">Спробуйте іншу назву, частину тіла або групу м’язів.</string>
+    <string name="exercise_search_no_results_supporting">Спробуй іншу назву, частину тіла або групу м’язів.</string>
     <string name="exercise_search_result_count">Вправ: %1$d</string>
     <string name="exercise_search_match_alias">Також відомо як: %1$s</string>
     <string name="exercise_search_match_approximate">Схожа назва: %1$s</string>
@@ -1357,7 +1357,7 @@
     <string name="exercise_load_option_count">Ваг: %1$d</string>
     <string name="exercise_load_profile_action">Ваги тренажера</string>
     <string name="exercise_load_profile_eyebrow">Налаштування тренажера</string>
-    <string name="exercise_load_profile_supporting">Вкажіть точні ваги, доступні на цьому тренажері. Розумний тренер рекомендуватиме лише ці положення; ручні ваги та історія не зміняться.</string>
+    <string name="exercise_load_profile_supporting">Вкажи точні ваги, доступні на цьому тренажері. Розумний тренер рекомендуватиме лише ці положення; ручні ваги та історія не зміняться.</string>
     <string name="exercise_load_direction_title">Що робить вправу важчою?</string>
     <string name="exercise_load_higher_is_harder">Більша вага</string>
     <string name="exercise_load_lower_is_harder">Менша допомога</string>
@@ -1365,7 +1365,7 @@
     <string name="exercise_load_preset_5">Крок 5 кг</string>
     <string name="exercise_load_weights_label">Доступні ваги, кг</string>
     <string name="exercise_load_weights_hint">Одне значення в рядку або через пробіл/крапку з комою, наприклад: 69 73 77. Десяткова кома підтримується.</string>
-    <string name="exercise_load_profile_error">Вкажіть від 1 до 128 унікальних ваг у межах 0–1 000 000 кг.</string>
+    <string name="exercise_load_profile_error">Вкажи від 1 до 128 унікальних ваг у межах 0–1 000 000 кг.</string>
     <string name="exercise_load_profile_save">Зберегти налаштування</string>
     <string name="exercise_load_profile_clear">Використовувати автоматичний крок</string>
     <string name="exercise_filter_all">Усі</string>
@@ -1385,7 +1385,7 @@
     <string name="garmin_open_app">Відкрити Gym Workout Tracker у Garmin</string>
     <string name="garmin_reset_pairing_action">Скинути захищене прив’язування Garmin</string>
     <string name="garmin_reset_pairing_title">Скинути захищене прив’язування Garmin?</string>
-    <string name="garmin_reset_pairing_description">Черга тренувань на довіреному годиннику буде очищена, після чого почнеться новий захищений період для квитанцій. Не від’єднуйте годинник.</string>
+    <string name="garmin_reset_pairing_description">Черга тренувань на довіреному годиннику буде очищена, після чого почнеться новий захищений період для квитанцій. Не від’єднуй годинник.</string>
     <string name="garmin_reset_pairing_confirm">Скинути прив’язування</string>
     <string name="garmin_profile_eyebrow">Garmin</string>
     <string name="garmin_profile_title">Твій годинник</string>
@@ -1404,8 +1404,8 @@
     <string name="exercise_media_choose">Обрати своє фото</string>
     <string name="exercise_media_restore">Повернути вбудовану демонстрацію</string>
     <string name="exercise_media_remove">Видалити фото</string>
-    <string name="exercise_media_hint">Натисніть, щоб побачити початкове та кінцеве положення</string>
-    <string name="exercise_media_error">Не вдалося використати фото. Оберіть JPEG, PNG або WebP до 8 МБ.</string>
+    <string name="exercise_media_hint">Натисни, щоб побачити початкове та кінцеве положення</string>
+    <string name="exercise_media_error">Не вдалося використати фото. Обери JPEG, PNG або WebP до 8 МБ.</string>
     <string name="live_workout_load_failed">Не вдалося оновити спільне тренування. Опитування повториться автоматично.</string>
     <string name="live_workout_send_failed">Не вдалося надіслати запрошення на спільне тренування.</string>
     <string name="live_workout_invite_unavailable">Запрошення надіслано. Можливо, друг зараз недоступний.</string>
@@ -1415,14 +1415,14 @@
     <string name="live_workout_started_after_accept">Спільне тренування почалося.</string>
     <string name="live_workout_invite_declined">Запрошення на спільне тренування відхилено.</string>
     <string name="live_workout_start_failed">Не вдалося почати спільне тренування.</string>
-    <string name="live_workout_active_blocked">Завершіть або видаліть поточне тренування перед підключенням.</string>
+    <string name="live_workout_active_blocked">Заверши або видали поточне тренування перед підключенням.</string>
     <string name="live_workout_queue_full">Черга синхронізації переповнена. Локальне тренування збережено, але спільний режим від’єднано.</string>
     <string name="live_workout_mapping_failed">Зв’язок підходів застарів. Тренування продовжиться локально.</string>
     <string name="live_workout_queue_save_failed">Не вдалося зберегти оновлення для повтору. Локальне тренування не втрачено.</string>
     <string name="live_workout_conflict_detached">Спільне тренування несумісно змінилося. Тренування продовжиться локально.</string>
     <string name="workout_share_copy_friend_action">Надіслати копію: %1$s</string>
     <string name="workout_share_live_friend_title">Тренуватися разом</string>
-    <string name="workout_share_live_friend_supporting">Коли друг прийме запрошення, одне синхронне тренування почнеться для вас обох.</string>
+    <string name="workout_share_live_friend_supporting">Коли друг прийме запрошення, одне синхронне тренування почнеться для тебе й друга.</string>
     <string name="workout_share_sheet_title">Поділитися тренуванням</string>
     <string name="workout_share_hero_supporting">Надішли посилання, копію або запрошення наживо.</string>
     <string name="workout_share_other_app_title">Надіслати через інший застосунок</string>
@@ -1438,7 +1438,7 @@
     <string name="live_workout_connection_realtime">Підключено в реальному часі. Стан усе одно перевіряється на сервері.</string>
     <string name="live_workout_connection_polling">Realtime недоступний; працює безпечне опитування.</string>
     <string name="live_workout_connection_offline">Немає мережі. Локальні зміни чекають точного повтору.</string>
-    <string name="live_workout_invited_by">%1$s запрошує вас</string>
+    <string name="live_workout_invited_by">%1$s запрошує тебе</string>
     <string name="live_workout_plan_summary">Вправ: %1$d · підходів: %2$d</string>
     <string name="live_workout_with_friend">Разом із %1$s</string>
     <string name="live_workout_status_waiting">Очікуємо відповідь друга.</string>
@@ -1620,7 +1620,7 @@
     <string name="voice_workout_listening">Слухаю…</string>
     <string name="voice_workout_privacy">Аудіо й транскрипт залишаються на цьому пристрої та не зберігаються.</string>
     <string name="voice_workout_preview">Попередній перегляд</string>
-    <string name="voice_workout_choose_exercise">Виберіть вправу</string>
+    <string name="voice_workout_choose_exercise">Вибери вправу</string>
     <string name="voice_workout_weight">Вага</string>
     <string name="voice_workout_reps">Повтори</string>
     <string name="voice_workout_kg_times">кг ×</string>
@@ -1710,8 +1710,8 @@
     <string name="workout_detail_add_exercise_short">+ Додати вправу</string>
     <string name="workout_detail_details_title">Дата й нотатка</string>
     <string name="message_workout_details_saved">Дані тренування збережено</string>
-    <string name="message_workout_details_invalid">Перевірте дату й нотатку</string>
+    <string name="message_workout_details_invalid">Перевір дату й нотатку</string>
     <string name="message_workout_details_failed">Не вдалося зберегти дані тренування</string>
     <string name="message_exercise_removed">Вправу видалено</string>
-    <string name="message_remove_exercise_failed">Не вдалося видалити вправу. Оновіть тренування та спробуйте ще раз.</string>
+    <string name="message_remove_exercise_failed">Не вдалося видалити вправу. Онови тренування та спробуй ще раз.</string>
 </resources>
