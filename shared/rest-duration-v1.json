@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "description": "Recommended rest seconds golden cases run by Android RestDurationGoldenTest and iOS RestDurationGoldenTests. restSeconds is the role-based rest for the exercise resolved from name (Primary 180, Secondary 120, Isolation 75, Core and Warmup 60; unknown or custom exercises count as Isolation 75). catalogKey, when present, is the catalog key of the same exercise: iOS also passes it alongside the name, Android resolves from the name alone.",
+  "cases": [
+    {
+      "id": "primary-squat-english",
+      "name": "Squat",
+      "catalogKey": "squat",
+      "restSeconds": 180
+    },
+    {
+      "id": "primary-squat-ukrainian",
+      "name": "Присідання зі штангою",
+      "catalogKey": "squat",
+      "restSeconds": 180
+    },
+    {
+      "id": "primary-squat-alias-english",
+      "name": "Barbell Squat",
+      "catalogKey": "squat",
+      "restSeconds": 180
+    },
+    {
+      "id": "primary-squat-alias-ukrainian",
+      "name": "Присід зі штангою",
+      "catalogKey": "squat",
+      "restSeconds": 180
+    },
+    {
+      "id": "primary-deadlift-mixed-case",
+      "name": "dEaDlIfT",
+      "catalogKey": "deadlift",
+      "restSeconds": 180
+    },
+    {
+      "id": "secondary-leg-press",
+      "name": "Leg Press",
+      "catalogKey": "leg_press",
+      "restSeconds": 120
+    },
+    {
+      "id": "secondary-leg-press-alias",
+      "name": "Жим ногами",
+      "catalogKey": "leg_press",
+      "restSeconds": 120
+    },
+    {
+      "id": "secondary-dumbbell-bench-uppercase",
+      "name": "DUMBBELL BENCH PRESS",
+      "catalogKey": "dumbbell_bench_press",
+      "restSeconds": 120
+    },
+    {
+      "id": "isolation-lateral-raise",
+      "name": "Lateral Raise",
+      "catalogKey": "lateral_raise",
+      "restSeconds": 75
+    },
+    {
+      "id": "isolation-lateral-raise-alias",
+      "name": "Махи в сторони",
+      "catalogKey": "lateral_raise",
+      "restSeconds": 75
+    },
+    {
+      "id": "core-plank-english",
+      "name": "Plank",
+      "catalogKey": "plank",
+      "restSeconds": 60
+    },
+    {
+      "id": "core-plank-ukrainian",
+      "name": "Планка",
+      "catalogKey": "plank",
+      "restSeconds": 60
+    },
+    {
+      "id": "padded-whitespace",
+      "name": "  \tSquat \n ",
+      "catalogKey": "squat",
+      "restSeconds": 180
+    },
+    {
+      "id": "russian-squat-heuristic",
+      "name": "Приседания со штангой",
+      "restSeconds": 120
+    },
+    {
+      "id": "russian-deadlift-heuristic",
+      "name": "Становая тяга",
+      "restSeconds": 120
+    },
+    {
+      "id": "custom-unknown-name",
+      "name": "My Custom Lift",
+      "restSeconds": 75
+    },
+    {
+      "id": "empty-name",
+      "name": "",
+      "restSeconds": 75
+    }
+  ]
+}

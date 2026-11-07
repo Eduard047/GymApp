@@ -1,0 +1,146 @@
+{
+  "version": 1,
+  "description": "Weight and volume number formatting golden cases run by Android WeightFormatGoldenTest and iOS WeightFormatGoldenTests. input is the editable weight text with a dot separator and no grouping (Android formatWeightInput, iOS gymMachineWeightEditText in English). display is the weight number with the language's decimal separator, up to 2 decimals and no grouping (Android formatWeightDisplay, iOS gymMachineWeightEditText). volume is a training volume number with at most 1 decimal and locale digit grouping (Android formatVolumeTotal, iOS gymVolumeText without the unit). Languages are en, uk and ru.",
+  "languages": [
+    "en",
+    "uk",
+    "ru"
+  ],
+  "cases": [
+    {
+      "id": "zero",
+      "value": 0,
+      "input": "0",
+      "display": {
+        "en": "0",
+        "uk": "0",
+        "ru": "0"
+      },
+      "volume": {
+        "en": "0",
+        "uk": "0",
+        "ru": "0"
+      }
+    },
+    {
+      "id": "quarter-step",
+      "value": 1.25,
+      "input": "1.25",
+      "display": {
+        "en": "1.25",
+        "uk": "1,25",
+        "ru": "1,25"
+      },
+      "volume": {
+        "en": "1.2",
+        "uk": "1,2",
+        "ru": "1,2"
+      }
+    },
+    {
+      "id": "plate-fraction",
+      "value": 21.25,
+      "input": "21.25",
+      "display": {
+        "en": "21.25",
+        "uk": "21,25",
+        "ru": "21,25"
+      },
+      "volume": {
+        "en": "21.2",
+        "uk": "21,2",
+        "ru": "21,2"
+      }
+    },
+    {
+      "id": "half-kilogram",
+      "value": 62.5,
+      "input": "62.5",
+      "display": {
+        "en": "62.5",
+        "uk": "62,5",
+        "ru": "62,5"
+      },
+      "volume": {
+        "en": "62.5",
+        "uk": "62,5",
+        "ru": "62,5"
+      }
+    },
+    {
+      "id": "whole",
+      "value": 80,
+      "input": "80",
+      "display": {
+        "en": "80",
+        "uk": "80",
+        "ru": "80"
+      },
+      "volume": {
+        "en": "80",
+        "uk": "80",
+        "ru": "80"
+      }
+    },
+    {
+      "id": "volume-fraction",
+      "value": 112.5,
+      "input": "112.5",
+      "display": {
+        "en": "112.5",
+        "uk": "112,5",
+        "ru": "112,5"
+      },
+      "volume": {
+        "en": "112.5",
+        "uk": "112,5",
+        "ru": "112,5"
+      }
+    },
+    {
+      "id": "thousand",
+      "value": 1000,
+      "input": "1000",
+      "display": {
+        "en": "1000",
+        "uk": "1000",
+        "ru": "1000"
+      },
+      "volume": {
+        "en": "1,000",
+        "uk": "1\u00a0000",
+        "ru": "1\u00a0000"
+      }
+    },
+    {
+      "id": "large-fraction",
+      "value": 12345.6,
+      "input": "12345.6",
+      "display": {
+        "en": "12345.6",
+        "uk": "12345,6",
+        "ru": "12345,6"
+      },
+      "volume": {
+        "en": "12,345.6",
+        "uk": "12\u00a0345,6",
+        "ru": "12\u00a0345,6"
+      }
+    },
+    {
+      "id": "step-noise",
+      "value": 0.30000000000000004,
+      "input": "0.3",
+      "display": {
+        "en": "0.3",
+        "uk": "0,3",
+        "ru": "0,3"
+      },
+      "volume": {
+        "en": "0.3",
+        "uk": "0,3",
+        "ru": "0,3"
+      }
+    }
+  ]
+}
