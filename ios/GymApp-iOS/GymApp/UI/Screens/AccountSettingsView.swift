@@ -824,12 +824,20 @@ private struct GarminTokenPresentation: Identifiable {
     var id: String { credential.id }
 }
 
+enum GarminWatchName {
+    /// Resolves the default name at use time so it follows the language active now, not when the view was created.
+    static func effectiveGarminDisplayName(_ typed: String) -> String {
+        let trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? gymLocalized("Garmin watch") : trimmed
+    }
+}
+
 @MainActor
 private struct GarminSettingsCard: View {
     @ObservedObject var garminCloud: GarminCloudService
     @ObservedObject var garminPhoneSync: GarminPhoneSyncService
 
-    @State private var displayName = gymLocalized("Garmin watch")
+    @State private var displayName = ""
     @State private var errorMessage: String?
     @State private var tokenPresentation: GarminTokenPresentation?
     private let garminStoreURL = URL(
@@ -970,7 +978,7 @@ private struct GarminSettingsCard: View {
 
                 Divider()
 
-                TextField("Watch name", text: $displayName)
+                TextField("Watch name", text: $displayName, prompt: Text(gymLocalized("Garmin watch")))
                     .textInputAutocapitalization(.words)
                     .autocorrectionDisabled()
                     .gymTextFieldChrome()
@@ -989,7 +997,7 @@ private struct GarminSettingsCard: View {
                     }
                 }
                 .buttonStyle(GymPrimaryButtonStyle())
-                .disabled(garminCloud.isWorking || displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(garminCloud.isWorking)
 
                 Text("Create a new device ID only for a watch that has never used GymApp cloud sync. For an existing watch, select it above or rotate its token.")
                     .font(.caption)
@@ -1094,7 +1102,7 @@ private struct GarminSettingsCard: View {
 
     private func createNewDevice() async {
         do {
-            let credential = try await garminCloud.createDevice(displayName: displayName)
+            let credential = try await garminCloud.createDevice(displayName: GarminWatchName.effectiveGarminDisplayName(displayName))
             tokenPresentation = GarminTokenPresentation(
                 credential: credential,
                 canRevoke: true

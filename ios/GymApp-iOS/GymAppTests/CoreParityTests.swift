@@ -9,6 +9,13 @@ import XCTest
 
 @MainActor
 final class CoreParityTests: XCTestCase {
+    func testEffectiveGarminDisplayNameFallsBackToLocalizedDefaultAndTrimsTypedName() {
+        let fallback = gymLocalized("Garmin watch")
+        XCTAssertEqual(GarminWatchName.effectiveGarminDisplayName(""), fallback)
+        XCTAssertEqual(GarminWatchName.effectiveGarminDisplayName("  \n\t "), fallback)
+        XCTAssertEqual(GarminWatchName.effectiveGarminDisplayName("  Fenix 6 \n"), "Fenix 6")
+    }
+
     func testAddExerciseAtAccountLimitThrowsExerciseLimitReached() throws {
         let storageKey = "exercise-limit-account"
         let store = try WorkoutStore(
