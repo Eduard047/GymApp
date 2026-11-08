@@ -39,13 +39,11 @@ import androidx.compose.material.icons.filled.MoveToInbox
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.Checkbox
@@ -106,6 +104,8 @@ import com.example.gymapp.data.repository.ExerciseLoadDirection
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.theme.GymCompactShape
+import com.example.gymapp.ui.components.GymSearchField
 import com.example.gymapp.ui.components.tabularDigits
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.SettingsRow
@@ -1754,28 +1754,12 @@ internal fun ExerciseSearchAndFilters(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            OutlinedTextField(
+            GymSearchField(
                 value = query,
                 onValueChange = onQueryChange,
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = null)
-                },
-                trailingIcon = if (query.isNotEmpty()) {
-                    {
-                        IconButton(onClick = { onQueryChange("") }) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = stringResource(R.string.exercise_search_clear)
-                            )
-                        }
-                    }
-                } else {
-                    null
-                },
-                label = { Text(stringResource(R.string.exercise_search_label)) },
-                placeholder = { Text(stringResource(R.string.exercise_search_placeholder)) }
+                placeholder = stringResource(R.string.exercise_search_label),
+                clearDescription = stringResource(R.string.exercise_search_clear),
+                modifier = Modifier.weight(1f)
             )
 
             Box {
@@ -3033,7 +3017,11 @@ private fun ExerciseHistoryBottomSheetContent(
         }
 
         item {
-            AppPanel(modifier = Modifier.fillMaxWidth()) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = GymCompactShape,
+                color = MaterialTheme.colorScheme.surfaceVariant
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -3067,7 +3055,11 @@ private fun ExerciseHistoryBottomSheetContent(
         }
 
         item {
-            AppPanel(modifier = Modifier.fillMaxWidth()) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = GymCompactShape,
+                color = MaterialTheme.colorScheme.surfaceVariant
+            ) {
                 SettingsRow(
                     icon = Icons.Default.AccessibilityNew,
                     title = stringResource(R.string.exercise_card_muscle_groups),

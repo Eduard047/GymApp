@@ -36,6 +36,12 @@ import androidx.compose.material3.SwitchColors
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -113,6 +119,50 @@ fun adaptiveScreenHorizontalPadding(
     windowWidth = LocalConfiguration.current.screenWidthDp.dp,
     maximumContentWidth = maximumContentWidth
 )
+
+/**
+ * Filled tonal search field (iOS `gymTextFieldChrome` search row): surfaceVariant fill, control corner radius,
+ * no outline or underline, leading search glyph and a trailing clear button while the query is not empty.
+ */
+@Composable
+fun GymSearchField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    clearDescription: String,
+    modifier: Modifier = Modifier
+) {
+    TextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.semantics { contentDescription = placeholder },
+        singleLine = true,
+        shape = GymControlShape,
+        leadingIcon = {
+            Icon(Icons.Default.Search, contentDescription = null)
+        },
+        trailingIcon = if (value.isNotEmpty()) {
+            {
+                IconButton(onClick = { onValueChange("") }) {
+                    Icon(Icons.Default.Close, contentDescription = clearDescription)
+                }
+            }
+        } else {
+            null
+        },
+        placeholder = { Text(placeholder) },
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+            errorContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            disabledIndicatorColor = Color.Transparent,
+            errorIndicatorColor = Color.Transparent
+        )
+    )
+}
 
 @Composable
 fun AppPanel(
