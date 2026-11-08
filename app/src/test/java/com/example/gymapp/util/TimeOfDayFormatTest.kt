@@ -49,4 +49,24 @@ class TimeOfDayFormatTest {
         val uk = clean(TimeOfDayFormat.formatDateTime(afternoon, locales[1], false, ZoneOffset.UTC))
         assertTrue(uk, uk.contains("серп") && uk.contains(", 2:05 "))
     }
+
+    @Test
+    fun workoutTitleIsShortDateNbspDotTime() {
+        val now = Instant.parse("2026-11-08T10:00:00Z").toEpochMilli()
+        val sep = Instant.parse("2026-09-26T18:53:00Z").toEpochMilli()
+        assertEquals(
+            "Sat, Sep 26\u00A0\u00B7 18:53",
+            TimeOfDayFormat.formatWorkoutTitle(sep, locales[0], true, ZoneOffset.UTC, now)
+        )
+        assertEquals(
+            "Sat, Sep 26\u00A0\u00B7 6:53 PM",
+            TimeOfDayFormat.formatWorkoutTitle(sep, locales[0], false, ZoneOffset.UTC, now)
+                .replace('\u202F', ' ')
+        )
+        val ru = TimeOfDayFormat.formatWorkoutTitle(sep, locales[2], true, ZoneOffset.UTC, now)
+        assertTrue(ru, ru.startsWith("Сб, 26 сент") && ru.endsWith("\u00A0\u00B7 18:53"))
+        // Midnight is shown like any other time, as on iPhone.
+        val midnight = Instant.parse("2026-09-26T00:00:00Z").toEpochMilli()
+        assertTrue(TimeOfDayFormat.formatWorkoutTitle(midnight, locales[0], true, ZoneOffset.UTC, now).endsWith("\u00A0\u00B7 00:00"))
+    }
 }

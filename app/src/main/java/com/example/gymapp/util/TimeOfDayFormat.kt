@@ -47,4 +47,18 @@ object TimeOfDayFormat {
         return dateFormat.format(Date(timestamp)) + ", " +
             formatTime(timestamp, locale, is24Hour, zoneId)
     }
+
+    /**
+     * Past-workout detail title: "Sat, Sep 26 · 18:53" (short date, no-break space, "· ", time).
+     * Always shows the time, like iPhone `compactHeroTitle`; there is no missing-time rule.
+     */
+    fun formatWorkoutTitle(
+        timestamp: Long,
+        locale: Locale,
+        is24Hour: Boolean,
+        zoneId: ZoneId = ZoneId.systemDefault(),
+        now: Long = System.currentTimeMillis()
+    ): String =
+        DateTimeUtils.formatShortDate(timestamp, locale, zoneId, now) + "\u00A0\u00B7 " +
+            formatTime(timestamp, locale, is24Hour, zoneId)
 }

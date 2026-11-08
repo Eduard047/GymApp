@@ -126,6 +126,7 @@ import com.example.gymapp.ui.viewmodel.WorkoutDetailEvent
 import com.example.gymapp.ui.viewmodel.WorkoutDetailStagedRemoval
 import com.example.gymapp.ui.viewmodel.WorkoutDetailUiState
 import com.example.gymapp.util.DateTimeUtils
+import com.example.gymapp.util.TimeOfDayFormat
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
@@ -252,6 +253,7 @@ internal fun WorkoutDetailScreen(
 ) {
     val toastController = LocalGymToastController.current
     val context = LocalContext.current
+    val is24Hour = remember(context) { TimeOfDayFormat.systemUses24Hour(context) }
     val coroutineScope = rememberCoroutineScope()
     var exerciseToRemoveId by remember { mutableStateOf<Long?>(null) }
     var confirmDeleteSession by remember { mutableStateOf(false) }
@@ -434,9 +436,16 @@ internal fun WorkoutDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
             ) {
                 item {
+                    val workoutTitle = remember(details.session.date, is24Hour) {
+                        TimeOfDayFormat.formatWorkoutTitle(
+                            details.session.date,
+                            Locale.getDefault(),
+                            is24Hour
+                        )
+                    }
                     if (garminMetrics != null) {
                         GarminWorkoutHeaderCard(
-                            date = DateTimeUtils.formatDate(details.session.date),
+                            date = workoutTitle,
                             metrics = garminMetrics,
                             hasVerifiedGarminOrigin =
                                 garminPresentation?.hasVerifiedGarminOrigin == true,
@@ -451,7 +460,7 @@ internal fun WorkoutDetailScreen(
                         )
                     } else {
                         WorkoutHeaderCard(
-                            date = DateTimeUtils.formatDate(details.session.date),
+                            date = workoutTitle,
                             note = details.session.note,
                             exerciseCount = details.workoutExercises.size,
                             setCount = details.workoutExercises.sumOf { it.sets.size },
