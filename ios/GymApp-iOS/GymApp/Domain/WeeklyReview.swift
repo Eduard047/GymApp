@@ -70,7 +70,11 @@ struct WeeklyReview {
             if a.current.exerciseID != b.current.exerciseID { return a.current.exerciseID.uuidString < b.current.exerciseID.uuidString }
             return a.current.weight < b.current.weight
         }.filter { seen.insert($0.current.exerciseID).inserted }
-        let sessions = Dictionary(grouping: current, by: \.workoutID).values.compactMap(\.first).sorted { $0.sessionDate > $1.sessionDate }
+        // One row per workout in first-appearance order, newest first; ties keep that order so the result is deterministic.
+        var seenWorkouts = Set<UUID>()
+        let sessions = current.filter { seenWorkouts.insert($0.workoutID).inserted }.enumerated().sorted { a, b in
+            a.element.sessionDate != b.element.sessionDate ? a.element.sessionDate > b.element.sessionDate : a.offset < b.offset
+        }.map(\.element)
         return WeeklyReview(start: start, end: calendar.date(byAdding: .day, value: -1, to: until)!, partial: offset == 0,
             trainingDays: Set(current.map { calendar.startOfDay(for: $0.sessionDate) }).count,
             sessions: sessions, comparableCount: comparisons.count, insights: Array(insights.prefix(3)))
