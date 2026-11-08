@@ -2024,6 +2024,8 @@ struct ExercisePickerSheet: View {
     let sessionCounts: [UUID: Int]
     /// Evaluated at most once per presentation of the sheet.
     var historySnapshot: () -> ExercisePickerHistorySnapshot = { ExercisePickerHistorySnapshot() }
+    /// Overrides the default "Add exercise" navigation title (e.g. "Replace exercise").
+    var title: String?
     let onSelect: (Exercise) -> Void
     let onCreate: (String) throws -> Exercise
 
@@ -2297,7 +2299,7 @@ struct ExercisePickerSheet: View {
                 }
             }
             .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
-            .navigationTitle("Add exercise")
+            .navigationTitle(title.map { Text($0) } ?? Text("Add exercise"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

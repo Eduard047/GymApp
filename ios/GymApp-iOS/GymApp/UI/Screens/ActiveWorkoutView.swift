@@ -763,6 +763,10 @@ struct ActiveWorkoutView: View {
                         )
                     )
                 },
+                title: replacingExerciseBlockID == nil ? nil : gymText(
+                    "Replace exercise", "Замінити вправу", "Заменить упражнение",
+                    languageCode: gymCurrentLanguageCode()
+                ),
                 onSelect: { exercise in
                     if let blockID = replacingExerciseBlockID {
                         replaceExercise(blockID: blockID, with: exercise)
