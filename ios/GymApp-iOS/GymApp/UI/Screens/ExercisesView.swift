@@ -353,8 +353,18 @@ struct ExercisesView: View {
                     .frame(maxWidth: .infinity)
                 }
             } else {
-                ForEach(filteredExercises) { exercise in
-                    exerciseCard(exercise)
+                // One tonal container for the whole library, rows split by hairlines inset past the thumbnail,
+                // like the exercise picker (and Android).
+                GymPanel(contentPadding: EdgeInsets()) {
+                    LazyVStack(spacing: 0) {
+                        ForEach(filteredExercises) { exercise in
+                            if exercise.id != filteredExercises.first?.id {
+                                Divider()
+                                    .padding(.leading, dynamicTypeSize.isAccessibilitySize ? 12 : 82)
+                            }
+                            exerciseCard(exercise)
+                        }
+                    }
                 }
             }
         }
@@ -548,9 +558,7 @@ struct ExercisesView: View {
             )
         }
 
-        return GymPanel(
-            contentPadding: EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12)
-        ) {
+        return Group {
             if dynamicTypeSize.isAccessibilitySize {
                 // Media and actions share a row; the name gets the full width below.
                 VStack(alignment: .leading, spacing: 8) {
@@ -570,6 +578,8 @@ struct ExercisesView: View {
                 }
             }
         }
+        .padding(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func favoriteButton(_ exercise: Exercise, displayName: String) -> some View {

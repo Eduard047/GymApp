@@ -16,6 +16,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -105,6 +106,7 @@ import com.example.gymapp.data.repository.ExerciseLoadDirection
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.tabularDigits
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.SettingsRow
 import com.example.gymapp.ui.components.ExerciseMediaPreview
@@ -1099,9 +1101,11 @@ fun ExerciseListScreen(
             end = screenHorizontalPadding,
             bottom = GymSpacing.ScreenBottom + bottomContentInset
         ),
-        verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
+        // Library rows form one grouped container, so only the non-row items carry the section gap.
+        verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         item {
+            Box(modifier = Modifier.padding(bottom = GymSpacing.Large)) {
             ScreenHeader(
                 title = stringResource(R.string.title_exercises),
                 trailing = {
@@ -1120,6 +1124,7 @@ fun ExerciseListScreen(
                     }
                 }
             )
+            }
         }
 
         if (
@@ -1128,7 +1133,7 @@ fun ExerciseListScreen(
         ) {
             item {
                 AppPanel(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = GymSpacing.Large),
                     containerColor = MaterialTheme.colorScheme.errorContainer
                 ) {
                     Text(
@@ -1142,6 +1147,7 @@ fun ExerciseListScreen(
         }
 
         item {
+            Box(modifier = Modifier.padding(bottom = GymSpacing.Large)) {
             ExerciseSearchAndFilters(
                 query = searchQuery,
                 onQueryChange = { searchQuery = it.take(EXERCISE_SEARCH_QUERY_MAX_CHARS) },
@@ -1155,6 +1161,7 @@ fun ExerciseListScreen(
                 onFavoritesOnlyChange = { favoritesOnly = it },
                 resultCount = filteredExercises.size
             )
+            }
         }
 
         if (filteredExercises.isEmpty()) {
@@ -1212,9 +1219,23 @@ fun ExerciseListScreen(
                         }
                     }
                 }
-                AppPanel(
-                    modifier = Modifier.fillMaxWidth()
+                // Inset-grouped row, same as the exercise picker: consecutive rows share one tonal container
+                // (outer corners only on the first and last row), split by a hairline inset past the thumbnail.
+                val isFirstRow = exercise.id == filteredExercises.first().id
+                val isLastRow = exercise.id == filteredExercises.last().id
+                val groupRadius = 12.dp
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(
+                        topStart = if (isFirstRow) groupRadius else 0.dp,
+                        topEnd = if (isFirstRow) groupRadius else 0.dp,
+                        bottomStart = if (isLastRow) groupRadius else 0.dp,
+                        bottomEnd = if (isLastRow) groupRadius else 0.dp
+                    ),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    contentColor = MaterialTheme.colorScheme.onSurface
                 ) {
+                  Box {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1343,6 +1364,17 @@ fun ExerciseListScreen(
                             }
                         }
                     }
+                    if (!isLastRow) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(start = if (fullWidthTitle) 12.dp else 82.dp)
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        )
+                    }
+                  }
                 }
             }
         }
@@ -3119,7 +3151,7 @@ private fun HistoryStat(
         }
         Text(
             text = value,
-            style = MaterialTheme.typography.titleSmall,
+            style = MaterialTheme.typography.titleSmall.tabularDigits(),
             color = MaterialTheme.colorScheme.primary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -3158,7 +3190,7 @@ private fun ExerciseHistorySessionCard(
                 )
                 Text(
                     text = formattedStringResource(R.string.progress_weight_value, formatProgressWeight(maxWeight, locale)),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodySmall.tabularDigits(),
                     color = MaterialTheme.colorScheme.primary
                 )
             }
@@ -3169,12 +3201,12 @@ private fun ExerciseHistorySessionCard(
             ) {
                 Text(
                     text = formattedStringResource(R.string.exercise_history_sets_inline, sessionGroup.sets.size),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodySmall.tabularDigits(),
                     modifier = Modifier.weight(1f)
                 )
                 Text(
                     text = formattedStringResource(R.string.exercise_history_volume_inline, formatHistoryVolume(totalVolume, locale)),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodySmall.tabularDigits(),
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -3217,12 +3249,12 @@ private fun ExerciseHistorySessionCard(
                     Text(
                         text = formatProgressWeight(set.weight, locale),
                         modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium
+                        style = MaterialTheme.typography.bodyMedium.tabularDigits()
                     )
                     Text(
                         text = set.reps.toString(),
                         modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium
+                        style = MaterialTheme.typography.bodyMedium.tabularDigits()
                     )
                 }
             }
