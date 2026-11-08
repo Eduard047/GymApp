@@ -57,7 +57,6 @@ import com.example.gymapp.ui.theme.accentMarkColor
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -730,7 +729,8 @@ private fun WorkoutHeaderCard(
             }
             Text(
                 text = summaryLine,
-                style = MaterialTheme.typography.bodyMedium,
+                // Medium weight and tabular digits like the iPhone metrics line.
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium).tabularDigits(),
                 color = HeroTone.supporting
             )
             WorkoutEditModeButton(
@@ -943,15 +943,13 @@ private fun WorkoutEditModeButton(
     isActivityOnly: Boolean,
     onToggleEdit: () -> Unit
 ) {
-    FilledTonalButton(
+    // Plain text action like the iPhone "Edit" bar button: a filled pill under the summary outweighed the date title.
+    TextButton(
         onClick = onToggleEdit,
         // Grows with the text so a long label wraps instead of being clipped at large font sizes.
-        modifier = Modifier.heightIn(min = 40.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        colors = ButtonDefaults.filledTonalButtonColors(
-            containerColor = HeroTone.tile,
-            contentColor = HeroTone.actionLabel
-        )
+        modifier = Modifier.heightIn(min = 44.dp),
+        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp),
+        colors = ButtonDefaults.textButtonColors(contentColor = HeroTone.actionLabel)
     ) {
         Icon(
             imageVector = if (isEditing) Icons.Default.Close else Icons.Default.Edit,
@@ -2121,7 +2119,7 @@ private fun SavedWorkoutExerciseCard(
             if (isExpanded) {
                 Text(
                     text = (listOf(setCountLabel) + summaryParts).joinToString(" · "),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodySmall.tabularDigits(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
@@ -2150,7 +2148,7 @@ private fun SavedWorkoutExerciseCard(
                     text = summaryParts.joinToString(" · "),
                     style = MaterialTheme.typography.labelMedium.copy(
                         fontWeight = FontWeight.SemiBold
-                    ),
+                    ).tabularDigits(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis

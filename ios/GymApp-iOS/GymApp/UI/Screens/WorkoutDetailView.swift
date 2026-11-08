@@ -1670,7 +1670,7 @@ struct WorkoutDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text(heroMetricsLine(workout, languageCode: languageCode))
-                        .font(.subheadline.weight(.medium))
+                        .font(.subheadline.weight(.medium).monospacedDigit())
                         .foregroundStyle(GymTheme.onHero)
                 }
 
@@ -1705,7 +1705,7 @@ struct WorkoutDetailView: View {
                     // A note or a Garmin summary already occupies the subtitle
                     // line above, so surface the compact metrics separately.
                     Text(heroMetricsLine(workout, languageCode: languageCode))
-                        .font(.subheadline.weight(.medium))
+                        .font(.subheadline.weight(.medium).monospacedDigit())
                         .foregroundStyle(GymTheme.onHeroSecondary)
                 }
 

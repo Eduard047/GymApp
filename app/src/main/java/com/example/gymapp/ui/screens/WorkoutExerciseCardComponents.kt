@@ -1039,7 +1039,7 @@ internal fun RecordedSetRow(
                         }
                         Text(
                             text = summary,
-                            style = MaterialTheme.typography.titleSmall,
+                            style = MaterialTheme.typography.titleSmall.tabularDigits(),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1
                         )

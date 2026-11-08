@@ -367,7 +367,7 @@ struct GymCompletedSetSummary: View {
                 .gymScaledFrame(width: 22, height: 22, relativeTo: .subheadline)
                 .background(GymTheme.secondary.opacity(0.18), in: Circle())
             Text(summary)
-                .font(.subheadline.weight(.semibold))
+                .font(.subheadline.weight(.semibold).monospacedDigit())
                 .foregroundStyle(GymTheme.textSecondary)
                 .lineLimit(1)
             if isPersonalRecord {
@@ -436,7 +436,7 @@ struct GymExpandableSetRow<Trailing: View, Editor: View>: View {
             HStack(spacing: 8) {
                 GymSetNumberBadge(position: position)
                 Text(summary)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
                     .foregroundStyle(GymTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
                 if isPersonalRecord {
