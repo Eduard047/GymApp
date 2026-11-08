@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.NavigateBefore
@@ -151,6 +152,7 @@ import java.time.format.TextStyle
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import com.example.gymapp.util.formatVolumeTotal
+import com.example.gymapp.ui.viewmodel.shouldShowRepeatLastWorkoutAction
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
 
@@ -170,6 +172,7 @@ fun WorkoutListScreen(
     onAddWorkout: () -> Unit,
     onStartPlan: (String) -> Unit,
     onOpenPlan: (String) -> Unit,
+    onRepeatLastWorkout: () -> Unit = {},
     onStartFirstWorkout: (TrainingGoal, Int, FirstWorkoutEffort) -> Unit,
     onEditFirstWorkout: (TrainingGoal, Int, FirstWorkoutEffort) -> Unit,
     onSkipFirstWorkout: () -> Unit,
@@ -327,6 +330,8 @@ fun WorkoutListScreen(
                         onStartWorkout = onAddWorkout,
                         onStartPlan = onStartPlan,
                         onOpenPlan = onOpenPlan,
+                        hasRepeatableWorkout = uiState.hasRepeatableWorkout,
+                        onRepeatLastWorkout = onRepeatLastWorkout,
                         onDiscardWorkout = {
                             showActiveWorkoutDiscardConfirmation = true
                         },
@@ -554,6 +559,8 @@ private fun FocusLens(
     onStartWorkout: () -> Unit,
     onStartPlan: (String) -> Unit,
     onOpenPlan: (String) -> Unit,
+    hasRepeatableWorkout: Boolean,
+    onRepeatLastWorkout: () -> Unit,
     onDiscardWorkout: () -> Unit,
     onCancelRetainedPlan: () -> Unit,
     tutorialAnchors: TutorialAnchorRegistry?,
@@ -896,6 +903,23 @@ private fun FocusLens(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(stringResource(R.string.today_edit_plan))
                 }
+            }
+        }
+        if (shouldShowRepeatLastWorkoutAction(
+                hasRepeatableWorkout = hasRepeatableWorkout,
+                hasActiveWorkout = hasActiveWorkout,
+                hasRetainedWorkoutDraft = hasRetainedWorkoutDraft
+            )
+        ) {
+            OutlinedButton(
+                onClick = onRepeatLastWorkout,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                colors = heroSecondaryOutlinedColors(),
+                border = heroSecondaryBorder()
+            ) {
+                Icon(imageVector = Icons.Default.Refresh, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.repeat_last_workout_action))
             }
         }
         // In the active state the pill sits above the "more options" row instead.

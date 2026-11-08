@@ -185,6 +185,7 @@ import com.example.gymapp.ui.viewmodel.FriendsUiState
 import com.example.gymapp.ui.viewmodel.LiveWorkoutUiState
 import com.example.gymapp.ui.viewmodel.LiveWorkoutDraftSendRequest
 import com.example.gymapp.ui.viewmodel.LiveWorkoutViewModel
+import com.example.gymapp.ui.viewmodel.RepeatLastWorkoutStart
 import com.example.gymapp.ui.viewmodel.PostWorkoutSummaryViewModel
 import com.example.gymapp.ui.viewmodel.RetainedWorkoutDraftFingerprint
 import com.example.gymapp.ui.viewmodel.durableDigest
@@ -3119,6 +3120,30 @@ internal fun GymAppRoot(
                                             AppDestination.ActiveWorkout.route
                                         }
                                     )
+                                },
+                                onRepeatLastWorkout = {
+                                    if (!resumeRetainedWorkoutEditor()) {
+                                        coroutineScope.launch {
+                                            when (viewModel.startRepeatLastWorkout()) {
+                                                RepeatLastWorkoutStart.Started,
+                                                RepeatLastWorkoutStart.AlreadyActive ->
+                                                    navController.navigate(
+                                                        AppDestination.ActiveWorkout.route
+                                                    ) {
+                                                        launchSingleTop = true
+                                                    }
+                                                // Nothing to start directly (data limit, removed
+                                                // exercise): hand the repeat to the editor, which
+                                                // shows what needs fixing.
+                                                RepeatLastWorkoutStart.Unavailable -> {
+                                                    addWorkoutDraftViewModel.repeatLastWorkout()
+                                                    navController.navigate(
+                                                        AppDestination.AddWorkout.route
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                 },
                                 onStartPlan = { launchToken ->
                                     if (!resumeRetainedWorkoutEditor()) {

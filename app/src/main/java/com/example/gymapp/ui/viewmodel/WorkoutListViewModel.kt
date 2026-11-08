@@ -35,6 +35,7 @@ import com.example.gymapp.data.repository.SmartWorkoutLaunchPlanCodec
 import com.example.gymapp.data.repository.SmartWorkoutLaunchStateFingerprint
 import com.example.gymapp.data.repository.SmartWorkoutLaunchUseRegistry
 import com.example.gymapp.data.repository.RecommendedWorkoutStartCommitter
+import com.example.gymapp.data.repository.StartActiveWorkoutResult
 import com.example.gymapp.data.repository.WeeklyTrainingDecision
 import com.example.gymapp.data.repository.WeeklyTrainingRhythm
 import com.example.gymapp.data.repository.WeeklyTrainingRhythmCalculator
@@ -285,6 +286,22 @@ data class WeeklyTrainingSummaryUiModel(
     val volumeDeltaPercent: Int? = null
 )
 
+/** Same rule as `getLatestSessionDetails`: activity-only sessions (no sets) cannot be repeated. */
+internal fun canRepeatLastWorkout(sessions: List<WorkoutSessionSummary>): Boolean =
+    sessions.any { it.setCount > 0 }
+
+/** Outcome of the Today one-tap "Repeat last workout" start. */
+enum class RepeatLastWorkoutStart {
+    /** The active workout was created from the last workout. */
+    Started,
+
+    /** An active workout (or a live-room start) already owns the slot; just open it. */
+    AlreadyActive,
+
+    /** Nothing could be started directly (no workout with sets, deleted exercise, data limit). */
+    Unavailable
+}
+
 enum class TrainingHistoryPeriod {
     Week,
     Month
@@ -314,6 +331,8 @@ data class WorkoutListUiState(
     val monthLabel: String = DateTimeUtils.monthLabel(0),
     val sessions: List<WorkoutSessionSummary> = emptyList(),
     val hasAnyWorkout: Boolean = false,
+    /** A stored workout with sets exists, so "Repeat last workout" has something to seed. */
+    val hasRepeatableWorkout: Boolean = false,
     val showFirstWorkoutActivation: Boolean = false,
     val todayPlan: TodayPlanUiModel? = null,
     val hasCompletedWorkoutToday: Boolean = false,
@@ -619,6 +638,7 @@ class WorkoutListViewModel(
             monthLabel = DateTimeUtils.monthLabel(offset, currentLocale(), zoneId),
             sessions = sessions,
             hasAnyWorkout = allSessions.isNotEmpty(),
+            hasRepeatableWorkout = canRepeatLastWorkout(allSessions),
             showFirstWorkoutActivation = surface.needsTodayPlan &&
                 allSessions.isEmpty() && !experience.activationDismissed,
             todayPlan = todayPlan,
@@ -988,6 +1008,39 @@ class WorkoutListViewModel(
                 trainingGuidanceManager.activeBinding == expectedAccountBinding &&
                 trainingProfileManager.activeBinding == expectedProfileAccountBinding
         }
+
+    /**
+     * Starts an active workout seeded from the latest stored workout without opening the editor.
+     * The seed is [repeatLastWorkoutDrafts], the same rules as the editor's "Repeat last" followed
+     * by Start; the repository start enforces the active-workout / live-room / data-limit guards.
+     */
+    internal suspend fun startRepeatLastWorkout(): RepeatLastWorkoutStart {
+        val template = try {
+            repository.getLatestWorkoutTemplate()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            null
+        } ?: return RepeatLastWorkoutStart.Unavailable
+        val drafts = repeatLastWorkoutDrafts(template)
+        if (drafts.isEmpty()) return RepeatLastWorkoutStart.Unavailable
+        return try {
+            when (
+                repository.startActiveWorkout(
+                    date = System.currentTimeMillis(),
+                    note = mergedTemplateNote("", template.session.note),
+                    workoutExercises = drafts
+                )
+            ) {
+                StartActiveWorkoutResult.Started -> RepeatLastWorkoutStart.Started
+                StartActiveWorkoutResult.AlreadyActive -> RepeatLastWorkoutStart.AlreadyActive
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            RepeatLastWorkoutStart.Unavailable
+        }
+    }
 
     /** Applies the first-workout profile and starts the exact plan as one acknowledged action. */
     internal suspend fun startFirstWorkoutPlan(encoded: String): Boolean =

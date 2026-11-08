@@ -729,7 +729,11 @@ test("unknown recommended weight becomes explicit zero across every plan boundar
   );
   assert.match(
     androidEditorViewModel,
-    /private fun parseDrafts\([\s\S]*parseWeightInputOrNull\(set\.weight\)[\s\S]*WorkoutDataLimits\.isValidWeight\(weight\)/
+    /fun parseExerciseInputDrafts\([\s\S]*parseWeightInputOrNull\(set\.weight\)[\s\S]*WorkoutDataLimits\.isValidWeight\(weight\)/
+  );
+  assert.match(
+    androidEditorViewModel,
+    /private fun parseDrafts\([^)]*\): List<WorkoutExerciseDraft> =\s*parseExerciseInputDrafts\(drafts\)/
   );
   assert.match(
     androidEditorViewModel,

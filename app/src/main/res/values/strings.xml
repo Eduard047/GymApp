@@ -980,6 +980,7 @@
     <string name="today_focus_set_progress">Set %1$d · %2$d / %3$d completed</string>
     <string name="today_start_recommended">Edit plan</string>
     <string name="today_edit_plan">Edit plan</string>
+    <string name="repeat_last_workout_action">Repeat last workout</string>
     <string name="today_start_plan">Start plan</string>
     <string name="workout_plan_more_options">More options</string>
     <string name="workout_plan_discard_title">Discard plan changes?</string>

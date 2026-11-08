@@ -643,6 +643,68 @@ internal fun canRepeatFromTemplates(templates: List<WorkoutTemplatePreviewUiMode
 internal fun mergedTemplateNote(currentNote: String, sourceNote: String?): String =
     if (currentNote.isBlank()) sourceNote.orEmpty() else currentNote
 
+/**
+ * The exercises and sets "Repeat last workout" seeds from a stored workout, in stored order: the
+ * weight is formatted exactly as the editor shows it and reps are plain digits; an exercise without
+ * sets keeps one blank set. The editor ([AddWorkoutViewModel.repeatLastWorkout]) and the Today
+ * one-tap start ([repeatLastWorkoutDrafts]) both build from this, so the two stay identical.
+ */
+internal fun repeatLastWorkoutSeed(
+    template: WorkoutSessionDetails
+): List<Pair<Long, List<SetInputState>>> = template.workoutExercises.map { exerciseDetails ->
+    val mappedSets = exerciseDetails.sets.map { set ->
+        SetInputState(weight = formatPlannedWeight(set.weight), reps = set.reps.toString())
+    }
+    exerciseDetails.workoutExercise.exerciseId to mappedSets.ifEmpty { listOf(SetInputState()) }
+}
+
+/**
+ * Drafts for starting the repeat of [template] directly, without the editor: the
+ * [repeatLastWorkoutSeed] parsed with the editor's own start rules ([parseExerciseInputDrafts]),
+ * i.e. the same result the editor's Start would produce for an untouched repeat. Empty when the
+ * workout has no sets or any set breaks a data limit; the caller then falls back to the editor.
+ */
+internal fun repeatLastWorkoutDrafts(template: WorkoutSessionDetails): List<WorkoutExerciseDraft> =
+    parseExerciseInputDrafts(
+        repeatLastWorkoutSeed(template).mapIndexed { index, (exerciseId, sets) ->
+            ExerciseInputState(draftId = index.toLong(), exerciseId = exerciseId, sets = sets)
+        }
+    )
+
+/** The Today "Repeat last workout" action: only with no active workout, no kept draft, and a workout with sets. */
+internal fun shouldShowRepeatLastWorkoutAction(
+    hasRepeatableWorkout: Boolean,
+    hasActiveWorkout: Boolean,
+    hasRetainedWorkoutDraft: Boolean
+): Boolean = hasRepeatableWorkout && !hasActiveWorkout && !hasRetainedWorkoutDraft
+
+/** Parses editor drafts into start drafts; empty when anything is invalid or over a limit. */
+internal fun parseExerciseInputDrafts(drafts: List<ExerciseInputState>): List<WorkoutExerciseDraft> {
+    if (drafts.size > WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) return emptyList()
+    val result = mutableListOf<WorkoutExerciseDraft>()
+    drafts.forEach { draft ->
+        val exerciseId = draft.exerciseId ?: return@forEach
+        if (draft.sets.isEmpty() || draft.sets.size > WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
+            return emptyList()
+        }
+        val sets = mutableListOf<WorkoutSetDraft>()
+        draft.sets.forEach { set ->
+            val weight = parseWeightInputOrNull(set.weight)
+            val repsInput = set.reps.trim()
+            val reps = repsInput.takeIf { it.length <= AddWorkoutViewModel.MAX_REPS_INPUT_LENGTH }
+                ?.toIntOrNull()
+            if (weight == null || reps == null ||
+                !WorkoutDataLimits.isValidWeight(weight) || !WorkoutDataLimits.isValidReps(reps)
+            ) {
+                return emptyList()
+            }
+            sets += WorkoutSetDraft(weight = weight, reps = reps)
+        }
+        result += WorkoutExerciseDraft(exerciseId = exerciseId, sets = sets)
+    }
+    return result
+}
+
 private val LOWER_BODY_PRESET_MUSCLES = setOf(
     "quads", "hamstrings", "glutes", "calves", "adductors", "lowerBack", "abs"
 )
@@ -2548,48 +2610,16 @@ class AddWorkoutViewModel internal constructor(
         generatedSmartPlan.value = null
         smartAlternativePicker.value = null
         note.value = mergedTemplateNote(note.value, template.session.note)
-        val drafts = template.workoutExercises.map { exerciseDetails ->
-            val mappedSets = exerciseDetails.sets.map { set ->
-                SetInputState(
-                    weight = formatWeight(set.weight),
-                    reps = set.reps.toString()
-                )
-            }
-            ExerciseInputState(
-                draftId = nextDraftId++,
-                exerciseId = exerciseDetails.workoutExercise.exerciseId,
-                sets = if (mappedSets.isEmpty()) listOf(SetInputState()) else mappedSets
-            )
+        val drafts = repeatLastWorkoutSeed(template).map { (exerciseId, sets) ->
+            ExerciseInputState(draftId = nextDraftId++, exerciseId = exerciseId, sets = sets)
         }
 
         replaceExerciseDrafts(drafts)
         hasValidationError.value = false
     }
 
-    private fun parseDrafts(drafts: List<ExerciseInputState>): List<WorkoutExerciseDraft> {
-        if (drafts.size > WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) return emptyList()
-        val result = mutableListOf<WorkoutExerciseDraft>()
-        drafts.forEach { draft ->
-            val exerciseId = draft.exerciseId ?: return@forEach
-            if (draft.sets.isEmpty() || draft.sets.size > WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
-                return emptyList()
-            }
-            val sets = mutableListOf<WorkoutSetDraft>()
-            draft.sets.forEach { set ->
-                val weight = parseWeightInputOrNull(set.weight)
-                val repsInput = set.reps.trim()
-                val reps = repsInput.takeIf { it.length <= MAX_REPS_INPUT_LENGTH }?.toIntOrNull()
-                if (weight == null || reps == null ||
-                    !WorkoutDataLimits.isValidWeight(weight) || !WorkoutDataLimits.isValidReps(reps)
-                ) {
-                    return emptyList()
-                }
-                sets += WorkoutSetDraft(weight = weight, reps = reps)
-            }
-            result += WorkoutExerciseDraft(exerciseId = exerciseId, sets = sets)
-        }
-        return result
-    }
+    private fun parseDrafts(drafts: List<ExerciseInputState>): List<WorkoutExerciseDraft> =
+        parseExerciseInputDrafts(drafts)
 
     fun applyWorkoutRecommendation(draftId: Long) {
         hasValidationError.value = false

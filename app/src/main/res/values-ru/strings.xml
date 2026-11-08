@@ -1014,6 +1014,7 @@
     <string name="today_focus_set_progress">Подход %1$d · выполнено %2$d / %3$d</string>
     <string name="today_start_recommended">Редактировать план</string>
     <string name="today_edit_plan">Редактировать план</string>
+    <string name="repeat_last_workout_action">Повторить последнюю тренировку</string>
     <string name="today_start_plan">Начать план</string>
     <string name="workout_plan_more_options">Дополнительные параметры</string>
     <string name="workout_plan_discard_title">Отменить изменения плана?</string>
