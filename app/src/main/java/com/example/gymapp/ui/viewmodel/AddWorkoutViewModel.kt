@@ -333,7 +333,7 @@ data class AddWorkoutUiState(
     val note: String = "",
     val exercises: List<ExerciseEntity> = emptyList(),
     val frequentExerciseIds: List<Long> = emptyList(),
-    /** Picker "Recent" section: last distinct exercises logged, newest first (see [recentExerciseIds]). */
+    /** Picker "Recent" source: every distinct logged exercise, newest first (see [recentExerciseIds]); the picker excludes plan exercises and caps it. */
     val recentExerciseIds: List<Long> = emptyList(),
     val exerciseWorkoutCounts: Map<Long, Int> = emptyMap(),
     val exerciseMuscleIds: Map<String, Set<String>> = emptyMap(),
@@ -1069,7 +1069,12 @@ class AddWorkoutViewModel internal constructor(
             isLoaded = true,
             exercises = exerciseList,
             frequentExerciseIds = frequentIds,
-            recentExerciseIds = recentExerciseIds(history, exerciseList.mapTo(HashSet()) { it.id }),
+            // Every distinct exercise, newest first: the picker drops those already in the plan, then caps at 8.
+            recentExerciseIds = recentExerciseIds(
+                history,
+                exerciseList.mapTo(HashSet()) { it.id },
+                limit = Int.MAX_VALUE
+            ),
             exerciseWorkoutCounts = workoutCounts,
             exerciseMuscleIds = exerciseList.associate { exercise ->
                 val contributions = manualMappings[exercise.name.normalizedExerciseName()]

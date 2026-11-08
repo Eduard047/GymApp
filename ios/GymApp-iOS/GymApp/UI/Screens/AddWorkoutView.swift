@@ -571,13 +571,18 @@ struct AddWorkoutView: View {
                 exerciseMediaOwnerKey: store.accountStorageKey,
                 muscleMappings: store.muscleMappings,
                 sessionCounts: exerciseSessionCounts,
-                latestSessionDates: ExercisePickerFrequent.latestSessionDates(
-                    from: store.allExerciseHistory()
-                ),
-                recentExerciseIDs: GymRecentExercises.ids(
-                    workouts: store.workouts,
-                    pickerIDs: Set(store.exercises.map(\.id))
-                ),
+                historySnapshot: {
+                    let inPlan = Set(drafts.map(\.exerciseID))
+                    return ExercisePickerHistorySnapshot(
+                        latestSessionDates: ExercisePickerFrequent.latestSessionDates(
+                            from: store.allExerciseHistory()
+                        ),
+                        recentExerciseIDs: GymRecentExercises.ids(
+                            workouts: store.workouts,
+                            pickerIDs: Set(store.exercises.map(\.id)).subtracting(inPlan)
+                        )
+                    )
+                },
                 onSelect: addExercise,
                 onCreate: { try store.addExercise(name: $0) }
             )

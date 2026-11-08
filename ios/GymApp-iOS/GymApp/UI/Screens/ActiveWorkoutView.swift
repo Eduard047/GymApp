@@ -192,6 +192,8 @@ struct ActiveWorkoutView: View {
     /// re-derives the live set so it never acts on stale data).
     @State private var pendingDeleteRecordedSetID: UUID?
     @State private var showingAddExercisePicker = false
+    /// This view instance's identity in the `GymKeepAwake` holder set.
+    @State private var keepAwakeToken = UUID()
     @State private var collapsedExerciseIDs = Set<UUID>()
     @State private var expandedSetIDs = Set<UUID>()
     @FocusState private var focusedWeightSetID: UUID?
@@ -689,13 +691,17 @@ struct ActiveWorkoutView: View {
                 exerciseMediaOwnerKey: workoutStore.accountStorageKey,
                 muscleMappings: workoutStore.muscleMappings,
                 sessionCounts: addExerciseSessionCounts,
-                latestSessionDates: ExercisePickerFrequent.latestSessionDates(
-                    from: workoutStore.allExerciseHistory()
-                ),
-                recentExerciseIDs: GymRecentExercises.ids(
-                    workouts: workoutStore.workouts,
-                    pickerIDs: Set(addableExercises.map(\.id))
-                ),
+                historySnapshot: {
+                    ExercisePickerHistorySnapshot(
+                        latestSessionDates: ExercisePickerFrequent.latestSessionDates(
+                            from: workoutStore.allExerciseHistory()
+                        ),
+                        recentExerciseIDs: GymRecentExercises.ids(
+                            workouts: workoutStore.workouts,
+                            pickerIDs: Set(addableExercises.map(\.id))
+                        )
+                    )
+                },
                 onSelect: addExercise,
                 onCreate: { name in try workoutStore.addExercise(name: name) }
             )
@@ -741,7 +747,7 @@ struct ActiveWorkoutView: View {
         }
         .onDisappear {
             cancelVoiceCommand()
-            GymKeepAwake.apply(false)
+            GymKeepAwake.update(hold: false, token: keepAwakeToken)
         }
         .onChange(of: keepScreenOn) { _, _ in
             updateKeepAwake()
@@ -761,8 +767,9 @@ struct ActiveWorkoutView: View {
 
     /// Holds the screen awake only while this screen is visible, the switch is on and the app is active.
     private func updateKeepAwake(scenePhase phase: ScenePhase? = nil) {
-        GymKeepAwake.apply(
-            GymKeepAwake.shouldHoldScreen(enabled: keepScreenOn, scenePhase: phase ?? scenePhase)
+        GymKeepAwake.update(
+            hold: GymKeepAwake.shouldHoldScreen(enabled: keepScreenOn, scenePhase: phase ?? scenePhase),
+            token: keepAwakeToken
         )
     }
 

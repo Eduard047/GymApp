@@ -92,7 +92,7 @@ internal fun ExerciseCatalogSelector(
     onCreateExercise: (suspend (String) -> Long)? = null,
     /** Exercises already in the plan: shown with a check and not selectable again (Add mode). */
     addedExerciseIds: Set<Long> = emptySet(),
-    /** Last distinct exercises logged, newest first: the "Recent" section while no search or filter is active (Add mode). */
+    /** Distinct logged exercises, newest first: the "Recent" section (minus [addedExerciseIds], max 8) while no search or filter is active (Add mode). */
     recentExerciseIds: List<Long> = emptyList()
 ) {
     val isChooseMode = mode == ExerciseSelectorMode.Choose
@@ -139,9 +139,14 @@ internal fun ExerciseCatalogSelector(
         ).filter { exercise -> !frequentOnly || exercise.id in frequentExerciseIds }
     }
 
-    val recentExercises = remember(exercises, recentExerciseIds) {
+    // Exercises already in the plan are not offered in Recent (they would only be disabled rows), and
+    // do not use up one of the slots: the section backfills to the cap.
+    val recentExercises = remember(exercises, recentExerciseIds, addedExerciseIds) {
         val byId = exercises.associateBy { it.id }
-        recentExerciseIds.mapNotNull { byId[it] }.take(RECENT_EXERCISES_MAX)
+        recentExerciseIds
+            .filter { it !in addedExerciseIds }
+            .mapNotNull { byId[it] }
+            .take(RECENT_EXERCISES_MAX)
     }
     val showRecent = !isChooseMode && recentExercises.isNotEmpty() && query.isBlank() &&
         !frequentOnly && !favoritesOnly && bodyFilter == ExerciseBodyFilter.All && muscleFilter == null
@@ -241,7 +246,7 @@ internal fun ExerciseCatalogSelector(
                                 isChooseMode = false,
                                 sessionCount = 0,
                                 selected = exercise.id == selectedExerciseId,
-                                alreadyAdded = exercise.id in addedExerciseIds,
+                                alreadyAdded = false,
                                 exerciseMediaOwnerKey = exerciseMediaOwnerKey,
                                 onClick = {
                                     onExerciseSelected(exercise.id)

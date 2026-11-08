@@ -30,4 +30,29 @@ final class GymKeepAwakeTests: XCTestCase {
     func testPreferenceKeyIsSeparateFromHaptics() {
         XCTAssertNotEqual(GymKeepAwake.preferenceKey, GymHaptics.preferenceKey)
     }
+
+    func testAnOutgoingViewReleasingItsHoldKeepsANewerViewsHold() {
+        var holders = GymKeepAwakeHolders()
+        let outgoing = UUID()
+        let incoming = UUID()
+        holders.acquire(outgoing)
+        XCTAssertTrue(holders.isHeld)
+        // The new screen appears before the old one disappears.
+        holders.acquire(incoming)
+        holders.release(outgoing)
+        XCTAssertTrue(holders.isHeld)
+        holders.release(incoming)
+        XCTAssertFalse(holders.isHeld)
+    }
+
+    func testAcquireAndReleaseAreIdempotentPerToken() {
+        var holders = GymKeepAwakeHolders()
+        let token = UUID()
+        holders.acquire(token)
+        holders.acquire(token)
+        holders.release(token)
+        XCTAssertFalse(holders.isHeld)
+        holders.release(token)
+        XCTAssertFalse(holders.isHeld)
+    }
 }

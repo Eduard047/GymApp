@@ -1983,9 +1983,31 @@ enum ExerciseFilterEngine {
     }
 }
 
+/// History-derived inputs of the exercise picker. Scanning the whole history is not free, so the
+/// picker builds this once per presentation (`ExercisePickerHistoryCache`), not on every parent re-render.
+struct ExercisePickerHistorySnapshot {
+    var latestSessionDates: [UUID: Date] = [:]
+    /// Last distinct exercises logged, newest first (`GymRecentExercises`), already limited to the exercises
+    /// the picker offers (not those already in the workout).
+    var recentExerciseIDs: [UUID] = []
+}
+
+private final class ExercisePickerHistoryCache {
+    private var value: ExercisePickerHistorySnapshot?
+
+    func snapshot(_ make: () -> ExercisePickerHistorySnapshot) -> ExercisePickerHistorySnapshot {
+        if let value { return value }
+        let made = make()
+        value = made
+        return made
+    }
+}
+
 struct ExercisePickerSheet: View {
 
     @Environment(\.dismiss) private var dismiss
+    /// Lives as long as this presentation of the sheet; fills itself on first read.
+    @State private var historyCache = ExercisePickerHistoryCache()
     @State private var search = ""
     @State private var newExerciseName = ""
     @State private var errorMessage: String?
@@ -2000,17 +2022,20 @@ struct ExercisePickerSheet: View {
     let exerciseMediaOwnerKey: String
     let muscleMappings: [ExerciseMuscleMapping]
     let sessionCounts: [UUID: Int]
-    var latestSessionDates: [UUID: Date] = [:]
-    /// Last distinct exercises logged, newest first (`GymRecentExercises`): the "Recent" section.
-    var recentExerciseIDs: [UUID] = []
+    /// Evaluated at most once per presentation of the sheet.
+    var historySnapshot: () -> ExercisePickerHistorySnapshot = { ExercisePickerHistorySnapshot() }
     let onSelect: (Exercise) -> Void
     let onCreate: (String) throws -> Exercise
 
     private var frequentIDs: [UUID] {
         ExercisePickerFrequent.topIDs(
             sessionCounts: sessionCounts,
-            latestSessionDates: latestSessionDates
+            latestSessionDates: history.latestSessionDates
         )
+    }
+
+    private var history: ExercisePickerHistorySnapshot {
+        historyCache.snapshot(historySnapshot)
     }
 
     /// Like Android, the shortlist is applied after search, filters and sort.
@@ -2034,9 +2059,15 @@ struct ExercisePickerSheet: View {
     private var recentExercises: [Exercise] {
         guard search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !frequentOnly, !favoritesOnly, bodyFilter == .all, muscleFilter == nil,
-              !recentExerciseIDs.isEmpty else { return [] }
+              !history.recentExerciseIDs.isEmpty else { return [] }
         let byID = Dictionary(exercises.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return Array(recentExerciseIDs.compactMap { byID[$0] }.prefix(GymRecentExercises.maxCount))
+        // Exercises already in the workout never show in Recent (they would only be disabled rows).
+        return Array(
+            history.recentExerciseIDs
+                .filter { !selectedExerciseIDs.contains($0) }
+                .compactMap { byID[$0] }
+                .prefix(GymRecentExercises.maxCount)
+        )
     }
 
     /// One exercise row, shared by the "Recent" section and the normal list.
@@ -2111,6 +2142,7 @@ struct ExercisePickerSheet: View {
                     Section(gymText("Recent", "Нещодавні", "Недавние", languageCode: gymCurrentLanguageCode())) {
                         ForEach(recent) { exercise in
                             exerciseRow(exercise)
+                                .id("recent-\(exercise.id.uuidString)")
                         }
                     }
                 }
@@ -2239,6 +2271,12 @@ struct ExercisePickerSheet: View {
                             GymContentUnavailableView.search(text: search)
                         }
                     } else {
+                        if !recent.isEmpty {
+                            Text(gymText("All exercises", "Усі вправи", "Все упражнения", languageCode: gymCurrentLanguageCode()))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(GymTheme.textSecondary)
+                                .accessibilityAddTraits(.isHeader)
+                        }
                         ForEach(filteredExercises) { exercise in
                             exerciseRow(exercise)
                         }

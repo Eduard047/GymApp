@@ -1,18 +1,18 @@
 {
   "version": 1,
   "description": "Exercise picker: the 'Recent' section shown above the list while the search field is empty (T169). Implemented by recentExerciseIds on Android; iPhone must produce identical results.",
-  "scope": "Add-exercise picker of the plan editor and the saved-workout editor. The Progress 'choose exercise' picker has no Recent section. The section is also hidden while any picker filter chip (Frequent, Favorites, body part, muscle) is active; that part is UI-only and not covered by the cases. The recent exercises keep their normal position in the list below, and an exercise already in the plan keeps the picker's usual 'added' check and disabled state in the Recent row too.",
+  "scope": "Add-exercise picker of the plan editor, the saved-workout editor and the active workout. The Progress 'choose exercise' picker has no Recent section. The section is also hidden while any picker filter chip (Frequent, Favorites, body part, muscle) is active; that part is UI-only and not covered by the cases. The recent exercises keep their normal position in the list below. Exercises already in the current plan/workout are not shown in Recent at all (no disabled 'added' rows) and do not use up a slot: the caller removes them from eligibleExerciseIds, so the section backfills with older exercises up to the cap.",
   "rules": [
     "1. Source = rows of completed workouts. Sessions go newest first by date; if several sessions share a date, the greater sessionId (later stored) is newer. Inside a session exercises go in ascending blockOrderIndex.",
     "2. Every logged set row counts, whatever its weight and reps. A block with no logged sets contributes no row (Android has no row for it; iPhone skips the empty block).",
     "3. Exercises are distinct by exerciseId, the first occurrence in that order wins (an exercise in two blocks of one session, or in several sessions, is listed once).",
-    "4. Only exercises present in eligibleExerciseIds (the picker's own list: no longer existing, archived or hidden exercises are not in it) are listed. Skipped exercises do not use up a slot.",
+    "4. Only exercises present in eligibleExerciseIds are listed. That is the picker's own list minus the exercises already in the current plan/workout: no longer existing, archived or hidden exercises are not in it, and neither are exercises already added. Skipped exercises do not use up a slot.",
     "5. At most 8 exercises (after skipping).",
     "6. Search text that is not blank (after trimming) hides the section: expected = []. An empty history or an empty picker list also gives [] (the section is not drawn)."
   ],
   "inputFields": {
     "query": "current search field text",
-    "eligibleExerciseIds": "ids of the exercises the picker lists",
+    "eligibleExerciseIds": "ids of the exercises the picker lists, without the ones already in the current plan/workout",
     "history": "rows of one logged set each: exerciseId, sessionId, date (any comparable number, e.g. epoch ms), blockOrderIndex (position of the exercise block in the workout). Several rows with the same keys are several sets of one block."
   },
   "outputField": "expected = exercise ids of the Recent section, top to bottom; [] means the section is not shown",
@@ -635,6 +635,100 @@
         6,
         7,
         8
+      ]
+    },
+    {
+      "id": "in-plan-excluded-backfills",
+      "name": "Exercises already in the plan are left out of eligible ids, so older ones backfill to the cap",
+      "query": "",
+      "eligibleExerciseIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        12
+      ],
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 1,
+          "date": 1000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 2,
+          "date": 2000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 3,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 4,
+          "sessionId": 4,
+          "date": 4000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 5,
+          "sessionId": 5,
+          "date": 5000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 6,
+          "sessionId": 6,
+          "date": 6000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 7,
+          "sessionId": 7,
+          "date": 7000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 8,
+          "sessionId": 8,
+          "date": 8000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 9,
+          "sessionId": 9,
+          "date": 9000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 10,
+          "sessionId": 10,
+          "date": 10000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 11,
+          "sessionId": 11,
+          "date": 11000,
+          "blockOrderIndex": 0
+        }
+      ],
+      "expected": [
+        8,
+        7,
+        6,
+        5,
+        4,
+        3,
+        2,
+        1
       ]
     },
     {
