@@ -376,7 +376,8 @@ func gymShortDateTime(
 
 /// The one workout-duration format: "45 min", "1 h", "1 h 5 min" (UK: "45 хв",
 /// "1 год 5 хв"; RU: "45 мин", "1 ч 5 мин"). Any positive duration shows at
-/// least one minute. Returns "" when the duration is not positive.
+/// least one minute. Returns "" when the duration is not positive. A no-break space (U+00A0) joins each
+/// number to its unit so a value never wraps away from it.
 func gymCompactDuration(
     _ seconds: Int,
     languageCode: String = gymCurrentLanguageCode()
@@ -387,20 +388,20 @@ func gymCompactDuration(
     let remaining = minutes % 60
     if hours == 0 {
         return gymText(
-            "\(minutes) min", "\(minutes) хв", "\(minutes) мин",
+            "\(minutes)\u{00A0}min", "\(minutes)\u{00A0}хв", "\(minutes)\u{00A0}мин",
             languageCode: languageCode
         )
     }
     if remaining == 0 {
         return gymText(
-            "\(hours) h", "\(hours) год", "\(hours) ч",
+            "\(hours)\u{00A0}h", "\(hours)\u{00A0}год", "\(hours)\u{00A0}ч",
             languageCode: languageCode
         )
     }
     return gymText(
-        "\(hours) h \(remaining) min",
-        "\(hours) год \(remaining) хв",
-        "\(hours) ч \(remaining) мин",
+        "\(hours)\u{00A0}h \(remaining)\u{00A0}min",
+        "\(hours)\u{00A0}год \(remaining)\u{00A0}хв",
+        "\(hours)\u{00A0}ч \(remaining)\u{00A0}мин",
         languageCode: languageCode
     )
 }

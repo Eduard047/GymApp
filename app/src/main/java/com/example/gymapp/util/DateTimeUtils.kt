@@ -161,7 +161,8 @@ object DateTimeUtils {
     /**
      * Abbreviated hour/minute duration such as "4 h 31 min", "4 год 31 хв" or "4 ч 31 мин" (at most two
      * units, seconds dropped). Reproduces the iOS `DateComponentsFormatter` output with the
-     * abbreviated style.
+     * abbreviated style. A no-break space (U+00A0) joins each number to its unit so a value never
+     * wraps away from it.
      * Returns an empty string when [seconds] is not positive.
      */
     fun formatCompactDuration(
@@ -173,9 +174,9 @@ object DateTimeUtils {
         // A positive duration shorter than a minute still reads "1 min" (matches iOS and PWA).
         val minutes = if (seconds < 60L) 1L else seconds % 3600 / 60
         val (hourUnit, minuteUnit) = when (locale.language.lowercase(Locale.ROOT)) {
-            "uk" -> " \u0433\u043e\u0434" to " \u0445\u0432"
-            "ru" -> " \u0447" to " \u043c\u0438\u043d"
-            else -> " h" to " min"
+            "uk" -> "\u00A0\u0433\u043e\u0434" to "\u00A0\u0445\u0432"
+            "ru" -> "\u00A0\u0447" to "\u00A0\u043c\u0438\u043d"
+            else -> "\u00A0h" to "\u00A0min"
         }
         return when {
             hours == 0L -> "$minutes$minuteUnit"

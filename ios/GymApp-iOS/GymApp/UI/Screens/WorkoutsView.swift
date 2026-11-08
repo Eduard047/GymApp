@@ -1384,9 +1384,9 @@ public struct WorkoutsView: View {
             )
             todayPlanMetric(
                 value: gymText(
-                    "\(minutes) min",
-                    "\(minutes) хв",
-                    "\(minutes) мин",
+                    "\(minutes)\u{00A0}min",
+                    "\(minutes)\u{00A0}хв",
+                    "\(minutes)\u{00A0}мин",
                     languageCode: languageCode
                 ),
                 label: gymText("Estimated", "Орієнтовно", "Примерно", languageCode: languageCode)

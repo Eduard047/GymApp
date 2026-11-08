@@ -130,9 +130,9 @@ class PostWorkoutSummaryFormattingTest {
         val datePart = DateTimeUtils.formatShortDate(date, locale)
         assertEquals(datePart, postWorkoutSubtitle(date, null, locale))
         assertEquals(datePart, postWorkoutSubtitle(date, 0L, locale))
-        assertEquals("$datePart · 4 h 31 min", postWorkoutSubtitle(date, 16271L, locale))
+        assertEquals("$datePart · 4\u00A0h 31\u00A0min", postWorkoutSubtitle(date, 16271L, locale))
         assertEquals(
-            DateTimeUtils.formatShortDate(date, Locale("ru")) + " · 4 ч 31 мин",
+            DateTimeUtils.formatShortDate(date, Locale("ru")) + " · 4\u00A0ч 31\u00A0мин",
             postWorkoutSubtitle(date, 16271L, Locale("ru"))
         )
     }

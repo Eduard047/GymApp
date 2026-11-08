@@ -1099,7 +1099,7 @@ struct WorkoutRestTimerControls: View {
             }
         } else {
             ForEach([60, 90, 120, 180], id: \.self) { seconds in
-                Button(gymText("\(seconds)s", "\(seconds) с", "\(seconds) с", languageCode: gymCurrentLanguageCode())) {
+                Button(gymText("\(seconds)s", "\(seconds)\u{00A0}с", "\(seconds)\u{00A0}с", languageCode: gymCurrentLanguageCode())) {
                     if let onStart { onStart(seconds) }
                     else { manager.start(id: timerID, seconds: seconds, title: exerciseName) }
                 }

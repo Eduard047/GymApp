@@ -10,34 +10,34 @@ class CompactDurationTest {
 
     @Test
     fun englishUsesHourAndMinuteWords() {
-        assertEquals("4 h 31 min", DateTimeUtils.formatCompactDuration(16271, Locale.ENGLISH))
-        assertEquals("1 h", DateTimeUtils.formatCompactDuration(3600, Locale.ENGLISH))
-        assertEquals("45 min", DateTimeUtils.formatCompactDuration(2700, Locale.ENGLISH))
-        assertEquals("2 h 1 min", DateTimeUtils.formatCompactDuration(7260, Locale.ENGLISH))
+        assertEquals("4\u00A0h 31\u00A0min", DateTimeUtils.formatCompactDuration(16271, Locale.ENGLISH))
+        assertEquals("1\u00A0h", DateTimeUtils.formatCompactDuration(3600, Locale.ENGLISH))
+        assertEquals("45\u00A0min", DateTimeUtils.formatCompactDuration(2700, Locale.ENGLISH))
+        assertEquals("2\u00A0h 1\u00A0min", DateTimeUtils.formatCompactDuration(7260, Locale.ENGLISH))
     }
 
     @Test
     fun ukrainianUsesHourAndMinuteWords() {
-        assertEquals("4 год 31 хв", DateTimeUtils.formatCompactDuration(16271, uk))
-        assertEquals("1 год", DateTimeUtils.formatCompactDuration(3600, uk))
-        assertEquals("45 хв", DateTimeUtils.formatCompactDuration(2700, uk))
-        assertEquals("2 год 1 хв", DateTimeUtils.formatCompactDuration(7260, uk))
+        assertEquals("4\u00A0год 31\u00A0хв", DateTimeUtils.formatCompactDuration(16271, uk))
+        assertEquals("1\u00A0год", DateTimeUtils.formatCompactDuration(3600, uk))
+        assertEquals("45\u00A0хв", DateTimeUtils.formatCompactDuration(2700, uk))
+        assertEquals("2\u00A0год 1\u00A0хв", DateTimeUtils.formatCompactDuration(7260, uk))
     }
 
     @Test
-    fun russianSeparatesNumberAndUnitWithPlainSpace() {
-        assertEquals("4 ч 31 мин", DateTimeUtils.formatCompactDuration(16271, ru))
-        assertEquals("1 ч", DateTimeUtils.formatCompactDuration(3600, ru))
-        assertEquals("45 мин", DateTimeUtils.formatCompactDuration(2700, ru))
-        assertEquals("2 ч 1 мин", DateTimeUtils.formatCompactDuration(7260, ru))
+    fun keepsEveryNumberWithItsUnitOnOneLine() {
+        assertEquals("4\u00A0ч 31\u00A0мин", DateTimeUtils.formatCompactDuration(16271, ru))
+        assertEquals("1\u00A0ч", DateTimeUtils.formatCompactDuration(3600, ru))
+        assertEquals("45\u00A0мин", DateTimeUtils.formatCompactDuration(2700, ru))
+        assertEquals("2\u00A0ч 1\u00A0мин", DateTimeUtils.formatCompactDuration(7260, ru))
     }
 
     @Test
     fun positiveSubMinuteDurationFloorsToOneMinute() {
-        assertEquals("1 min", DateTimeUtils.formatCompactDuration(30, Locale.ENGLISH))
-        assertEquals("1 хв", DateTimeUtils.formatCompactDuration(1, uk))
-        assertEquals("1 мин", DateTimeUtils.formatCompactDuration(59, ru))
-        assertEquals("1 h", DateTimeUtils.formatCompactDuration(3630, Locale.ENGLISH))
+        assertEquals("1\u00A0min", DateTimeUtils.formatCompactDuration(30, Locale.ENGLISH))
+        assertEquals("1\u00A0хв", DateTimeUtils.formatCompactDuration(1, uk))
+        assertEquals("1\u00A0мин", DateTimeUtils.formatCompactDuration(59, ru))
+        assertEquals("1\u00A0h", DateTimeUtils.formatCompactDuration(3630, Locale.ENGLISH))
     }
 
     @Test

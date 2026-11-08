@@ -1487,7 +1487,7 @@
     <string name="activation_edit_plan">Review exercises</string>
     <string name="activation_create_manually">Create manually</string>
     <string name="today_plan_size">%1$s · %2$s</string>
-    <string name="today_plan_duration">About %1$d min</string>
+    <string name="today_plan_duration">About %1$d&#160;min</string>
     <string name="progress_section_overview">Overview</string>
     <string name="progress_section_exercises">Exercises</string>
     <string name="progress_section_goals">Goals</string>
@@ -1517,9 +1517,9 @@
     <string name="action_show_details">Show</string>
     <string name="action_hide_details">Hide</string>
     <string name="post_workout_metric_duration">Duration</string>
-    <string name="duration_minutes_compact">%1$d min</string>
-    <string name="duration_hours_compact">%1$d h</string>
-    <string name="duration_hours_minutes_compact">%1$d h %2$d min</string>
+    <string name="duration_minutes_compact">%1$d&#160;min</string>
+    <string name="duration_hours_compact">%1$d&#160;h</string>
+    <string name="duration_hours_minutes_compact">%1$d&#160;h %2$d&#160;min</string>
     <string name="tutorial_step_count">Step %1$d of %2$d</string>
     <string name="tutorial_back">Back</string>
     <string name="tutorial_next">Next</string>

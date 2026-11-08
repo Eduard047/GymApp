@@ -1527,7 +1527,7 @@
     <string name="activation_edit_plan">Переглянути вправи</string>
     <string name="activation_create_manually">Створити вручну</string>
     <string name="today_plan_size">%1$s · %2$s</string>
-    <string name="today_plan_duration">Близько %1$d хв</string>
+    <string name="today_plan_duration">Близько %1$d&#160;хв</string>
     <string name="progress_section_overview">Огляд</string>
     <string name="progress_section_exercises">Вправи</string>
     <string name="progress_section_goals">Цілі</string>
@@ -1557,9 +1557,9 @@
     <string name="action_show_details">Показати</string>
     <string name="action_hide_details">Сховати</string>
     <string name="post_workout_metric_duration">Тривалість</string>
-    <string name="duration_minutes_compact">%1$d хв</string>
-    <string name="duration_hours_compact">%1$d год</string>
-    <string name="duration_hours_minutes_compact">%1$d год %2$d хв</string>
+    <string name="duration_minutes_compact">%1$d&#160;хв</string>
+    <string name="duration_hours_compact">%1$d&#160;год</string>
+    <string name="duration_hours_minutes_compact">%1$d&#160;год %2$d&#160;хв</string>
     <string name="tutorial_step_count">Крок %1$d із %2$d</string>
     <string name="tutorial_back">Назад</string>
     <string name="tutorial_next">Далі</string>

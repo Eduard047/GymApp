@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Shared duration/time formatter vectors run by Android DurationFormatGoldenTest and iOS DurationFormatGoldenTests. Localized formatters give one string per language; others give one 'expected' string. A case may carry 'android'/'ios' instead of 'expected' only where the platforms differ (see knownDifferences).",
+  "description": "Shared duration/time formatter vectors run by Android DurationFormatGoldenTest and iOS DurationFormatGoldenTests. Localized formatters give one string per language; others give one 'expected' string. A case may carry 'android'/'ios' instead of 'expected' only where the platforms differ (see knownDifferences). Number and unit in localized durations are joined by a no-break space (U+00A0) so a value never wraps; the space between the hour and minute parts stays breakable.",
   "languages": [
     "en",
     "uk",
@@ -23,81 +23,97 @@
         {
           "seconds": 1,
           "expected": {
-            "en": "1 min",
-            "uk": "1 хв",
-            "ru": "1 мин"
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
           }
         },
         {
           "seconds": 59,
           "expected": {
-            "en": "1 min",
-            "uk": "1 хв",
-            "ru": "1 мин"
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
           }
         },
         {
           "seconds": 60,
           "expected": {
-            "en": "1 min",
-            "uk": "1 хв",
-            "ru": "1 мин"
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
           }
         },
         {
           "seconds": 61,
           "expected": {
-            "en": "1 min",
-            "uk": "1 хв",
-            "ru": "1 мин"
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
           }
         },
         {
           "seconds": 599,
           "expected": {
-            "en": "9 min",
-            "uk": "9 хв",
-            "ru": "9 мин"
+            "en": "9 min",
+            "uk": "9 хв",
+            "ru": "9 мин"
+          }
+        },
+        {
+          "seconds": 2700,
+          "expected": {
+            "en": "45 min",
+            "uk": "45 хв",
+            "ru": "45 мин"
           }
         },
         {
           "seconds": 3599,
           "expected": {
-            "en": "59 min",
-            "uk": "59 хв",
-            "ru": "59 мин"
+            "en": "59 min",
+            "uk": "59 хв",
+            "ru": "59 мин"
           }
         },
         {
           "seconds": 3600,
           "expected": {
-            "en": "1 h",
-            "uk": "1 год",
-            "ru": "1 ч"
+            "en": "1 h",
+            "uk": "1 год",
+            "ru": "1 ч"
           }
         },
         {
           "seconds": 3661,
           "expected": {
-            "en": "1 h 1 min",
-            "uk": "1 год 1 хв",
-            "ru": "1 ч 1 мин"
+            "en": "1 h 1 min",
+            "uk": "1 год 1 хв",
+            "ru": "1 ч 1 мин"
+          }
+        },
+        {
+          "seconds": 3900,
+          "expected": {
+            "en": "1 h 5 min",
+            "uk": "1 год 5 хв",
+            "ru": "1 ч 5 мин"
           }
         },
         {
           "seconds": 36000,
           "expected": {
-            "en": "10 h",
-            "uk": "10 год",
-            "ru": "10 ч"
+            "en": "10 h",
+            "uk": "10 год",
+            "ru": "10 ч"
           }
         },
         {
           "seconds": 86399,
           "expected": {
-            "en": "23 h 59 min",
-            "uk": "23 год 59 хв",
-            "ru": "23 ч 59 мин"
+            "en": "23 h 59 min",
+            "uk": "23 год 59 хв",
+            "ru": "23 ч 59 мин"
           }
         }
       ]
@@ -110,89 +126,89 @@
         {
           "seconds": 0,
           "expected": {
-            "en": "1 min",
-            "uk": "1 хв",
-            "ru": "1 мин"
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
           }
         },
         {
           "seconds": 1,
           "expected": {
-            "en": "1 min",
-            "uk": "1 хв",
-            "ru": "1 мин"
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
           }
         },
         {
           "seconds": 59,
           "expected": {
-            "en": "1 min",
-            "uk": "1 хв",
-            "ru": "1 мин"
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
           }
         },
         {
           "seconds": 60,
           "expected": {
-            "en": "1 min",
-            "uk": "1 хв",
-            "ru": "1 мин"
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
           }
         },
         {
           "seconds": 61,
           "expected": {
-            "en": "1 min",
-            "uk": "1 хв",
-            "ru": "1 мин"
+            "en": "1 min",
+            "uk": "1 хв",
+            "ru": "1 мин"
           }
         },
         {
           "seconds": 599,
           "expected": {
-            "en": "9 min",
-            "uk": "9 хв",
-            "ru": "9 мин"
+            "en": "9 min",
+            "uk": "9 хв",
+            "ru": "9 мин"
           }
         },
         {
           "seconds": 3599,
           "expected": {
-            "en": "59 min",
-            "uk": "59 хв",
-            "ru": "59 мин"
+            "en": "59 min",
+            "uk": "59 хв",
+            "ru": "59 мин"
           }
         },
         {
           "seconds": 3600,
           "expected": {
-            "en": "1 h",
-            "uk": "1 год",
-            "ru": "1 ч"
+            "en": "1 h",
+            "uk": "1 год",
+            "ru": "1 ч"
           }
         },
         {
           "seconds": 3661,
           "expected": {
-            "en": "1 h 1 min",
-            "uk": "1 год 1 хв",
-            "ru": "1 ч 1 мин"
+            "en": "1 h 1 min",
+            "uk": "1 год 1 хв",
+            "ru": "1 ч 1 мин"
           }
         },
         {
           "seconds": 36000,
           "expected": {
-            "en": "10 h",
-            "uk": "10 год",
-            "ru": "10 ч"
+            "en": "10 h",
+            "uk": "10 год",
+            "ru": "10 ч"
           }
         },
         {
           "seconds": 86399,
           "expected": {
-            "en": "23 h 59 min",
-            "uk": "23 год 59 хв",
-            "ru": "23 ч 59 мин"
+            "en": "23 h 59 min",
+            "uk": "23 год 59 хв",
+            "ru": "23 ч 59 мин"
           }
         }
       ]
