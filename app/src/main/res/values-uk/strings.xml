@@ -557,6 +557,8 @@
     <string name="exercise_rest_use_default">За замовчуванням</string>
     <string name="exercise_rest_default_hint">За замовчуванням: %1$s</string>
     <string name="exercise_rest_too_many">Забагато власних часів відпочинку. Спершу скинь частину.</string>
+    <string name="replace_exercise_menu">Замінити вправу</string>
+    <string name="replace_exercise_done">Вправу замінено.</string>
     <string name="active_workout_remove_exercise">Видалити вправу</string>
     <string name="workout_exercise_move_up">Перемістити вище</string>
     <string name="workout_exercise_move_down">Перемістити нижче</string>

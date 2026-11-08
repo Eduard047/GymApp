@@ -171,6 +171,19 @@ sealed interface RemoveActiveWorkoutExerciseResult {
     data object LivePlanFrozen : RemoveActiveWorkoutExerciseResult
 }
 
+sealed interface ReplaceActiveWorkoutExerciseResult {
+    /** The block keeps its id and position; only the exercise and its (all pending) sets changed. */
+    data class Replaced(val revision: Long) : ReplaceActiveWorkoutExerciseResult
+    data object Missing : ReplaceActiveWorkoutExerciseResult
+    data object Stale : ReplaceActiveWorkoutExerciseResult
+    /** The block or the catalog exercise no longer exists. */
+    data object TargetChanged : ReplaceActiveWorkoutExerciseResult
+    data object AlreadyInWorkout : ReplaceActiveWorkoutExerciseResult
+    /** A set of the block was already recorded; recorded work is never replaced. */
+    data object HasRecordedSets : ReplaceActiveWorkoutExerciseResult
+    data object LivePlanFrozen : ReplaceActiveWorkoutExerciseResult
+}
+
 sealed interface MoveActiveWorkoutExerciseResult {
     data class Moved(val revision: Long) : MoveActiveWorkoutExerciseResult
     /** The exercise is already at the edge in the requested direction; nothing was written. */
@@ -2748,6 +2761,95 @@ class GymRepository(
                 listOf(set.copy(activeWorkoutExerciseId = exerciseId, orderIndex = position, completedAt = null))
             )
             RestoreActiveWorkoutSetResult.Restored(expectedRevision + 1L)
+        }
+    }
+
+    /**
+     * Swaps the catalog exercise of block [exerciseId] for [newExerciseId] in place: same block id and
+     * position, with [sets] as its new pending sets. Atomic and revision-checked; refused while a live
+     * room owns the plan, when the new exercise is already in the workout, or when any set of the block
+     * is recorded. No set is recorded, so undo and the rest timer are untouched.
+     */
+    suspend fun replaceActiveWorkoutExercise(
+        exerciseId: String,
+        newExerciseId: Long,
+        sets: List<WorkoutSetDraft>,
+        expectedRevision: Long
+    ): ReplaceActiveWorkoutExerciseResult = activeWorkoutMutationMutex.withLock {
+        require(isStableActiveWorkoutId(exerciseId)) { "Active exercise identifier is invalid." }
+        require(newExerciseId > 0) { "Exercise identifier is invalid." }
+        require(expectedRevision in 0 until Long.MAX_VALUE) {
+            "Active workout revision is invalid."
+        }
+        require(sets.size in 1..WorkoutDataLimits.MAX_SETS_PER_EXERCISE) { "Set count is invalid." }
+        require(sets.all { WorkoutDataLimits.isValidWeight(it.weight) && WorkoutDataLimits.isValidReps(it.reps) }) {
+            "Set values are invalid."
+        }
+        database.withTransaction {
+            val details = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
+                ?.sortedActiveWorkout()
+                ?: return@withTransaction ReplaceActiveWorkoutExerciseResult.Missing
+            requireValidStoredActiveWorkout(details)
+            if (details.activeWorkout.revision != expectedRevision) {
+                return@withTransaction ReplaceActiveWorkoutExerciseResult.Stale
+            }
+            if (activeWorkoutPlanIsLiveFrozen(details.activeWorkout.startedAt)) {
+                return@withTransaction ReplaceActiveWorkoutExerciseResult.LivePlanFrozen
+            }
+            val target = details.exercises.firstOrNull { block ->
+                block.activeWorkoutExercise.id == exerciseId
+            } ?: return@withTransaction ReplaceActiveWorkoutExerciseResult.TargetChanged
+            if (target.sets.any { it.completedAt != null }) {
+                return@withTransaction ReplaceActiveWorkoutExerciseResult.HasRecordedSets
+            }
+            val exercise = exerciseDao.getById(newExerciseId)
+                ?: return@withTransaction ReplaceActiveWorkoutExerciseResult.TargetChanged
+            require(WorkoutDataLimits.isValidExerciseName(exercise.name)) {
+                "Exercise name is outside the supported length."
+            }
+            val name = exercise.name.trim()
+            val catalogKey = BuiltInExerciseCatalog.inferKey(exercise.name)
+            if (details.exercises.any { block ->
+                    block.activeWorkoutExercise.id != exerciseId &&
+                        (block.activeWorkoutExercise.exerciseName == name ||
+                            (catalogKey != null && block.activeWorkoutExercise.catalogKey == catalogKey))
+                }
+            ) {
+                return@withTransaction ReplaceActiveWorkoutExerciseResult.AlreadyInWorkout
+            }
+            val usedIds = details.exercises.flatMap { block ->
+                listOf(block.activeWorkoutExercise.id) + block.sets.map { it.id }
+            }.toMutableSet()
+            val setRows = sets.mapIndexed { index, seed ->
+                ActiveWorkoutSetEntity(
+                    id = nextStableActiveWorkoutId(usedIds),
+                    activeWorkoutExerciseId = exerciseId,
+                    weight = seed.weight,
+                    reps = seed.reps,
+                    orderIndex = index,
+                    completedAt = null
+                )
+            }
+            check(
+                activeWorkoutDao.advanceRevisionKeepingUndoable(ACTIVE_WORKOUT_ID, expectedRevision) == 1
+            ) { "Active workout changed while replacing the exercise." }
+            activeWorkoutDao.deleteSetsOfExercise(exerciseId)
+            check(activeWorkoutDao.deleteExercise(ACTIVE_WORKOUT_ID, exerciseId) == 1) {
+                "Active exercise changed while replacing it."
+            }
+            activeWorkoutDao.insertExercises(
+                listOf(
+                    ActiveWorkoutExerciseEntity(
+                        id = exerciseId,
+                        activeWorkoutId = ACTIVE_WORKOUT_ID,
+                        exerciseName = name,
+                        catalogKey = catalogKey,
+                        orderIndex = target.activeWorkoutExercise.orderIndex
+                    )
+                )
+            )
+            activeWorkoutDao.insertSets(setRows)
+            ReplaceActiveWorkoutExerciseResult.Replaced(expectedRevision + 1L)
         }
     }
 

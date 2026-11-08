@@ -89,6 +89,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.ButtonDefaults
@@ -192,6 +193,7 @@ import com.example.gymapp.ui.components.rememberGymHaptics
 import com.example.gymapp.util.rememberKeepScreenOnPreference
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutAddExerciseCatalog
+import com.example.gymapp.ui.viewmodel.activeWorkoutExerciseCanBeReplaced
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutExerciseUiState
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutSetUiState
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutUiState
@@ -245,6 +247,8 @@ fun ActiveWorkoutScreen(
     onMoveExerciseTo: (String, Int) -> Unit = { _, _ -> },
     addExerciseCatalog: ActiveWorkoutAddExerciseCatalog = ActiveWorkoutAddExerciseCatalog(),
     onAddExercise: (Long) -> Unit = {},
+    /** Swaps a pending exercise (block id) for the picked catalog exercise in place. */
+    onReplaceExercise: (String, Long) -> Unit = { _, _ -> },
     onCreateExercise: (suspend (String) -> Long)? = null,
     onRecordSet: (String) -> Unit,
     onRecordAllPendingSets: () -> Unit,
@@ -463,6 +467,8 @@ fun ActiveWorkoutScreen(
     }
     val onVoiceStarted: () -> Unit = { recordedConfirmation = null }
     var showDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
+    /** Block id whose "Replace exercise" picker is open. */
+    var replacingExerciseId by rememberSaveable { mutableStateOf<String?>(null) }
     var showFinishWorkoutConfirmation by rememberSaveable { mutableStateOf(false) }
     var liveParticipantTab by rememberSaveable(uiState.livePeerName) {
         mutableStateOf(LiveParticipantTab.Self)
@@ -729,6 +735,9 @@ fun ActiveWorkoutScreen(
                     onSkipRemainingSets = { onSkipRemainingSets(exercise.id) },
                     canRemoveExercise = uiState.liveConnectionMode == null && uiState.exercises.size > 1,
                     onRemoveExercise = { onRemoveExercise(exercise.id) },
+                    canReplaceExercise = uiState.liveConnectionMode == null &&
+                        activeWorkoutExerciseCanBeReplaced(exercise.sets),
+                    onReplaceExercise = { replacingExerciseId = exercise.id },
                     canMoveUp = exerciseIndex > 0,
                     canMoveDown = exerciseIndex < uiState.exercises.lastIndex,
                     onMoveExercise = { offset -> onMoveExercise(exercise.id, offset) },
@@ -759,6 +768,29 @@ fun ActiveWorkoutScreen(
                     onVoiceStarted = onVoiceStarted,
                     onVoiceCommandFeedback = onVoiceCommandFeedback
                 )
+            }
+
+            if (uiState.liveConnectionMode == null && replacingExerciseId != null) {
+                item(key = "replace-exercise") {
+                    // The same catalog picker as "+ Add exercise" (already hides exercises in the workout),
+                    // opened from an exercise's menu; the pick swaps that exercise in place.
+                    ExerciseCatalogSelector(
+                        selectedExerciseId = null,
+                        exercises = addExerciseCatalog.exercises,
+                        frequentExerciseIds = addExerciseCatalog.frequentExerciseIds,
+                        recentExerciseIds = addExerciseCatalog.recentExerciseIds,
+                        exerciseWorkoutCounts = addExerciseCatalog.exerciseWorkoutCounts,
+                        exerciseMuscleIds = addExerciseCatalog.exerciseMuscleIds,
+                        exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                        externalOpen = true,
+                        onExternalDismiss = { replacingExerciseId = null },
+                        onExerciseSelected = { newExerciseId ->
+                            replacingExerciseId?.let { onReplaceExercise(it, newExerciseId) }
+                            replacingExerciseId = null
+                        },
+                        onCreateExercise = onCreateExercise
+                    )
+                }
             }
 
             if (uiState.liveConnectionMode == null) {
@@ -1368,6 +1400,9 @@ private fun ActiveWorkoutExerciseCard(
     onSkipRemainingSets: () -> Unit,
     canRemoveExercise: Boolean,
     onRemoveExercise: () -> Unit,
+    /** "Replace exercise" menu item: only while no set of the exercise is recorded and not in a live room. */
+    canReplaceExercise: Boolean = false,
+    onReplaceExercise: () -> Unit = {},
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onMoveExercise: (Int) -> Unit,
@@ -1466,7 +1501,7 @@ private fun ActiveWorkoutExerciseCard(
                 }
             },
             descriptionExtra = cue?.let { "${stringResource(R.string.exercise_cue_label)}: $it" },
-            menu = if (canRemoveExercise || canEditCue) {
+            menu = if (canRemoveExercise || canEditCue || canReplaceExercise) {
                 {
                     WorkoutExerciseMenu(
                         enabled = !operationInProgress,
@@ -1477,6 +1512,18 @@ private fun ActiveWorkoutExerciseCard(
                         canMoveDown = canMoveDown,
                         showRemove = canRemoveExercise,
                         extraItems = { closeMenu ->
+                            if (canReplaceExercise) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.replace_exercise_menu)) },
+                                    leadingIcon = {
+                                        Icon(imageVector = Icons.Default.SwapHoriz, contentDescription = null)
+                                    },
+                                    onClick = {
+                                        closeMenu()
+                                        onReplaceExercise()
+                                    }
+                                )
+                            }
                             if (canEditCue) {
                                 ExerciseCueMenuItem(hasCue = cue != null) {
                                     closeMenu()

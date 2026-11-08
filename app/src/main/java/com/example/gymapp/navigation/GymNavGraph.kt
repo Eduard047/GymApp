@@ -3947,6 +3947,7 @@ internal fun GymAppRoot(
                                 onMoveExerciseTo = viewModel::moveExerciseTo,
                                 addExerciseCatalog = addExerciseCatalog,
                                 onAddExercise = viewModel::addExercise,
+                                onReplaceExercise = viewModel::replaceExercise,
                                 onCreateExercise = viewModel::createExerciseForPicker,
                                 onRecordSet = viewModel::recordSet,
                                 onRecordAllPendingSets = viewModel::recordAllPendingSets,

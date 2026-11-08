@@ -6,6 +6,8 @@ import com.example.gymapp.data.entity.ActiveWorkoutEntity
 import com.example.gymapp.data.entity.ActiveWorkoutExerciseEntity
 import com.example.gymapp.data.entity.ActiveWorkoutExerciseWithDetails
 import com.example.gymapp.data.entity.ActiveWorkoutSetEntity
+import com.example.gymapp.data.entity.ExerciseEntity
+import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.AddActiveWorkoutSetResult
 import com.example.gymapp.data.repository.ApplyActiveWorkoutAdaptationResult
 import com.example.gymapp.data.repository.RecordActiveWorkoutSetResult
@@ -400,6 +402,120 @@ class ActiveWorkoutViewModelTest {
         assertFalse(activeWorkoutBatchUndoAvailable(batch, ready, liveRoomId = "lr_x"))
         assertTrue(
             activeWorkoutBatchUndoAvailable(batch.copy(liveRoomId = "lr_x"), ready, liveRoomId = "lr_x")
+        )
+    }
+
+    private fun replaceWorkout(completed: Set<String> = emptySet()) = ActiveWorkoutDetails(
+        activeWorkout = ActiveWorkoutEntity(
+            id = 1L, date = 0L, note = null, startedAt = 1_000L, revision = 3L, undoableSetId = null
+        ),
+        exercises = listOf(
+            ActiveWorkoutExerciseWithDetails(
+                ActiveWorkoutExerciseEntity("e0", 1L, "Squat", null, 0),
+                listOf(ActiveWorkoutSetEntity("s0", "e0", 100.0, 5, 0, null))
+            ),
+            ActiveWorkoutExerciseWithDetails(
+                ActiveWorkoutExerciseEntity("e1", 1L, "Bench", null, 1),
+                listOf("a", "b").mapIndexed { index, id ->
+                    ActiveWorkoutSetEntity(id, "e1", 50.0, 8, index, if (id in completed) 2_000L else null)
+                }
+            ),
+            ActiveWorkoutExerciseWithDetails(
+                ActiveWorkoutExerciseEntity("e2", 1L, "Row", null, 2),
+                listOf(ActiveWorkoutSetEntity("s2", "e2", 40.0, 10, 0, null))
+            )
+        )
+    )
+
+    private fun historyEntry(setId: Long, exerciseId: Long, weight: Double, reps: Int, order: Int) =
+        ExerciseHistoryEntry(
+            setId = setId, sessionId = 1L, sessionDate = 10L, exerciseId = exerciseId,
+            exerciseName = "X", weight = weight, reps = reps, setOrderIndex = order
+        )
+
+    @Test
+    fun replaceIsHiddenOnceAnySetIsRecorded() {
+        fun ui(done: Boolean) = ActiveWorkoutSetUiState(
+            id = "s", orderIndex = 0, weightInput = "", repsInput = "", isCompleted = done, completedAt = null
+        )
+        assertTrue(activeWorkoutExerciseCanBeReplaced(listOf(ui(false), ui(false))))
+        assertFalse(activeWorkoutExerciseCanBeReplaced(listOf(ui(false), ui(true))))
+        val bench = ExerciseEntity(id = 9L, name = "Incline Press")
+        assertEquals(
+            ActiveWorkoutEditBlock.Allowed,
+            activeWorkoutExerciseReplaceBlock(replaceWorkout(), "e1", bench, inLiveRoom = false, operationInProgress = false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.HasRecordedSets,
+            activeWorkoutExerciseReplaceBlock(replaceWorkout(setOf("b")), "e1", bench, false, false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.LiveRoom,
+            activeWorkoutExerciseReplaceBlock(replaceWorkout(), "e1", bench, inLiveRoom = true, operationInProgress = false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.Missing,
+            activeWorkoutExerciseReplaceBlock(replaceWorkout(), "nope", bench, false, false)
+        )
+    }
+
+    @Test
+    fun replaceRejectsAnExerciseAlreadyElsewhereInTheWorkout() {
+        val row = ExerciseEntity(id = 4L, name = "Row")
+        assertEquals(
+            ActiveWorkoutEditBlock.Duplicate,
+            activeWorkoutExerciseReplaceBlock(replaceWorkout(), "e1", row, false, false)
+        )
+        // Picking the exercise's own name is not a duplicate of itself.
+        assertEquals(
+            ActiveWorkoutEditBlock.Allowed,
+            activeWorkoutExerciseReplaceBlock(replaceWorkout(), "e1", ExerciseEntity(id = 2L, name = "Bench"), false, false)
+        )
+    }
+
+    @Test
+    fun replacementSetsFollowTheLastSessionSeed() {
+        val history = listOf(
+            historyEntry(1, 9L, 60.0, 8, 0),
+            historyEntry(2, 9L, 65.0, 6, 1),
+            historyEntry(3, 9L, 70.0, 4, 2)
+        )
+        val old = listOf(SetSeed(50.0, 8), SetSeed(50.0, 8))
+        assertEquals(
+            listOf(SetSeed(60.0, 8), SetSeed(65.0, 6), SetSeed(70.0, 4)),
+            activeWorkoutReplacementSets(old, history, 9L)
+        )
+    }
+
+    @Test
+    fun replacementSetsWithoutSeedKeepCountAndRepsWithLastWeightOrZero() {
+        val old = listOf(SetSeed(50.0, 8), SetSeed(52.5, 6), SetSeed(55.0, 5))
+        // No history for the new exercise at all: same count and reps, weight 0.
+        assertEquals(
+            listOf(SetSeed(0.0, 8), SetSeed(0.0, 6), SetSeed(0.0, 5)),
+            activeWorkoutReplacementSets(old, emptyList(), 9L)
+        )
+        // History exists but has no usable reps: no seed, last known weight is applied.
+        val weightOnly = listOf(historyEntry(1, 9L, 42.5, 0, 0))
+        assertEquals(
+            listOf(SetSeed(42.5, 8), SetSeed(42.5, 6), SetSeed(42.5, 5)),
+            activeWorkoutReplacementSets(old, weightOnly, 9L)
+        )
+    }
+
+    @Test
+    fun replaceOutcomeMessagesCoverTheRefusals() {
+        assertEquals(
+            R.string.replace_exercise_done,
+            activeWorkoutReplaceExerciseOutcomeMessage(
+                com.example.gymapp.data.repository.ReplaceActiveWorkoutExerciseResult.Replaced(4L)
+            )
+        )
+        assertEquals(
+            R.string.active_workout_exercise_already_added,
+            activeWorkoutReplaceExerciseOutcomeMessage(
+                com.example.gymapp.data.repository.ReplaceActiveWorkoutExerciseResult.AlreadyInWorkout
+            )
         )
     }
 

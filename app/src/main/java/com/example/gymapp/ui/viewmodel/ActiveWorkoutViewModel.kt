@@ -18,6 +18,7 @@ import com.example.gymapp.data.repository.WorkoutAdaptation
 import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.data.entity.ExerciseEntity
+import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.ActiveWorkoutSetUpdate
 import com.example.gymapp.data.repository.AddActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.AddActiveWorkoutSetResult
@@ -32,6 +33,8 @@ import com.example.gymapp.data.repository.RecordActiveWorkoutSetResult
 import com.example.gymapp.data.repository.RecordActiveWorkoutSetsResult
 import com.example.gymapp.data.repository.MoveActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.RemoveActiveWorkoutExerciseResult
+import com.example.gymapp.data.repository.ReplaceActiveWorkoutExerciseResult
+import com.example.gymapp.data.repository.WorkoutSetDraft
 import com.example.gymapp.data.repository.SaveActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.UndoActiveWorkoutSetResult
 import com.example.gymapp.data.repository.WorkoutDataLimits
@@ -56,6 +59,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -234,7 +238,11 @@ internal enum class ActiveWorkoutEditBlock {
     Missing,
     LastSet,
     LastExercise,
-    AtEdge
+    AtEdge,
+    /** Replace: some set of the exercise is already recorded. */
+    HasRecordedSets,
+    /** Replace: the picked exercise is already in the workout. */
+    Duplicate
 }
 
 /**
@@ -303,6 +311,62 @@ internal fun activeWorkoutExerciseRemovalBlock(
     }
     if (details.exercises.size <= 1) return ActiveWorkoutEditBlock.LastExercise
     return ActiveWorkoutEditBlock.Allowed
+}
+
+/** "Replace exercise" is offered only while no set of the exercise is recorded. */
+internal fun activeWorkoutExerciseCanBeReplaced(sets: List<ActiveWorkoutSetUiState>): Boolean =
+    sets.none(ActiveWorkoutSetUiState::isCompleted)
+
+/**
+ * Whether block [exerciseId] may be replaced by catalog exercise [newExercise] (null = unknown id):
+ * not in a live room, not while another edit runs, only while none of its sets is recorded, and
+ * never by an exercise already elsewhere in the workout (by name or catalog key). The exercise
+ * itself does not count as a duplicate.
+ */
+internal fun activeWorkoutExerciseReplaceBlock(
+    details: ActiveWorkoutDetails?,
+    exerciseId: String,
+    newExercise: ExerciseEntity?,
+    inLiveRoom: Boolean,
+    operationInProgress: Boolean
+): ActiveWorkoutEditBlock {
+    if (inLiveRoom) return ActiveWorkoutEditBlock.LiveRoom
+    if (operationInProgress) return ActiveWorkoutEditBlock.Busy
+    details ?: return ActiveWorkoutEditBlock.Missing
+    val target = details.exercises.firstOrNull { it.activeWorkoutExercise.id == exerciseId }
+        ?: return ActiveWorkoutEditBlock.Missing
+    newExercise ?: return ActiveWorkoutEditBlock.Missing
+    if (target.sets.any { it.completedAt != null }) return ActiveWorkoutEditBlock.HasRecordedSets
+    val name = newExercise.name.trim()
+    val key = BuiltInExerciseCatalog.inferKey(newExercise.name)
+    val duplicate = details.exercises.any { block ->
+        val present = block.activeWorkoutExercise
+        present.id != exerciseId && (present.exerciseName == name || (key != null && present.catalogKey == key))
+    }
+    return if (duplicate) ActiveWorkoutEditBlock.Duplicate else ActiveWorkoutEditBlock.Allowed
+}
+
+/**
+ * New pending sets for a replaced exercise: the plan-seed rule ([lastSessionSetSeed]) for the new
+ * exercise; without usable history the same number of sets as before with unchanged reps and the new
+ * exercise's last known weight (0 when never logged).
+ */
+internal fun activeWorkoutReplacementSets(
+    oldSets: List<SetSeed>,
+    history: List<ExerciseHistoryEntry>,
+    newExerciseId: Long
+): List<SetSeed> {
+    lastSessionSetSeed(history, newExerciseId)?.let { return it }
+    val weight = lastLoggedWeight(history, newExerciseId) ?: 0.0
+    return oldSets.map { SetSeed(weight = weight, reps = it.reps) }
+}
+
+internal fun activeWorkoutReplaceExerciseOutcomeMessage(result: ReplaceActiveWorkoutExerciseResult): Int = when (result) {
+    is ReplaceActiveWorkoutExerciseResult.Replaced -> R.string.replace_exercise_done
+    ReplaceActiveWorkoutExerciseResult.Missing -> R.string.active_workout_missing
+    ReplaceActiveWorkoutExerciseResult.LivePlanFrozen -> R.string.training_adaptation_live_blocked
+    ReplaceActiveWorkoutExerciseResult.AlreadyInWorkout -> R.string.active_workout_exercise_already_added
+    else -> R.string.active_workout_changed
 }
 
 /**
@@ -1658,6 +1722,56 @@ class ActiveWorkoutViewModel(
                 it.copy(
                     isRecordingAll = false,
                     message = message?.let { id -> LocalizedText(id) },
+                    messageSetId = null
+                )
+            }
+        }
+    }
+
+    /**
+     * Replaces the pending exercise [exerciseId] with catalog exercise [newExerciseId] in place (same
+     * block id and position). Offered only while none of its sets is recorded, so the undo target and
+     * the rest timer (always owned by a recorded set) are untouched. Refused in live rooms.
+     */
+    fun replaceExercise(exerciseId: String, newExerciseId: Long) {
+        val snapshot = details.value
+        val newExercise = addExerciseCatalog.value.exercises.firstOrNull { it.id == newExerciseId }
+        val block = activeWorkoutExerciseReplaceBlock(
+            details = snapshot,
+            exerciseId = exerciseId,
+            newExercise = newExercise,
+            inLiveRoom = isInLiveRoom(),
+            operationInProgress = activeWorkoutOperationInProgress()
+        )
+        if (block == ActiveWorkoutEditBlock.Busy) return
+        if (block != ActiveWorkoutEditBlock.Allowed) {
+            val message = when (block) {
+                ActiveWorkoutEditBlock.LiveRoom -> R.string.training_adaptation_live_blocked
+                ActiveWorkoutEditBlock.Duplicate -> R.string.active_workout_exercise_already_added
+                else -> R.string.active_workout_changed
+            }
+            operationState.update { it.copy(message = LocalizedText(message), messageSetId = null) }
+            return
+        }
+        val workout = checkNotNull(snapshot)
+        val revision = workout.activeWorkout.revision
+        val oldSets = workout.exercises.first { it.activeWorkoutExercise.id == exerciseId }.sets
+            .map { SetSeed(weight = it.weight, reps = it.reps) }
+        operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
+        viewModelScope.launch {
+            val result = runCatching {
+                val history = runCatching { allExerciseHistoryFlow.first() }.getOrDefault(emptyList())
+                val sets = activeWorkoutReplacementSets(oldSets, history, newExerciseId)
+                    .map { WorkoutSetDraft(weight = it.weight, reps = it.reps) }
+                repository.replaceActiveWorkoutExercise(exerciseId, newExerciseId, sets, revision)
+            }.getOrNull()
+            operationState.update {
+                it.copy(
+                    isRecordingAll = false,
+                    message = LocalizedText(
+                        if (result == null) R.string.active_workout_changed
+                        else activeWorkoutReplaceExerciseOutcomeMessage(result)
+                    ),
                     messageSetId = null
                 )
             }
