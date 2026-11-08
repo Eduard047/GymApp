@@ -100,6 +100,8 @@ data class PostWorkoutSummaryUiState(
     val personalRecords: List<PostWorkoutPrUiState> = emptyList(),
     /** Per-exercise comparison with the previous session; empty hides the card (see [buildExerciseVsLast]). */
     val exerciseComparisons: List<ExerciseVsLastUiState> = emptyList(),
+    /** Hero chip when this is the biggest workout by volume (see [biggestWorkoutBadge]), else null. */
+    val biggestWorkout: BiggestWorkoutBadge? = null,
     val feedback: WorkoutFeedback? = null,
     val completedMissions: List<CompletedMissionUiState> = emptyList(),
     val newBadges: List<NewBadgeUiState> = emptyList()
@@ -377,6 +379,15 @@ class PostWorkoutSummaryViewModel(
                 currentSessionDate = sessionDetails.session.date
             )
 
+            val biggestWorkout = biggestWorkoutBadge(
+                earlier = previousSessions.map { summary ->
+                    BiggestWorkoutSession(summary.session.id, summary.session.date, summary.totalVolume)
+                },
+                currentDate = sessionDetails.session.date,
+                currentVolume = volume,
+                zone = zoneId
+            )
+
             PostWorkoutSummaryUiState(
                 isLoading = false,
                 isSessionFound = true,
@@ -417,6 +428,7 @@ class PostWorkoutSummaryViewModel(
                 comebackBonusXp = afterSnapshot.comeback.bonusXp,
                 personalRecords = personalRecords,
                 exerciseComparisons = exerciseComparisons,
+                biggestWorkout = biggestWorkout,
                 feedback = experience.feedbackBySession[sessionId]
                     ?.takeIf { it.sessionStartedAtMillis == sessionDetails.session.date }
                     ?.feedback,

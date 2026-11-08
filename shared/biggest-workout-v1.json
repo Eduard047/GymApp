@@ -1,0 +1,473 @@
+{
+  "version": 1,
+  "description": "Post-workout summary hero chip: 'Biggest workout ever' / 'Biggest this month' (T180). Implemented by biggestWorkoutBadge on Android and GymBiggestWorkout.badge on iPhone; both must produce identical results.",
+  "rules": [
+    "1. Input is the set of workouts strictly earlier than the finished one (same date -> smaller id/stored order is earlier; the caller decides that) plus the finished workout. Each has a date (epoch ms) and a volume = sum of weight x reps over its sets (bodyweight 0 kg adds 0).",
+    "2. A finished workout with volume <= 0 never gets a chip (expected null).",
+    "3. 'ever': at least 3 earlier workouts AND the finished volume is strictly greater than the volume of every earlier workout.",
+    "4. 'month': otherwise, among earlier workouts whose date falls in the same calendar year+month as the finished workout in the given time zone (the device local zone in the app), at least 2 AND the finished volume is strictly greater than each of them. Workouts of other months or other years do not count and are not compared.",
+    "5. Never both: 'ever' wins when both hold. Otherwise null (no chip).",
+    "6. Volumes are compared with a 1e-9 tolerance: a difference of 1e-9 or less is a tie (not greater).",
+    "7. Display (identical on both platforms): ever -> en 'Biggest workout ever' / uk 'Найбільший обсяг за весь час' / ru 'Самый большой объём за всё время'; month -> en 'Biggest this month' / uk 'Найбільший обсяг цього місяця' / ru 'Самый большой объём в этом месяце'. A flat tonal capsule with a trophy icon on the hero card, shown after the level-up pill."
+  ],
+  "inputFields": {
+    "timeZone": "IANA zone id used for the calendar month",
+    "earlier": "workouts earlier than the finished one: id, date (epoch ms), volume",
+    "current": "the finished workout: date (epoch ms), volume"
+  },
+  "outputField": "expected: 'ever' | 'month' | null",
+  "cases": [
+    {
+      "id": "no-earlier",
+      "name": "No earlier workouts: no chip",
+      "timeZone": "UTC",
+      "earlier": [],
+      "current": {
+        "date": 1779271200000,
+        "volume": 5000
+      },
+      "expected": null
+    },
+    {
+      "id": "ever-three-earlier-different-months",
+      "name": "3 earlier workouts in other months, current beats all -> ever",
+      "timeZone": "UTC",
+      "earlier": [
+        {
+          "id": 1,
+          "date": 1768039200000,
+          "volume": 3000
+        },
+        {
+          "id": 2,
+          "date": 1770717600000,
+          "volume": 4000
+        },
+        {
+          "id": 3,
+          "date": 1773136800000,
+          "volume": 3500
+        }
+      ],
+      "current": {
+        "date": 1779271200000,
+        "volume": 5000
+      },
+      "expected": "ever"
+    },
+    {
+      "id": "ever-wins-over-month",
+      "name": "Biggest ever and also biggest of the month -> only ever",
+      "timeZone": "UTC",
+      "earlier": [
+        {
+          "id": 1,
+          "date": 1777716000000,
+          "volume": 3000
+        },
+        {
+          "id": 2,
+          "date": 1778320800000,
+          "volume": 4000
+        },
+        {
+          "id": 3,
+          "date": 1778580000000,
+          "volume": 3500
+        }
+      ],
+      "current": {
+        "date": 1779271200000,
+        "volume": 5000
+      },
+      "expected": "ever"
+    },
+    {
+      "id": "ever-needs-three-earlier",
+      "name": "Only 2 earlier in other months, even though current is biggest -> none",
+      "timeZone": "UTC",
+      "earlier": [
+        {
+          "id": 1,
+          "date": 1773136800000,
+          "volume": 3000
+        },
+        {
+          "id": 2,
+          "date": 1775815200000,
+          "volume": 4000
+        }
+      ],
+      "current": {
+        "date": 1779271200000,
+        "volume": 5000
+      },
+      "expected": null
+    },
+    {
+      "id": "month-two-earlier-same-month",
+      "name": "2 earlier workouts only, both this month, current beats both -> month",
+      "timeZone": "UTC",
+      "earlier": [
+        {
+          "id": 1,
+          "date": 1777716000000,
+          "volume": 3000
+        },
+        {
+          "id": 2,
+          "date": 1778320800000,
+          "volume": 4000
+        }
+      ],
+      "current": {
+        "date": 1779271200000,
+        "volume": 5000
+      },
+      "expected": "month"
+    },
+    {
+      "id": "month-one-earlier-only",
+      "name": "Only 1 earlier workout this month -> none",
+      "timeZone": "UTC",
+      "earlier": [
+        {
+          "id": 1,
+          "date": 1775124000000,
+          "volume": 9000
+        },
+        {
+          "id": 2,
+          "date": 1778320800000,
+          "volume": 4000
+        }
+      ],
+      "current": {
+        "date": 1779271200000,
+        "volume": 5000
+      },
+      "expected": null
+    },
+    {
+      "id": "month-beaten-by-older-month",
+      "name": "3 earlier, 2 this month beaten, but an older month is bigger -> month",
+      "timeZone": "UTC",
+      "earlier": [
+        {
+          "id": 1,
+          "date": 1770026400000,
+          "volume": 9000
+        },
+        {
+          "id": 2,
+          "date": 1777802400000,
+          "volume": 3000
+        },
+        {
+          "id": 3,
+          "date": 1778320800000,
+          "volume": 4000
+        }
+      ],
+      "current": {
+        "date": 1779271200000,
+        "volume": 5000
+      },
+      "expected": "month"
+    },
+    {
+      "id": "month-not-biggest-this-month",
+      "name": "Beats older months but not a workout earlier this month -> none",
+      "timeZone": "UTC",
+      "earlier": [
+        {
+          "id": 1,
+          "date": 1770026400000,
+          "volume": 1000
+        },
+        {
+          "id": 2,
+          "date": 1777802400000,
+          "volume": 6000
+        },
+        {
+          "id": 3,
+          "date": 1778320800000,
+          "volume": 4000
+        }
+      ],
+      "current": {
+        "date": 1779271200000,
+        "volume": 5000
+      },
+      "expected": null
+    },
+    {
+      "id": "tie-with-max-ever",
+      "name": "Equal to the biggest earlier workout is not strictly greater -> none",
+      "timeZone": "UTC",
+      "earlier": [
+        {
+          "id": 1,
+          "date": 1768039200000,
+          "volume": 5000
+        },
+        {
+          "id": 2,
+          "date": 1770717600000,
+          "volume": 4000
+        },
+        {
+          "id": 3,
+          "date": 1773136800000,
+          "volume": 3500
+        }
+      ],
+      "current": {
+        "date": 1779271200000,
+        "volume": 5000
+      },
+      "expected": null
+    },
+    {
+      "id": "tie-with-max-month",
+      "name": "Equal to a workout earlier this month is not strictly greater -> none",
+      "timeZone": "UTC",
+      "earlier": [
+        {
+          "id": 1,
+          "date": 1777802400000,
+          "volume": 5000
+        },
+        {
+          "id": 2,
+          "date": 1778320800000,
+          "volume": 4000
+        }
+      ],
+      "current": {
+        "date": 1779271200000,
+        "volume": 5000
+      },
+      "expected": null
+    },
+    {
+      "id": "zero-volume-never",
+      "name": "Zero-volume workout never gets a chip, even over zero-volume history",
+      "timeZone": "UTC",
+      "earlier": [
+        {
+          "id": 1,
+          "date": 1777716000000,
+          "volume": 0
+        },
+        {
+          "id": 2,
+          "date": 1778320800000,
+          "volume": 0
+        },
+        {
+          "id": 3,
+          "date": 1778580000000,
+          "volume": 0
+        }
+      ],
+      "current": {
+        "date": 1779271200000,
+        "volume": 0
+      },
+      "expected": null
+    },
+    {
+      "id": "bodyweight-history-positive-current",
+      "name": "Earlier bodyweight workouts have volume 0; a loaded workout beats them -> ever",
+      "timeZone": "UTC",
+      "earlier": [
+        {
+          "id": 1,
+          "date": 1772445600000,
+          "volume": 0
+        },
+        {
+          "id": 2,
+          "date": 1775728800000,
+          "volume": 0
+        },
+        {
+          "id": 3,
+          "date": 1775988000000,
+          "volume": 0
+        }
+      ],
+      "current": {
+        "date": 1779271200000,
+        "volume": 100
+      },
+      "expected": "ever"
+    },
+    {
+      "id": "same-month-other-year",
+      "name": "Same month number in an earlier year does not count as this month -> none",
+      "timeZone": "UTC",
+      "earlier": [
+        {
+          "id": 1,
+          "date": 1746180000000,
+          "volume": 3000
+        },
+        {
+          "id": 2,
+          "date": 1746784800000,
+          "volume": 4000
+        }
+      ],
+      "current": {
+        "date": 1779271200000,
+        "volume": 5000
+      },
+      "expected": null
+    },
+    {
+      "id": "ever-fractional-volume",
+      "name": "Fractional volumes compare exactly: 4000.5 beats 4000.25 -> ever",
+      "timeZone": "UTC",
+      "earlier": [
+        {
+          "id": 1,
+          "date": 1768039200000,
+          "volume": 4000.25
+        },
+        {
+          "id": 2,
+          "date": 1770717600000,
+          "volume": 1000
+        },
+        {
+          "id": 3,
+          "date": 1773136800000,
+          "volume": 2000
+        }
+      ],
+      "current": {
+        "date": 1779271200000,
+        "volume": 4000.5
+      },
+      "expected": "ever"
+    },
+    {
+      "id": "order-of-earlier-irrelevant",
+      "name": "Earlier list order does not matter",
+      "timeZone": "UTC",
+      "earlier": [
+        {
+          "id": 3,
+          "date": 1778580000000,
+          "volume": 3500
+        },
+        {
+          "id": 1,
+          "date": 1777716000000,
+          "volume": 3000
+        },
+        {
+          "id": 2,
+          "date": 1778320800000,
+          "volume": 4000
+        }
+      ],
+      "current": {
+        "date": 1779271200000,
+        "volume": 5000
+      },
+      "expected": "ever"
+    },
+    {
+      "id": "tz-kyiv-month-boundary-counts-as-april",
+      "name": "Two workouts at 22:30Z and 23:30Z on 31 Mar are 1 Apr in Kyiv (UTC+3): same month as the 2 Apr current -> month",
+      "timeZone": "Europe/Kyiv",
+      "earlier": [
+        {
+          "id": 1,
+          "date": 1774996200000,
+          "volume": 3000
+        },
+        {
+          "id": 2,
+          "date": 1774999800000,
+          "volume": 4000
+        }
+      ],
+      "current": {
+        "date": 1775124000000,
+        "volume": 5000
+      },
+      "expected": "month"
+    },
+    {
+      "id": "tz-utc-same-instants-different-month",
+      "name": "Same instants in UTC: the earlier ones are in March, so no earlier workout this month -> none",
+      "timeZone": "UTC",
+      "earlier": [
+        {
+          "id": 1,
+          "date": 1774996200000,
+          "volume": 3000
+        },
+        {
+          "id": 2,
+          "date": 1774999800000,
+          "volume": 4000
+        }
+      ],
+      "current": {
+        "date": 1775124000000,
+        "volume": 5000
+      },
+      "expected": null
+    },
+    {
+      "id": "tz-current-moves-to-next-month",
+      "name": "Current at 21:30Z on 30 Apr is 1 May in Kyiv (UTC+3); April workouts no longer count -> none",
+      "timeZone": "Europe/Kyiv",
+      "earlier": [
+        {
+          "id": 1,
+          "date": 1775815200000,
+          "volume": 3000
+        },
+        {
+          "id": 2,
+          "date": 1776679200000,
+          "volume": 4000
+        }
+      ],
+      "current": {
+        "date": 1777584600000,
+        "volume": 5000
+      },
+      "expected": null
+    },
+    {
+      "id": "tz-new-york-evening-previous-month",
+      "name": "Current 02:00Z on 1 Jun is 31 May 22:00 in New York: counts with May workouts -> month",
+      "timeZone": "America/New_York",
+      "earlier": [
+        {
+          "id": 1,
+          "date": 1778425200000,
+          "volume": 3000
+        },
+        {
+          "id": 2,
+          "date": 1779289200000,
+          "volume": 4000
+        }
+      ],
+      "current": {
+        "date": 1780279200000,
+        "volume": 5000
+      },
+      "expected": "month"
+    }
+  ]
+}

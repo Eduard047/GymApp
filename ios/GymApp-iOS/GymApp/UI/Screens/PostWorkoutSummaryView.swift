@@ -130,6 +130,31 @@ func postWorkoutPreviousHistory(
     }
 }
 
+/// The hero chip for the finished workout, or nil when it is not the biggest (shared/biggest-workout-v1.json).
+/// Earlier workouts use the same ordering as the rest of the summary (date, then stored id).
+func biggestWorkoutBadge(
+    summaries: [WorkoutSessionSummary],
+    workoutID: UUID,
+    calendar: Calendar
+) -> BiggestWorkoutBadge? {
+    guard let current = summaries.first(where: { $0.workoutID == workoutID }) else { return nil }
+    let earlier = summaries
+        .filter {
+            isPostWorkoutEarlier(
+                candidateDate: $0.date,
+                candidateID: $0.workoutID,
+                currentDate: current.date,
+                currentID: current.workoutID
+            )
+        }
+        .map { BiggestWorkoutSession(date: $0.date, volume: $0.totalVolume) }
+    return GymBiggestWorkout.badge(
+        earlier: earlier,
+        current: BiggestWorkoutSession(date: current.date, volume: current.totalVolume),
+        calendar: calendar
+    )
+}
+
 /// One resolved row of the "Compared with last time" card (title in the app language).
 struct SummaryVsLastRow: Identifiable, Equatable, Sendable {
     let id: String
@@ -152,6 +177,8 @@ struct PostWorkoutSummaryView: View {
     @State private var failedFeedback: WorkoutFeedback?
     /// Computed once per history revision off the main actor, not on every body pass.
     @State private var vsLastRows: [SummaryVsLastRow] = []
+    /// "Biggest workout" hero chip, computed with the vs-last rows off the main actor.
+    @State private var biggestBadge: BiggestWorkoutBadge?
 
     private let workoutID: UUID
     private let onOpenDetail: (UUID) -> Void
@@ -295,14 +322,19 @@ struct PostWorkoutSummaryView: View {
     private func refreshVsLast() async {
         guard let date = store.workout(id: workoutID)?.date else {
             vsLastRows = []
+            biggestBadge = nil
             return
         }
         let history = store.allExerciseHistory()
+        let summaries = store.workoutSummaries
+        let calendar = calendar
         let id = workoutID
-        let rows = await Task.detached(priority: .userInitiated) {
-            GymExerciseVsLast.rows(history: history, workoutID: id, currentDate: date)
+        let (rows, badge) = await Task.detached(priority: .userInitiated) {
+            let rows = GymExerciseVsLast.rows(history: history, workoutID: id, currentDate: date)
+            return (rows, biggestWorkoutBadge(summaries: summaries, workoutID: id, calendar: calendar))
         }.value
         guard !Task.isCancelled else { return }
+        biggestBadge = badge
         vsLastRows = rows.map { row in
             SummaryVsLastRow(
                 id: row.exerciseID,
@@ -465,9 +497,43 @@ struct PostWorkoutSummaryView: View {
                 if let levelUp {
                     levelUpPill(from: levelUp.from, to: levelUp.to)
                 }
+
+                if let biggestBadge {
+                    biggestWorkoutPill(biggestBadge)
+                }
             }
             .accessibilityElement(children: .combine)
         }
+    }
+
+    /// Flat tonal capsule with a trophy, matching Android's `biggest_workout_*` InfoPill.
+    private func biggestWorkoutPill(_ badge: BiggestWorkoutBadge) -> some View {
+        let title = switch badge {
+        case .ever:
+            gymText(
+                "Biggest workout ever", "Найбільший обсяг за весь час", "Самый большой объём за всё время",
+                languageCode: languageCode
+            )
+        case .month:
+            gymText(
+                "Biggest this month", "Найбільший обсяг цього місяця", "Самый большой объём в этом месяце",
+                languageCode: languageCode
+            )
+        }
+        return HStack(spacing: 6) {
+            Image(systemName: "trophy.fill")
+                .imageScale(.small)
+                .accessibilityHidden(true)
+            Text(title)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(GymTheme.heroAccentText)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7)
+        .background(Capsule().fill(GymTheme.heroAccentText.opacity(0.12)))
+        .overlay { Capsule().strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
+        .accessibilityElement(children: .combine)
     }
 
     /// Flat tonal capsule on the hero, matching Android's `post_workout_level_up` InfoPill.

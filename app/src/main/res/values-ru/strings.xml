@@ -1333,6 +1333,8 @@
     <string name="post_workout_xp_gain">+%1$d XP</string>
     <string name="post_workout_level">Уровень %1$d</string>
     <string name="post_workout_level_up">Новый уровень! %1$d → %2$d</string>
+    <string name="biggest_workout_ever">Самый большой объём за всё время</string>
+    <string name="biggest_workout_month">Самый большой объём в этом месяце</string>
     <string name="post_workout_metric_exercises">Упражнения</string>
     <string name="post_workout_metrics_title">Показатели тренировки</string>
     <string name="post_workout_metric_top_muscle">Главная мышца</string>

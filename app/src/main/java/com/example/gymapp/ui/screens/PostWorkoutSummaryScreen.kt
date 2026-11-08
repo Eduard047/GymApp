@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Verified
 import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -71,6 +72,7 @@ import com.example.gymapp.ui.components.brandFillColor
 import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.util.localizedMuscleName
+import com.example.gymapp.ui.viewmodel.BiggestWorkoutBadge
 import com.example.gymapp.ui.viewmodel.CompletedMissionUiState
 import com.example.gymapp.ui.viewmodel.ExerciseVsLastUiState
 import com.example.gymapp.ui.viewmodel.VsLastBasis
@@ -645,6 +647,19 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                         uiState.previousLevel,
                         uiState.currentLevel
                     ),
+                    onHero = true
+                )
+            }
+
+            uiState.biggestWorkout?.let { badge ->
+                InfoPill(
+                    text = stringResource(
+                        when (badge) {
+                            BiggestWorkoutBadge.Ever -> R.string.biggest_workout_ever
+                            BiggestWorkoutBadge.Month -> R.string.biggest_workout_month
+                        }
+                    ),
+                    leadingIcon = Icons.Default.EmojiEvents,
                     onHero = true
                 )
             }
