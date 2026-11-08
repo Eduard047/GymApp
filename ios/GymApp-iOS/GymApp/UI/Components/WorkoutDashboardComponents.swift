@@ -337,8 +337,8 @@ struct GymMonthNavigator: View {
                 // the month so neither has to truncate.
                 GymAdaptiveStack(rowAlignment: .center, columnAlignment: .center, spacing: 5, columnSpacing: 2) {
                     Text(month.formatted(.dateTime.month(.wide).year().locale(locale)))
-                        .font(.caption)
-                        .foregroundStyle(GymTheme.textSecondary)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GymTheme.textPrimary)
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                         .minimumScaleFactor(0.8)
                         .multilineTextAlignment(.center)
@@ -1285,14 +1285,11 @@ struct WorkoutRecommendationsCard: View {
                         GymInfoPill(recommendation.priority)
                     }
                     .padding(11)
+                    // Flat tonal row: no hairline around a row that already sits on a panel.
                     .background(
-                        GymTheme.surface.opacity(0.52),
+                        GymTheme.surfaceVariant.opacity(0.5),
                         in: RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius)
                     )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius)
-                            .strokeBorder(GymTheme.outline.opacity(0.32), lineWidth: 1)
-                    }
                     .accessibilityElement(children: .combine)
                 }
             }

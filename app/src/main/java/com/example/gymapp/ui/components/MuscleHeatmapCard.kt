@@ -51,6 +51,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
@@ -71,6 +72,9 @@ import java.util.Locale
 import kotlin.math.min
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
+
+/** Legend swatches share the 4dp rounding of the iOS `HeatStepSwatch`, so they read as the squares they explain. */
+internal val HeatLegendShape = RoundedCornerShape(4.dp)
 
 @Composable
 fun MuscleHeatmapCard(
@@ -518,11 +522,11 @@ private fun MuscleLegend() {
             Box(
                 modifier = Modifier
                     .size(14.dp)
-                    .clip(MaterialTheme.shapes.extraSmall)
+                    .clip(HeatLegendShape)
                     .background(HeatStepColors.fill(step))
                     .then(
                         if (step == 0) {
-                            Modifier.border(1.dp, emptyOutline, MaterialTheme.shapes.extraSmall)
+                            Modifier.border(1.dp, emptyOutline, HeatLegendShape)
                         } else {
                             Modifier
                         }

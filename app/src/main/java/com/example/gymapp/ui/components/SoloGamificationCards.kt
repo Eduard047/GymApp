@@ -478,14 +478,14 @@ fun ActivityHeatmapCard(
                     Box(
                         modifier = Modifier
                             .size(14.dp)
-                            .clip(MaterialTheme.shapes.extraSmall)
+                            .clip(HeatLegendShape)
                             .background(HeatStepColors.fill(step))
                             .then(
                                 if (step == 0) {
                                     Modifier.border(
                                         1.dp,
                                         HeatStepColors.emptyOutline(),
-                                        MaterialTheme.shapes.extraSmall
+                                        HeatLegendShape
                                     )
                                 } else {
                                     Modifier

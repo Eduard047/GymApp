@@ -450,12 +450,9 @@ internal fun RecommendationsCard(
             recommendations.forEach { recommendation ->
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
-                    shape = MaterialTheme.shapes.small,
-                    border = BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
-                    )
+                    // Flat tonal row: no hairline around a row that already sits on a panel.
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = MaterialTheme.shapes.small
                 ) {
                     Row(
                         modifier = Modifier.padding(10.dp),

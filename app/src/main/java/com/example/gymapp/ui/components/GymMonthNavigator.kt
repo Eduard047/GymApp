@@ -67,8 +67,9 @@ fun GymMonthNavigator(
             Text(
                 text = monthLabel,
                 modifier = Modifier.clearAndSetSemantics { },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
