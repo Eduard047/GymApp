@@ -157,11 +157,16 @@ struct ActiveWorkoutView: View {
     /// The exercise whose device-local cue is being edited (see `ExerciseCueStore`).
     @State private var cueEditTarget: ExerciseCueEditTarget?
     /// The account's cues, read once on appear and on account change, and again after a save.
-    @State private var exerciseCues: [String: String] = [:]
+    @State private var loadedCues = AccountScopedMap<String>.empty
     /// The exercise whose custom rest is being edited, and the account's custom rests (read like the cues).
     @State private var restEditTarget: ExerciseRestEditTarget?
-    @State private var exerciseRestTimes: [String: Int] = [:]
+    @State private var loadedRestTimes = AccountScopedMap<Int>.empty
     private let restTimers: RestTimerManager
+
+    /// The loaded maps hold only the current account's entries; after an account switch they read as empty
+    /// until `.task(id: accountStorageKey)` reloads them.
+    private var exerciseCues: [String: String] { loadedCues.entries(forOwner: workoutStore.accountStorageKey) }
+    private var exerciseRestTimes: [String: Int] { loadedRestTimes.entries(forOwner: workoutStore.accountStorageKey) }
 
     private let draftID: UUID
     /// Friends' latest results keyed by `FriendGhosts.exerciseKey`; a plain value
@@ -661,7 +666,7 @@ struct ActiveWorkoutView: View {
                         identityKey: target.identityKey
                     )
                     if result != .tooMany {
-                        exerciseCues = ExerciseCueStore().cues(accountStorageKey: workoutStore.accountStorageKey)
+                        applyCueSave(result, identityKey: target.identityKey)
                         cueEditTarget = nil
                     }
                     return result
@@ -679,7 +684,7 @@ struct ActiveWorkoutView: View {
                         identityKey: target.identityKey
                     )
                     if result != .tooMany {
-                        exerciseRestTimes = ExerciseRestTimeStore().restTimes(accountStorageKey: workoutStore.accountStorageKey)
+                        applyRestSave(result, identityKey: target.identityKey)
                         restEditTarget = nil
                     }
                     return result
@@ -739,8 +744,8 @@ struct ActiveWorkoutView: View {
             Text(finishConfirmationMessage)
         }
         .task(id: workoutStore.accountStorageKey) {
-            exerciseCues = ExerciseCueStore().cues(accountStorageKey: workoutStore.accountStorageKey)
-            exerciseRestTimes = ExerciseRestTimeStore().restTimes(accountStorageKey: workoutStore.accountStorageKey)
+            reloadCues()
+            reloadRestTimes()
         }
         .onAppear {
             liveParticipantSelection = .current
@@ -965,7 +970,7 @@ struct ActiveWorkoutView: View {
     /// (bodyweight sets add 0), so the hero shows no empty "0 kg" line.
     private func heroVolumeLine(_ draft: ActiveWorkoutDraft) -> String? {
         let volume = draft.completedVolume
-        guard volume >= 0.5 else { return nil }
+        guard volume >= 1.0 else { return nil }
         let text = gymHeroVolumeText(volume, languageCode: gymCurrentLanguageCode())
         return gymText(
             "Volume: \(text)",
@@ -3549,6 +3554,59 @@ struct ActiveWorkoutView: View {
             }
         } catch {
             show(error)
+        }
+    }
+
+    private func reloadCues() {
+        let owner = workoutStore.accountStorageKey
+        loadedCues = AccountScopedMap(ownerKey: owner, entries: ExerciseCueStore().cues(accountStorageKey: owner))
+    }
+
+    private func reloadRestTimes() {
+        let owner = workoutStore.accountStorageKey
+        loadedRestTimes = AccountScopedMap(ownerKey: owner, entries: ExerciseRestTimeStore().restTimes(accountStorageKey: owner))
+    }
+
+    /// Mirrors a cue save into the in-memory map instead of re-reading every cue from UserDefaults.
+    private func applyCueSave(_ result: ExerciseCueSaveResult, identityKey: String) {
+        let owner = workoutStore.accountStorageKey
+        switch result {
+        case .stored(let cue):
+            if let next = loadedCues.applying(key: identityKey, value: cue, forOwner: owner) {
+                loadedCues = next
+            } else {
+                reloadCues()
+            }
+        case .removed:
+            if let next = loadedCues.applying(key: identityKey, value: nil, forOwner: owner) {
+                loadedCues = next
+            } else {
+                reloadCues()
+            }
+        case .failed, .tooMany:
+            reloadCues()
+        }
+    }
+
+    /// Mirrors a custom-rest save into the in-memory map and drops the Live Activity cache.
+    private func applyRestSave(_ result: ExerciseRestSaveResult, identityKey: String) {
+        ExerciseRestTimesCache.shared.invalidate()
+        let owner = workoutStore.accountStorageKey
+        switch result {
+        case .stored(let seconds):
+            if let next = loadedRestTimes.applying(key: identityKey, value: seconds, forOwner: owner) {
+                loadedRestTimes = next
+            } else {
+                reloadRestTimes()
+            }
+        case .removed:
+            if let next = loadedRestTimes.applying(key: identityKey, value: nil, forOwner: owner) {
+                loadedRestTimes = next
+            } else {
+                reloadRestTimes()
+            }
+        case .failed, .tooMany:
+            reloadRestTimes()
         }
     }
 

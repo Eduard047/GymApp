@@ -329,7 +329,7 @@ final class WorkoutLiveActivityController: ObservableObject {
         // The exercise's own device-local rest wins, like on the workout screen.
         let restIdentityKey = FriendGhosts.exerciseKey(catalogKey: restCatalogKey, name: restExerciseName)
         let restSeconds = ExerciseRestTime.effectiveSeconds(
-            stored: ExerciseRestTimeStore().restSeconds(
+            stored: ExerciseRestTimesCache.shared.restSeconds(
                 accountStorageKey: workoutStore.accountStorageKey,
                 identityKey: restIdentityKey
             ),

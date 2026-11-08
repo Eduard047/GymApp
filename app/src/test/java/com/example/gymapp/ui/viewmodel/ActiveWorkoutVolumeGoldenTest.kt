@@ -41,7 +41,7 @@ class ActiveWorkoutVolumeGoldenTest {
             if (Math.abs(volume - case.getDouble("volume")) > 1e-9) {
                 mismatches += "$id volume: expected ${case.getDouble("volume")} but was $volume"
             }
-            if ((volume >= 0.5) != case.getBoolean("visible")) {
+            if ((volume >= 1.0) != case.getBoolean("visible")) {
                 mismatches += "$id visible: expected ${case.getBoolean("visible")} for $volume"
             }
             for (languageIndex in 0 until languages.length()) {

@@ -28,7 +28,7 @@ final class ActiveWorkoutVolumeGoldenTests: XCTestCase {
                 exercises: [ActiveWorkoutExercise(exerciseID: UUID(), sets: sets)]
             )
             XCTAssertEqual(draft.completedVolume, expectedVolume, accuracy: 1e-9, "\(id) volume")
-            XCTAssertEqual(draft.completedVolume >= 0.5, visible, "\(id) visible")
+            XCTAssertEqual(draft.completedVolume >= 1.0, visible, "\(id) visible")
             for language in languages {
                 let expectedText = try XCTUnwrap(text[language])
                 let unit = gymLocalized("kg", languageCode: language)

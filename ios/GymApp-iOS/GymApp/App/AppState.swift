@@ -2682,6 +2682,7 @@ final class AppState: ObservableObject {
         AppTutorialStore(defaults: defaults).clear(accountStorageKey: storageKey)
         ExerciseCueStore(defaults: defaults).clear(accountStorageKey: storageKey)
         ExerciseRestTimeStore(defaults: defaults).clear(accountStorageKey: storageKey)
+        ExerciseRestTimesCache.shared.invalidate()
         defaults.removeObject(forKey: Self.hiddenLeaderboardProfilesKey)
         defaults.removeObject(
             forKey: leaderboardHiddenProfilesDefaultsKey(for: storageKey)
@@ -3603,6 +3604,7 @@ final class AppState: ObservableObject {
         AppTutorialStore(defaults: defaults).clear(accountStorageKey: storageKey)
         ExerciseCueStore(defaults: defaults).clear(accountStorageKey: storageKey)
         ExerciseRestTimeStore(defaults: defaults).clear(accountStorageKey: storageKey)
+        ExerciseRestTimesCache.shared.invalidate()
         defaults.removeObject(forKey: hiddenLeaderboardProfilesKey)
         defaults.removeObject(
             forKey: leaderboardHiddenProfilesDefaultsKey(for: storageKey)

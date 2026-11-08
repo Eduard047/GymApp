@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Running session volume shown in the active-workout hero, run by Android ActiveWorkoutVolumeGoldenTest and iOS ActiveWorkoutVolumeGoldenTests. volume is the sum of weight x reps over completed sets only (Android activeWorkoutCompletedVolume, iOS ActiveWorkoutDraft.completedVolume); weight 0 sets contribute 0. text is the whole-kilogram number with locale grouping and no unit, like the post-workout summary (Android formatSessionVolume, iOS gymHeroVolumeText without the unit). visible is false while the volume rounds to 0, then the hero hides the item. Languages are en, uk and ru.",
+  "description": "Running session volume shown in the active-workout hero, run by Android ActiveWorkoutVolumeGoldenTest and iOS ActiveWorkoutVolumeGoldenTests. volume is the sum of weight x reps over completed sets only (Android activeWorkoutCompletedVolume, iOS ActiveWorkoutDraft.completedVolume); weight 0 sets contribute 0. text is the whole-kilogram number with locale grouping and no unit, like the post-workout summary (Android formatSessionVolume, iOS gymHeroVolumeText without the unit). visible is true from 1 kg up (volume >= 1.0) and false below it, where the whole-kilogram text would round to 0, then the hero hides the item. Languages are en, uk and ru.",
   "languages": [
     "en",
     "uk",
@@ -187,6 +187,42 @@
         "en": "62",
         "uk": "62",
         "ru": "62"
+      },
+      "visible": true
+    },
+    {
+      "id": "half-kilogram-hidden",
+      "description": "0.5 kg total would show as 0 kg, so the item stays hidden (visible needs at least 1 kg)",
+      "sets": [
+        {
+          "weight": 0.5,
+          "reps": 1,
+          "completed": true
+        }
+      ],
+      "volume": 0.5,
+      "text": {
+        "en": "0",
+        "uk": "0",
+        "ru": "0"
+      },
+      "visible": false
+    },
+    {
+      "id": "one-kilogram-shown",
+      "description": "Exactly 1 kg is the smallest volume the hero shows",
+      "sets": [
+        {
+          "weight": 0.5,
+          "reps": 2,
+          "completed": true
+        }
+      ],
+      "volume": 1,
+      "text": {
+        "en": "1",
+        "uk": "1",
+        "ru": "1"
       },
       "visible": true
     }

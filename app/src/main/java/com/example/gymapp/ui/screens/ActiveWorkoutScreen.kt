@@ -1130,7 +1130,7 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
     )
     // Hidden until a weighted set is logged; the same whole-kg format as the post-workout summary.
     val volumeText = uiState.completedVolume
-        .takeIf { it.isFinite() && it >= 0.5 }
+        .takeIf { it.isFinite() && it >= 1.0 }
         ?.let { formattedStringResource(R.string.stats_volume, formatSessionVolume(it, locale)) }
     val baseSummary = if (currentExerciseName != null) {
         formattedStringResource(R.string.active_workout_hero_summary_now, elapsed, setsDone, currentExerciseName)
