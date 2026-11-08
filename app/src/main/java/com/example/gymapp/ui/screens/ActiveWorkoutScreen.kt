@@ -768,6 +768,7 @@ fun ActiveWorkoutScreen(
                         selectedExerciseId = null,
                         exercises = addExerciseCatalog.exercises,
                         frequentExerciseIds = addExerciseCatalog.frequentExerciseIds,
+                        recentExerciseIds = addExerciseCatalog.recentExerciseIds,
                         exerciseWorkoutCounts = addExerciseCatalog.exerciseWorkoutCounts,
                         exerciseMuscleIds = addExerciseCatalog.exerciseMuscleIds,
                         exerciseMediaOwnerKey = exerciseMediaOwnerKey,

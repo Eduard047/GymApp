@@ -692,6 +692,10 @@ struct ActiveWorkoutView: View {
                 latestSessionDates: ExercisePickerFrequent.latestSessionDates(
                     from: workoutStore.allExerciseHistory()
                 ),
+                recentExerciseIDs: GymRecentExercises.ids(
+                    workouts: workoutStore.workouts,
+                    pickerIDs: Set(addableExercises.map(\.id))
+                ),
                 onSelect: addExercise,
                 onCreate: { name in try workoutStore.addExercise(name: name) }
             )
