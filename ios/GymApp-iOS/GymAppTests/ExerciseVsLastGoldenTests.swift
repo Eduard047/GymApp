@@ -6,7 +6,7 @@ import XCTest
 final class ExerciseVsLastGoldenTests: XCTestCase {
     func testSharedGoldenCasesMatchAndroid() throws {
         let cases = try XCTUnwrap(contract()["cases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 18)
+        XCTAssertEqual(cases.count, 20)
 
         for item in cases {
             let id = try XCTUnwrap(item["id"] as? String)

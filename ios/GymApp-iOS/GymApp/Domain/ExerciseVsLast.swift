@@ -46,6 +46,8 @@ enum GymExerciseVsLast {
     /// Rows shown in the "Compared with last time" card, like Android.
     static let maxExercises = 8
     private static let epsilon = 1e-9
+    /// A volume delta smaller than this (kg) counts as "same" (shared rule 5), so the UI never shows "+0 kg".
+    private static let volumeSameThreshold = 0.05
 
     private struct FirstBlock {
         let blockOrderIndex: Int
@@ -124,7 +126,9 @@ enum GymExerciseVsLast {
             let delta = repsBasis
                 ? Double(entry.current.reps - previous.reps)
                 : entry.current.volume - previous.volume
-            let status: VsLastStatus = abs(delta) <= epsilon ? .same : (delta > 0 ? .up : .down)
+            let sameLimit = repsBasis ? epsilon : volumeSameThreshold - epsilon
+            let isSame = abs(delta) < sameLimit || abs(delta) <= epsilon
+            let status: VsLastStatus = isSame ? .same : (delta > 0 ? .up : .down)
             return ExerciseVsLast(
                 exerciseID: entry.id,
                 status: status,

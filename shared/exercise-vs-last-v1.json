@@ -7,7 +7,7 @@
     "2. Previous session of an exercise = among history rows of that exercise that are earlier than the finished session (date smaller; same date -> smaller sessionId), the session with the greatest date, tie -> the greatest sessionId. Sessions without the exercise are skipped; older sessions are never used once that session is found. The finished session and anything later never count.",
     "3. Only the FIRST block of the exercise counts (lowest blockOrderIndex), in the finished workout and in the previous session. Blocks are NOT concatenated (same as plan seed rule 3). Set order is irrelevant.",
     "4. Best set = highest weight, tie -> more reps. Volume = sum of weight x reps. Total reps = sum of reps. All over the first block's remaining sets.",
-    "5. Status: 'new' = no previous session (basis null, delta null, previousBest null). Otherwise if BOTH volumes are 0 (bodyweight only) basis = 'reps' and delta = totalReps(current) - totalReps(previous); else basis = 'volume' and delta = volume(current) - volume(previous). status = 'same' if |delta| <= 1e-9 (reported delta 0), 'up' if delta > 0, 'down' if delta < 0.",
+    "5. Status: 'new' = no previous session (basis null, delta null, previousBest null). Otherwise if BOTH volumes are 0 (bodyweight only) basis = 'reps' and delta = totalReps(current) - totalReps(previous); else basis = 'volume' and delta = volume(current) - volume(previous). status = 'same' if |delta| <= 1e-9 (reported delta 0) or, on the volume basis, |delta| < 0.05 kg (reported delta 0, so the UI never shows '+0 kg'; compare with a 1e-9 tolerance so a delta of exactly 0.05 is 'up'); otherwise 'up' if delta > 0, 'down' if delta < 0. The reps basis is unchanged (integers).",
     "6. Row order = workout order: ascending blockOrderIndex of the exercise's first block (tie -> smaller exerciseId). An exercise without any set with reps > 0 is not listed.",
     "7. At most 8 rows (the first 8 in workout order). If every one of the shown rows is 'new' (or there are none) the card is hidden, expected = []. Hiding is decided AFTER the cap.",
     "8. Display (not covered by cases, identical on both platforms): title en 'Compared with last time' / uk 'Порівняно з минулим разом' / ru 'По сравнению с прошлым разом'. Status words en New/Up/Down/Same, uk Нове/Більше/Менше/Так само, ru Новое/Больше/Меньше/Так же. Up and down use the app's positive / negative semantic colors AND an up / down arrow with an accessibility description; new and same use the neutral muted color and no arrow.",
@@ -1313,6 +1313,94 @@
         }
       ],
       "expected": []
+    },
+    {
+      "id": "volume-delta-under-005-is-same",
+      "name": "Volume 20 -> 20.04: delta 0.04 < 0.05 kg counts as same, delta 0",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 20,
+          "reps": 1
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 20.04,
+          "reps": 1
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 1,
+          "status": "same",
+          "basis": "volume",
+          "delta": 0,
+          "best": {
+            "weight": 20.04,
+            "reps": 1
+          },
+          "previousBest": {
+            "weight": 20,
+            "reps": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "volume-delta-005-is-up",
+      "name": "Volume 20 -> 20.05: delta 0.05 is up (within 1e-9)",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 20,
+          "reps": 1
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 20.05,
+          "reps": 1
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 1,
+          "status": "up",
+          "basis": "volume",
+          "delta": 0.05,
+          "best": {
+            "weight": 20.05,
+            "reps": 1
+          },
+          "previousBest": {
+            "weight": 20,
+            "reps": 1
+          }
+        }
+      ]
     }
   ]
 }

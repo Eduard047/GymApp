@@ -38,6 +38,9 @@ internal const val VS_LAST_MAX_EXERCISES = 8
 
 private const val VS_LAST_EPSILON = 1e-9
 
+/** A volume delta smaller than this (kg) counts as "same" (shared rule 5), so the UI never shows "+0 kg". */
+private const val VS_LAST_VOLUME_SAME_THRESHOLD = 0.05
+
 private data class FirstBlockSummary(
     val exerciseName: String,
     val blockOrderIndex: Int,
@@ -123,8 +126,9 @@ internal fun buildExerciseVsLast(
                 } else {
                     current.volume - previous.volume
                 }
+                val sameLimit = if (repsBasis) VS_LAST_EPSILON else VS_LAST_VOLUME_SAME_THRESHOLD - VS_LAST_EPSILON
                 val status = when {
-                    kotlin.math.abs(delta) <= VS_LAST_EPSILON -> VsLastStatus.Same
+                    kotlin.math.abs(delta) < sameLimit || kotlin.math.abs(delta) <= VS_LAST_EPSILON -> VsLastStatus.Same
                     delta > 0.0 -> VsLastStatus.Up
                     else -> VsLastStatus.Down
                 }
