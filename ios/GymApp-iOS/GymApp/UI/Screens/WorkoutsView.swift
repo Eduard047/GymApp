@@ -496,6 +496,7 @@ public struct WorkoutsView: View {
 
     private let onStartPlan: (WorkoutLaunchSeed) -> Bool
     private let onAddWorkout: (WorkoutLaunchSeed?) -> Bool
+    private let onRepeatLastWorkout: () -> Void
     private let hasRetainedWorkoutDraft: Bool
     /// Exercise/set counts of the saved plan draft, so the Today card shows the
     /// edited plan instead of the generated one it started from.
@@ -529,6 +530,7 @@ public struct WorkoutsView: View {
         hasBlockingLiveWorkout: Bool = false,
         onStartPlan: @escaping (WorkoutLaunchSeed) -> Bool,
         onAddWorkout: @escaping (WorkoutLaunchSeed?) -> Bool,
+        onRepeatLastWorkout: @escaping () -> Void = {},
         onContinueWorkout: @escaping () -> Void = {},
         onDiscardWorkout: @escaping () -> Void = {},
         onCancelPlan: @escaping () -> Void = {},
@@ -552,6 +554,7 @@ public struct WorkoutsView: View {
         self.hasBlockingLiveWorkout = hasBlockingLiveWorkout
         self.onStartPlan = onStartPlan
         self.onAddWorkout = onAddWorkout
+        self.onRepeatLastWorkout = onRepeatLastWorkout
         self.onContinueWorkout = onContinueWorkout
         self.onDiscardWorkout = onDiscardWorkout
         self.onCancelPlan = onCancelPlan
@@ -1154,6 +1157,8 @@ public struct WorkoutsView: View {
                 )
                 focusActionButtons(launchSeed: launchSeed, guidance: guidance)
             }
+
+            repeatLastWorkoutAction
 
             trainWithFriendPill()
         }
@@ -2445,6 +2450,37 @@ public struct WorkoutsView: View {
                     isEnabled: tracksTutorialPrimaryActionFrame,
                     onTutorialPrimaryActionFrameChange
                 )
+            }
+        }
+    }
+
+    /// One-tap start of a repeat of the last workout (Android parity). Secondary style, below the
+    /// primary and plan rows; hidden with no repeatable workout, an active workout or a kept draft.
+    @ViewBuilder
+    private var repeatLastWorkoutAction: some View {
+        if RepeatLastWorkout.shouldShowAction(
+            hasRepeatableWorkout: store.workoutSummaries.contains { $0.setCount > 0 },
+            hasActiveWorkout: activeWorkoutDraft != nil,
+            hasRetainedWorkoutDraft: hasRetainedWorkoutDraft
+        ) {
+            focusActionButton(
+                title: gymText(
+                    "Repeat last workout",
+                    "Повторити останнє тренування",
+                    "Повторить последнюю тренировку",
+                    languageCode: languageCode
+                ),
+                systemImage: "arrow.counterclockwise",
+                primary: false,
+                accessibilityHint: gymText(
+                    "Starts a copy of your latest workout now",
+                    "Одразу починає копію останнього тренування",
+                    "Сразу начинает копию последней тренировки",
+                    languageCode: languageCode
+                )
+            ) {
+                referenceDate = Date()
+                onRepeatLastWorkout()
             }
         }
     }

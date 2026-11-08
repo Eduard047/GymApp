@@ -509,6 +509,8 @@ private struct MainTabShell: View {
     @State private var workoutLaunchSeed: WorkoutLaunchSeed?
     @State private var workoutLaunchConsumerID: UUID?
     @State private var workoutLaunchDrafts: [WorkoutEditorExerciseDraft]?
+    /// Opens the plan editor with the latest workout repeated (Today "Repeat last workout" fallback).
+    @State private var repeatsLatestWorkoutInEditor = false
     @State private var workoutEditorDraft: WorkoutPlanEditorDraftState?
     @State private var workoutEditorLiveRecipient: SocialFriendSummary?
     @State private var profileNavigationID = UUID()
@@ -639,6 +641,7 @@ private struct MainTabShell: View {
                     launchSeed: workoutLaunchSeed,
                     launchSeedConsumerID: workoutLaunchConsumerID,
                     launchSeedDrafts: workoutLaunchDrafts,
+                    repeatsLatestWorkout: repeatsLatestWorkoutInEditor,
                     restoredDraft: workoutEditorDraft,
                     liveInviteRecipient: workoutEditorLiveRecipient,
                     onStarted: { _ in
@@ -1018,6 +1021,7 @@ private struct MainTabShell: View {
                 workoutLaunchSeed = nil
                 workoutLaunchConsumerID = nil
                 workoutLaunchDrafts = nil
+                repeatsLatestWorkoutInEditor = false
                 workoutEditorLiveRecipient = nil
                 presentSharedWorkoutPreviewIfPossible()
                 scheduleAutomaticTutorial()
@@ -1917,6 +1921,7 @@ private struct MainTabShell: View {
                         return true
                     }
                 },
+                onRepeatLastWorkout: startRepeatLastWorkout,
                 onContinueWorkout: {
                     showsAddWorkout = false
                     showsActiveWorkout = true
@@ -2063,6 +2068,55 @@ private struct MainTabShell: View {
     /// Reused by both the "С другом" hero pill (while a solo workout is
     /// active) and `openDirectLiveWorkoutEditor`'s own guard, so the message
     /// stays identical across both entry points.
+    /// Today "Repeat last workout": a kept editor draft reopens that editor, an active workout opens
+    /// as is, and anything that cannot start directly falls back to the editor with the repeat
+    /// applied, where the usual validation shows what needs fixing.
+    private func startRepeatLastWorkout() {
+        guard !showsAddWorkout, !showsActiveWorkout else { return }
+        if activeWorkoutStore.draft != nil {
+            showsActiveWorkout = true
+            return
+        }
+        if workoutEditorDraft?.belongs(to: store.accountStorageKey) == true
+            || workoutEditorLiveRecipient != nil {
+            sharedWorkoutDraftSeed = []
+            workoutLaunchSeed = nil
+            workoutLaunchConsumerID = nil
+            workoutLaunchDrafts = nil
+            repeatsLatestWorkoutInEditor = false
+            showsAddWorkout = true
+            return
+        }
+        switch RepeatLastWorkout.start(workoutStore: store, activeWorkoutStore: activeWorkoutStore) {
+        case .started:
+            workoutEditorDraft = nil
+            workoutEditorLiveRecipient = nil
+            sharedWorkoutDraftSeed = []
+            workoutLaunchSeed = nil
+            workoutLaunchConsumerID = nil
+            workoutLaunchDrafts = nil
+            repeatsLatestWorkoutInEditor = false
+            showsAddWorkout = false
+            showsActiveWorkout = true
+        case .alreadyActive:
+            // A live-room reservation can own the slot without a local draft; there is no
+            // active workout to open then, so show the existing live-workout block message.
+            if activeWorkoutStore.draft != nil {
+                showsActiveWorkout = true
+            } else {
+                showLiveWorkoutBlockedMessage()
+            }
+        case .unavailable:
+            sharedWorkoutDraftSeed = []
+            workoutLaunchSeed = nil
+            workoutLaunchConsumerID = nil
+            workoutLaunchDrafts = nil
+            workoutEditorLiveRecipient = nil
+            repeatsLatestWorkoutInEditor = true
+            showsAddWorkout = true
+        }
+    }
+
     private func showLiveWorkoutBlockedMessage() {
         appState.show(
             message: gymText(

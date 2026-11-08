@@ -230,6 +230,7 @@ struct AddWorkoutView: View {
         launchSeed: WorkoutLaunchSeed? = nil,
         launchSeedConsumerID: UUID? = nil,
         launchSeedDrafts: [WorkoutEditorExerciseDraft]? = nil,
+        repeatsLatestWorkout: Bool = false,
         restoredDraft: WorkoutPlanEditorDraftState? = nil,
         liveInviteRecipient: SocialFriendSummary? = nil,
         voiceTranscriptionService: (any VoiceTranscriptionService)? = nil,
@@ -250,6 +251,7 @@ struct AddWorkoutView: View {
             launchSeed: launchSeed,
             launchSeedConsumerID: launchSeedConsumerID,
             launchSeedDrafts: launchSeedDrafts,
+            repeatsLatestWorkout: repeatsLatestWorkout,
             restoredDraft: restoredDraft,
             liveInviteRecipient: liveInviteRecipient,
             voiceTranscriptionService: voiceTranscriptionService,
@@ -291,6 +293,7 @@ struct AddWorkoutView: View {
         launchSeed: WorkoutLaunchSeed? = nil,
         launchSeedConsumerID: UUID? = nil,
         launchSeedDrafts: [WorkoutEditorExerciseDraft]? = nil,
+        repeatsLatestWorkout: Bool = false,
         restoredDraft: WorkoutPlanEditorDraftState? = nil,
         liveInviteRecipient: SocialFriendSummary? = nil,
         voiceTranscriptionService: (any VoiceTranscriptionService)? = nil,
@@ -336,9 +339,16 @@ struct AddWorkoutView: View {
         // A default date goes stale when a retained draft is reopened later, so only a
         // back-logged date the user chose on purpose survives a restore.
         let initialDate = initialDateIsExplicit ? (restoredDraft?.date ?? Date()) : Date()
-        let initialNote = restoredDraft?.note ?? ""
+        // Today's one-tap repeat could not start directly: open the editor with the same repeat the
+        // "Repeat latest" button applies, so its validation shows what needs fixing. The baseline
+        // stays empty, so the repeated plan counts as an unsaved edit like the button's result.
+        let repeatedWorkout = restoredDraft == nil && launchSeed == nil && repeatsLatestWorkout
+            ? store.latestWorkoutTemplate : nil
+        let initialNote = restoredDraft?.note ?? repeatedWorkout?.note ?? ""
         let initialEffort = restoredDraft?.selectedEffort ?? launchSeed?.requestedEffort ?? .auto
-        let initialEditorDrafts = restoredDraft?.drafts ?? seededDrafts ?? initialDrafts.map {
+        let initialEditorDrafts = restoredDraft?.drafts ?? seededDrafts
+            ?? repeatedWorkout.map(RepeatLastWorkout.editorDrafts(from:))
+            ?? initialDrafts.map {
             exercise in
                 WorkoutEditorExerciseDraft(
                     exerciseID: exercise.exerciseID,
@@ -381,9 +391,9 @@ struct AddWorkoutView: View {
         _baselinePlanSnapshot = State(
             initialValue: restoredDraft?.baselinePlanSnapshot ?? PlanEditorSnapshot(
                 date: initialDate,
-                note: initialNote,
+                note: repeatedWorkout == nil ? initialNote : "",
                 effort: initialEffort,
-                drafts: initialEditorDrafts
+                drafts: repeatedWorkout == nil ? initialEditorDrafts : []
             )
         )
     }
@@ -1863,12 +1873,7 @@ struct AddWorkoutView: View {
         latestSmartPlan = nil
         smartGeneratedDraftIDs.removeAll()
         smartPlanIsStale = false
-        replaceDrafts(workout.exercises.map { block in
-            WorkoutEditorExerciseDraft(
-                exerciseID: block.exerciseID,
-                sets: block.sets.map { WorkoutEditorSetDraft(weight: $0.weight, reps: $0.reps) }
-            )
-        })
+        replaceDrafts(RepeatLastWorkout.editorDrafts(from: workout))
         if note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             note = workout.note ?? ""
         }
@@ -2190,37 +2195,11 @@ struct AddWorkoutView: View {
     }
 
     private func validationMessage() -> String? {
-        guard !drafts.isEmpty else { return gymLocalized("Add at least one exercise.") }
-        guard date <= Date() else {
-            return gymText(
-                "Workout date cannot be in the future.",
-                "Дата тренування не може бути в майбутньому.",
-                "Дата тренировки не может быть в будущем.",
-                languageCode: gymCurrentLanguageCode()
-            )
-        }
-        for draft in drafts {
-            guard store.exercise(id: draft.exerciseID) != nil else {
-                return gymLocalized("One selected exercise no longer exists.")
-            }
-            guard !draft.sets.isEmpty else {
-                return gymLocalized("Every exercise needs at least one set.")
-            }
-            for set in draft.sets {
-                guard set.isReadyForSave else {
-                    return gymText(
-                        "Weight must be a finite number from 0 to 1,000,000.",
-                        "Вага має бути скінченним числом від 0 до 1 000 000.",
-                        "Вес должен быть конечным числом от 0 до 1 000 000.",
-                        languageCode: gymCurrentLanguageCode()
-                    )
-                }
-                guard (1 ... 10_000).contains(set.reps) else {
-                    return gymLocalized("Repetitions must be at least one.")
-                }
-            }
-        }
-        return nil
+        workoutEditorValidationMessage(
+            drafts: drafts,
+            date: date,
+            exerciseExists: { store.exercise(id: $0) != nil }
+        )
     }
 
     /// Reveals which exercise card holds the first invalid set: scrolls to it and
@@ -2247,24 +2226,7 @@ struct AddWorkoutView: View {
                     isExplicit: dateIsExplicit
                 ),
                 note: note,
-                exercises: drafts.map { exercise in
-                    // `exercise.id`/`set.id` may be seeded from the catalog exercise ID or a
-                    // deterministic recommendation ID (Smart Coach) for editor identity and
-                    // launch-seed equality. Those are stable across separate workouts, so the
-                    // active-workout block/set identity must be a fresh per-instance UUID
-                    // instead, or repeating the same exercise later collides in WorkoutStore.
-                    ActiveWorkoutExercise(
-                        id: UUID(),
-                        exerciseID: exercise.exerciseID,
-                        sets: exercise.sets.map { set in
-                            ActiveWorkoutSet(
-                                id: UUID(),
-                                weight: set.weight,
-                                reps: set.reps
-                            )
-                        }
-                    )
-                },
+                exercises: RepeatLastWorkout.activeExercises(from: drafts),
                 workoutStore: store
             )
             onStarted(active.id)
