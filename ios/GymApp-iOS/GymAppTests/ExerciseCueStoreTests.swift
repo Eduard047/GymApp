@@ -89,6 +89,29 @@ final class ExerciseCueStoreTests: XCTestCase {
         XCTAssertNil(defaults.data(forKey: "gymapp.exercise-cues.v1.a"))
     }
 
+    func testThousandEntriesWithMaxLengthCyrillicKeysAndCuesAllSave() throws {
+        let store = ExerciseCueStore(defaults: defaults)
+        let cue = String(repeating: "ж", count: ExerciseCue.maximumCodePoints)
+        func key(_ number: Int) -> String {
+            let head = "custom:\(String(format: "%04d", number))"
+            return head + String(repeating: "Я", count: 512 - head.count)
+        }
+        XCTAssertEqual(key(0).count, 512)
+        XCTAssertTrue(ExerciseCueStore.isUsableIdentityKey(key(0)))
+        // 999 entries are seeded in one write; the last two go through setCue, which checks the cap and the byte limit.
+        var seeded: [String: String] = [:]
+        for number in 0 ..< ExerciseCueStore.maximumEntries - 1 { seeded[key(number)] = cue }
+        defaults.set(try JSONEncoder().encode(seeded), forKey: "gymapp.exercise-cues.v1.a")
+        let last = key(ExerciseCueStore.maximumEntries - 1)
+        XCTAssertEqual(store.setCue(cue, accountStorageKey: "a", identityKey: last), .stored(cue))
+        XCTAssertEqual(store.cues(accountStorageKey: "a").count, ExerciseCueStore.maximumEntries)
+        XCTAssertEqual(store.cue(accountStorageKey: "a", identityKey: last), cue)
+        XCTAssertEqual(store.cue(accountStorageKey: "a", identityKey: key(0)), cue)
+        XCTAssertEqual(store.setCue(cue, accountStorageKey: "a", identityKey: key(ExerciseCueStore.maximumEntries)), .tooMany)
+        XCTAssertEqual(store.setCue("новий", accountStorageKey: "a", identityKey: key(0)), .stored("новий"))
+        XCTAssertEqual(store.cues(accountStorageKey: "a").count, ExerciseCueStore.maximumEntries)
+    }
+
     func testRefusesNewCueBeyondTheEntryCapButStillEditsExisting() {
         let store = ExerciseCueStore(defaults: defaults)
         for index in 0..<ExerciseCueStore.maximumEntries {

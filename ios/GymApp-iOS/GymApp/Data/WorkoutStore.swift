@@ -5305,7 +5305,7 @@ public final class WorkoutStore: ObservableObject {
     ) -> [ExerciseHistoryEntry] {
         let exercisesByID = Dictionary(uniqueKeysWithValues: exercises.map { ($0.id, $0) })
         var result: [ExerciseHistoryEntry] = []
-        for workout in workouts {
+        for (workoutIndex, workout) in workouts.enumerated() {
             guard (startDate == nil || workout.date >= startDate!),
                   (endDate == nil || workout.date <= endDate!) else { continue }
             for (blockIndex, block) in workout.exercises.enumerated() {
@@ -5323,7 +5323,8 @@ public final class WorkoutStore: ObservableObject {
                             weight: set.weight,
                             reps: set.reps,
                             setOrderIndex: index,
-                            blockOrderIndex: blockIndex
+                            blockOrderIndex: blockIndex,
+                            workoutOrderIndex: workoutIndex
                         )
                     )
                 }

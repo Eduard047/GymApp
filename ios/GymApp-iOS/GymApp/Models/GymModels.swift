@@ -270,6 +270,9 @@ public struct ExerciseHistoryEntry: Codable, Identifiable, Hashable, Sendable {
     public let setOrderIndex: Int
     /// Position of the set's exercise block in its workout; `setOrderIndex` restarts per block.
     public let blockOrderIndex: Int
+    /// Position of the set's workout in the store (Android: the session id, i.e. insertion order);
+    /// breaks ties between workouts that start at the same instant.
+    public let workoutOrderIndex: Int
 
     public init(
         setID: UUID,
@@ -281,7 +284,8 @@ public struct ExerciseHistoryEntry: Codable, Identifiable, Hashable, Sendable {
         weight: Double,
         reps: Int,
         setOrderIndex: Int,
-        blockOrderIndex: Int = 0
+        blockOrderIndex: Int = 0,
+        workoutOrderIndex: Int = 0
     ) {
         self.setID = setID
         self.workoutID = workoutID
@@ -296,6 +300,7 @@ public struct ExerciseHistoryEntry: Codable, Identifiable, Hashable, Sendable {
         self.reps = reps
         self.setOrderIndex = setOrderIndex
         self.blockOrderIndex = blockOrderIndex
+        self.workoutOrderIndex = workoutOrderIndex
     }
 
     public var volume: Double {

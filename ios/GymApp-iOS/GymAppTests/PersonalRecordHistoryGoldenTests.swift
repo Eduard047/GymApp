@@ -61,6 +61,27 @@ final class PersonalRecordHistoryGoldenTests: XCTestCase {
         XCTAssertTrue(PersonalRecordHistory.replay([]).isEmpty)
     }
 
+    func testSameInstantWorkoutsReplayInStoredOrderNotUUIDOrder() {
+        // uuid order is 1 < 2, stored order is 2 first: the stored-first workout is the baseline.
+        func entry(_ workout: Int, order: Int, weight: Double) -> ExerciseHistoryEntry {
+            ExerciseHistoryEntry(
+                setID: sessionUUID(workout * 10),
+                workoutID: sessionUUID(workout),
+                sessionDate: Date(timeIntervalSince1970: 100),
+                exerciseID: sessionUUID(999),
+                exerciseName: "Bench",
+                weight: weight,
+                reps: 5,
+                setOrderIndex: 0,
+                workoutOrderIndex: order
+            )
+        }
+        let events = PersonalRecordHistory.replay([entry(1, order: 1, weight: 110), entry(2, order: 0, weight: 100)])
+        XCTAssertEqual(events.map { sessionNumber($0.workoutID) }, [1])
+        XCTAssertEqual(events.first?.weight, 110)
+        XCTAssertTrue(PersonalRecordHistory.replay([entry(1, order: 0, weight: 110), entry(2, order: 1, weight: 100)]).isEmpty)
+    }
+
     private func kindName(_ kind: PersonalRecordHistoryKind) -> String {
         switch kind {
         case .weight: return "weight"
@@ -97,7 +118,8 @@ final class PersonalRecordHistoryGoldenTests: XCTestCase {
                         weight: try XCTUnwrap((set["weight"] as? NSNumber)?.doubleValue),
                         reps: try XCTUnwrap(set["reps"] as? Int),
                         setOrderIndex: index - blockStart,
-                        blockOrderIndex: block
+                        blockOrderIndex: block,
+                        workoutOrderIndex: sessionID
                     )
                 )
             }

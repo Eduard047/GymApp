@@ -74,6 +74,27 @@ final class ExerciseRestTimeStoreTests: XCTestCase {
         XCTAssertEqual(store.restSeconds(accountStorageKey: "b", identityKey: "k"), 75)
     }
 
+    func testThousandEntriesWithMaxLengthCyrillicKeysAllSave() throws {
+        let store = ExerciseRestTimeStore(defaults: defaults)
+        func key(_ number: Int) -> String {
+            let head = "custom:\(String(format: "%04d", number))"
+            return head + String(repeating: "Я", count: 512 - head.count)
+        }
+        XCTAssertEqual(key(0).count, 512)
+        XCTAssertTrue(ExerciseCueStore.isUsableIdentityKey(key(0)))
+        // 999 entries are seeded in one write; the last two go through setRestSeconds, which checks the cap and the byte limit.
+        var seeded: [String: Int] = [:]
+        for number in 0 ..< ExerciseRestTimeStore.maximumEntries - 1 { seeded[key(number)] = ExerciseRestTime.maximumSeconds }
+        defaults.set(try JSONEncoder().encode(seeded), forKey: "gymapp.exercise-rest.v1.a")
+        let last = key(ExerciseRestTimeStore.maximumEntries - 1)
+        XCTAssertEqual(store.setRestSeconds(600, accountStorageKey: "a", identityKey: last), .stored(600))
+        XCTAssertEqual(store.restTimes(accountStorageKey: "a").count, ExerciseRestTimeStore.maximumEntries)
+        XCTAssertEqual(store.restSeconds(accountStorageKey: "a", identityKey: last), 600)
+        XCTAssertEqual(store.setRestSeconds(60, accountStorageKey: "a", identityKey: key(ExerciseRestTimeStore.maximumEntries)), .tooMany)
+        XCTAssertEqual(store.setRestSeconds(90, accountStorageKey: "a", identityKey: key(0)), .stored(90))
+        XCTAssertEqual(store.restTimes(accountStorageKey: "a").count, ExerciseRestTimeStore.maximumEntries)
+    }
+
     func testRefusesNewEntryBeyondTheCapButStillEditsExisting() {
         let store = ExerciseRestTimeStore(defaults: defaults)
         for index in 0..<ExerciseRestTimeStore.maximumEntries {

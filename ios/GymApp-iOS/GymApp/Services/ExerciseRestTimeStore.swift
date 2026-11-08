@@ -34,7 +34,10 @@ enum ExerciseRestSaveResult: Equatable {
 struct ExerciseRestTimeStore {
     static let maximumEntries = 1_000
     private static let keyPrefix = "gymapp.exercise-rest.v1."
-    private static let maximumBytes = 128 * 1_024
+    /// Room for `maximumEntries` worst-case entries, like Android (1000 entries, no byte cap): a key of up to
+    /// 512 characters at up to 4 UTF-8 bytes each (the cue store's identity-key limit), a seconds value of up to
+    /// 4 digits, plus quotes, colon and comma. 1000 max-length Cyrillic keys come to about 1 MB.
+    private static let maximumBytes = maximumEntries * (512 * 4 + 4 + 8)
 
     private let defaults: UserDefaults
 

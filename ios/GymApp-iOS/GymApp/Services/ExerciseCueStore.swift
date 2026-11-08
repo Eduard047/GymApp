@@ -39,7 +39,11 @@ struct ExerciseCueStore {
     static let maximumEntries = 1_000
     private static let keyPrefix = "gymapp.exercise-cues.v1."
     private static let maximumKeyCharacters = 512
-    private static let maximumBytes = 512 * 1_024
+    /// Room for `maximumEntries` worst-case entries, like Android (1000 entries, no byte cap): a key of
+    /// `maximumKeyCharacters` characters at up to 4 UTF-8 bytes each, a cue of `ExerciseCue.maximumCodePoints`
+    /// code points at up to 6 bytes each (a control character is JSON-escaped), plus quotes, colon and comma.
+    /// 1000 max-length Cyrillic keys with max-length cues come to about 1.2 MB.
+    private static let maximumBytes = maximumEntries * (maximumKeyCharacters * 4 + ExerciseCue.maximumCodePoints * 6 + 8)
 
     private let defaults: UserDefaults
 

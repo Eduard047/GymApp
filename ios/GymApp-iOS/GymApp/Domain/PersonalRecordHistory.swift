@@ -36,6 +36,11 @@ enum PersonalRecordHistory {
             let leftDate = left[0].sessionDate
             let rightDate = right[0].sessionDate
             if leftDate != rightDate { return leftDate < rightDate }
+            // Same instant: the workout stored first replays first (Android: lower session id). The
+            // uuid only keeps hand-built input (every workoutOrderIndex 0) deterministic.
+            if left[0].workoutOrderIndex != right[0].workoutOrderIndex {
+                return left[0].workoutOrderIndex < right[0].workoutOrderIndex
+            }
             return left[0].workoutID.uuidString < right[0].workoutID.uuidString
         }
 
@@ -44,11 +49,16 @@ enum PersonalRecordHistory {
         for session in sessions {
             let isBaseline = best == nil
             var running = best ?? PersonalRecordBaseline(bestWeight: 0, bestEstimatedOneRepMax: 0)
-            let sets = session.sorted { left, right in
-                if left.blockOrderIndex != right.blockOrderIndex { return left.blockOrderIndex < right.blockOrderIndex }
-                if left.setOrderIndex != right.setOrderIndex { return left.setOrderIndex < right.setOrderIndex }
-                return left.setID.uuidString < right.setID.uuidString
-            }
+            // Block, then set; a repeated position keeps the input order (Android: lower set id).
+            let sets = session.enumerated().sorted { left, right in
+                if left.element.blockOrderIndex != right.element.blockOrderIndex {
+                    return left.element.blockOrderIndex < right.element.blockOrderIndex
+                }
+                if left.element.setOrderIndex != right.element.setOrderIndex {
+                    return left.element.setOrderIndex < right.element.setOrderIndex
+                }
+                return left.offset < right.offset
+            }.map(\.element)
             for set in sets {
                 if !isBaseline, set.weight > 0 {
                     let result = LivePersonalRecords.evaluate(weight: set.weight, reps: set.reps, against: running)

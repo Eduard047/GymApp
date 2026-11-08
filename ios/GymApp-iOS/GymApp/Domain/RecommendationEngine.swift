@@ -1779,7 +1779,8 @@ public enum RecommendationEngine {
                 weight: replacement,
                 reps: entry.reps,
                 setOrderIndex: entry.setOrderIndex,
-                blockOrderIndex: entry.blockOrderIndex
+                blockOrderIndex: entry.blockOrderIndex,
+                workoutOrderIndex: entry.workoutOrderIndex
             )
         }
     }

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "rules": "Replay one exercise's sessions oldest first (date, then id). The first session is the baseline and never holds a record, even when all its sets are 0 kg. Afterwards each set (in set order) is compared with the best weight and best Epley estimate (weight * (1 + reps / 30)) logged before it, including earlier sets of its own session. 0 kg sets are never records and do not move the best. A weight record needs strictly more weight; an e1RM record needs an estimate above the best by more than 1e-9. A set that beats both is reported as kind weight. Expected events are newest first (later sets first inside a session); set is the zero-based set order inside the session. The list is capped at limit (default 50). Sets may carry an optional zero-based block (the exercise block inside the workout, default 0); set is then the index inside its block, and a session's sets replay block by block (block, then set), not by set index alone.",
+  "rules": "Replay one exercise's sessions oldest first (date, then id: sessions with the identical date replay in id order, whatever the input order; the id stands for the stored order, so iOS uses the workout's position in the store, never its random uuid). The first session is the baseline and never holds a record, even when all its sets are 0 kg. Afterwards each set (in set order) is compared with the best weight and best Epley estimate (weight * (1 + reps / 30)) logged before it, including earlier sets of its own session. 0 kg sets are never records and do not move the best. A weight record needs strictly more weight; an e1RM record needs an estimate above the best by more than 1e-9. A set that beats both is reported as kind weight. Expected events are newest first (later sets first inside a session); set is the zero-based set order inside the session. The list is capped at limit (default 50). Sets may carry an optional zero-based block (the exercise block inside the workout, default 0); set is then the index inside its block, and a session's sets replay block by block (block, then set), not by set index alone.",
   "limit": 50,
   "cases": [
     {
@@ -509,6 +509,58 @@
           "session": 2,
           "set": 1,
           "weight": 110,
+          "reps": 5,
+          "kind": "weight"
+        }
+      ]
+    },
+    {
+      "id": "same-date-replays-by-id",
+      "description": "Sessions with the identical date replay in id order, not input order: session 1 is the baseline, 2 beats it, 3 beats 2",
+      "sessions": [
+        {
+          "id": 3,
+          "date": 1700000000000,
+          "sets": [
+            {
+              "weight": 110,
+              "reps": 5
+            }
+          ]
+        },
+        {
+          "id": 1,
+          "date": 1700000000000,
+          "sets": [
+            {
+              "weight": 100,
+              "reps": 5
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "date": 1700000000000,
+          "sets": [
+            {
+              "weight": 105,
+              "reps": 5
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "session": 3,
+          "set": 0,
+          "weight": 110,
+          "reps": 5,
+          "kind": "weight"
+        },
+        {
+          "session": 2,
+          "set": 0,
+          "weight": 105,
           "reps": 5,
           "kind": "weight"
         }
