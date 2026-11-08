@@ -23,7 +23,7 @@ final class RepeatLastWorkoutTests: XCTestCase {
         drafts.map { $0.sets.flatMap { [$0.weight, Double($0.reps)] } }
     }
 
-    func testSeedKeepsStoredOrderAndSetValuesAndGivesEmptyExerciseOneBlankSet() {
+    func testSeedKeepsStoredOrderAndSetValuesAndLeavesEmptyExerciseWithoutSets() {
         let first = UUID()
         let second = UUID()
         let third = UUID()
@@ -42,7 +42,22 @@ final class RepeatLastWorkoutTests: XCTestCase {
         let seed = RepeatLastWorkout.editorDrafts(from: workout)
 
         XCTAssertEqual(seed.map(\.exerciseID), [second, first, third])
-        XCTAssertEqual(flatten(seed), [[62.5, 8, 60, 10], [0, 10], [0, 12]])
+        XCTAssertEqual(flatten(seed), [[62.5, 8, 60, 10], [], [0, 12]])
+    }
+
+    func testExerciseWithoutSetsFailsValidationAndDoesNotStartDirectly() throws {
+        let (store, active) = try makeStores(account: "repeat-last-empty-exercise")
+        let bench = try store.addExercise(name: "Repeat Empty \(UUID().uuidString)")
+        let emptyWorkout = WorkoutSession(
+            date: now,
+            exercises: [WorkoutExercise(exerciseID: bench.id, sets: [])]
+        )
+        let drafts = RepeatLastWorkout.editorDrafts(from: emptyWorkout)
+        XCTAssertEqual(drafts.first?.sets.count, 0)
+        XCTAssertNotNil(workoutEditorValidationMessage(
+            drafts: drafts, date: now, now: now, exerciseExists: { _ in true }
+        ))
+        XCTAssertNil(active.draft)
     }
 
     func testDirectStartBuildsTheSameSeedAsTheEditorAndCarriesTheNote() throws {

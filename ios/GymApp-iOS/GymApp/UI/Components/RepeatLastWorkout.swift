@@ -25,13 +25,14 @@ enum RepeatLastWorkout {
         hasRepeatableWorkout && !hasActiveWorkout && !hasRetainedWorkoutDraft
     }
 
-    /// Exercises and sets of `workout` in stored order; an exercise without sets keeps one blank set.
+    /// Exercises and sets of `workout` in stored order; an exercise without sets stays empty, so the shared
+    /// validation rejects it ("Every exercise needs at least one set.") instead of inventing a 0x10 set.
     static func editorDrafts(from workout: WorkoutSession) -> [WorkoutEditorExerciseDraft] {
         workout.exercises.map { block in
             let sets = block.sets.map { WorkoutEditorSetDraft(weight: $0.weight, reps: $0.reps) }
             return WorkoutEditorExerciseDraft(
                 exerciseID: block.exerciseID,
-                sets: sets.isEmpty ? [WorkoutEditorSetDraft()] : sets
+                sets: sets
             )
         }
     }

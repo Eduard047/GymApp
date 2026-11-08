@@ -3262,6 +3262,14 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertEqual(replaced.exercises[0].sets.map(\.reps), [8, 5])
     }
 
+    func testBatchRecordResultAllowsFinishOnlyWhenTheLiveQueueWriteSucceeded() {
+        XCTAssertEqual(ActiveWorkoutBatchRecordResult(liveQueueFailed: false), .recorded)
+        XCTAssertEqual(ActiveWorkoutBatchRecordResult(liveQueueFailed: true), .recordedButLiveQueueFailed)
+        XCTAssertTrue(ActiveWorkoutBatchRecordResult.recorded.allowsFinish)
+        XCTAssertFalse(ActiveWorkoutBatchRecordResult.recordedButLiveQueueFailed.allowsFinish)
+        XCTAssertFalse(ActiveWorkoutBatchRecordResult.failed.allowsFinish)
+    }
+
     func testReplaceExercisePreservesPositionBlockIdentityAndEveryOtherBlock() throws {
         let context = try makeContext(account: "active-replace-position")
         let now = Date(timeIntervalSince1970: 1_800_000_000)

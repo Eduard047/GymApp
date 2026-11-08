@@ -26,6 +26,22 @@ func activeWorkoutActionStatus(
     return ActiveWorkoutActionStatus(message: success, isError: false)
 }
 
+/// Outcome of the "log every remaining set" batch. Finishing right after it is allowed only for
+/// `recorded`: when the sets were saved but the live-room queue write failed, the room finish would
+/// be queued without those completions, so the workout stays open with the warning shown (Android
+/// stops the same way). A rest-cleanup failure is non-fatal and still counts as `recorded`.
+enum ActiveWorkoutBatchRecordResult: Equatable {
+    case recorded
+    case recordedButLiveQueueFailed
+    case failed
+
+    init(liveQueueFailed: Bool) {
+        self = liveQueueFailed ? .recordedButLiveQueueFailed : .recorded
+    }
+
+    var allowsFinish: Bool { self == .recorded }
+}
+
 func activeWorkoutValueEditorsAreDisabled(
     isCompleted: Bool,
     hasCommitIntent: Bool,
@@ -3275,10 +3291,11 @@ struct ActiveWorkoutView: View {
         )
     }
 
-    /// Returns true when the batch was written (a live-queue or rest-cleanup warning still
-    /// counts as written); false when the store rejected it and the failure was shown.
+    /// `.recorded` / `.recordedButLiveQueueFailed` when the batch was written (the live-queue warning
+    /// is shown; a rest-cleanup failure is non-fatal and only adds a warning); `.failed` when the
+    /// store rejected it and the failure was shown.
     @discardableResult
-    private func recordAllSets(_ draft: ActiveWorkoutDraft) -> Bool {
+    private func recordAllSets(_ draft: ActiveWorkoutDraft) -> ActiveWorkoutBatchRecordResult {
         let orderedInputs = draft.exercises.flatMap { exercise in
             exercise.sets.compactMap { set in
                 set.isCompleted
@@ -3314,7 +3331,9 @@ struct ActiveWorkoutView: View {
             }
             // Batch persistence never starts rest. Any older rest is retired only
             // after the one atomic draft revision has succeeded.
-            let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
+            // Rest cleanup is non-fatal (as on Android): the sets are already stored, so a
+            // reconcile failure only adds the cleanup warning below.
+            let restOutcome = try? ActiveWorkoutRestReconciler.reconcile(
                 draft: updated,
                 store: activeWorkoutStore,
                 manager: restTimers,
@@ -3367,18 +3386,18 @@ struct ActiveWorkoutView: View {
                 )
                 announce(batchMessage)
             }
-            return true
+            return ActiveWorkoutBatchRecordResult(liveQueueFailed: liveQueueFailureMessage != nil)
         } catch {
             showActionFailure(error, liveQueueFailure: liveQueueFailureMessage)
-            return false
+            return .failed
         }
     }
 
     /// "Log remaining and finish": records every remaining planned set as planned, then
-    /// finishes against the draft revision that recording produced. A failed recording
-    /// keeps the workout open with the error already shown.
+    /// finishes against the draft revision that recording produced. A failed recording, or sets
+    /// saved while the live-room queue write failed, keeps the workout open with the warning shown.
     private func recordRemainingAndFinish() {
-        guard let draft = currentDraft, recordAllSets(draft),
+        guard let draft = currentDraft, recordAllSets(draft).allowsFinish,
               let settled = currentDraft, settled.id == draft.id else { return }
         finish(settled)
     }
