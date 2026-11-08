@@ -609,8 +609,20 @@ fun ActiveWorkoutScreen(
         if (target != null) {
             val targetExercise = exercises[target.exerciseIndex]
             val targetSetId = targetExercise.sets[target.setIndex].id
-            // Let the recorded row finish changing height before measuring.
-            delay(if (reduceMotion) 50L else 350L)
+            // Let the rows finish changing height before measuring: the recorded row gains the rest timer and the
+            // next set swaps to its taller editor, both with animateContentSize. Measure once the target's
+            // bounds hold still (a fixed delay read mid-animation and left the Record button below the fold).
+            delay(if (reduceMotion) 50L else 120L)
+            var lastBounds: Rect? = null
+            var stableReads = 0
+            var waited = 0L
+            while (waited < 1500L && stableReads < 3) {
+                val current = setRowBounds.rows[targetSetId]
+                if (current != null && current == lastBounds) stableReads++ else stableReads = 0
+                lastBounds = current
+                delay(40L)
+                waited += 40L
+            }
             if (setRowBounds.rows[targetSetId] == null) {
                 // The target row is not composed (scrolled far away): bring its exercise card in first.
                 val exerciseIds = exercises.map { it.id }
@@ -1037,6 +1049,7 @@ fun ActiveWorkoutScreen(
             exerciseMediaOwnerKey = exerciseMediaOwnerKey,
             externalOpen = true,
             trigger = {},
+            titleRes = R.string.replace_exercise_menu,
             onExternalDismiss = { replacingExerciseId = null },
             onExerciseSelected = { newExerciseId ->
                 replacingExerciseId?.let { onReplaceExercise(it, newExerciseId) }

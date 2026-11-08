@@ -61,6 +61,16 @@ class NextSetFocusTest {
     }
 
     @Test
+    fun scrollDeltaRevealsWholeExpandedEditorIncludingRecordButton() {
+        // Editor block 520px tall whose header is visible but whose Record button is below the fold.
+        assertEquals(420f, NextSetFocus.scrollDelta(700f, 1220f, 100f, 800f), 0f)
+        // The same block measured only as a 90px header would wrongly need no scroll.
+        assertEquals(0f, NextSetFocus.scrollDelta(700f, 790f, 100f, 800f), 0f)
+        // Taller than the viewport: its top aligns under the top bar.
+        assertEquals(600f, NextSetFocus.scrollDelta(700f, 1500f, 100f, 800f), 0f)
+    }
+
+    @Test
     fun failedRecordForAwaitingSetClearsPendingFocus() {
         assertTrue(NextSetFocus.recordFailureClearsAwaiting("a", "a", true, false))
     }

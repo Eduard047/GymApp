@@ -97,7 +97,9 @@ internal fun ExerciseCatalogSelector(
     /** Exercises already in the plan: shown with a check and not selectable again (Add mode). */
     addedExerciseIds: Set<Long> = emptySet(),
     /** Distinct logged exercises, newest first: the "Recent" section (minus [addedExerciseIds], max 8) while no search or filter is active (Add mode). */
-    recentExerciseIds: List<Long> = emptyList()
+    recentExerciseIds: List<Long> = emptyList(),
+    /** Overrides the sheet title (e.g. "Replace exercise"); null keeps the mode's default. */
+    @androidx.annotation.StringRes titleRes: Int? = null
 ) {
     val isChooseMode = mode == ExerciseSelectorMode.Choose
     var internalExpanded by rememberSaveable { mutableStateOf(false) }
@@ -188,7 +190,7 @@ internal fun ExerciseCatalogSelector(
             ) {
                 GymSheetTitleRow(
                     title = stringResource(
-                        if (isChooseMode) R.string.progress_choose_exercise else R.string.action_add_exercise
+                        titleRes ?: if (isChooseMode) R.string.progress_choose_exercise else R.string.action_add_exercise
                     ),
                     onClose = closePicker,
                     style = androidx.compose.material3.MaterialTheme.typography.titleLarge.copy(
