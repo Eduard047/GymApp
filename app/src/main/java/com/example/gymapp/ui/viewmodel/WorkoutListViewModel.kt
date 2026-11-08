@@ -202,7 +202,9 @@ data class MuscleHeatmapUiModel(
     val unmappedExercises: List<UnmappedExerciseUiModel> = emptyList(),
     val exerciseMappings: List<ExerciseMappingUiModel> = emptyList(),
     val manualEditorExerciseName: String? = null,
-    val manualMuscles: List<MuscleOptionUiModel> = emptyList()
+    val manualMuscles: List<MuscleOptionUiModel> = emptyList(),
+    /** Localized names of major muscles not trained for 10+ days, longest first; empty hides the hint. */
+    val untrainedMuscleLabels: List<String> = emptyList()
 )
 
 data class TrainingRecommendationUiModel(
@@ -665,6 +667,13 @@ class WorkoutListViewModel(
                     selectedMuscleId = selection.muscleId,
                     manualEditorExerciseName = selection.editorName,
                     muscleMappings = muscleMappings
+                ).copy(
+                    untrainedMuscleLabels = buildUntrainedMuscleLabels(
+                        exerciseHistory = exerciseHistory,
+                        allSessions = allSessions,
+                        muscleMappings = muscleMappings,
+                        nowMillis = nowMillis
+                    )
                 )
             } else {
                 MuscleHeatmapUiModel()
@@ -1646,6 +1655,36 @@ class WorkoutListViewModel(
             manualEditorExerciseName = manualEditorExerciseName,
             manualMuscles = manualMuscles
         )
+    }
+
+    /** Hint under the muscle map (shared/untrained-muscles-v1.json); independent of the selected period. */
+    private fun buildUntrainedMuscleLabels(
+        exerciseHistory: List<ExerciseHistoryEntry>,
+        allSessions: List<WorkoutSessionSummary>,
+        muscleMappings: List<ExerciseMuscleMappingEntity>,
+        nowMillis: Long
+    ): List<String> {
+        if (allSessions.size < UNTRAINED_HINT_MIN_WORKOUTS) return emptyList()
+        val manualMap = muscleMappings.toManualContributionMap()
+        val musclesByExercise = HashMap<String, Map<String, Double>>()
+        val sets = exerciseHistory.mapNotNull { entry ->
+            if (entry.reps <= 0) return@mapNotNull null
+            val muscles = musclesByExercise.getOrPut(entry.exerciseName) {
+                muscleContributionsForExercise(entry.exerciseName, manualMap)
+                    .filter { it.muscleId in UNTRAINED_HINT_MUSCLE_IDS }
+                    .associate { it.muscleId to it.weight }
+            }
+            if (muscles.isEmpty()) null else UntrainedMuscleSet(entry.sessionDate, entry.reps, muscles)
+        }
+        val ids = untrainedMuscleIds(
+            workoutDates = allSessions.map { it.session.date },
+            sets = sets,
+            now = nowMillis,
+            zone = zoneId
+        )
+        return ids.mapNotNull { id ->
+            MUSCLE_DEFINITIONS.firstOrNull { it.id == id }?.let { t(en = it.titleEn, uk = it.titleUk) }
+        }
     }
 
     private fun List<ExerciseHistoryEntry>.filterForMusclePeriod(

@@ -1,0 +1,970 @@
+{
+  "version": 1,
+  "description": "Heatmap hint 'Not trained for 10+ days: ...' (T181). Implemented by untrainedMuscleIds on Android and GymUntrainedMuscles.untrainedMuscleIDs on iPhone; both must produce identical results.",
+  "rules": [
+    "1. Candidate groups are the major muscles in 'majorMuscles' (the muscles the existing Balance recommendation watches), in heatmap display order. No new taxonomy; the heatmap has only these fine muscles, no roll-up.",
+    "2. Eligibility: the user has at least 3 workouts in total AND at least one workout whose local calendar date is at most 30 days before today's local date. Otherwise the result is empty (new or inactive users).",
+    "3. A group's last trained day is the latest local calendar date of any set with reps > 0 whose contribution weight for that group is > 0. Sets for muscles outside majorMuscles are ignored.",
+    "4. A group is untrained when it was never trained, or when the number of local calendar days between its last trained day and today is 10 or more. A future-dated set counts as recent.",
+    "5. Order: never-trained groups first, then the longest untrained first; ties keep the heatmap display order. At most 3 groups are returned. An empty result hides the line.",
+    "6. Independent of the selected heatmap period. 'Today' and every day are taken in the device local time zone (timeZone in the app).",
+    "7. Display (identical on both platforms): en 'Not trained for 10+ days: %s' / uk 'Не тренувалися понад 10 днів: %s' / ru 'Не тренировались больше 10 дней: %s', %s = the localized group names joined with ', '. A flat secondary-text line under the muscle map, no card."
+  ],
+  "constants": {
+    "minWorkouts": 3,
+    "recentWorkoutDays": 30,
+    "untrainedDays": 10,
+    "maxGroups": 3
+  },
+  "majorMuscles": [
+    "chest",
+    "lats",
+    "upperBack",
+    "glutes",
+    "quads",
+    "hamstrings"
+  ],
+  "inputFields": {
+    "timeZone": "IANA zone id used for local calendar days",
+    "now": "current instant (epoch ms)",
+    "workouts": "dates (epoch ms) of all completed workouts",
+    "sets": "logged sets: date (epoch ms), reps, muscles = muscle id -> contribution weight"
+  },
+  "outputField": "expected: muscle ids in display order of the hint",
+  "cases": [
+    {
+      "id": "two-workouts-no-hint",
+      "name": "Only 2 completed workouts: no hint even though nothing is trained",
+      "timeZone": "UTC",
+      "now": 1794139200000,
+      "workouts": [
+        1794052800000,
+        1793966400000
+      ],
+      "sets": [],
+      "expected": []
+    },
+    {
+      "id": "inactive-no-recent-workout",
+      "name": "3 workouts but the latest is 31 days ago: no hint (inactive user)",
+      "timeZone": "UTC",
+      "now": 1794139200000,
+      "workouts": [
+        1791460800000,
+        1790683200000,
+        1789819200000
+      ],
+      "sets": [
+        {
+          "date": 1791460800000,
+          "reps": 8,
+          "muscles": {
+            "chest": 1.0
+          }
+        }
+      ],
+      "expected": []
+    },
+    {
+      "id": "recent-workout-30-days-counts",
+      "name": "Latest workout exactly 30 days ago still counts as recent",
+      "timeZone": "UTC",
+      "now": 1794139200000,
+      "workouts": [
+        1791547200000,
+        1790683200000,
+        1789819200000
+      ],
+      "sets": [
+        {
+          "date": 1791547200000,
+          "reps": 8,
+          "muscles": {
+            "chest": 1.0,
+            "lats": 1.0,
+            "upperBack": 1.0,
+            "glutes": 1.0,
+            "quads": 1.0,
+            "hamstrings": 1.0
+          }
+        }
+      ],
+      "expected": [
+        "chest",
+        "lats",
+        "upperBack"
+      ]
+    },
+    {
+      "id": "never-trained-display-order",
+      "name": "Recent user, no sets at all: all groups never trained, first 3 in display order",
+      "timeZone": "UTC",
+      "now": 1794139200000,
+      "workouts": [
+        1794052800000,
+        1793880000000,
+        1793620800000
+      ],
+      "sets": [],
+      "expected": [
+        "chest",
+        "lats",
+        "upperBack"
+      ]
+    },
+    {
+      "id": "boundary-9-vs-10-days",
+      "name": "10 days untrained is listed, 9 days is not",
+      "timeZone": "UTC",
+      "now": 1794139200000,
+      "workouts": [
+        1794052800000,
+        1793880000000,
+        1793620800000
+      ],
+      "sets": [
+        {
+          "date": 1793275200000,
+          "reps": 8,
+          "muscles": {
+            "chest": 1.0
+          }
+        },
+        {
+          "date": 1793361600000,
+          "reps": 8,
+          "muscles": {
+            "lats": 1.0
+          }
+        },
+        {
+          "date": 1794139200000,
+          "reps": 8,
+          "muscles": {
+            "upperBack": 1.0
+          }
+        },
+        {
+          "date": 1794139200000,
+          "reps": 8,
+          "muscles": {
+            "glutes": 1.0
+          }
+        },
+        {
+          "date": 1794139200000,
+          "reps": 8,
+          "muscles": {
+            "quads": 1.0
+          }
+        },
+        {
+          "date": 1794139200000,
+          "reps": 8,
+          "muscles": {
+            "hamstrings": 1.0
+          }
+        }
+      ],
+      "expected": [
+        "chest"
+      ]
+    },
+    {
+      "id": "oldest-first",
+      "name": "Ordered by longest untrained first",
+      "timeZone": "UTC",
+      "now": 1794139200000,
+      "workouts": [
+        1794052800000,
+        1793880000000,
+        1793620800000
+      ],
+      "sets": [
+        {
+          "date": 1793102400000,
+          "reps": 8,
+          "muscles": {
+            "chest": 1.0
+          }
+        },
+        {
+          "date": 1792411200000,
+          "reps": 8,
+          "muscles": {
+            "lats": 1.0
+          }
+        },
+        {
+          "date": 1792843200000,
+          "reps": 8,
+          "muscles": {
+            "upperBack": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "glutes": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "quads": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "hamstrings": 1.0
+          }
+        }
+      ],
+      "expected": [
+        "lats",
+        "upperBack",
+        "chest"
+      ]
+    },
+    {
+      "id": "never-trained-before-oldest",
+      "name": "Never-trained groups come before trained-long-ago ones, then display order",
+      "timeZone": "UTC",
+      "now": 1794139200000,
+      "workouts": [
+        1794052800000,
+        1793880000000,
+        1793620800000
+      ],
+      "sets": [
+        {
+          "date": 1790683200000,
+          "reps": 8,
+          "muscles": {
+            "upperBack": 1.0
+          }
+        },
+        {
+          "date": 1793966400000,
+          "reps": 8,
+          "muscles": {
+            "chest": 1.0
+          }
+        },
+        {
+          "date": 1793966400000,
+          "reps": 8,
+          "muscles": {
+            "lats": 1.0
+          }
+        },
+        {
+          "date": 1793966400000,
+          "reps": 8,
+          "muscles": {
+            "hamstrings": 1.0
+          }
+        }
+      ],
+      "expected": [
+        "glutes",
+        "quads",
+        "upperBack"
+      ]
+    },
+    {
+      "id": "cap-at-three",
+      "name": "Five untrained groups: only the three longest",
+      "timeZone": "UTC",
+      "now": 1794139200000,
+      "workouts": [
+        1794052800000,
+        1793880000000,
+        1793620800000
+      ],
+      "sets": [
+        {
+          "date": 1793188800000,
+          "reps": 8,
+          "muscles": {
+            "chest": 1.0
+          }
+        },
+        {
+          "date": 1793102400000,
+          "reps": 8,
+          "muscles": {
+            "lats": 1.0
+          }
+        },
+        {
+          "date": 1793016000000,
+          "reps": 8,
+          "muscles": {
+            "upperBack": 1.0
+          }
+        },
+        {
+          "date": 1792929600000,
+          "reps": 8,
+          "muscles": {
+            "glutes": 1.0
+          }
+        },
+        {
+          "date": 1792843200000,
+          "reps": 8,
+          "muscles": {
+            "quads": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "hamstrings": 1.0
+          }
+        }
+      ],
+      "expected": [
+        "quads",
+        "glutes",
+        "upperBack"
+      ]
+    },
+    {
+      "id": "tie-display-order",
+      "name": "Equal days untrained: heatmap display order breaks the tie",
+      "timeZone": "UTC",
+      "now": 1794139200000,
+      "workouts": [
+        1794052800000,
+        1793880000000,
+        1793620800000
+      ],
+      "sets": [
+        {
+          "date": 1793188800000,
+          "reps": 8,
+          "muscles": {
+            "glutes": 1.0
+          }
+        },
+        {
+          "date": 1793188800000,
+          "reps": 8,
+          "muscles": {
+            "upperBack": 1.0
+          }
+        },
+        {
+          "date": 1793188800000,
+          "reps": 8,
+          "muscles": {
+            "lats": 1.0
+          }
+        },
+        {
+          "date": 1793188800000,
+          "reps": 8,
+          "muscles": {
+            "chest": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "quads": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "hamstrings": 1.0
+          }
+        }
+      ],
+      "expected": [
+        "chest",
+        "lats",
+        "upperBack"
+      ]
+    },
+    {
+      "id": "zero-reps-ignored",
+      "name": "A set with 0 reps does not count as training; the older real set decides",
+      "timeZone": "UTC",
+      "now": 1794139200000,
+      "workouts": [
+        1794052800000,
+        1793880000000,
+        1793620800000
+      ],
+      "sets": [
+        {
+          "date": 1794139200000,
+          "reps": 0,
+          "muscles": {
+            "chest": 1.0
+          }
+        },
+        {
+          "date": 1792411200000,
+          "reps": 8,
+          "muscles": {
+            "chest": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "lats": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "upperBack": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "glutes": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "quads": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "hamstrings": 1.0
+          }
+        }
+      ],
+      "expected": [
+        "chest"
+      ]
+    },
+    {
+      "id": "zero-weight-contribution-ignored",
+      "name": "A muscle with 0 contribution weight is not trained by that set",
+      "timeZone": "UTC",
+      "now": 1794139200000,
+      "workouts": [
+        1794052800000,
+        1793880000000,
+        1793620800000
+      ],
+      "sets": [
+        {
+          "date": 1794139200000,
+          "reps": 8,
+          "muscles": {
+            "lats": 0.0,
+            "chest": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "upperBack": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "glutes": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "quads": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "hamstrings": 1.0
+          }
+        }
+      ],
+      "expected": [
+        "lats"
+      ]
+    },
+    {
+      "id": "secondary-muscle-counts",
+      "name": "Any positive contribution counts, primary or secondary",
+      "timeZone": "UTC",
+      "now": 1794139200000,
+      "workouts": [
+        1794052800000,
+        1793880000000,
+        1793620800000
+      ],
+      "sets": [
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "quads": 1.0,
+            "hamstrings": 0.45,
+            "glutes": 0.7
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "lats": 0.9,
+            "upperBack": 0.6
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "chest": 1.0
+          }
+        }
+      ],
+      "expected": []
+    },
+    {
+      "id": "minor-muscles-ignored",
+      "name": "Muscles outside the major set never appear and never hide a major group",
+      "timeZone": "UTC",
+      "now": 1794139200000,
+      "workouts": [
+        1794052800000,
+        1793880000000,
+        1793620800000
+      ],
+      "sets": [
+        {
+          "date": 1794139200000,
+          "reps": 8,
+          "muscles": {
+            "biceps": 1.0,
+            "shoulders": 1.0,
+            "calves": 1.0,
+            "abs": 1.0,
+            "forearms": 1.0,
+            "triceps": 1.0,
+            "obliques": 1.0,
+            "adductors": 1.0,
+            "lowerBack": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "chest": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "lats": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "upperBack": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "glutes": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "quads": 1.0
+          }
+        }
+      ],
+      "expected": [
+        "hamstrings"
+      ]
+    },
+    {
+      "id": "all-trained-empty",
+      "name": "Everything trained within 10 days: empty list, line hidden",
+      "timeZone": "UTC",
+      "now": 1794139200000,
+      "workouts": [
+        1794052800000,
+        1793880000000,
+        1793620800000
+      ],
+      "sets": [
+        {
+          "date": 1793361600000,
+          "reps": 8,
+          "muscles": {
+            "chest": 1.0
+          }
+        },
+        {
+          "date": 1793361600000,
+          "reps": 8,
+          "muscles": {
+            "lats": 1.0
+          }
+        },
+        {
+          "date": 1793361600000,
+          "reps": 8,
+          "muscles": {
+            "upperBack": 1.0
+          }
+        },
+        {
+          "date": 1793361600000,
+          "reps": 8,
+          "muscles": {
+            "glutes": 1.0
+          }
+        },
+        {
+          "date": 1793361600000,
+          "reps": 8,
+          "muscles": {
+            "quads": 1.0
+          }
+        },
+        {
+          "date": 1793361600000,
+          "reps": 8,
+          "muscles": {
+            "hamstrings": 1.0
+          }
+        }
+      ],
+      "expected": []
+    },
+    {
+      "id": "latest-set-wins",
+      "name": "Many sets: the most recent one per group is used",
+      "timeZone": "UTC",
+      "now": 1794139200000,
+      "workouts": [
+        1794052800000,
+        1793880000000,
+        1793620800000
+      ],
+      "sets": [
+        {
+          "date": 1791547200000,
+          "reps": 8,
+          "muscles": {
+            "chest": 1.0
+          }
+        },
+        {
+          "date": 1793966400000,
+          "reps": 8,
+          "muscles": {
+            "chest": 1.0
+          }
+        },
+        {
+          "date": 1791979200000,
+          "reps": 8,
+          "muscles": {
+            "lats": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "upperBack": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "glutes": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "quads": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "hamstrings": 1.0
+          }
+        }
+      ],
+      "expected": [
+        "lats"
+      ]
+    },
+    {
+      "id": "future-dated-set-counts-as-recent",
+      "name": "A set dated in the future is not untrained",
+      "timeZone": "UTC",
+      "now": 1794139200000,
+      "workouts": [
+        1794052800000,
+        1793880000000,
+        1793620800000
+      ],
+      "sets": [
+        {
+          "date": 1794312000000,
+          "reps": 8,
+          "muscles": {
+            "chest": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "lats": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "upperBack": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "glutes": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "quads": 1.0
+          }
+        },
+        {
+          "date": 1794052800000,
+          "reps": 8,
+          "muscles": {
+            "hamstrings": 1.0
+          }
+        }
+      ],
+      "expected": []
+    },
+    {
+      "id": "calendar-days-not-24h",
+      "name": "Local calendar days, not elapsed hours: 8 days 1 hour later is already 10 days",
+      "timeZone": "UTC",
+      "now": 1794097800000,
+      "workouts": [
+        1794011400000,
+        1793838600000,
+        1793579400000
+      ],
+      "sets": [
+        {
+          "date": 1793316600000,
+          "reps": 8,
+          "muscles": {
+            "chest": 1.0
+          }
+        },
+        {
+          "date": 1794097800000,
+          "reps": 8,
+          "muscles": {
+            "lats": 1.0
+          }
+        },
+        {
+          "date": 1794097800000,
+          "reps": 8,
+          "muscles": {
+            "upperBack": 1.0
+          }
+        },
+        {
+          "date": 1794097800000,
+          "reps": 8,
+          "muscles": {
+            "glutes": 1.0
+          }
+        },
+        {
+          "date": 1794097800000,
+          "reps": 8,
+          "muscles": {
+            "quads": 1.0
+          }
+        },
+        {
+          "date": 1794097800000,
+          "reps": 8,
+          "muscles": {
+            "hamstrings": 1.0
+          }
+        }
+      ],
+      "expected": [
+        "chest"
+      ]
+    },
+    {
+      "id": "time-zone-new-york-local-day",
+      "name": "New York evening: the set is 9 local days old (10 in UTC), so no hint",
+      "timeZone": "America/New_York",
+      "now": 1794106800000,
+      "workouts": [
+        1794020400000,
+        1793847600000,
+        1793588400000
+      ],
+      "sets": [
+        {
+          "date": 1793275200000,
+          "reps": 8,
+          "muscles": {
+            "chest": 1.0
+          }
+        },
+        {
+          "date": 1794106800000,
+          "reps": 8,
+          "muscles": {
+            "lats": 1.0
+          }
+        },
+        {
+          "date": 1794106800000,
+          "reps": 8,
+          "muscles": {
+            "upperBack": 1.0
+          }
+        },
+        {
+          "date": 1794106800000,
+          "reps": 8,
+          "muscles": {
+            "glutes": 1.0
+          }
+        },
+        {
+          "date": 1794106800000,
+          "reps": 8,
+          "muscles": {
+            "quads": 1.0
+          }
+        },
+        {
+          "date": 1794106800000,
+          "reps": 8,
+          "muscles": {
+            "hamstrings": 1.0
+          }
+        }
+      ],
+      "expected": []
+    },
+    {
+      "id": "time-zone-same-instants-utc",
+      "name": "Same instants in UTC: 10 days, chest listed",
+      "timeZone": "UTC",
+      "now": 1794106800000,
+      "workouts": [
+        1794020400000,
+        1793847600000,
+        1793588400000
+      ],
+      "sets": [
+        {
+          "date": 1793275200000,
+          "reps": 8,
+          "muscles": {
+            "chest": 1.0
+          }
+        },
+        {
+          "date": 1794106800000,
+          "reps": 8,
+          "muscles": {
+            "lats": 1.0
+          }
+        },
+        {
+          "date": 1794106800000,
+          "reps": 8,
+          "muscles": {
+            "upperBack": 1.0
+          }
+        },
+        {
+          "date": 1794106800000,
+          "reps": 8,
+          "muscles": {
+            "glutes": 1.0
+          }
+        },
+        {
+          "date": 1794106800000,
+          "reps": 8,
+          "muscles": {
+            "quads": 1.0
+          }
+        },
+        {
+          "date": 1794106800000,
+          "reps": 8,
+          "muscles": {
+            "hamstrings": 1.0
+          }
+        }
+      ],
+      "expected": [
+        "chest"
+      ]
+    }
+  ]
+}

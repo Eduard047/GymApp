@@ -45,6 +45,7 @@ final class ProgressOverviewMemo {
     let weeklyStreak = ProgressMemo<ProgressOverviewKey, Int>()
     let muscleHistory = ProgressMemo<ProgressMuscleKey, [ExerciseHistoryEntry]>()
     let muscleData = ProgressMemo<ProgressMuscleKey, WorkoutMuscleDashboardData>()
+    let untrainedMuscles = ProgressMemo<ProgressOverviewKey, [String]>()
 }
 
 @MainActor
@@ -250,7 +251,8 @@ struct ProgressHubView: View {
                     WorkoutMuscleLoadCard(
                         period: $musclePeriod,
                         selectedMuscleID: $selectedMuscleID,
-                        data: muscleDashboardData(key)
+                        data: muscleDashboardData(key),
+                        untrainedMuscleLabels: untrainedMuscleLabels(key)
                     )
 #if DEBUG
                     .id("ui-audit-muscle-map")
@@ -391,6 +393,18 @@ struct ProgressHubView: View {
             WeeklyStreakCalculator.current(
                 sessions: store.workoutSummaries,
                 targetTrainingDays: key.workoutsPerWeek,
+                now: referenceDate,
+                calendar: calendar
+            )
+        }
+    }
+
+    private func untrainedMuscleLabels(_ key: ProgressOverviewKey) -> [String] {
+        memo.untrainedMuscles.value(for: key) {
+            WorkoutDashboardDataBuilder.untrainedMuscleLabels(
+                history: store.allExerciseHistory(),
+                workoutDates: store.workoutSummaries.map(\.date),
+                mappings: store.muscleMappings,
                 now: referenceDate,
                 calendar: calendar
             )

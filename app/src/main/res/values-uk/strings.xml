@@ -1342,6 +1342,7 @@
     <string name="post_workout_level_up">Новий рівень! %1$d → %2$d</string>
     <string name="biggest_workout_ever">Найбільший обсяг за весь час</string>
     <string name="biggest_workout_month">Найбільший обсяг цього місяця</string>
+    <string name="untrained_muscles_hint">Не тренувалися понад 10 днів: %1$s</string>
     <string name="post_workout_metric_exercises">Вправи</string>
     <string name="post_workout_metrics_title">Показники тренування</string>
     <string name="post_workout_metric_top_muscle">Головний м’яз</string>

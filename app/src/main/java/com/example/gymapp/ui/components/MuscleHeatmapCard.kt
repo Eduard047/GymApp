@@ -138,6 +138,17 @@ fun MuscleHeatmapCard(
 
             MuscleLegend()
 
+            if (heatmap.untrainedMuscleLabels.isNotEmpty()) {
+                Text(
+                    text = formattedStringResource(
+                        R.string.untrained_muscles_hint,
+                        heatmap.untrainedMuscleLabels.joinToString(", ")
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             if (heatmap.selectedMuscleLabel != null) {
                 SelectedMuscleHighlight(heatmap = heatmap)
                 SelectedMuscleExercises(heatmap = heatmap)

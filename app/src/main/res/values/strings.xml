@@ -1300,6 +1300,7 @@
     <string name="post_workout_level_up">Level up! %1$d → %2$d</string>
     <string name="biggest_workout_ever">Biggest workout ever</string>
     <string name="biggest_workout_month">Biggest this month</string>
+    <string name="untrained_muscles_hint">Not trained for 10+ days: %1$s</string>
     <string name="post_workout_metric_exercises">Exercises</string>
     <string name="post_workout_metrics_title">Training metrics</string>
     <string name="post_workout_metric_top_muscle">Top muscle</string>

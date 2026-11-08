@@ -190,6 +190,27 @@ enum WorkoutDashboardDataBuilder {
         )
     }
 
+    /// Localized names for the muscle map hint "Not trained for 10+ days" (shared/untrained-muscles-v1.json);
+    /// independent of the selected period, so it takes the full history.
+    static func untrainedMuscleLabels(
+        history: [ExerciseHistoryEntry],
+        workoutDates: [Date],
+        mappings: [ExerciseMuscleMapping],
+        now: Date,
+        calendar: Calendar
+    ) -> [String] {
+        GymUntrainedMuscles.hintMuscleIDs(
+            history: history,
+            workoutDates: workoutDates,
+            mappings: mappings,
+            now: now,
+            calendar: calendar
+        )
+        .compactMap { id in
+            MuscleMappingEngine.muscleDefinitions.first { $0.id == id }.map(localizedMuscleName)
+        }
+    }
+
     static func recommendations(
         history: [ExerciseHistoryEntry],
         mappings: [ExerciseMuscleMapping],
@@ -964,6 +985,20 @@ struct WorkoutMuscleLoadCard: View {
     @Binding var selectedMuscleID: String?
 
     let data: WorkoutMuscleDashboardData
+    /// Localized names of major muscles not trained for 10+ days; the hint line is hidden when empty.
+    var untrainedMuscleLabels: [String] = []
+
+    private var untrainedHint: String {
+        String(
+            format: gymText(
+                "Not trained for 10+ days: %@",
+                "Не тренувалися понад 10 днів: %@",
+                "Не тренировались больше 10 дней: %@",
+                languageCode: gymCurrentLanguageCode()
+            ),
+            untrainedMuscleLabels.joined(separator: ", ")
+        )
+    }
 
     private var selectedMuscle: WorkoutMuscleMetric? {
         data.muscles.first { $0.id == selectedMuscleID }
@@ -1054,6 +1089,13 @@ struct WorkoutMuscleLoadCard: View {
                 .accessibilityElement(children: .combine)
 
                 MuscleBodyMapLegend()
+
+                if !untrainedMuscleLabels.isEmpty {
+                    Text(untrainedHint)
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 116), spacing: 8)],
