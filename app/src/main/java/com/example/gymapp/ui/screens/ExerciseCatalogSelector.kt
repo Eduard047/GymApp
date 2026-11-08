@@ -1,6 +1,10 @@
 package com.example.gymapp.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Surface
@@ -231,7 +235,7 @@ internal fun ExerciseCatalogSelector(
                         .fillMaxWidth()
                         .weight(1f)
                         .nestedScroll(remember { ConsumeListOverscrollConnection }),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
                 ) {
                     if (showRecent) {
                         item(key = "recent-header") {
@@ -248,6 +252,8 @@ internal fun ExerciseCatalogSelector(
                                 selected = exercise.id == selectedExerciseId,
                                 alreadyAdded = false,
                                 exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                                isFirstInGroup = exercise.id == recentExercises.first().id,
+                                isLastInGroup = exercise.id == recentExercises.last().id,
                                 onClick = {
                                     onExerciseSelected(exercise.id)
                                     closePicker()
@@ -257,14 +263,16 @@ internal fun ExerciseCatalogSelector(
                     }
                     if (!isChooseMode && onCreateExercise != null) {
                         item(key = "create-exercise") {
-                            CreateExercisePanel(
-                                searchQuery = query,
-                                onCreate = onCreateExercise,
-                                onCreated = { exerciseId ->
-                                    onExerciseSelected(exerciseId)
-                                    closePicker()
-                                }
-                            )
+                            Box(modifier = Modifier.padding(vertical = 8.dp)) {
+                                CreateExercisePanel(
+                                    searchQuery = query,
+                                    onCreate = onCreateExercise,
+                                    onCreated = { exerciseId ->
+                                        onExerciseSelected(exerciseId)
+                                        closePicker()
+                                    }
+                                )
+                            }
                         }
                     }
                     if (visibleExercises.isEmpty()) {
@@ -297,6 +305,8 @@ internal fun ExerciseCatalogSelector(
                                 selected = exercise.id == selectedExerciseId,
                                 alreadyAdded = !isChooseMode && exercise.id in addedExerciseIds,
                                 exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                                isFirstInGroup = exercise.id == visibleExercises.first().id,
+                                isLastInGroup = exercise.id == visibleExercises.last().id,
                                 onClick = {
                                     onExerciseSelected(exercise.id)
                                     closePicker()
@@ -315,7 +325,8 @@ internal fun ExerciseCatalogSelector(
 private fun PickerSectionTitle(text: String) {
     Text(
         text = text,
-        modifier = Modifier.padding(top = 4.dp, start = 4.dp),
+        // Start inset 12dp = the grouped rows' content start; 16dp above / 6dp below replaces the old list gap.
+        modifier = Modifier.padding(top = 16.dp, bottom = 6.dp, start = 12.dp),
         style = androidx.compose.material3.MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.SemiBold,
         color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
@@ -334,22 +345,28 @@ private fun ExercisePickerRow(
     selected: Boolean,
     alreadyAdded: Boolean,
     exerciseMediaOwnerKey: String,
+    isFirstInGroup: Boolean,
+    isLastInGroup: Boolean,
     onClick: () -> Unit
 ) {
     val searchMatchReason = exerciseSearchMatch(exercise.name, query, muscleIds)?.reason
-    // Same solid hairline row as the Exercises list: primary text, no blue capsule.
+    // Inset-grouped row: consecutive rows share one tonal container (outer corners only on the group's
+    // first and last row) and are split by a hairline inset past the thumbnail.
+    val groupRadius = 12.dp
     Surface(
         onClick = onClick,
         enabled = !alreadyAdded,
         modifier = Modifier.fillMaxWidth(),
-        shape = GymPanelShape,
-        color = androidx.compose.material3.MaterialTheme.colorScheme.surface,
-        contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
-        border = BorderStroke(
-            1.dp,
-            androidx.compose.material3.MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
-        )
+        shape = RoundedCornerShape(
+            topStart = if (isFirstInGroup) groupRadius else 0.dp,
+            topEnd = if (isFirstInGroup) groupRadius else 0.dp,
+            bottomStart = if (isLastInGroup) groupRadius else 0.dp,
+            bottomEnd = if (isLastInGroup) groupRadius else 0.dp
+        ),
+        color = androidx.compose.material3.MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
     ) {
+      Box {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -409,6 +426,19 @@ private fun ExercisePickerRow(
                 )
             }
         }
+        if (!isLastInGroup) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 86.dp)
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(
+                        androidx.compose.material3.MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+            )
+        }
+      }
     }
 }
 

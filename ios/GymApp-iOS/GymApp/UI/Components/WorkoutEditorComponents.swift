@@ -2070,6 +2070,17 @@ struct ExercisePickerSheet: View {
         )
     }
 
+    /// Section label shared by "Recent" and "All exercises": subheadline semibold secondary, sentence case,
+    /// so both read the same as the Android picker's section titles.
+    private func pickerSectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(GymTheme.textSecondary)
+            .textCase(nil)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityAddTraits(.isHeader)
+    }
+
     /// One exercise row, shared by the "Recent" section and the normal list.
     private func exerciseRow(_ exercise: Exercise) -> some View {
         HStack(spacing: 12) {
@@ -2139,11 +2150,13 @@ struct ExercisePickerSheet: View {
             List {
                 let recent = recentExercises
                 if !recent.isEmpty {
-                    Section(gymText("Recent", "Нещодавні", "Недавние", languageCode: gymCurrentLanguageCode())) {
+                    Section {
                         ForEach(recent) { exercise in
                             exerciseRow(exercise)
                                 .id("recent-\(exercise.id.uuidString)")
                         }
+                    } header: {
+                        pickerSectionTitle(gymText("Recent", "Нещодавні", "Недавние", languageCode: gymCurrentLanguageCode()))
                     }
                 }
 
@@ -2272,10 +2285,10 @@ struct ExercisePickerSheet: View {
                         }
                     } else {
                         if !recent.isEmpty {
-                            Text(gymText("All exercises", "Усі вправи", "Все упражнения", languageCode: gymCurrentLanguageCode()))
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(GymTheme.textSecondary)
-                                .accessibilityAddTraits(.isHeader)
+                            pickerSectionTitle(gymText("All exercises", "Усі вправи", "Все упражнения", languageCode: gymCurrentLanguageCode()))
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 4, trailing: 16))
                         }
                         ForEach(filteredExercises) { exercise in
                             exerciseRow(exercise)
