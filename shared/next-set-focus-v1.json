@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "description": "Next-set focus golden cases run by Android NextSetFocusTest and iOS NextSetFocusTests. After the user records one set in the active workout, the screen moves its current-set focus (and scrolls it into view when needed) to the next incomplete set. sets lists every set of the workout AFTER the record as [exerciseIndex, setIndex, completed]; recorded is [exerciseIndex, setIndex] of the set that was just recorded (it is always completed in sets and never its own target). next is the target [exerciseIndex, setIndex], or null when nothing is left to do (workout complete: no focus change). Order: the first incomplete set after the recorded one in workout order (rest of the same exercise, then the following exercises); when none is left, wrap to the first incomplete set before it (earlier sets of the same exercise first, then earlier exercises); else null. Exercises whose sets are all complete have no incomplete set, so they are skipped automatically. Input order does not matter: sets are ordered by exerciseIndex then setIndex.",
+  "cases": [
+    { "id": "next-set-same-exercise", "sets": [[0, 0, true], [0, 1, false], [0, 2, false], [1, 0, false]], "recorded": [0, 0], "next": [0, 1] },
+    { "id": "last-set-of-exercise-goes-to-next-exercise", "sets": [[0, 0, true], [0, 1, true], [1, 0, false], [1, 1, false]], "recorded": [0, 1], "next": [1, 0] },
+    { "id": "skips-completed-exercise", "sets": [[0, 0, true], [1, 0, true], [1, 1, true], [2, 0, false]], "recorded": [0, 0], "next": [2, 0] },
+    { "id": "skips-completed-sets-inside-exercise", "sets": [[0, 0, true], [0, 1, true], [0, 2, false]], "recorded": [0, 0], "next": [0, 2] },
+    { "id": "wraps-to-earlier-exercise", "sets": [[0, 0, false], [0, 1, true], [1, 0, true], [1, 1, true]], "recorded": [1, 1], "next": [0, 0] },
+    { "id": "wrap-picks-first-incomplete-of-earlier-exercises", "sets": [[0, 0, true], [0, 1, false], [1, 0, false], [2, 0, true]], "recorded": [2, 0], "next": [0, 1] },
+    { "id": "wrap-within-same-exercise", "sets": [[0, 0, false], [0, 1, true], [0, 2, true]], "recorded": [0, 2], "next": [0, 0] },
+    { "id": "after-wins-over-earlier", "sets": [[0, 0, false], [1, 0, true], [1, 1, false]], "recorded": [1, 0], "next": [1, 1] },
+    { "id": "workout-complete-no-focus-change", "sets": [[0, 0, true], [0, 1, true], [1, 0, true]], "recorded": [1, 0], "next": null },
+    { "id": "single-set-workout", "sets": [[0, 0, true]], "recorded": [0, 0], "next": null },
+    { "id": "unordered-input-is-sorted", "sets": [[1, 0, false], [0, 1, false], [0, 0, true]], "recorded": [0, 0], "next": [0, 1] },
+    { "id": "sparse-indices", "sets": [[0, 0, true], [3, 5, false], [3, 7, false]], "recorded": [0, 0], "next": [3, 5] }
+  ]
+}

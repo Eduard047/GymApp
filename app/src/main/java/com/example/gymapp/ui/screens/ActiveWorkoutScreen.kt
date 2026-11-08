@@ -108,6 +108,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -228,6 +234,22 @@ internal const val ACTIVE_WORKOUT_VOLUME_METRIC_TAG = "active_workout_volume_met
 internal const val ACTIVE_WORKOUT_COMPLETED_METRIC_TAG = "active_workout_completed_metric"
 /** How long a tapped Log waits for the workout state before its haptic is dropped. */
 private const val RECORD_HAPTIC_WAIT_MS = 1500L
+
+/** Window bounds of the set rows and of the list, read once when a recorded set moves focus to the next one. */
+private class SetRowBoundsHolder {
+    val rows = HashMap<String, Rect>()
+    var viewport: Rect? = null
+    var exerciseBaseIndex: Int? = null
+}
+
+private val LocalSetRowBounds = staticCompositionLocalOf<SetRowBoundsHolder?> { null }
+
+@Composable
+private fun Modifier.trackSetRowBounds(setId: String): Modifier {
+    val holder = LocalSetRowBounds.current
+    DisposableEffect(holder, setId) { onDispose { holder?.rows?.remove(setId) } }
+    return onGloballyPositioned { holder?.rows?.put(setId, it.boundsInRoot()) }
+}
 
 @Composable
 fun ActiveWorkoutScreen(
@@ -549,16 +571,73 @@ fun ActiveWorkoutScreen(
         ?.id
 
     val listState = rememberLazyListState()
+    val setRowBounds = remember { SetRowBoundsHolder() }
+    // Set by a single-set Log tap only (not "log all", edits or undo): once that set shows as recorded, the
+    // next incomplete set (see NextSetFocus) is scrolled into view when it is not fully visible. The
+    // current-set highlight is derived from the first incomplete set, and no text field takes keyboard focus.
+    var recordedSetAwaitingFocus by remember { mutableStateOf<String?>(null) }
+    val recordedSetNowDone = recordedSetAwaitingFocus?.takeIf { recordedId ->
+        uiState.exercises.any { exercise -> exercise.sets.any { it.id == recordedId && it.isCompleted } }
+    }
+    val latestExercises by rememberUpdatedState(uiState.exercises)
+    LaunchedEffect(recordedSetNowDone) {
+        val recordedId = recordedSetNowDone ?: return@LaunchedEffect
+        val exercises = latestExercises
+        val states = exercises.flatMapIndexed { exerciseIndex, exercise ->
+            exercise.sets.mapIndexed { setIndex, set -> NextSetFocusSet(exerciseIndex, setIndex, set.isCompleted) }
+        }
+        val recordedAt = exercises.indices.firstNotNullOfOrNull { exerciseIndex ->
+            exercises[exerciseIndex].sets.indexOfFirst { it.id == recordedId }
+                .takeIf { it >= 0 }?.let { NextSetPosition(exerciseIndex, it) }
+        }
+        val target = recordedAt?.let { NextSetFocus.next(states, it) }
+        if (target != null) {
+            val targetExercise = exercises[target.exerciseIndex]
+            val targetSetId = targetExercise.sets[target.setIndex].id
+            // Let the recorded row finish changing height before measuring.
+            delay(if (reduceMotion) 50L else 350L)
+            if (setRowBounds.rows[targetSetId] == null) {
+                // The target row is not composed (scrolled far away): bring its exercise card in first.
+                val exerciseIds = exercises.map { it.id }
+                listState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { it.key in exerciseIds }
+                    ?.let { setRowBounds.exerciseBaseIndex = it.index - exerciseIds.indexOf(it.key) }
+                setRowBounds.exerciseBaseIndex?.let { base -> listState.scrollToItem(base + target.exerciseIndex) }
+                repeat(10) {
+                    if (setRowBounds.rows[targetSetId] == null) delay(30L)
+                }
+            }
+            val row = setRowBounds.rows[targetSetId]
+            val viewport = setRowBounds.viewport
+            if (row != null && viewport != null) {
+                val delta = NextSetFocus.scrollDelta(
+                    rowTop = row.top,
+                    rowBottom = row.bottom,
+                    viewportTop = viewport.top,
+                    viewportBottom = viewport.bottom - listState.layoutInfo.afterContentPadding
+                )
+                if (delta != 0f) {
+                    if (reduceMotion) listState.scrollBy(delta) else listState.animateScrollBy(delta)
+                }
+            }
+        }
+        recordedSetAwaitingFocus = null
+    }
     val reorder = rememberExerciseReorderState(listState)
     val exerciseKeys = uiState.exercises.map { it.id }
     val canReorderExercises = uiState.liveConnectionMode == null && uiState.exercises.size >= 2
     ExerciseReorderSync(reorder, exerciseKeys, enabled = canReorderExercises)
     val displayedExercises = reorder.displayed(uiState.exercises) { it.id }
     // While the "Recorded" banner carries Undo for a set, that set's row shows none: one Undo at a time.
-    CompositionLocalProvider(LocalRecordedBannerSetId provides recordedConfirmation?.setId) {
+    CompositionLocalProvider(
+        LocalRecordedBannerSetId provides recordedConfirmation?.setId,
+        LocalSetRowBounds provides setRowBounds
+    ) {
         LazyColumn(
             state = listState,
-            modifier = modifier.fillMaxSize().imePadding().exerciseReorderViewport(reorder),
+            modifier = modifier.fillMaxSize().imePadding()
+                .onGloballyPositioned { setRowBounds.viewport = it.boundsInRoot() }
+                .exerciseReorderViewport(reorder),
             contentPadding = PaddingValues(
                 start = screenHorizontalPadding,
                 top = GymSpacing.ScreenTop,
@@ -759,8 +838,14 @@ fun ActiveWorkoutScreen(
                         result
                     },
                     onDeleteSet = onDeleteSet,
-                    onRecordSet = onRecordSet,
-                    onUndoSet = onUndoSet,
+                    onRecordSet = { setId ->
+                        recordedSetAwaitingFocus = setId
+                        onRecordSet(setId)
+                    },
+                    onUndoSet = { setId ->
+                        recordedSetAwaitingFocus = null
+                        onUndoSet(setId)
+                    },
                     onAdjustRestTimer = adjustRestTimer,
                     onStopRestTimer = stopRestTimer,
                     onDismissMessage = onDismissMessage,
@@ -832,7 +917,10 @@ fun ActiveWorkoutScreen(
                         )
                         if (uiState.completedSetCount < uiState.totalSetCount) {
                             OutlinedButton(
-                                onClick = onRecordAllPendingSets,
+                                onClick = {
+                                    recordedSetAwaitingFocus = null
+                                    onRecordAllPendingSets()
+                                },
                                 enabled = !operationInProgress,
                                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                             ) {
@@ -1656,6 +1744,7 @@ private fun ActiveWorkoutExerciseCard(
                     )
                 }
                 ActiveWorkoutSetRow(
+                    modifier = Modifier.trackSetRowBounds(set.id),
                     set = set,
                     operationInProgress = operationInProgress,
                     editable = !set.isCompleted,
@@ -1862,6 +1951,7 @@ private fun ActiveWorkoutFinishExerciseDialog(
 
 @Composable
 private fun ActiveWorkoutSetRow(
+    modifier: Modifier = Modifier,
     set: ActiveWorkoutSetUiState,
     operationInProgress: Boolean,
     editable: Boolean,
@@ -1895,7 +1985,7 @@ private fun ActiveWorkoutSetRow(
     // jumping when a set is logged (reduced motion: instant, the row swap itself is the state change).
     val reduceMotion = rememberReduceMotion()
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .then(
                 if (reduceMotion) {

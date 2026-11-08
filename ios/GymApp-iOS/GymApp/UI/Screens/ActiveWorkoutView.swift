@@ -137,6 +137,25 @@ private struct CompletedSetRowUndo {
     let action: () -> Void
 }
 
+/// Asks the list to bring the next set into view after the user records a set. The token makes
+/// two requests for the same set distinct.
+private struct NextSetScrollRequest: Equatable {
+    let setID: UUID
+    let token: Int
+}
+
+/// Which set rows are fully inside the scroll view right now. A plain reference type on purpose:
+/// scrolling updates it constantly and must not re-render the screen.
+private final class SetRowVisibilityTracker {
+    private var fullyVisible = Set<UUID>()
+
+    func update(_ id: UUID, isFullyVisible: Bool) {
+        if isFullyVisible { fullyVisible.insert(id) } else { fullyVisible.remove(id) }
+    }
+
+    func isFullyVisible(_ id: UUID) -> Bool { fullyVisible.contains(id) }
+}
+
 private enum LiveParticipantSelection: String {
     case current
     case peer
@@ -203,6 +222,9 @@ struct ActiveWorkoutView: View {
     /// This view instance's identity in the `GymKeepAwake` holder set.
     @State private var keepAwakeToken = UUID()
     @State private var collapsedExerciseIDs = Set<UUID>()
+    /// Set by a single-set record; the list scrolls the next incomplete set into view when needed.
+    @State private var nextSetScrollRequest: NextSetScrollRequest?
+    @State private var setRowVisibility = SetRowVisibilityTracker()
     @State private var expandedSetIDs = Set<UUID>()
     @FocusState private var focusedWeightSetID: UUID?
     /// The set whose Log tap is waiting for the weight field's commit (see
@@ -405,6 +427,21 @@ struct ActiveWorkoutView: View {
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if focusedWeightSetID != nil {
                         weightKeyboardDoneBar
+                    }
+                }
+                .onChange(of: nextSetScrollRequest) { _, request in
+                    guard let request else { return }
+                    // After the recorded row has settled into its new layout. Keyboard focus is
+                    // never moved here; if the user started typing meanwhile, the keyboard
+                    // scroll below owns the position.
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: reduceMotion ? 80_000_000 : 400_000_000)
+                        guard nextSetScrollRequest == request,
+                              focusedWeightSetID == nil,
+                              !setRowVisibility.isFullyVisible(request.setID) else { return }
+                        withAnimation(GymMotion.animation(reduceMotion: reduceMotion)) {
+                            scrollProxy.scrollTo(request.setID, anchor: .center)
+                        }
                     }
                 }
                 .onChange(of: focusedWeightSetID) { _, focusedID in
@@ -1617,6 +1654,9 @@ struct ActiveWorkoutView: View {
                                 exerciseName: exerciseName,
                                 draft: draft
                             )
+                            .onScrollVisibilityChange(threshold: 0.99) { isFullyVisible in
+                                setRowVisibility.update(set.id, isFullyVisible: isFullyVisible)
+                            }
                             // A thin divider between two plain (upcoming/completed)
                             // rows only — the current set's own tinted card already
                             // separates itself visually, so no divider hugs it.
@@ -3104,6 +3144,14 @@ struct ActiveWorkoutView: View {
                         collapsedExerciseIDs.remove(nextExercise.id)
                     }
                 }
+            }
+            // Single-set record by the user: bring the next incomplete set into view
+            // (keyboard focus is untouched; the screen highlights the first incomplete set).
+            if let nextSetID = NextSetFocus.nextSetID(in: updated, afterRecorded: set.id) {
+                nextSetScrollRequest = NextSetScrollRequest(
+                    setID: nextSetID,
+                    token: (nextSetScrollRequest?.token ?? 0) + 1
+                )
             }
             // One confirmation only (see `recordedSetConfirmation`): the plain
             // "Set recorded. Rest timer started." success text is suppressed
