@@ -53,6 +53,8 @@ data class WorkoutDetailUiState(
     val setAdditionsInFlight: Set<Long> = emptySet(),
     val availableExercisesToAdd: List<ExerciseEntity> = emptyList(),
     val frequentExerciseIds: List<Long> = emptyList(),
+    /** Picker "Recent" section, already limited to the exercises the picker offers. */
+    val recentExerciseIds: List<Long> = emptyList(),
     val exerciseWorkoutCounts: Map<Long, Int> = emptyMap(),
     val exerciseMuscleIds: Map<String, Set<String>> = emptyMap(),
     val workoutComparison: WorkoutComparison? = null
@@ -90,6 +92,8 @@ private data class WorkoutDetailMutationState(
 private data class WorkoutDetailExerciseCatalog(
     val exercises: List<ExerciseEntity>,
     val frequentExerciseIds: List<Long>,
+    /** Newest first over every exercise; the add picker narrows it to the exercises it offers. */
+    val recentExerciseIds: List<Long>,
     val workoutCounts: Map<Long, Int>,
     val muscleIdsByName: Map<String, Set<String>>
 )
@@ -147,6 +151,11 @@ class WorkoutDetailViewModel(
         WorkoutDetailExerciseCatalog(
             exercises = exercises,
             frequentExerciseIds = frequentIds,
+            recentExerciseIds = recentExerciseIds(
+                history,
+                exercises.mapTo(HashSet()) { it.id },
+                limit = Int.MAX_VALUE
+            ),
             workoutCounts = workoutCounts,
             muscleIdsByName = exercises.associate { exercise ->
                 val contributions = manualMappings[exercise.name.normalizedExerciseName()]
@@ -241,6 +250,9 @@ class WorkoutDetailViewModel(
             ?.map { it.workoutExercise.exerciseId }
             ?.toSet()
             .orEmpty()
+        val availableExercises = catalog.exercises.filterNot {
+            it.id in selectedExerciseIds || it.id in mutations.exerciseAdditionsInFlight
+        }
         WorkoutDetailUiState(
             sessionDetails = details?.withoutStagedRemoval(deletion.staged),
             hasGarminReceipt = sessionContext.hasGarminReceipt,
@@ -251,10 +263,10 @@ class WorkoutDetailViewModel(
             personalRecordFlags = records.flags,
             personalRecordSetIds = records.setIds,
             setAdditionsInFlight = mutations.setAdditionsInFlight,
-            availableExercisesToAdd = catalog.exercises.filterNot {
-                it.id in selectedExerciseIds || it.id in mutations.exerciseAdditionsInFlight
-            },
+            availableExercisesToAdd = availableExercises,
             frequentExerciseIds = catalog.frequentExerciseIds,
+            recentExerciseIds = catalog.recentExerciseIds
+                .limitedToPicker(availableExercises.mapTo(HashSet()) { it.id }),
             exerciseWorkoutCounts = catalog.workoutCounts,
             exerciseMuscleIds = catalog.muscleIdsByName,
             workoutComparison = sessionContext.comparison

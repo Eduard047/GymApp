@@ -1,0 +1,1040 @@
+{
+  "version": 1,
+  "description": "Exercise picker: the 'Recent' section shown above the list while the search field is empty (T169). Implemented by recentExerciseIds on Android; iPhone must produce identical results.",
+  "scope": "Add-exercise picker of the plan editor and the saved-workout editor. The Progress 'choose exercise' picker has no Recent section. The section is also hidden while any picker filter chip (Frequent, Favorites, body part, muscle) is active; that part is UI-only and not covered by the cases. The recent exercises keep their normal position in the list below, and an exercise already in the plan keeps the picker's usual 'added' check and disabled state in the Recent row too.",
+  "rules": [
+    "1. Source = rows of completed workouts. Sessions go newest first by date; if several sessions share a date, the greater sessionId (later stored) is newer. Inside a session exercises go in ascending blockOrderIndex.",
+    "2. Every logged set row counts, whatever its weight and reps. A block with no logged sets contributes no row (Android has no row for it; iPhone skips the empty block).",
+    "3. Exercises are distinct by exerciseId, the first occurrence in that order wins (an exercise in two blocks of one session, or in several sessions, is listed once).",
+    "4. Only exercises present in eligibleExerciseIds (the picker's own list: no longer existing, archived or hidden exercises are not in it) are listed. Skipped exercises do not use up a slot.",
+    "5. At most 8 exercises (after skipping).",
+    "6. Search text that is not blank (after trimming) hides the section: expected = []. An empty history or an empty picker list also gives [] (the section is not drawn)."
+  ],
+  "inputFields": {
+    "query": "current search field text",
+    "eligibleExerciseIds": "ids of the exercises the picker lists",
+    "history": "rows of one logged set each: exerciseId, sessionId, date (any comparable number, e.g. epoch ms), blockOrderIndex (position of the exercise block in the workout). Several rows with the same keys are several sets of one block."
+  },
+  "outputField": "expected = exercise ids of the Recent section, top to bottom; [] means the section is not shown",
+  "cases": [
+    {
+      "id": "no-history",
+      "name": "No completed workouts -> empty (section hidden)",
+      "query": "",
+      "eligibleExerciseIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "history": [],
+      "expected": []
+    },
+    {
+      "id": "single-session-block-order",
+      "name": "One session: exercises in block order, sets of a block collapse",
+      "query": "",
+      "eligibleExerciseIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "history": [
+        {
+          "exerciseId": 3,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 3,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 3,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 1
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 1
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 2
+        }
+      ],
+      "expected": [
+        3,
+        1,
+        2
+      ]
+    },
+    {
+      "id": "input-order-irrelevant",
+      "name": "Row order in the input does not matter",
+      "query": "",
+      "eligibleExerciseIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "history": [
+        {
+          "exerciseId": 2,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 2
+        },
+        {
+          "exerciseId": 3,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 1
+        }
+      ],
+      "expected": [
+        3,
+        1,
+        2
+      ]
+    },
+    {
+      "id": "newest-date-first",
+      "name": "Sessions ordered by date, newest first, whatever the session ids",
+      "query": "",
+      "eligibleExerciseIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 30,
+          "date": 1000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 10,
+          "date": 3000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 3,
+          "sessionId": 20,
+          "date": 2000,
+          "blockOrderIndex": 0
+        }
+      ],
+      "expected": [
+        2,
+        3,
+        1
+      ]
+    },
+    {
+      "id": "date-tie-higher-session-first",
+      "name": "Same date: the higher (later stored) session id is newer",
+      "query": "",
+      "eligibleExerciseIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 12,
+          "date": 1000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 3,
+          "sessionId": 11,
+          "date": 1000,
+          "blockOrderIndex": 0
+        }
+      ],
+      "expected": [
+        2,
+        3,
+        1
+      ]
+    },
+    {
+      "id": "newer-session-beats-block-order",
+      "name": "A later block of a newer session still comes before an earlier session",
+      "query": "",
+      "eligibleExerciseIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 11,
+          "date": 2000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 3,
+          "sessionId": 11,
+          "date": 2000,
+          "blockOrderIndex": 5
+        }
+      ],
+      "expected": [
+        2,
+        3,
+        1
+      ]
+    },
+    {
+      "id": "first-occurrence-wins",
+      "name": "An exercise repeated in an older session keeps its newest position",
+      "query": "",
+      "eligibleExerciseIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 1
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 11,
+          "date": 2000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 3,
+          "sessionId": 11,
+          "date": 2000,
+          "blockOrderIndex": 1
+        }
+      ],
+      "expected": [
+        2,
+        3,
+        1
+      ]
+    },
+    {
+      "id": "same-session-two-blocks",
+      "name": "Same exercise in two blocks of one session: listed once, at its first block",
+      "query": "",
+      "eligibleExerciseIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 1
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 2
+        },
+        {
+          "exerciseId": 3,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 3
+        }
+      ],
+      "expected": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "id": "single-exercise",
+      "name": "One exercise with several sets -> one entry",
+      "query": "",
+      "eligibleExerciseIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "history": [
+        {
+          "exerciseId": 4,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 4,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 4,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 4,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0
+        }
+      ],
+      "expected": [
+        4
+      ]
+    },
+    {
+      "id": "skip-missing-exercise",
+      "name": "Exercises that no longer exist / are archived / hidden in the picker are skipped",
+      "query": "",
+      "eligibleExerciseIds": [
+        1,
+        2,
+        3
+      ],
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 99,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 1
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 2
+        }
+      ],
+      "expected": [
+        1,
+        2
+      ]
+    },
+    {
+      "id": "skipped-do-not-use-cap",
+      "name": "Skipped exercises do not use up the 8 slots",
+      "query": "",
+      "eligibleExerciseIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "history": [
+        {
+          "exerciseId": 100,
+          "sessionId": 10,
+          "date": 5000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 101,
+          "sessionId": 10,
+          "date": 4999,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 102,
+          "sessionId": 10,
+          "date": 4998,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 11,
+          "date": 999,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 11,
+          "date": 998,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 3,
+          "sessionId": 11,
+          "date": 997,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 4,
+          "sessionId": 11,
+          "date": 996,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 5,
+          "sessionId": 11,
+          "date": 995,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 6,
+          "sessionId": 11,
+          "date": 994,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 7,
+          "sessionId": 11,
+          "date": 993,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 8,
+          "sessionId": 11,
+          "date": 992,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 9,
+          "sessionId": 11,
+          "date": 991,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 10,
+          "sessionId": 11,
+          "date": 990,
+          "blockOrderIndex": 0
+        }
+      ],
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "id": "max-eight",
+      "name": "More than 8 distinct exercises: only the 8 newest",
+      "query": "",
+      "eligibleExerciseIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 11,
+          "date": 1001,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 12,
+          "date": 1002,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 3,
+          "sessionId": 13,
+          "date": 1003,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 4,
+          "sessionId": 14,
+          "date": 1004,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 5,
+          "sessionId": 15,
+          "date": 1005,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 6,
+          "sessionId": 16,
+          "date": 1006,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 7,
+          "sessionId": 17,
+          "date": 1007,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 8,
+          "sessionId": 18,
+          "date": 1008,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 9,
+          "sessionId": 19,
+          "date": 1009,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 10,
+          "sessionId": 20,
+          "date": 1010,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 11,
+          "sessionId": 21,
+          "date": 1011,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 12,
+          "sessionId": 22,
+          "date": 1012,
+          "blockOrderIndex": 0
+        }
+      ],
+      "expected": [
+        12,
+        11,
+        10,
+        9,
+        8,
+        7,
+        6,
+        5
+      ]
+    },
+    {
+      "id": "exactly-eight",
+      "name": "Exactly 8 distinct exercises: all of them",
+      "query": "",
+      "eligibleExerciseIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 1
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 2
+        },
+        {
+          "exerciseId": 3,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 3
+        },
+        {
+          "exerciseId": 4,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 4
+        },
+        {
+          "exerciseId": 5,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 5
+        },
+        {
+          "exerciseId": 6,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 6
+        },
+        {
+          "exerciseId": 7,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 7
+        },
+        {
+          "exerciseId": 8,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 8
+        }
+      ],
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "id": "cap-inside-one-session",
+      "name": "The cap also cuts inside one session, by block order",
+      "query": "",
+      "eligibleExerciseIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 1
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 2
+        },
+        {
+          "exerciseId": 3,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 3
+        },
+        {
+          "exerciseId": 4,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 4
+        },
+        {
+          "exerciseId": 5,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 5
+        },
+        {
+          "exerciseId": 6,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 6
+        },
+        {
+          "exerciseId": 7,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 7
+        },
+        {
+          "exerciseId": 8,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 8
+        },
+        {
+          "exerciseId": 9,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 9
+        },
+        {
+          "exerciseId": 10,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 10
+        }
+      ],
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "id": "search-text-hides",
+      "name": "Non-empty search text hides the section",
+      "query": "bench",
+      "eligibleExerciseIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 1
+        }
+      ],
+      "expected": []
+    },
+    {
+      "id": "blank-search-counts-as-empty",
+      "name": "Whitespace-only search text counts as empty",
+      "query": "   ",
+      "eligibleExerciseIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 1
+        }
+      ],
+      "expected": [
+        1,
+        2
+      ]
+    },
+    {
+      "id": "no-eligible-exercises",
+      "name": "Nothing in the picker -> empty",
+      "query": "",
+      "eligibleExerciseIds": [],
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 1000,
+          "blockOrderIndex": 0
+        }
+      ],
+      "expected": []
+    }
+  ]
+}

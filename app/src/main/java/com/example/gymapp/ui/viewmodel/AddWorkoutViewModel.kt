@@ -333,6 +333,8 @@ data class AddWorkoutUiState(
     val note: String = "",
     val exercises: List<ExerciseEntity> = emptyList(),
     val frequentExerciseIds: List<Long> = emptyList(),
+    /** Picker "Recent" section: last distinct exercises logged, newest first (see [recentExerciseIds]). */
+    val recentExerciseIds: List<Long> = emptyList(),
     val exerciseWorkoutCounts: Map<Long, Int> = emptyMap(),
     val exerciseMuscleIds: Map<String, Set<String>> = emptyMap(),
     val exerciseDrafts: List<ExerciseInputState> = emptyList(),
@@ -1001,6 +1003,7 @@ class AddWorkoutViewModel internal constructor(
         val isLoaded: Boolean,
         val exercises: List<ExerciseEntity>,
         val frequentExerciseIds: List<Long>,
+        val recentExerciseIds: List<Long>,
         val exerciseWorkoutCounts: Map<Long, Int>,
         val exerciseMuscleIds: Map<String, Set<String>>,
         val loadProfiles: Map<Long, ExerciseLoadProfile>,
@@ -1066,6 +1069,7 @@ class AddWorkoutViewModel internal constructor(
             isLoaded = true,
             exercises = exerciseList,
             frequentExerciseIds = frequentIds,
+            recentExerciseIds = recentExerciseIds(history, exerciseList.mapTo(HashSet()) { it.id }),
             exerciseWorkoutCounts = workoutCounts,
             exerciseMuscleIds = exerciseList.associate { exercise ->
                 val contributions = manualMappings[exercise.name.normalizedExerciseName()]
@@ -1085,6 +1089,7 @@ class AddWorkoutViewModel internal constructor(
             isLoaded = false,
             exercises = emptyList(),
             frequentExerciseIds = emptyList(),
+            recentExerciseIds = emptyList(),
             exerciseWorkoutCounts = emptyMap(),
             exerciseMuscleIds = emptyMap(),
             loadProfiles = emptyMap(),
@@ -1360,6 +1365,7 @@ class AddWorkoutViewModel internal constructor(
             note = local.note,
             exercises = catalog.exercises,
             frequentExerciseIds = catalog.frequentExerciseIds,
+            recentExerciseIds = catalog.recentExerciseIds,
             exerciseWorkoutCounts = catalog.exerciseWorkoutCounts,
             exerciseMuscleIds = catalog.exerciseMuscleIds,
             exerciseDrafts = local.exerciseDrafts,

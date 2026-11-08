@@ -1378,6 +1378,8 @@
     <string name="exercise_picker_all">Усі</string>
     <string name="exercise_picker_frequent">Часті</string>
     <string name="exercise_picker_frequent_empty">Часто використовувані вправи з’являться тут після збереження тренувань.</string>
+    <string name="picker_recent_title">Нещодавні</string>
+    <string name="picker_recent_all_title">Усі вправи</string>
     <string name="exercise_card_mapped_count">Зіставлено: %1$d</string>
     <string name="exercise_card_auto_mapping">Автозіставлення</string>
     <string name="exercise_card_muscle_groups">Групи м’язів</string>

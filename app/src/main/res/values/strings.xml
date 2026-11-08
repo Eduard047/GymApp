@@ -1338,6 +1338,8 @@
     <string name="exercise_picker_all">All</string>
     <string name="exercise_picker_frequent">Frequent</string>
     <string name="exercise_picker_frequent_empty">Your frequently used exercises will appear here after you save some workouts.</string>
+    <string name="picker_recent_title">Recent</string>
+    <string name="picker_recent_all_title">All exercises</string>
     <string name="exercise_card_mapped_count">%1$d mapped</string>
     <string name="exercise_card_auto_mapping">Auto mapping</string>
     <string name="exercise_card_muscle_groups">Muscle groups</string>

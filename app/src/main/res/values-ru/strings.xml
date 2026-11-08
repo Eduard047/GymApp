@@ -1378,6 +1378,8 @@
     <string name="exercise_picker_all">Все</string>
     <string name="exercise_picker_frequent">Частые</string>
     <string name="exercise_picker_frequent_empty">Часто используемые упражнения появятся здесь после сохранения тренировок.</string>
+    <string name="picker_recent_title">Недавние</string>
+    <string name="picker_recent_all_title">Все упражнения</string>
     <string name="exercise_card_mapped_count">Сопоставлено: %1$d</string>
     <string name="exercise_card_auto_mapping">Автосопоставление</string>
     <string name="exercise_card_muscle_groups">Группы мышц</string>

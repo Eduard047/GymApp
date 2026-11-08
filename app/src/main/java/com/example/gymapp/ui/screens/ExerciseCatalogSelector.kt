@@ -56,6 +56,7 @@ import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.util.currentAppLanguageTag
+import com.example.gymapp.ui.viewmodel.RECENT_EXERCISES_MAX
 import com.example.gymapp.util.formattedPluralStringResource
 
 /** Which flow the catalog sheet serves: adding an exercise to a workout, or choosing one to view. */
@@ -90,7 +91,9 @@ internal fun ExerciseCatalogSelector(
      */
     onCreateExercise: (suspend (String) -> Long)? = null,
     /** Exercises already in the plan: shown with a check and not selectable again (Add mode). */
-    addedExerciseIds: Set<Long> = emptySet()
+    addedExerciseIds: Set<Long> = emptySet(),
+    /** Last distinct exercises logged, newest first: the "Recent" section while no search or filter is active (Add mode). */
+    recentExerciseIds: List<Long> = emptyList()
 ) {
     val isChooseMode = mode == ExerciseSelectorMode.Choose
     var internalExpanded by rememberSaveable { mutableStateOf(false) }
@@ -135,6 +138,13 @@ internal fun ExerciseCatalogSelector(
             languageTag = languageTag
         ).filter { exercise -> !frequentOnly || exercise.id in frequentExerciseIds }
     }
+
+    val recentExercises = remember(exercises, recentExerciseIds) {
+        val byId = exercises.associateBy { it.id }
+        recentExerciseIds.mapNotNull { byId[it] }.take(RECENT_EXERCISES_MAX)
+    }
+    val showRecent = !isChooseMode && recentExercises.isNotEmpty() && query.isBlank() &&
+        !frequentOnly && !favoritesOnly && bodyFilter == ExerciseBodyFilter.All && muscleFilter == null
 
     if (trigger != null) {
         trigger { internalExpanded = true }
@@ -218,6 +228,28 @@ internal fun ExerciseCatalogSelector(
                         .nestedScroll(remember { ConsumeListOverscrollConnection }),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    if (showRecent) {
+                        item(key = "recent-header") {
+                            PickerSectionTitle(stringResource(R.string.picker_recent_title))
+                        }
+                        items(recentExercises, key = { "recent-${it.id}" }) { exercise ->
+                            ExercisePickerRow(
+                                exercise = exercise,
+                                languageTag = languageTag,
+                                query = query,
+                                muscleIds = exerciseMuscleIds[exercise.name],
+                                isChooseMode = false,
+                                sessionCount = 0,
+                                selected = exercise.id == selectedExerciseId,
+                                alreadyAdded = exercise.id in addedExerciseIds,
+                                exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                                onClick = {
+                                    onExerciseSelected(exercise.id)
+                                    closePicker()
+                                }
+                            )
+                        }
+                    }
                     if (!isChooseMode && onCreateExercise != null) {
                         item(key = "create-exercise") {
                             CreateExercisePanel(
@@ -244,94 +276,132 @@ internal fun ExerciseCatalogSelector(
                             )
                         }
                     } else {
+                        if (showRecent) {
+                            item(key = "all-header") {
+                                PickerSectionTitle(stringResource(R.string.picker_recent_all_title))
+                            }
+                        }
                         items(visibleExercises, key = { it.id }) { exercise ->
-                            val searchMatchReason = exerciseSearchMatch(exercise.name, query, exerciseMuscleIds[exercise.name])?.reason
-                            // Same solid hairline row as the Exercises list: primary text, no blue capsule.
-                            val alreadyAdded = !isChooseMode && exercise.id in addedExerciseIds
-                            Surface(
+                            ExercisePickerRow(
+                                exercise = exercise,
+                                languageTag = languageTag,
+                                query = query,
+                                muscleIds = exerciseMuscleIds[exercise.name],
+                                isChooseMode = isChooseMode,
+                                sessionCount = exerciseWorkoutCounts[exercise.id] ?: 0,
+                                selected = exercise.id == selectedExerciseId,
+                                alreadyAdded = !isChooseMode && exercise.id in addedExerciseIds,
+                                exerciseMediaOwnerKey = exerciseMediaOwnerKey,
                                 onClick = {
                                     onExerciseSelected(exercise.id)
                                     closePicker()
-                                },
-                                enabled = !alreadyAdded,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = GymPanelShape,
-                                color = androidx.compose.material3.MaterialTheme.colorScheme.surface,
-                                contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
-                                border = BorderStroke(
-                                    1.dp,
-                                    androidx.compose.material3.MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
-                                )
-                            ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 56.dp)
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                ExerciseMediaPreview(
-                                    exerciseId = exercise.id,
-                                    exerciseName = exercise.name,
-                                    ownerKey = exerciseMediaOwnerKey,
-                                    width = 64.dp,
-                                    height = 52.dp,
-                                    editable = false
-                                )
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .padding(start = 10.dp),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                                ) {
-                                    Text(
-                                        text = BuiltInExerciseCatalog.displayName(
-                                            exercise.name,
-                                            languageTag
-                                        ),
-                                        style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    if (searchMatchReason != null) {
-                                        Text(
-                                            text = localizedExerciseSearchMatchReason(
-                                                searchMatchReason
-                                            ),
-                                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    } else if (isChooseMode) {
-                                        val sessionCount = exerciseWorkoutCounts[exercise.id] ?: 0
-                                        Text(
-                                            text = formattedPluralStringResource(
-                                                R.plurals.progress_sessions_count,
-                                                sessionCount,
-                                                sessionCount
-                                            ),
-                                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
                                 }
-                                if (exercise.id == selectedExerciseId || alreadyAdded) {
-                                    Spacer(modifier = Modifier.size(8.dp))
-                                    Icon(
-                                        imageVector = Icons.Default.CheckCircle,
-                                        contentDescription = null,
-                                        tint = androidx.compose.material3.MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                            }
+                            )
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Plain section label of the picker list: tonal secondary text, no caps, no rule. */
+@Composable
+private fun PickerSectionTitle(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier.padding(top = 4.dp, start = 4.dp),
+        style = androidx.compose.material3.MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+/** One exercise row of the picker, shared by the "Recent" section and the normal list. */
+@Composable
+private fun ExercisePickerRow(
+    exercise: ExerciseEntity,
+    languageTag: String,
+    query: String,
+    muscleIds: Set<String>?,
+    isChooseMode: Boolean,
+    sessionCount: Int,
+    selected: Boolean,
+    alreadyAdded: Boolean,
+    exerciseMediaOwnerKey: String,
+    onClick: () -> Unit
+) {
+    val searchMatchReason = exerciseSearchMatch(exercise.name, query, muscleIds)?.reason
+    // Same solid hairline row as the Exercises list: primary text, no blue capsule.
+    Surface(
+        onClick = onClick,
+        enabled = !alreadyAdded,
+        modifier = Modifier.fillMaxWidth(),
+        shape = GymPanelShape,
+        color = androidx.compose.material3.MaterialTheme.colorScheme.surface,
+        contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(
+            1.dp,
+            androidx.compose.material3.MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ExerciseMediaPreview(
+                exerciseId = exercise.id,
+                exerciseName = exercise.name,
+                ownerKey = exerciseMediaOwnerKey,
+                width = 64.dp,
+                height = 52.dp,
+                editable = false
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = BuiltInExerciseCatalog.displayName(exercise.name, languageTag),
+                    style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (searchMatchReason != null) {
+                    Text(
+                        text = localizedExerciseSearchMatchReason(searchMatchReason),
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                } else if (isChooseMode) {
+                    Text(
+                        text = formattedPluralStringResource(
+                            R.plurals.progress_sessions_count,
+                            sessionCount,
+                            sessionCount
+                        ),
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            if (selected || alreadyAdded) {
+                Spacer(modifier = Modifier.size(8.dp))
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = androidx.compose.material3.MaterialTheme.colorScheme.primary
+                )
             }
         }
     }

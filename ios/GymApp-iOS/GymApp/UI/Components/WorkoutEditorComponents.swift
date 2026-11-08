@@ -2001,6 +2001,8 @@ struct ExercisePickerSheet: View {
     let muscleMappings: [ExerciseMuscleMapping]
     let sessionCounts: [UUID: Int]
     var latestSessionDates: [UUID: Date] = [:]
+    /// Last distinct exercises logged, newest first (`GymRecentExercises`): the "Recent" section.
+    var recentExerciseIDs: [UUID] = []
     let onSelect: (Exercise) -> Void
     let onCreate: (String) throws -> Exercise
 
@@ -2028,6 +2030,65 @@ struct ExercisePickerSheet: View {
         return result.filter { frequent.contains($0.id) }
     }
 
+    /// "Recent" shows only while the search field is empty and no filter chip narrows the list.
+    private var recentExercises: [Exercise] {
+        guard search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !frequentOnly, !favoritesOnly, bodyFilter == .all, muscleFilter == nil,
+              !recentExerciseIDs.isEmpty else { return [] }
+        let byID = Dictionary(exercises.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return Array(recentExerciseIDs.compactMap { byID[$0] }.prefix(GymRecentExercises.maxCount))
+    }
+
+    /// One exercise row, shared by the "Recent" section and the normal list.
+    private func exerciseRow(_ exercise: Exercise) -> some View {
+        HStack(spacing: 12) {
+            ExerciseMediaButton(
+                rawExerciseName: exercise.name,
+                catalogKey: exercise.catalogKey,
+                exerciseID: exercise.id,
+                ownerKey: exerciseMediaOwnerKey,
+                editable: ExerciseMediaPresentation.isEditable(on: .picker)
+            )
+            Button {
+                onSelect(exercise)
+                dismiss()
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(gymExerciseName(exercise))
+                            .multilineTextAlignment(.leading)
+                        if let matchReason = ExerciseFilterEngine.localizedMatchReason(
+                            for: exercise,
+                            query: search,
+                            muscleMappings: muscleMappings,
+                            languageCode: gymCurrentLanguageCode()
+                        ) {
+                            Text(matchReason)
+                                .font(.caption)
+                                .foregroundStyle(GymTheme.textSecondary)
+                                .multilineTextAlignment(.leading)
+                        }
+                    }
+                    Spacer()
+                    if selectedExerciseIDs.contains(exercise.id) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(GymTheme.primary)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+            .disabled(selectedExerciseIDs.contains(exercise.id))
+            .accessibilityHint(
+                gymLocalized(
+                    selectedExerciseIDs.contains(exercise.id)
+                        ? "Already in this workout"
+                        : "Adds exercise to the workout"
+                )
+            )
+        }
+    }
+
     /// One horizontally scrolling chip row that bleeds to the sheet edges (no list inset or
     /// separator), so a chip is never cut by the row's own padding.
     private func chipRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
@@ -2045,6 +2106,15 @@ struct ExercisePickerSheet: View {
     var body: some View {
         NavigationStack {
             List {
+                let recent = recentExercises
+                if !recent.isEmpty {
+                    Section(gymText("Recent", "Нещодавні", "Недавние", languageCode: gymCurrentLanguageCode())) {
+                        ForEach(recent) { exercise in
+                            exerciseRow(exercise)
+                        }
+                    }
+                }
+
                 Section("Create exercise") {
                     TextField("Exercise name", text: $newExerciseName)
                         .textInputAutocapitalization(.words)
@@ -2170,52 +2240,7 @@ struct ExercisePickerSheet: View {
                         }
                     } else {
                         ForEach(filteredExercises) { exercise in
-                            HStack(spacing: 12) {
-                                ExerciseMediaButton(
-                                    rawExerciseName: exercise.name,
-                                    catalogKey: exercise.catalogKey,
-                                    exerciseID: exercise.id,
-                                    ownerKey: exerciseMediaOwnerKey,
-                                    editable: ExerciseMediaPresentation.isEditable(on: .picker)
-                                )
-                                Button {
-                                    onSelect(exercise)
-                                    dismiss()
-                                } label: {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(gymExerciseName(exercise))
-                                                .multilineTextAlignment(.leading)
-                                            if let matchReason = ExerciseFilterEngine.localizedMatchReason(
-                                                for: exercise,
-                                                query: search,
-                                                muscleMappings: muscleMappings,
-                                                languageCode: gymCurrentLanguageCode()
-                                            ) {
-                                                Text(matchReason)
-                                                    .font(.caption)
-                                                    .foregroundStyle(GymTheme.textSecondary)
-                                                    .multilineTextAlignment(.leading)
-                                            }
-                                        }
-                                        Spacer()
-                                        if selectedExerciseIDs.contains(exercise.id) {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .foregroundStyle(GymTheme.primary)
-                                        }
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                                .contentShape(Rectangle())
-                                .disabled(selectedExerciseIDs.contains(exercise.id))
-                                .accessibilityHint(
-                                    gymLocalized(
-                                        selectedExerciseIDs.contains(exercise.id)
-                                            ? "Already in this workout"
-                                            : "Adds exercise to the workout"
-                                    )
-                                )
-                            }
+                            exerciseRow(exercise)
                         }
                     }
                 }

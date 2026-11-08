@@ -552,6 +552,7 @@ internal fun WorkoutDetailScreen(
                             selectedExerciseId = null,
                             exercises = uiState.availableExercisesToAdd,
                             frequentExerciseIds = uiState.frequentExerciseIds,
+                            recentExerciseIds = uiState.recentExerciseIds,
                             exerciseWorkoutCounts = uiState.exerciseWorkoutCounts,
                             exerciseMuscleIds = uiState.exerciseMuscleIds,
                             exerciseMediaOwnerKey = exerciseMediaOwnerKey,

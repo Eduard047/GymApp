@@ -1577,6 +1577,10 @@ struct WorkoutDetailView: View {
                 latestSessionDates: ExercisePickerFrequent.latestSessionDates(
                     from: store.allExerciseHistory()
                 ),
+                recentExerciseIDs: GymRecentExercises.ids(
+                    workouts: store.workouts,
+                    pickerIDs: Set(store.exercises.map(\.id))
+                ),
                 onSelect: addExercise,
                 onCreate: createExerciseForEditing
             )
