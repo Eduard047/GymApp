@@ -848,6 +848,9 @@ struct WorkoutActivityHeatmap: View {
                         heatmapCell(day)
                     }
                 }
+                // The today ring is drawn 4pt outside its cell; the inset keeps the
+                // grid's bounds from clipping it on the edge columns.
+                .padding(4)
                 .frame(maxWidth: 440, alignment: .leading)
 
                 HStack(spacing: 7) {

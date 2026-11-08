@@ -59,8 +59,10 @@ struct GymSegmentedControl<Value: Hashable>: View {
                         .font(.subheadline.weight(isSelected ? .semibold : .medium))
                         .foregroundStyle(isSelected ? GymTheme.onPrimary : GymTheme.textPrimary)
                         .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.85)
+                        // One line, scaled to fit: a wrapped label made its capsule
+                        // taller than the neighbouring segments.
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                         .padding(.horizontal, GymTheme.Spacing.medium)
                         .frame(maxWidth: .infinity, minHeight: 36)
                         .background(
