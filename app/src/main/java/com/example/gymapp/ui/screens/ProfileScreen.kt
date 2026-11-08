@@ -46,6 +46,7 @@ import androidx.compose.material.icons.outlined.TrackChanges
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.GroupOff
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.Watch
@@ -63,6 +64,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.semantics.Role
 import com.example.gymapp.util.rememberHapticsPreference
+import com.example.gymapp.util.rememberKeepScreenOnPreference
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -676,6 +678,8 @@ private fun LazyListScope.profileSettingsContent(
             )
             SettingsRowDivider()
             ProfileHapticsRow()
+            SettingsRowDivider()
+            ProfileKeepScreenOnRow()
             if (trainingProfile != null) {
                 SettingsRowDivider()
                 SettingsRow(
@@ -723,6 +727,27 @@ private fun ProfileHapticsRow() {
     SettingsRow(
         icon = Icons.Default.Vibration,
         title = stringResource(R.string.settings_haptics_title),
+        modifier = Modifier.toggleable(
+            value = enabled,
+            role = Role.Switch,
+            onValueChange = preference::setEnabled
+        ),
+        trailing = SettingsRowTrailing.None,
+        trailingContent = { Switch(checked = enabled, onCheckedChange = null, colors = gymSwitchColors()) }
+    )
+}
+
+/**
+ * Keep-screen-on row: a device-local switch (default on) that holds the screen awake while the active
+ * workout screen is visible. The whole row is the toggle.
+ */
+@Composable
+private fun ProfileKeepScreenOnRow() {
+    val preference = rememberKeepScreenOnPreference()
+    val enabled by preference.enabled.collectAsState()
+    SettingsRow(
+        icon = Icons.Default.LightMode,
+        title = stringResource(R.string.keep_awake_setting_title),
         modifier = Modifier.toggleable(
             value = enabled,
             role = Role.Switch,

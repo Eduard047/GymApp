@@ -24,6 +24,7 @@ import com.example.gymapp.ui.components.GymToastController
 import com.example.gymapp.ui.media.ExerciseMediaStore
 import com.example.gymapp.ui.screens.clearPrivateBackupShareArtifacts
 import com.example.gymapp.util.HapticsPreference
+import com.example.gymapp.util.KeepScreenOnPreference
 import com.example.gymapp.util.LanguageManager
 import com.example.gymapp.util.RestTimerController
 import com.example.gymapp.util.TrainingGuidanceManager
@@ -60,6 +61,7 @@ class GymApplication : Application() {
     }
     val languageManager: LanguageManager by lazy { LanguageManager(this) }
     val hapticsPreference: HapticsPreference by lazy { HapticsPreference(this) }
+    val keepScreenOnPreference: KeepScreenOnPreference by lazy { KeepScreenOnPreference(this) }
     val trainingProfileManager: TrainingProfileManager by lazy { TrainingProfileManager(this) }
     val trainingGuidanceManager: TrainingGuidanceManager by lazy { TrainingGuidanceManager(this) }
     val restTimerController: RestTimerController by lazy { RestTimerController(this) }

@@ -148,6 +148,7 @@ struct ActiveWorkoutView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .caption) private var compactCapsuleHeight: CGFloat = 32
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(GymKeepAwake.preferenceKey) private var keepScreenOn = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(GymToastCenter.self) private var toasts: GymToastCenter?
     @ObservedObject private var workoutStore: WorkoutStore
@@ -726,6 +727,7 @@ struct ActiveWorkoutView: View {
             liveParticipantSelection = .current
             collapseCompletedExercises()
             reconcileRestProjection()
+            updateKeepAwake()
 #if DEBUG
             presentUIAuditRouteIfRequested()
 #endif
@@ -735,8 +737,13 @@ struct ActiveWorkoutView: View {
         }
         .onDisappear {
             cancelVoiceCommand()
+            GymKeepAwake.apply(false)
+        }
+        .onChange(of: keepScreenOn) { _, _ in
+            updateKeepAwake()
         }
         .onChange(of: scenePhase) { _, phase in
+            updateKeepAwake(scenePhase: phase)
             if phase != .active {
                 cancelVoiceCommand()
                 // The weight field commits only on focus loss; commit before iOS can kill the app.
@@ -746,6 +753,13 @@ struct ActiveWorkoutView: View {
                 Task { await restTimers.refreshNotificationAuthorization() }
             }
         }
+    }
+
+    /// Holds the screen awake only while this screen is visible, the switch is on and the app is active.
+    private func updateKeepAwake(scenePhase phase: ScenePhase? = nil) {
+        GymKeepAwake.apply(
+            GymKeepAwake.shouldHoldScreen(enabled: keepScreenOn, scenePhase: phase ?? scenePhase)
+        )
     }
 
 #if DEBUG

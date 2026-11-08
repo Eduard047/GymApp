@@ -111,6 +111,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -188,6 +189,7 @@ import com.example.gymapp.ui.components.exerciseReorderItem
 import com.example.gymapp.ui.components.exerciseReorderViewport
 import com.example.gymapp.ui.components.rememberExerciseReorderState
 import com.example.gymapp.ui.components.rememberGymHaptics
+import com.example.gymapp.util.rememberKeepScreenOnPreference
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutAddExerciseCatalog
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutExerciseUiState
@@ -262,6 +264,15 @@ fun ActiveWorkoutScreen(
 ) {
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     val gymHaptics = rememberGymHaptics()
+    // Hold the screen awake while this screen is composed and the "Keep screen on" switch is on; the
+    // flag is cleared again when the screen leaves or the switch is turned off.
+    val keepScreenOn by rememberKeepScreenOnPreference().enabled.collectAsState()
+    val hostView = LocalView.current
+    DisposableEffect(hostView, keepScreenOn) {
+        val previous = hostView.keepScreenOn
+        hostView.keepScreenOn = keepScreenOn
+        onDispose { hostView.keepScreenOn = previous }
+    }
     // Device-local cues of this account (the owner key is its database name), loaded once off the main
     // thread; the revision re-reads them after a save. Cues of another owner are never shown.
     val cueContext = LocalContext.current

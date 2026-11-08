@@ -1177,6 +1177,7 @@
 
     <string name="language_button">Язык</string>
     <string name="settings_haptics_title">Тактильный отклик</string>
+    <string name="keep_awake_setting_title">Не выключать экран во время тренировки</string>
     <string name="language_name_english">English</string>
     <string name="language_name_ukrainian">Укра&#x0457;нська</string>
     <string name="language_name_russian">Русский</string>

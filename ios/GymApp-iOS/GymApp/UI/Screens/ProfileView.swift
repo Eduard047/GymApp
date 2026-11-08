@@ -37,6 +37,7 @@ struct ProfileView: View {
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @AppStorage(GymHaptics.preferenceKey) private var hapticsEnabled = true
+    @AppStorage(GymKeepAwake.preferenceKey) private var keepScreenOn = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AccessibilityFocusState private var focusedProfilePushTarget: NativePushProfileFocus?
@@ -428,6 +429,8 @@ struct ProfileView: View {
                 settingsRowDivider
                 hapticsRow
                 settingsRowDivider
+                keepScreenOnRow
+                settingsRowDivider
                 trainingSettingsRow
                 settingsRowDivider
                 backupRow
@@ -606,6 +609,49 @@ struct ProfileView: View {
                 HStack(spacing: 12) {
                     icon
                     Toggle(isOn: $hapticsEnabled) { label }
+                        .tint(GymTheme.primaryAction)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 12)
+        .frame(minHeight: 48)
+    }
+
+    /// In-app "Keep screen on during workouts" switch: holds the screen awake
+    /// while the active workout is visible; stored on this device only.
+    private var keepScreenOnRow: some View {
+        let icon = Image(systemName: "sun.max")
+            .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
+            .foregroundStyle(GymTheme.primary)
+            .frame(width: settingsRowIconWidth)
+            .accessibilityHidden(true)
+        let keepScreenOnTitle = gymText(
+            "Keep screen on during workouts",
+            "Не вимикати екран під час тренування",
+            "Не выключать экран во время тренировки",
+            languageCode: languageCode
+        )
+        let label = Text(keepScreenOnTitle)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(GymTheme.textPrimary)
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                // The label gets the full width; the switch sits on its own line.
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 12) {
+                        icon
+                        label
+                    }
+                    Toggle(isOn: $keepScreenOn) { label }
+                        .labelsHidden()
+                        .tint(GymTheme.primaryAction)
+                        .accessibilityLabel(keepScreenOnTitle)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    icon
+                    Toggle(isOn: $keepScreenOn) { label }
                         .tint(GymTheme.primaryAction)
                 }
             }
