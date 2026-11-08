@@ -876,7 +876,6 @@ public struct WorkoutsView: View {
             activationLensShape.strokeBorder(GymTheme.heroOutline, lineWidth: 1)
         }
         .clipShape(activationLensShape)
-        .shadow(color: Color.black.opacity(0.055), radius: 8, x: 0, y: 4)
         .appTutorialTarget(.todayFocus)
     }
 
@@ -1163,7 +1162,6 @@ public struct WorkoutsView: View {
         .background { activationLensShape.fill(GymTheme.heroSurface) }
         .overlay { activationLensShape.strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
         .clipShape(activationLensShape)
-        .shadow(color: Color.black.opacity(0.055), radius: 8, x: 0, y: 4)
         .appTutorialTarget(.todayFocus)
     }
 
@@ -1320,7 +1318,6 @@ public struct WorkoutsView: View {
         .background { activationLensShape.fill(GymTheme.heroSurface) }
         .overlay { activationLensShape.strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
         .clipShape(activationLensShape)
-        .shadow(color: Color.black.opacity(0.055), radius: 8, x: 0, y: 4)
         .appTutorialTarget(.todayFocus)
     }
 
@@ -1397,7 +1394,7 @@ public struct WorkoutsView: View {
     private func todayPlanMetric(value: String, label: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value).font(.headline.bold().monospacedDigit())
-            Text(label).font(.caption2)
+            Text(label).font(.caption)
         }
         .foregroundStyle(GymTheme.onHeroSecondary)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1745,7 +1742,7 @@ public struct WorkoutsView: View {
                 let completed = summary.hasWorkout(on: day, calendar: calendar)
                 VStack(spacing: 6) {
                     Text(weeklyDaySymbol(day))
-                        .font(.caption2.weight(.semibold))
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(GymTheme.textSecondary)
                     Circle()
                         .fill(completed ? GymTheme.secondary : GymTheme.surfaceVariant)
@@ -1796,7 +1793,7 @@ public struct WorkoutsView: View {
             LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(Array(mondayFirstSymbols.enumerated()), id: \.offset) { _, symbol in
                     Text(symbol.uppercased(with: locale))
-                        .font(.caption2.weight(.semibold))
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(GymTheme.textSecondary)
                         .frame(maxWidth: .infinity)
                 }
@@ -2025,7 +2022,7 @@ public struct WorkoutsView: View {
                     let completed = summary.hasWorkout(on: day, calendar: calendar)
                     VStack(spacing: 6) {
                         Text(weeklyDaySymbol(day))
-                            .font(.caption2.weight(.semibold))
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(GymTheme.textSecondary)
                         Circle()
                             .fill(completed ? GymTheme.secondary : GymTheme.surfaceVariant)
@@ -2183,7 +2180,7 @@ public struct WorkoutsView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.68)
             Text(label)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(GymTheme.textSecondary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -2320,7 +2317,7 @@ public struct WorkoutsView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
             Text(label)
-                .font(.caption2)
+                .font(.caption)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
         }

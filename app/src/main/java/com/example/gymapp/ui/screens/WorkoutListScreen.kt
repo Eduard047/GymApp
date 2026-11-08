@@ -1257,7 +1257,7 @@ private fun TrainingHistoryWeekStrip(
                     text = day.date.dayOfWeek
                         .getDisplayName(TextStyle.NARROW, locale)
                         .uppercase(locale),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Box(
@@ -1321,7 +1321,7 @@ private fun TrainingHistoryMonthGrid(
                     text = java.time.DayOfWeek.of(dayNumber)
                         .getDisplayName(TextStyle.NARROW, locale)
                         .uppercase(locale),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.weight(1f)
@@ -1497,7 +1497,7 @@ private fun WeeklyTrainingMetric(
         FitMetricValue(text = value)
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
@@ -1574,7 +1574,7 @@ private fun TodayHeroMetric(
         FitMetricValue(text = value, color = HeroTone.title)
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelMedium,
             color = HeroTone.supporting,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
@@ -2058,7 +2058,7 @@ private fun FocusLensMetric(
         )
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelMedium,
             color = HeroTone.supporting
         )
     }
