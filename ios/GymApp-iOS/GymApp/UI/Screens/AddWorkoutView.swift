@@ -1839,14 +1839,12 @@ struct AddWorkoutView: View {
         latestSmartPlan = nil
         smartPlanIsStale = !smartGeneratedDraftIDs.isEmpty
         // New exercises go to the end so the first added stays first.
-        let newDraft = WorkoutEditorExerciseDraft(
+        // Seeded from the exercise's last completed session (shared/plan-seed-last-session-v1.json);
+        // the card is built whole, so it can never overwrite a user edit.
+        let newDraft = GymPlanSeed.pickerDraft(
             exerciseID: exercise.id,
-            sets: [
-                WorkoutEditorSetDraft(
-                    weight: store.lastWeight(exerciseID: exercise.id) ?? 0,
-                    reps: 10
-                )
-            ]
+            workouts: store.workouts,
+            lastWeight: store.lastWeight(exerciseID: exercise.id)
         )
         drafts.append(newDraft)
         lastInsertedDraftID = newDraft.id
