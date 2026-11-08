@@ -2991,6 +2991,203 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertEqual(reopened.draft, removedFirst)
     }
 
+    // MARK: Replace exercise
+
+    func testReplaceExerciseIsHiddenAndRefusedOnceAnySetIsRecorded() throws {
+        let context = try makeContext(account: "active-replace-recorded")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let two = try startTwoExercises(
+            context,
+            first: [ActiveWorkoutSet(weight: 60, reps: 8), ActiveWorkoutSet(weight: 60, reps: 8)],
+            second: [ActiveWorkoutSet(weight: 30, reps: 10)],
+            now: now
+        )
+        let target = try context.history.addExercise(name: "Replace Target \(UUID().uuidString)")
+        XCTAssertTrue(ActiveWorkoutStore.exerciseCanBeReplaced(two.draft.exercises[0]))
+
+        let recorded = try context.active.recordSet(
+            draftID: two.draft.id, setID: two.draft.exercises[0].sets[1].id,
+            expectedRevision: two.draft.revision, restSeconds: 60, now: now.addingTimeInterval(10)
+        )
+        XCTAssertFalse(ActiveWorkoutStore.exerciseCanBeReplaced(recorded.exercises[0]))
+        XCTAssertTrue(ActiveWorkoutStore.exerciseCanBeReplaced(recorded.exercises[1]))
+
+        XCTAssertThrowsError(try context.active.replaceExercise(
+            draftID: recorded.id, exerciseBlockID: two.firstBlock, newExerciseID: target.id,
+            expectedRevision: recorded.revision, workoutStore: context.history,
+            isSolo: { true }, now: now.addingTimeInterval(20)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .setAlreadyCompleted) }
+        // Live-frozen plan, stale revision, unknown block and unknown exercise change nothing either.
+        XCTAssertThrowsError(try context.active.replaceExercise(
+            draftID: recorded.id, exerciseBlockID: two.secondBlock, newExerciseID: target.id,
+            expectedRevision: recorded.revision, workoutStore: context.history,
+            isSolo: { false }, now: now.addingTimeInterval(20)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .invalidDraft) }
+        XCTAssertThrowsError(try context.active.replaceExercise(
+            draftID: recorded.id, exerciseBlockID: two.secondBlock, newExerciseID: target.id,
+            expectedRevision: recorded.revision - 1, workoutStore: context.history,
+            isSolo: { true }, now: now.addingTimeInterval(20)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .staleDraft) }
+        XCTAssertThrowsError(try context.active.replaceExercise(
+            draftID: recorded.id, exerciseBlockID: UUID(), newExerciseID: target.id,
+            expectedRevision: recorded.revision, workoutStore: context.history,
+            isSolo: { true }, now: now.addingTimeInterval(20)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .exerciseUnavailable) }
+        XCTAssertThrowsError(try context.active.replaceExercise(
+            draftID: recorded.id, exerciseBlockID: two.secondBlock, newExerciseID: UUID(),
+            expectedRevision: recorded.revision, workoutStore: context.history,
+            isSolo: { true }, now: now.addingTimeInterval(20)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .exerciseUnavailable) }
+        XCTAssertEqual(context.active.draft, recorded)
+    }
+
+    func testReplaceExerciseRejectsAnExerciseElsewhereInTheWorkoutButAllowsItsOwn() throws {
+        let context = try makeContext(account: "active-replace-duplicate")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let two = try startTwoExercises(
+            context,
+            first: [ActiveWorkoutSet(weight: 60, reps: 8)],
+            second: [ActiveWorkoutSet(weight: 30, reps: 10)],
+            now: now
+        )
+        let secondExerciseID = two.draft.exercises[1].exerciseID
+        XCTAssertThrowsError(try context.active.replaceExercise(
+            draftID: two.draft.id, exerciseBlockID: two.firstBlock, newExerciseID: secondExerciseID,
+            expectedRevision: two.draft.revision, workoutStore: context.history,
+            isSolo: { true }, now: now.addingTimeInterval(20)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .exerciseAlreadyInWorkout) }
+        XCTAssertEqual(context.active.draft, two.draft)
+
+        // The block's own exercise is not a duplicate of itself.
+        let own = try context.active.replaceExercise(
+            draftID: two.draft.id, exerciseBlockID: two.firstBlock, newExerciseID: context.exercise.id,
+            expectedRevision: two.draft.revision, workoutStore: context.history,
+            isSolo: { true }, now: now.addingTimeInterval(21)
+        )
+        XCTAssertEqual(own.exercises[0].exerciseID, context.exercise.id)
+        XCTAssertEqual(own.revision, two.draft.revision + 1)
+    }
+
+    func testReplaceExerciseSeedsSetsFromTheNewExercisesLastSession() throws {
+        let context = try makeContext(account: "active-replace-seed")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let two = try startTwoExercises(
+            context,
+            first: [ActiveWorkoutSet(weight: 50, reps: 8), ActiveWorkoutSet(weight: 50, reps: 8)],
+            second: [ActiveWorkoutSet(weight: 30, reps: 10)],
+            now: now
+        )
+        let target = try context.history.addExercise(name: "Replace Seed \(UUID().uuidString)")
+        _ = try context.history.createWorkout(
+            date: now.addingTimeInterval(-86_400),
+            note: nil,
+            exercises: [WorkoutExerciseDraft(
+                exerciseID: target.id,
+                sets: [
+                    WorkoutSetDraft(weight: 60, reps: 8),
+                    WorkoutSetDraft(weight: 65, reps: 6),
+                    WorkoutSetDraft(weight: 70, reps: 4)
+                ]
+            )]
+        )
+        let replaced = try context.active.replaceExercise(
+            draftID: two.draft.id, exerciseBlockID: two.firstBlock, newExerciseID: target.id,
+            expectedRevision: two.draft.revision, workoutStore: context.history,
+            isSolo: { true }, now: now.addingTimeInterval(20)
+        )
+        let block = replaced.exercises[0]
+        XCTAssertEqual(block.exerciseID, target.id)
+        XCTAssertEqual(block.exerciseName, target.name)
+        XCTAssertEqual(block.exerciseCatalogKey, target.catalogKey)
+        XCTAssertEqual(block.sets.map(\.weight), [60, 65, 70])
+        XCTAssertEqual(block.sets.map(\.reps), [8, 6, 4])
+        XCTAssertTrue(block.sets.allSatisfy { !$0.isCompleted })
+        let reopened = ActiveWorkoutStore(
+            accountStorageKey: context.history.accountStorageKey,
+            workoutStorageURL: context.history.storageURL
+        )
+        XCTAssertEqual(reopened.draft, replaced)
+    }
+
+    func testReplacementSetsWithoutSeedKeepCountAndRepsWithLastWeightOrZero() throws {
+        let old = [
+            ActiveWorkoutSetInput(weight: 50, reps: 8),
+            ActiveWorkoutSetInput(weight: 52.5, reps: 6),
+            ActiveWorkoutSetInput(weight: 55, reps: 5)
+        ]
+        XCTAssertEqual(
+            ActiveWorkoutStore.replacementSets(oldSets: old, seed: nil, lastWeight: nil),
+            [
+                ActiveWorkoutSetInput(weight: 0, reps: 8),
+                ActiveWorkoutSetInput(weight: 0, reps: 6),
+                ActiveWorkoutSetInput(weight: 0, reps: 5)
+            ]
+        )
+        XCTAssertEqual(
+            ActiveWorkoutStore.replacementSets(oldSets: old, seed: nil, lastWeight: 42.5),
+            [
+                ActiveWorkoutSetInput(weight: 42.5, reps: 8),
+                ActiveWorkoutSetInput(weight: 42.5, reps: 6),
+                ActiveWorkoutSetInput(weight: 42.5, reps: 5)
+            ]
+        )
+        XCTAssertEqual(
+            ActiveWorkoutStore.replacementSets(
+                oldSets: old,
+                seed: [PlanSeedSet(weight: 40, reps: 12)],
+                lastWeight: 99
+            ),
+            [ActiveWorkoutSetInput(weight: 40, reps: 12)]
+        )
+
+        // End to end: no history for the new exercise keeps count and reps at 0 kg.
+        let context = try makeContext(account: "active-replace-fallback")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let two = try startTwoExercises(
+            context,
+            first: [ActiveWorkoutSet(weight: 50, reps: 8), ActiveWorkoutSet(weight: 55, reps: 5)],
+            second: [ActiveWorkoutSet(weight: 30, reps: 10)],
+            now: now
+        )
+        let target = try context.history.addExercise(name: "Replace Fallback \(UUID().uuidString)")
+        let replaced = try context.active.replaceExercise(
+            draftID: two.draft.id, exerciseBlockID: two.firstBlock, newExerciseID: target.id,
+            expectedRevision: two.draft.revision, workoutStore: context.history,
+            isSolo: { true }, now: now.addingTimeInterval(20)
+        )
+        XCTAssertEqual(replaced.exercises[0].sets.map(\.weight), [0, 0])
+        XCTAssertEqual(replaced.exercises[0].sets.map(\.reps), [8, 5])
+    }
+
+    func testReplaceExercisePreservesPositionBlockIdentityAndEveryOtherBlock() throws {
+        let context = try makeContext(account: "active-replace-position")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let two = try startTwoExercises(
+            context,
+            first: [ActiveWorkoutSet(weight: 60, reps: 8)],
+            second: [ActiveWorkoutSet(weight: 30, reps: 10)],
+            now: now
+        )
+        let third = try context.history.addExercise(name: "Replace Third \(UUID().uuidString)")
+        let target = try context.history.addExercise(name: "Replace Middle \(UUID().uuidString)")
+        let withThird = try context.active.addExercise(
+            draftID: two.draft.id, exerciseID: third.id, expectedRevision: two.draft.revision,
+            workoutStore: context.history, isSolo: { true }, now: now.addingTimeInterval(5)
+        )
+        let replaced = try context.active.replaceExercise(
+            draftID: withThird.id, exerciseBlockID: two.secondBlock, newExerciseID: target.id,
+            expectedRevision: withThird.revision, workoutStore: context.history,
+            isSolo: { true }, now: now.addingTimeInterval(20)
+        )
+        XCTAssertEqual(replaced.exercises.count, 3)
+        XCTAssertEqual(replaced.exercises[1].id, two.secondBlock)
+        XCTAssertEqual(replaced.exercises[1].exerciseID, target.id)
+        XCTAssertEqual(replaced.exercises[0], withThird.exercises[0])
+        XCTAssertEqual(replaced.exercises[2], withThird.exercises[2])
+        XCTAssertEqual(replaced.revision, withThird.revision + 1)
+        XCTAssertEqual(context.active.draft, replaced)
+    }
+
     private func startSets(
         _ context: Context,
         sets: [ActiveWorkoutSet],

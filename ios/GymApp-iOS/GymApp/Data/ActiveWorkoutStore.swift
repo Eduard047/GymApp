@@ -815,6 +815,92 @@ final class ActiveWorkoutStore: ObservableObject {
         }
     }
 
+    /// "Replace exercise" is offered only while no set of the block is recorded.
+    static func exerciseCanBeReplaced(_ exercise: ActiveWorkoutExercise) -> Bool {
+        !exercise.sets.contains(where: \.isCompleted)
+    }
+
+    /// Pending sets for a replaced exercise: the plan-seed rule (`GymPlanSeed.lastSessionSetSeed`)
+    /// for the new exercise; without a usable seed the same number of sets as before with
+    /// unchanged reps and `lastWeight` (0 when the new exercise was never logged).
+    static func replacementSets(
+        oldSets: [ActiveWorkoutSetInput],
+        seed: [PlanSeedSet]?,
+        lastWeight: Double?
+    ) -> [ActiveWorkoutSetInput] {
+        if let seed, !seed.isEmpty,
+           seed.allSatisfy({ (try? validate(weight: $0.weight, reps: $0.reps)) != nil }) {
+            return seed.map { ActiveWorkoutSetInput(weight: $0.weight, reps: $0.reps) }
+        }
+        let weight = lastWeight.flatMap { $0.isFinite && $0 >= 0 && $0 <= maximumWeight ? $0 : nil } ?? 0
+        return oldSets.map { ActiveWorkoutSetInput(weight: weight, reps: $0.reps) }
+    }
+
+    /// Replaces the pending exercise block `exerciseBlockID` with catalog exercise
+    /// `newExerciseID` in place: same block id and position, new pending sets from
+    /// `replacementSets`. Atomic and revision-checked. Refused (nothing written) while a
+    /// live room or reservation freezes the plan, for an unknown block or exercise, when
+    /// any set of the block is already recorded (`setAlreadyCompleted`, so the undo target
+    /// and the rest timer, always owned by a recorded set, are untouched), for an
+    /// exercise that is elsewhere in the workout (same id or catalog key), and at the set limit.
+    @discardableResult
+    func replaceExercise(
+        draftID: UUID,
+        exerciseBlockID: UUID,
+        newExerciseID: UUID,
+        expectedRevision: UInt64,
+        workoutStore: WorkoutStore,
+        isSolo: () -> Bool,
+        now: Date = Date()
+    ) throws -> ActiveWorkoutDraft {
+        try assertStructuralChangeAllowed(isSolo: isSolo)
+        guard workoutStore.accountStorageKey == accountStorageKey else {
+            throw ActiveWorkoutStoreError.accountMismatch
+        }
+        guard let newExercise = workoutStore.exercise(id: newExerciseID) else {
+            throw ActiveWorkoutStoreError.exerciseUnavailable
+        }
+        return try mutate(
+            draftID: draftID,
+            expectedRevision: expectedRevision,
+            now: now
+        ) { candidate in
+            guard let index = candidate.exercises.firstIndex(where: { $0.id == exerciseBlockID }) else {
+                throw ActiveWorkoutStoreError.exerciseUnavailable
+            }
+            let old = candidate.exercises[index]
+            guard Self.exerciseCanBeReplaced(old) else {
+                throw ActiveWorkoutStoreError.setAlreadyCompleted
+            }
+            guard !candidate.exercises.contains(where: { block in
+                block.id != exerciseBlockID
+                    && (block.exerciseID == newExercise.id
+                        || (newExercise.catalogKey != nil
+                            && block.exerciseCatalogKey == newExercise.catalogKey))
+            }) else {
+                throw ActiveWorkoutStoreError.exerciseAlreadyInWorkout
+            }
+            let sets = Self.replacementSets(
+                oldSets: old.sets.map { ActiveWorkoutSetInput(weight: $0.weight, reps: $0.reps) },
+                seed: GymPlanSeed.lastSessionSetSeed(
+                    exerciseID: newExercise.id,
+                    workouts: workoutStore.workouts
+                ),
+                lastWeight: workoutStore.lastWeight(exerciseID: newExercise.id)
+            )
+            guard candidate.plannedSetCount - old.sets.count + sets.count <= Self.maximumTotalSets else {
+                throw ActiveWorkoutStoreError.limitExceeded
+            }
+            candidate.exercises[index] = ActiveWorkoutExercise(
+                id: old.id,
+                exerciseID: newExercise.id,
+                exerciseName: newExercise.name,
+                exerciseCatalogKey: newExercise.catalogKey,
+                sets: sets.map { ActiveWorkoutSet(weight: $0.weight, reps: $0.reps) }
+            )
+        }
+    }
+
     /// The most recent saved set of an exercise from a workout dated before `date`.
     private static func lastLoggedSet(
         exerciseID: UUID,

@@ -192,6 +192,9 @@ struct ActiveWorkoutView: View {
     /// re-derives the live set so it never acts on stale data).
     @State private var pendingDeleteRecordedSetID: UUID?
     @State private var showingAddExercisePicker = false
+    /// Set while the shared exercise picker is open for "Replace exercise": the block id being
+    /// replaced. Nil means the picker adds an exercise. Cleared when the sheet closes.
+    @State private var replacingExerciseBlockID: UUID?
     /// This view instance's identity in the `GymKeepAwake` holder set.
     @State private var keepAwakeToken = UUID()
     @State private var collapsedExerciseIDs = Set<UUID>()
@@ -684,7 +687,7 @@ struct ActiveWorkoutView: View {
                 onCancel: { restEditTarget = nil }
             )
         }
-        .sheet(isPresented: $showingAddExercisePicker) {
+        .sheet(isPresented: $showingAddExercisePicker, onDismiss: { replacingExerciseBlockID = nil }) {
             ExercisePickerSheet(
                 exercises: addableExercises,
                 selectedExerciseIDs: [],
@@ -702,7 +705,13 @@ struct ActiveWorkoutView: View {
                         )
                     )
                 },
-                onSelect: addExercise,
+                onSelect: { exercise in
+                    if let blockID = replacingExerciseBlockID {
+                        replaceExercise(blockID: blockID, with: exercise)
+                    } else {
+                        addExercise(exercise)
+                    }
+                },
                 onCreate: { name in try workoutStore.addExercise(name: name) }
             )
             .gymSheetPresentation(.full)
@@ -1555,6 +1564,11 @@ struct ActiveWorkoutView: View {
                 } else if let cueTarget {
                     // Nothing to move or remove (a lone exercise, a live room): the menu only carries the cue.
                     Menu {
+                        if draft.commitIntent == nil,
+                           !liveWorkoutCoordinator.planIsFrozenForCurrentDraft,
+                           ActiveWorkoutStore.exerciseCanBeReplaced(exercise) {
+                            replaceMenuButton(exercise)
+                        }
                         cueMenuButton(cueTarget)
                         if let restTarget { restMenuButton(restTarget) }
                     } label: {
@@ -1727,10 +1741,28 @@ struct ActiveWorkoutView: View {
             onRemove: { pendingRemoveExerciseID = exercise.id },
             extraItems: {
                 GymExerciseMoveMenuItems(onMoveUp: onMoveUp, onMoveDown: onMoveDown)
+                if ActiveWorkoutStore.exerciseCanBeReplaced(exercise) { replaceMenuButton(exercise) }
                 if let cueTarget { cueMenuButton(cueTarget) }
                 if let restTarget { restMenuButton(restTarget) }
             }
         )
+    }
+
+    /// "Replace exercise" item of the exercise menu; opens the add-exercise picker for this
+    /// block. Offered only while none of the block's sets is recorded (callers check that).
+    private func replaceMenuButton(_ exercise: ActiveWorkoutExercise) -> some View {
+        Button {
+            replacingExerciseBlockID = exercise.id
+            showingAddExercisePicker = true
+        } label: {
+            Label(
+                gymText(
+                    "Replace exercise", "Замінити вправу", "Заменить упражнение",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                systemImage: "arrow.left.arrow.right"
+            )
+        }
     }
 
     /// "Add cue" / "Edit cue" item of the exercise menu; opens the cue editor sheet.
@@ -3927,6 +3959,48 @@ struct ActiveWorkoutView: View {
             } else {
                 showRestProjectionWarning(restCleanupWarning)
             }
+        } catch {
+            show(error)
+        }
+    }
+
+    /// Replaces a pending exercise in place (same block and position) with the picked one
+    /// through the store, which checks the revision, recorded sets, duplicates, limits and
+    /// the live-room freeze itself. A refusal shows the usual status message; no undo.
+    private func replaceExercise(blockID: UUID, with exercise: Exercise) {
+        guard let draft = currentDraft else { return }
+        guard !liveWorkoutCoordinator.planIsFrozenForCurrentDraft else {
+            show(LiveWorkoutSidecarError.invalidState)
+            return
+        }
+        let oldSetIDs = Set(draft.exercises.first(where: { $0.id == blockID })?.sets.map(\.id) ?? [])
+        do {
+            let updated = try activeWorkoutStore.replaceExercise(
+                draftID: draft.id,
+                exerciseBlockID: blockID,
+                newExerciseID: exercise.id,
+                expectedRevision: draft.revision,
+                workoutStore: workoutStore,
+                isSolo: { !liveWorkoutCoordinator.planIsFrozenForCurrentDraft }
+            )
+            if pendingFinishExerciseID == blockID { pendingFinishExerciseID = nil }
+            forgetTransientState(forSetIDs: oldSetIDs)
+            let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
+                draft: updated,
+                store: activeWorkoutStore,
+                manager: restTimers,
+                title: currentRestExerciseName(updated)
+            )
+            if restOutcome == .synchronized {
+                statusMessage = nil
+                statusIsError = false
+            } else {
+                showRestProjectionWarning(restCleanupWarning)
+            }
+            let languageCode = gymCurrentLanguageCode()
+            toasts?.show(
+                gymText("Exercise replaced.", "Вправу замінено.", "Упражнение заменено.", languageCode: languageCode)
+            )
         } catch {
             show(error)
         }
