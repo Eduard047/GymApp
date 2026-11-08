@@ -10236,6 +10236,7 @@ final class CoreParityTests: XCTestCase {
         let auth = AuthService(keychain: keychain, defaults: defaults)
 
         XCTAssertNil(auth.session)
+        keychain.accountsThatFailDeletion = ["current-session"]
         XCTAssertThrowsError(try auth.continueOffline(displayName: "Local")) { error in
             guard case AuthServiceError.secureSessionCleanupPending = error else {
                 return XCTFail("Expected secureSessionCleanupPending, got \(error)")
@@ -10245,6 +10246,123 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(auth.savedLocalProfiles.isEmpty)
         XCTAssertNil(try keychain.read(account: "local-profile-index-v1"))
         XCTAssertNotNil(try keychain.read(account: "current-session"))
+        XCTAssertTrue(defaults.bool(forKey: "gymapp.auth.pending-secure-session-deletion"))
+    }
+
+    func testStaleSessionSlotAndMarkerAreClearedInPlaceSoOfflineEntryProceeds() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "stale-slot-offline-retry")
+        try keychain.save(Data("not-a-session".utf8), account: "current-session")
+        defaults.set(true, forKey: "gymapp.auth.pending-secure-session-deletion")
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+        // Simulate a marker left behind after launch cleanup (e.g. earlier failed delete).
+        try keychain.save(Data("not-a-session".utf8), account: "current-session")
+        defaults.set(true, forKey: "gymapp.auth.pending-secure-session-deletion")
+
+        try auth.continueOffline(displayName: "Local")
+
+        XCTAssertEqual(auth.session?.storageKey.hasPrefix("local_"), true)
+        XCTAssertNil(try keychain.read(account: "current-session"))
+        XCTAssertFalse(defaults.bool(forKey: "gymapp.auth.pending-secure-session-deletion"))
+    }
+
+    func testOccupiedSlotWithoutMarkerIsClearedInPlaceAndOfflineEntryProceeds() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "occupied-slot-no-marker")
+        try keychain.save(Data("not-a-session".utf8), account: "current-session")
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+        XCTAssertNil(auth.session)
+        XCTAssertFalse(defaults.bool(forKey: "gymapp.auth.pending-secure-session-deletion"))
+
+        try auth.continueOffline(displayName: "Local")
+
+        XCTAssertEqual(auth.session?.storageKey.hasPrefix("local_"), true)
+        XCTAssertNil(try keychain.read(account: "current-session"))
+        XCTAssertFalse(defaults.bool(forKey: "gymapp.auth.pending-secure-session-deletion"))
+    }
+
+    func testCloudSlotWithPendingAccountDeletionIsClearedAndPendingRecordUntouched() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "cloud-slot-pending-account-deletion")
+        let cloud = cloudSession(userID: "pending-delete-user")
+        try keychain.save(
+            JSONEncoder().encode(AppAccountSession.cloud(cloud)),
+            account: "current-session"
+        )
+        let pendingKey = AppAccountSession.cloud(cloud).storageKey
+        try PendingAccountDeletionStore.begin(pendingKey, defaults: defaults)
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+        XCTAssertNil(auth.session)
+        XCTAssertNotNil(try keychain.read(account: "current-session"))
+
+        try auth.continueOffline(displayName: "Local")
+
+        XCTAssertEqual(auth.session?.storageKey.hasPrefix("local_"), true)
+        XCTAssertNil(try keychain.read(account: "current-session"))
+        XCTAssertEqual(
+            defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"),
+            pendingKey
+        )
+        XCTAssertFalse(defaults.bool(forKey: "gymapp.auth.pending-secure-session-deletion"))
+    }
+
+    func testInPlaceSlotCleanupKeepsSavedLocalProfilesAndActivatesNewProfileAcrossRelaunch() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "in-place-cleanup-keeps-profiles")
+        let seed = AuthService(keychain: keychain, defaults: defaults)
+        try seed.continueOffline(displayName: "Saved")
+        let saved = try XCTUnwrap(seed.savedLocalProfiles.first)
+        try seed.clearSession()
+        try keychain.save(Data("not-a-session".utf8), account: "current-session")
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+        XCTAssertNil(auth.session)
+
+        try auth.continueOffline(displayName: "Fresh")
+
+        let fresh = try XCTUnwrap(auth.savedLocalProfiles.first { $0.displayName == "Fresh" })
+        XCTAssertEqual(auth.savedLocalProfiles.count, 2)
+        XCTAssertTrue(auth.savedLocalProfiles.contains(saved))
+        XCTAssertEqual(auth.session, .local(id: fresh.id, displayName: fresh.displayName))
+        XCTAssertNil(try keychain.read(account: "current-session"))
+
+        let relaunched = AuthService(keychain: keychain, defaults: defaults)
+        XCTAssertEqual(relaunched.session, .local(id: fresh.id, displayName: fresh.displayName))
+        XCTAssertEqual(relaunched.savedLocalProfiles.count, 2)
+        XCTAssertTrue(relaunched.savedLocalProfiles.contains(saved))
+    }
+
+    func testPendingAuthTransactionSlotIsDeletedByInPlaceCleanup() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "in-place-cleanup-auth-transaction")
+        try keychain.save(Data("not-a-session".utf8), account: "current-session")
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+        try keychain.save(Data("stale-transaction".utf8), account: "pending-auth-transaction")
+        try keychain.save(Data("not-a-session".utf8), account: "current-session")
+
+        try auth.continueOffline(displayName: "Local")
+
+        XCTAssertNil(try keychain.read(account: "pending-auth-transaction"))
+        XCTAssertNil(try keychain.read(account: "current-session"))
+        XCTAssertFalse(defaults.bool(forKey: "gymapp.auth.pending-secure-session-deletion"))
+    }
+
+    func testFailedAuthTransactionDeletionKeepsOfflineEntryBlockedAndMarkerSet() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "in-place-cleanup-transaction-delete-fails")
+        try keychain.save(Data("not-a-session".utf8), account: "current-session")
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+        try keychain.save(Data("stale-transaction".utf8), account: "pending-auth-transaction")
+        try keychain.save(Data("not-a-session".utf8), account: "current-session")
+        keychain.accountsThatFailDeletion = ["pending-auth-transaction"]
+
+        XCTAssertThrowsError(try auth.continueOffline(displayName: "Local")) { error in
+            guard case AuthServiceError.secureSessionCleanupPending = error else {
+                return XCTFail("Expected secureSessionCleanupPending, got \(error)")
+            }
+        }
+        XCTAssertNil(auth.session)
+        XCTAssertTrue(auth.savedLocalProfiles.isEmpty)
+        XCTAssertNotNil(try keychain.read(account: "pending-auth-transaction"))
         XCTAssertTrue(defaults.bool(forKey: "gymapp.auth.pending-secure-session-deletion"))
     }
 

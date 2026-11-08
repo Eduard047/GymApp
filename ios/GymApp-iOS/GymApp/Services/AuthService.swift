@@ -1224,6 +1224,10 @@ final class AuthService: ObservableObject {
     /// A local account must never become active while the legacy cloud-session
     /// Keychain slot may still restore another owner on the next launch.
     private func requireSecureSessionDeletionCompletedForOffline() throws {
+        // Retry the cleanup in place, exactly as a relaunch would, so a stale
+        // marker or leftover Keychain slot (survives reinstall) never needs a
+        // restart. Only a deletion that still fails keeps offline entry blocked.
+        if session == nil { retryPendingSecureSessionDeletion() }
         guard !defaults.bool(forKey: Self.pendingSecureDeletionKey) else {
             throw AuthServiceError.secureSessionCleanupPending
         }
@@ -1241,6 +1245,27 @@ final class AuthService: ObservableObject {
             // a mixed local/cloud selection.
             markSecureSessionDeletionPending()
             throw AuthServiceError.secureSessionCleanupPending
+        }
+    }
+
+    /// In-place equivalent of the launch cleanup in `init`, which only deletes
+    /// when the pending marker is set. With the marker unset and an occupied
+    /// slot, the guard in `requireSecureSessionDeletionCompletedForOffline`
+    /// used to set the marker and rely on the next launch to delete; this
+    /// reaches the same end state (slot, auth transaction and active-profile
+    /// pointer cleared, marker removed) without a relaunch. The marker is set
+    /// first so a crash mid-cleanup is retried by `init` on the next launch,
+    /// and it stays set when any deletion fails.
+    private func retryPendingSecureSessionDeletion() {
+        let slotOccupied = ((try? keychain.read(account: sessionAccount)) ?? nil) != nil
+        guard slotOccupied || defaults.bool(forKey: Self.pendingSecureDeletionKey) else { return }
+        markSecureSessionDeletionPending()
+        var failed = false
+        do { try writeLocalProfiles(storedLocalProfiles, activeProfileID: nil) } catch { failed = true }
+        do { try keychain.delete(account: sessionAccount) } catch { failed = true }
+        do { try keychain.delete(account: authTransactionAccount) } catch { failed = true }
+        if !failed {
+            defaults.removeObject(forKey: Self.pendingSecureDeletionKey)
         }
     }
 
