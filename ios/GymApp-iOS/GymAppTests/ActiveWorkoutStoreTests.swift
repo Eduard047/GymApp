@@ -1423,6 +1423,109 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertNil(reopened.draft)
     }
 
+    func testLogRemainingThenFinishKeepsEverySetUsingTheRereadRevision() throws {
+        let context = try makeContext(account: "active-log-remaining-finish")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_300)
+        let doneID = UUID()
+        let remainingID = UUID()
+        let started = try context.active.start(
+            workoutDate: startedAt,
+            note: "Log remaining",
+            exercises: [
+                ActiveWorkoutExercise(
+                    id: UUID(),
+                    exerciseID: context.exercise.id,
+                    exerciseName: context.exercise.name,
+                    exerciseCatalogKey: context.exercise.catalogKey,
+                    sets: [
+                        ActiveWorkoutSet(id: doneID, weight: 100, reps: 5),
+                        ActiveWorkoutSet(id: remainingID, weight: 105, reps: 3)
+                    ]
+                )
+            ],
+            workoutStore: context.history,
+            now: startedAt
+        )
+        let recorded = try context.active.recordSet(
+            draftID: started.id,
+            setID: doneID,
+            expectedRevision: started.revision,
+            now: startedAt.addingTimeInterval(20)
+        )
+        let batch = try context.active.recordAllSets(
+            draftID: recorded.id,
+            expectedRevision: recorded.revision,
+            inputs: [remainingID: ActiveWorkoutSetInput(weight: 105, reps: 3)],
+            now: startedAt.addingTimeInterval(40)
+        )
+        // The batch moved the revision, so the old one can no longer finish.
+        XCTAssertThrowsError(
+            try context.active.finish(
+                draftID: recorded.id,
+                expectedRevision: recorded.revision,
+                into: context.history
+            )
+        ) { error in
+            XCTAssertEqual(error as? ActiveWorkoutStoreError, .staleDraft)
+        }
+        let settled = try XCTUnwrap(context.active.draft)
+        XCTAssertEqual(settled.revision, batch.revision)
+
+        let completed = try context.active.finish(
+            draftID: settled.id,
+            expectedRevision: settled.revision,
+            into: context.history
+        )
+
+        XCTAssertEqual(completed.exercises.first?.sets.map(\.id), [doneID, remainingID])
+        XCTAssertNil(context.active.draft)
+    }
+
+    func testFailedLogRemainingLeavesTheDraftOpenSoFinishIsNotReached() throws {
+        let context = try makeContext(account: "active-log-remaining-fails")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_400)
+        let doneID = UUID()
+        let remainingID = UUID()
+        let started = try context.active.start(
+            workoutDate: startedAt,
+            note: "Log remaining fails",
+            exercises: [
+                ActiveWorkoutExercise(
+                    id: UUID(),
+                    exerciseID: context.exercise.id,
+                    exerciseName: context.exercise.name,
+                    exerciseCatalogKey: context.exercise.catalogKey,
+                    sets: [
+                        ActiveWorkoutSet(id: doneID, weight: 100, reps: 5),
+                        ActiveWorkoutSet(id: remainingID, weight: 105, reps: 3)
+                    ]
+                )
+            ],
+            workoutStore: context.history,
+            now: startedAt
+        )
+        let recorded = try context.active.recordSet(
+            draftID: started.id,
+            setID: doneID,
+            expectedRevision: started.revision,
+            now: startedAt.addingTimeInterval(20)
+        )
+        let originalData = try Data(contentsOf: context.active.storageURL)
+
+        XCTAssertThrowsError(
+            try context.active.recordAllSets(
+                draftID: recorded.id,
+                expectedRevision: recorded.revision,
+                inputs: [remainingID: ActiveWorkoutSetInput(weight: .infinity, reps: 3)],
+                now: startedAt.addingTimeInterval(40)
+            )
+        )
+
+        XCTAssertEqual(context.active.draft, recorded)
+        XCTAssertEqual(try Data(contentsOf: context.active.storageURL), originalData)
+        XCTAssertTrue(context.history.workouts.isEmpty)
+    }
+
     func testRepeatedExerciseBlocksRemainValidAndFinishSeparately() throws {
         let context = try makeContext(account: "active-repeated-exercise")
         let startedAt = Date(timeIntervalSince1970: 1_800_000_300)

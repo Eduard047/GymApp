@@ -1281,6 +1281,19 @@ class ActiveWorkoutViewModel(
     }
 
     fun recordAllPendingSets() {
+        launchRecordAllPendingSets(finishAfter = false)
+    }
+
+    /**
+     * Finish-confirmation primary action: records every remaining planned set as planned, then
+     * finishes against the revision that recording produced. A failed recording never finishes;
+     * the workout stays open with the recording error message.
+     */
+    fun recordRemainingAndFinish() {
+        launchRecordAllPendingSets(finishAfter = true)
+    }
+
+    private fun launchRecordAllPendingSets(finishAfter: Boolean) {
         val snapshot = details.value ?: return
         val operation = operationState.value
         if (recordGate.inFlight.value.isNotEmpty() || operation.isRecordingAll ||
@@ -1351,6 +1364,21 @@ class ActiveWorkoutViewModel(
                                 localCommitted = true
                                 (preparation as? LiveLocalMutationPreparation.Prepared)?.let {
                                     liveSync?.commitPreparedLocalMutation(it)
+                                }
+                                val finishRevision =
+                                    activeWorkoutFinishRevisionAfterRecord(finishAfter, result)
+                                if (finishRevision != null) {
+                                    // Finishing follows immediately, so no batch undo is offered.
+                                    operationState.update {
+                                        it.copy(
+                                            isRecordingAll = false,
+                                            isFinishing = true,
+                                            message = null,
+                                            messageSetId = null
+                                        )
+                                    }
+                                    performFinish(snapshot, finishRevision)
+                                    return@launch
                                 }
                                 offerBatchUndo(
                                     ActiveWorkoutBatchUndo(
@@ -2219,11 +2247,18 @@ class ActiveWorkoutViewModel(
         }
         operationState.update { it.copy(isFinishing = true, message = null) }
         viewModelScope.launch {
+            performFinish(snapshot, snapshot.activeWorkout.revision)
+        }
+    }
+
+    /** Finishes against [expectedRevision]; the caller has already set `isFinishing`. */
+    private suspend fun performFinish(snapshot: ActiveWorkoutDetails, expectedRevision: Long) {
+        run {
             var preparation: LiveLocalMutationPreparation = LiveLocalMutationPreparation.Standalone
             var localCommitted = false
             try {
                 preparation = liveSync?.prepareLocalWorkoutFinished(
-                    expectedLocalRevision = snapshot.activeWorkout.revision
+                    expectedLocalRevision = expectedRevision
                 ) ?: LiveLocalMutationPreparation.Standalone
                 if (preparation == LiveLocalMutationPreparation.Rejected) {
                     operationState.update {
@@ -2232,9 +2267,9 @@ class ActiveWorkoutViewModel(
                             message = LocalizedText(R.string.live_workout_queue_save_failed)
                         )
                     }
-                    return@launch
+                    return
                 }
-                when (val result = repository.finishActiveWorkout(snapshot.activeWorkout.revision)) {
+                when (val result = repository.finishActiveWorkout(expectedRevision)) {
                     is FinishActiveWorkoutResult.Finished -> {
                         localCommitted = true
                         (preparation as? LiveLocalMutationPreparation.Prepared)?.let {
@@ -2495,3 +2530,16 @@ private fun formatActiveWeight(weight: Double): String = if (weight % 1.0 == 0.0
 private const val MAX_ACTIVE_WEIGHT_INPUT_LENGTH = 64
 private const val MAX_ACTIVE_REPS_INPUT_LENGTH = 10
 private const val ACTIVE_WORKOUT_DRAFT_DEBOUNCE_MS = 300L
+
+/**
+ * "Log remaining and finish" finishes only after the batch recording succeeded, against the
+ * revision that recording produced. Any other outcome returns null and the workout stays open.
+ */
+internal fun activeWorkoutFinishRevisionAfterRecord(
+    finishAfter: Boolean,
+    result: RecordActiveWorkoutSetsResult
+): Long? = if (finishAfter && result is RecordActiveWorkoutSetsResult.Recorded) {
+    result.revision
+} else {
+    null
+}

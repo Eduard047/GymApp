@@ -626,9 +626,13 @@
     </plurals>
     <string name="active_workout_finish_log_as_planned">Log as planned</string>
     <string name="active_workout_finish_confirm_title">Finish workout?</string>
-    <string name="active_workout_finish_confirm_message">%1$d of %2$d sets are done. Unfinished sets won\'t be saved.</string>
-    <string name="active_workout_finish_confirm_action">Finish</string>
-    <string name="active_workout_finish_confirm_keep">Keep training</string>
+    <plurals name="finish_remaining_body">
+        <item quantity="one">%1$d set is not logged yet.</item>
+        <item quantity="other">%1$d sets are not logged yet.</item>
+    </plurals>
+    <string name="finish_remaining_log_and_finish">Log remaining and finish</string>
+    <string name="finish_remaining_finish_without">Finish without them</string>
+    <string name="finish_remaining_keep">Keep training</string>
     <string name="active_workout_finish_skip_them">Skip them</string>
     <string name="active_workout_remaining_sets_skipped">Exercise saved. Remaining sets skipped.</string>
     <string name="active_workout_set_limit_reached">This exercise has reached the set limit.</string>

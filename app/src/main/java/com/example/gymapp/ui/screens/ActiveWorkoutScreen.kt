@@ -279,6 +279,7 @@ fun ActiveWorkoutScreen(
     onAdjustRestTimer: (Int) -> Unit,
     onStopRestTimer: () -> Unit,
     onFinishWorkout: () -> Unit,
+    onRecordRemainingAndFinish: () -> Unit,
     onDiscardWorkout: () -> Unit,
     onDismissMessage: () -> Unit,
     onPreviewAdaptation: (String, Int, Long?) -> Unit = { _, _, _ -> },
@@ -1037,32 +1038,54 @@ fun ActiveWorkoutScreen(
     if (showFinishWorkoutConfirmation &&
         activeWorkoutFinishNeedsConfirmation(uiState.completedSetCount, uiState.totalSetCount)
     ) {
+        val remainingSetCount = uiState.totalSetCount - uiState.completedSetCount
         AlertDialog(
             onDismissRequest = { showFinishWorkoutConfirmation = false },
             title = { Text(text = stringResource(R.string.active_workout_finish_confirm_title)) },
             text = {
                 Text(
-                    text = formattedStringResource(
-                        R.string.active_workout_finish_confirm_message,
-                        uiState.completedSetCount,
-                        uiState.totalSetCount
+                    text = formattedPluralStringResource(
+                        R.plurals.finish_remaining_body,
+                        remainingSetCount,
+                        remainingSetCount
                     )
                 )
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        showFinishWorkoutConfirmation = false
-                        onFinishWorkout()
-                    },
-                    enabled = !operationInProgress
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalAlignment = Alignment.End
                 ) {
-                    Text(text = stringResource(R.string.active_workout_finish_confirm_action))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showFinishWorkoutConfirmation = false }) {
-                    Text(text = stringResource(R.string.active_workout_finish_confirm_keep))
+                    Button(
+                        onClick = {
+                            showFinishWorkoutConfirmation = false
+                            onRecordRemainingAndFinish()
+                        },
+                        enabled = !operationInProgress,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    ) {
+                        Text(text = stringResource(R.string.finish_remaining_log_and_finish))
+                    }
+                    TextButton(
+                        onClick = {
+                            showFinishWorkoutConfirmation = false
+                            onFinishWorkout()
+                        },
+                        enabled = !operationInProgress,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        ),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    ) {
+                        Text(text = stringResource(R.string.finish_remaining_finish_without))
+                    }
+                    TextButton(
+                        onClick = { showFinishWorkoutConfirmation = false },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    ) {
+                        Text(text = stringResource(R.string.finish_remaining_keep))
+                    }
                 }
             }
         )

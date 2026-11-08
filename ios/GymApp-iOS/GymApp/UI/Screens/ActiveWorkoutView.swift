@@ -766,7 +766,20 @@ struct ActiveWorkoutView: View {
             isPresented: $showingFinishConfirmation
         ) {
             Button(
-                gymText("Finish", "Завершити", "Завершить", languageCode: gymCurrentLanguageCode())
+                gymText(
+                    "Log remaining and finish", "Записати решту й завершити",
+                    "Записать остальные и завершить",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            ) {
+                recordRemainingAndFinish()
+            }
+            Button(
+                gymText(
+                    "Finish without them", "Завершити без них", "Завершить без них",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                role: .destructive
             ) {
                 if let draft = currentDraft { finish(draft) }
             }
@@ -3262,7 +3275,10 @@ struct ActiveWorkoutView: View {
         )
     }
 
-    private func recordAllSets(_ draft: ActiveWorkoutDraft) {
+    /// Returns true when the batch was written (a live-queue or rest-cleanup warning still
+    /// counts as written); false when the store rejected it and the failure was shown.
+    @discardableResult
+    private func recordAllSets(_ draft: ActiveWorkoutDraft) -> Bool {
         let orderedInputs = draft.exercises.flatMap { exercise in
             exercise.sets.compactMap { set in
                 set.isCompleted
@@ -3351,9 +3367,20 @@ struct ActiveWorkoutView: View {
                 )
                 announce(batchMessage)
             }
+            return true
         } catch {
             showActionFailure(error, liveQueueFailure: liveQueueFailureMessage)
+            return false
         }
+    }
+
+    /// "Log remaining and finish": records every remaining planned set as planned, then
+    /// finishes against the draft revision that recording produced. A failed recording
+    /// keeps the workout open with the error already shown.
+    private func recordRemainingAndFinish() {
+        guard let draft = currentDraft, recordAllSets(draft),
+              let settled = currentDraft, settled.id == draft.id else { return }
+        finish(settled)
     }
 
     /// Undoes one recorded set. The latest (marker) set keeps the original behaviour,
@@ -4324,12 +4351,14 @@ struct ActiveWorkoutView: View {
     }
 
     private var finishConfirmationMessage: String {
-        let done = currentDraft?.completedSetCount ?? 0
-        let planned = currentDraft?.plannedSetCount ?? 0
+        let remaining = max(
+            (currentDraft?.plannedSetCount ?? 0) - (currentDraft?.completedSetCount ?? 0),
+            0
+        )
         return gymText(
-            "\(done) of \(planned) \(planned == 1 ? "set is" : "sets are") done. Unfinished sets won't be saved.",
-            "Виконано \(done) з \(planned) підходів. Невиконані підходи не буде збережено.",
-            "Выполнено \(done) из \(planned) подходов. Невыполненные подходы не будут сохранены.",
+            "\(remaining) \(remaining == 1 ? "set is" : "sets are") not logged yet.",
+            "\(remaining) \(gymPlural(remaining, one: "підхід", few: "підходи", many: "підходів", languageCode: "uk")) ще не записано.",
+            "\(remaining) \(gymPlural(remaining, one: "подход ещё не записан", few: "подхода ещё не записаны", many: "подходов ещё не записаны", languageCode: "ru")).",
             languageCode: gymCurrentLanguageCode()
         )
     }

@@ -3959,6 +3959,7 @@ internal fun GymAppRoot(
                                 onAdjustRestTimer = viewModel::adjustRestTimer,
                                 onStopRestTimer = viewModel::stopRestTimer,
                                 onFinishWorkout = viewModel::finishWorkout,
+                                onRecordRemainingAndFinish = viewModel::recordRemainingAndFinish,
                                 onDiscardWorkout = viewModel::discardWorkout,
                                 onDismissMessage = viewModel::dismissMessage,
                                 friendGhosts = friendGhosts,

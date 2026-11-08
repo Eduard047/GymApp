@@ -638,9 +638,15 @@
     </plurals>
     <string name="active_workout_finish_log_as_planned">Записати як у плані</string>
     <string name="active_workout_finish_confirm_title">Завершити тренування?</string>
-    <string name="active_workout_finish_confirm_message">Виконано %1$d з %2$d підходів. Невиконані підходи не буде збережено.</string>
-    <string name="active_workout_finish_confirm_action">Завершити</string>
-    <string name="active_workout_finish_confirm_keep">Продовжити тренування</string>
+    <plurals name="finish_remaining_body">
+        <item quantity="one">%1$d підхід ще не записано.</item>
+        <item quantity="few">%1$d підходи ще не записано.</item>
+        <item quantity="many">%1$d підходів ще не записано.</item>
+        <item quantity="other">%1$d підходу ще не записано.</item>
+    </plurals>
+    <string name="finish_remaining_log_and_finish">Записати решту й завершити</string>
+    <string name="finish_remaining_finish_without">Завершити без них</string>
+    <string name="finish_remaining_keep">Продовжити тренування</string>
     <string name="active_workout_finish_skip_them">Пропустити їх</string>
     <string name="active_workout_remaining_sets_skipped">Вправу збережено. Інші підходи пропущено.</string>
     <string name="active_workout_set_limit_reached">Досягнуто ліміту підходів для вправи.</string>
