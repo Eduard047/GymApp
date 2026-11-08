@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Verified
 import com.example.gymapp.ui.theme.Button
@@ -70,6 +72,10 @@ import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.util.localizedMuscleName
 import com.example.gymapp.ui.viewmodel.CompletedMissionUiState
+import com.example.gymapp.ui.viewmodel.ExerciseVsLastUiState
+import com.example.gymapp.ui.viewmodel.VsLastBasis
+import com.example.gymapp.ui.viewmodel.VsLastSet
+import com.example.gymapp.ui.viewmodel.VsLastStatus
 import com.example.gymapp.ui.viewmodel.NewBadgeUiState
 import com.example.gymapp.ui.viewmodel.PostWorkoutPrUiState
 import com.example.gymapp.ui.viewmodel.PostWorkoutSummaryUiState
@@ -79,6 +85,9 @@ import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.roundToInt
 import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.formatVolumeTotal
+import com.example.gymapp.util.keepNumberWithUnit
+import com.example.gymapp.util.formatWeightDisplay
 
 @Composable
 fun PostWorkoutSummaryScreen(
@@ -138,6 +147,12 @@ fun PostWorkoutSummaryScreen(
                 if (uiState.trainedMuscles.isNotEmpty()) {
                     item {
                         TrainedMusclesCard(muscles = uiState.trainedMuscles)
+                    }
+                }
+
+                if (uiState.exerciseComparisons.isNotEmpty()) {
+                    item {
+                        ExerciseVsLastCard(rows = uiState.exerciseComparisons)
                     }
                 }
 
@@ -663,6 +678,137 @@ private fun HeroStat(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+/** "+20 kg" / "−3 reps" (true minus, NBSP before the unit); null for "new" and "same". */
+@Composable
+private fun vsLastDeltaText(row: ExerciseVsLastUiState, locale: Locale): String? {
+    val delta = row.delta ?: return null
+    if (row.status != VsLastStatus.Up && row.status != VsLastStatus.Down) return null
+    val sign = if (delta > 0.0) "+" else "\u2212"
+    val magnitude = kotlin.math.abs(delta)
+    val text = when (row.basis) {
+        VsLastBasis.Reps -> formattedStringResource(
+            R.string.vs_last_reps,
+            NumberFormat.getIntegerInstance(locale).format(magnitude.roundToInt())
+        )
+        else -> formattedStringResource(R.string.vs_last_volume_kg, formatVolumeTotal(magnitude, locale))
+    }
+    return sign + keepNumberWithUnit(text)
+}
+
+@Composable
+private fun vsLastSetText(set: VsLastSet, locale: Locale): String =
+    if (set.weight > 0.0) {
+        formattedStringResource(R.string.vs_last_best_set, formatWeightDisplay(set.weight, locale), set.reps.toString())
+    } else {
+        keepNumberWithUnit(formattedStringResource(R.string.vs_last_reps, set.reps.toString()))
+    }
+
+/** Best set line: "60 × 8 → 62,5 × 8", or just the current best for a new exercise or an unchanged best set. */
+@Composable
+private fun vsLastBestText(row: ExerciseVsLastUiState, locale: Locale): String {
+    val current = vsLastSetText(row.best, locale)
+    val previous = row.previousBest?.takeIf { it != row.best } ?: return current
+    return formattedStringResource(R.string.vs_last_best_set_change, vsLastSetText(previous, locale), current)
+}
+
+/** Per-exercise comparison with the previous session, flat tonal panel like the neighbouring cards. */
+@Composable
+private fun ExerciseVsLastCard(rows: List<ExerciseVsLastUiState>) {
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SectionHeading(text = stringResource(R.string.vs_last_title))
+            rows.forEach { row ->
+                val statusLabel = stringResource(
+                    when (row.status) {
+                        VsLastStatus.New -> R.string.vs_last_status_new
+                        VsLastStatus.Up -> R.string.vs_last_status_up
+                        VsLastStatus.Down -> R.string.vs_last_status_down
+                        VsLastStatus.Same -> R.string.vs_last_status_same
+                    }
+                )
+                val statusColor = when (row.status) {
+                    VsLastStatus.Up -> MaterialTheme.colorScheme.secondary
+                    VsLastStatus.Down -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                val deltaText = vsLastDeltaText(row, locale)
+                val bestText = vsLastBestText(row, locale)
+                val arrowDescription = when (row.status) {
+                    VsLastStatus.Up -> stringResource(R.string.vs_last_arrow_up_description)
+                    VsLastStatus.Down -> stringResource(R.string.vs_last_arrow_down_description)
+                    else -> null
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics(mergeDescendants = true) { },
+                    horizontalArrangement = Arrangement.spacedBy(11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = localizedExerciseName(row.exerciseName),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = bestText,
+                            style = MaterialTheme.typography.bodySmall.tabularDigits(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            if (arrowDescription != null) {
+                                Icon(
+                                    imageVector = if (row.status == VsLastStatus.Up) {
+                                        Icons.Filled.ArrowUpward
+                                    } else {
+                                        Icons.Filled.ArrowDownward
+                                    },
+                                    contentDescription = arrowDescription,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = statusColor
+                                )
+                            }
+                            Text(
+                                text = statusLabel,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = statusColor,
+                                maxLines = 1
+                            )
+                        }
+                        if (deltaText != null) {
+                            Text(
+                                text = deltaText,
+                                style = MaterialTheme.typography.bodySmall.tabularDigits(),
+                                color = statusColor,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

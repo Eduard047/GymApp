@@ -1757,4 +1757,15 @@
     <string name="progress_pr_history_kind_weight">Рекорд веса</string>
     <string name="progress_pr_history_kind_e1rm">Рекорд расчётного 1ПМ</string>
     <string name="progress_pr_history_set_value">%1$s × %2$d</string>
+    <string name="vs_last_title">По сравнению с прошлым разом</string>
+    <string name="vs_last_status_new">Новое</string>
+    <string name="vs_last_status_up">Больше</string>
+    <string name="vs_last_status_down">Меньше</string>
+    <string name="vs_last_status_same">Так же</string>
+    <string name="vs_last_volume_kg">%1$s кг</string>
+    <string name="vs_last_reps">%1$s повт.</string>
+    <string name="vs_last_best_set">%1$s × %2$s</string>
+    <string name="vs_last_best_set_change">%1$s → %2$s</string>
+    <string name="vs_last_arrow_up_description">Больше, чем в прошлый раз</string>
+    <string name="vs_last_arrow_down_description">Меньше, чем в прошлый раз</string>
 </resources>

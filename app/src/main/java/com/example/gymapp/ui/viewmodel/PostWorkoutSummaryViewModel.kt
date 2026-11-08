@@ -98,6 +98,8 @@ data class PostWorkoutSummaryUiState(
     val comebackMultiplier: Double = 1.0,
     val comebackBonusXp: Int = 0,
     val personalRecords: List<PostWorkoutPrUiState> = emptyList(),
+    /** Per-exercise comparison with the previous session; empty hides the card (see [buildExerciseVsLast]). */
+    val exerciseComparisons: List<ExerciseVsLastUiState> = emptyList(),
     val feedback: WorkoutFeedback? = null,
     val completedMissions: List<CompletedMissionUiState> = emptyList(),
     val newBadges: List<NewBadgeUiState> = emptyList()
@@ -354,6 +356,26 @@ class PostWorkoutSummaryViewModel(
                 currentSessionId = sessionId,
                 currentSessionDate = sessionDetails.session.date
             )
+            val exerciseComparisons = buildExerciseVsLast(
+                currentEntries = sessionDetails.workoutExercises.flatMap { workoutExercise ->
+                    workoutExercise.sets.map { set ->
+                        ExerciseHistoryEntry(
+                            setId = set.id,
+                            sessionId = sessionDetails.session.id,
+                            sessionDate = sessionDetails.session.date,
+                            exerciseId = workoutExercise.exercise.id,
+                            exerciseName = workoutExercise.exercise.name,
+                            weight = set.weight,
+                            reps = set.reps,
+                            setOrderIndex = set.orderIndex,
+                            blockOrderIndex = workoutExercise.workoutExercise.orderIndex
+                        )
+                    }
+                },
+                allHistory = exerciseHistory,
+                currentSessionId = sessionId,
+                currentSessionDate = sessionDetails.session.date
+            )
 
             PostWorkoutSummaryUiState(
                 isLoading = false,
@@ -394,6 +416,7 @@ class PostWorkoutSummaryViewModel(
                 comebackMultiplier = afterSnapshot.comeback.multiplier,
                 comebackBonusXp = afterSnapshot.comeback.bonusXp,
                 personalRecords = personalRecords,
+                exerciseComparisons = exerciseComparisons,
                 feedback = experience.feedbackBySession[sessionId]
                     ?.takeIf { it.sessionStartedAtMillis == sessionDetails.session.date }
                     ?.feedback,

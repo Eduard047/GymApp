@@ -1,0 +1,1318 @@
+{
+  "version": 1,
+  "description": "Post-workout summary: per exercise of the just-finished workout, how it compares with that exercise's previous session ('vs last time', T179). Implemented by buildExerciseVsLast on Android; iPhone must produce identical results.",
+  "scope": "Only the post-workout summary card. Other screens keep their own comparisons (PR badges, week volume delta, plan seed).",
+  "rules": [
+    "1. Rows with reps <= 0 are dropped first, everywhere (current workout and history). Weight 0 (bodyweight) is a valid weight and is kept.",
+    "2. Previous session of an exercise = among history rows of that exercise that are earlier than the finished session (date smaller; same date -> smaller sessionId), the session with the greatest date, tie -> the greatest sessionId. Sessions without the exercise are skipped; older sessions are never used once that session is found. The finished session and anything later never count.",
+    "3. Only the FIRST block of the exercise counts (lowest blockOrderIndex), in the finished workout and in the previous session. Blocks are NOT concatenated (same as plan seed rule 3). Set order is irrelevant.",
+    "4. Best set = highest weight, tie -> more reps. Volume = sum of weight x reps. Total reps = sum of reps. All over the first block's remaining sets.",
+    "5. Status: 'new' = no previous session (basis null, delta null, previousBest null). Otherwise if BOTH volumes are 0 (bodyweight only) basis = 'reps' and delta = totalReps(current) - totalReps(previous); else basis = 'volume' and delta = volume(current) - volume(previous). status = 'same' if |delta| <= 1e-9 (reported delta 0), 'up' if delta > 0, 'down' if delta < 0.",
+    "6. Row order = workout order: ascending blockOrderIndex of the exercise's first block (tie -> smaller exerciseId). An exercise without any set with reps > 0 is not listed.",
+    "7. At most 8 rows (the first 8 in workout order). If every one of the shown rows is 'new' (or there are none) the card is hidden, expected = []. Hiding is decided AFTER the cap.",
+    "8. Display (not covered by cases, identical on both platforms): title en 'Compared with last time' / uk 'Порівняно з минулим разом' / ru 'По сравнению с прошлым разом'. Status words en New/Up/Down/Same, uk Нове/Більше/Менше/Так само, ru Новое/Больше/Меньше/Так же. Up and down use the app's positive / negative semantic colors AND an up / down arrow with an accessibility description; new and same use the neutral muted color and no arrow.",
+    "9. Display delta text (up and down only, none for same or new): sign '+' or U+2212 '−' followed by the magnitude. volume basis -> volume formatted like the existing volume formatter (locale grouping, at most 1 fraction digit), U+00A0 and the localized kg unit, e.g. '+20 kg'. reps basis -> magnitude as an integer, U+00A0 and the localized reps word, e.g. '+4 reps' (uk/ru 'повт.').",
+    "10. Display best set: a weighted set (weight > 0) is '<weight> × <reps>' with weight at most 2 fraction digits in the locale ('62,5 × 8'); a bodyweight set (weight 0) is '<reps> reps' ('12 reps', uk/ru 'повт.'). New, or previousBest equal to best (same weight and reps) -> only the current best; otherwise '<previousBest> → <best>', e.g. '60 × 8 → 62.5 × 8'."
+  ],
+  "inputFields": {
+    "currentSession": "the finished session: id and date (any comparable number, e.g. epoch ms)",
+    "history": "rows of one logged set each, for the finished session AND all others: exerciseId, sessionId, date, blockOrderIndex (position of the exercise block in its workout), setOrderIndex, weight (kg), reps. Rows of the finished session have sessionId == currentSession.id"
+  },
+  "outputField": "expected = ordered list of {exerciseId, status, basis, delta, best{weight,reps}, previousBest{weight,reps}|null}; [] means the card is hidden. delta is compared exactly for integers and within 1e-9 for decimals.",
+  "cases": [
+    {
+      "id": "no-previous-all-new",
+      "name": "Nothing earlier: every exercise is new -> card hidden",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 60,
+          "reps": 8
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 1,
+          "setOrderIndex": 0,
+          "weight": 40,
+          "reps": 10
+        }
+      ],
+      "expected": []
+    },
+    {
+      "id": "up-by-volume",
+      "name": "Volume 480 -> 500: up, delta +20, best set 60 x 8 -> 62.5 x 8",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 60,
+          "reps": 8
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 62.5,
+          "reps": 8
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 1,
+          "status": "up",
+          "basis": "volume",
+          "delta": 20,
+          "best": {
+            "weight": 62.5,
+            "reps": 8
+          },
+          "previousBest": {
+            "weight": 60,
+            "reps": 8
+          }
+        }
+      ]
+    },
+    {
+      "id": "down-by-volume",
+      "name": "Volume 1500 -> 1000: down, delta -500",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 100,
+          "reps": 5
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 100,
+          "reps": 5
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 2,
+          "weight": 100,
+          "reps": 5
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 100,
+          "reps": 5
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 100,
+          "reps": 5
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 1,
+          "status": "down",
+          "basis": "volume",
+          "delta": -500,
+          "best": {
+            "weight": 100,
+            "reps": 5
+          },
+          "previousBest": {
+            "weight": 100,
+            "reps": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": "same-volume",
+      "name": "Identical volume: same, delta 0 (UI shows no delta text)",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 60,
+          "reps": 8
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 60,
+          "reps": 8
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 60,
+          "reps": 8
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 60,
+          "reps": 8
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 1,
+          "status": "same",
+          "basis": "volume",
+          "delta": 0,
+          "best": {
+            "weight": 60,
+            "reps": 8
+          },
+          "previousBest": {
+            "weight": 60,
+            "reps": 8
+          }
+        }
+      ]
+    },
+    {
+      "id": "new-next-to-up",
+      "name": "A new exercise is listed (status new) while another one has history",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 2,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 40,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 60,
+          "reps": 8
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 1,
+          "setOrderIndex": 0,
+          "weight": 40,
+          "reps": 12
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 1,
+          "status": "new",
+          "basis": null,
+          "delta": null,
+          "best": {
+            "weight": 60,
+            "reps": 8
+          },
+          "previousBest": null
+        },
+        {
+          "exerciseId": 2,
+          "status": "up",
+          "basis": "volume",
+          "delta": 80,
+          "best": {
+            "weight": 40,
+            "reps": 12
+          },
+          "previousBest": {
+            "weight": 40,
+            "reps": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "best-set-tie-break",
+      "name": "Best set = highest weight, tie -> more reps (previous 60 x 10 not 60 x 8; current 70 x 6 not 70 x 5); volume 1680 -> 1370 is down",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 60,
+          "reps": 8
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 60,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 2,
+          "weight": 50,
+          "reps": 12
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 70,
+          "reps": 5
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 70,
+          "reps": 6
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 2,
+          "weight": 50,
+          "reps": 12
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 1,
+          "status": "down",
+          "basis": "volume",
+          "delta": -310,
+          "best": {
+            "weight": 70,
+            "reps": 6
+          },
+          "previousBest": {
+            "weight": 60,
+            "reps": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "zero-rep-sets-ignored",
+      "name": "Sets with reps <= 0 are ignored in volume and best set (current and previous)",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 60,
+          "reps": 8
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 200,
+          "reps": 0
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 60,
+          "reps": 8
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 100,
+          "reps": 0
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 1,
+          "status": "same",
+          "basis": "volume",
+          "delta": 0,
+          "best": {
+            "weight": 60,
+            "reps": 8
+          },
+          "previousBest": {
+            "weight": 60,
+            "reps": 8
+          }
+        }
+      ]
+    },
+    {
+      "id": "bodyweight-compares-reps",
+      "name": "Both volumes 0 (bodyweight only): decided by total reps 18 -> 22, delta +4",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 0,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 0,
+          "reps": 8
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 0,
+          "reps": 12
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 0,
+          "reps": 10
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 1,
+          "status": "up",
+          "basis": "reps",
+          "delta": 4,
+          "best": {
+            "weight": 0,
+            "reps": 12
+          },
+          "previousBest": {
+            "weight": 0,
+            "reps": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "bodyweight-down-by-reps",
+      "name": "Bodyweight only, fewer reps: down on reps, delta -3",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 0,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 1,
+          "weight": 0,
+          "reps": 8
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 0,
+          "reps": 15
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 1,
+          "status": "down",
+          "basis": "reps",
+          "delta": -3,
+          "best": {
+            "weight": 0,
+            "reps": 15
+          },
+          "previousBest": {
+            "weight": 0,
+            "reps": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "bodyweight-to-weighted-uses-volume",
+      "name": "Previous volume 0 but current volume > 0: volume decides (up, +100)",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 0,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 20,
+          "reps": 5
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 1,
+          "status": "up",
+          "basis": "volume",
+          "delta": 100,
+          "best": {
+            "weight": 20,
+            "reps": 5
+          },
+          "previousBest": {
+            "weight": 0,
+            "reps": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "previous-is-latest-session-with-exercise",
+      "name": "Previous = latest earlier session that has the exercise (skips a session without it, ignores older ones)",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 1,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 50,
+          "reps": 10
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 2,
+          "date": 2000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 30,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 60,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 70,
+          "reps": 10
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 1,
+          "status": "up",
+          "basis": "volume",
+          "delta": 100,
+          "best": {
+            "weight": 70,
+            "reps": 10
+          },
+          "previousBest": {
+            "weight": 60,
+            "reps": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "same-date-lower-id-is-earlier",
+      "name": "Same date: only a lower session id is earlier; higher id and later dates are ignored",
+      "currentSession": {
+        "id": 8,
+        "date": 5000
+      },
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 7,
+          "date": 5000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 40,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 9,
+          "date": 5000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 90,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 10,
+          "date": 6000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 95,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 8,
+          "date": 5000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 50,
+          "reps": 10
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 1,
+          "status": "up",
+          "basis": "volume",
+          "delta": 100,
+          "best": {
+            "weight": 50,
+            "reps": 10
+          },
+          "previousBest": {
+            "weight": 40,
+            "reps": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "first-block-only",
+      "name": "Only the first block of the exercise counts, in the current and the previous session",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 60,
+          "reps": 8
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 2,
+          "setOrderIndex": 0,
+          "weight": 100,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 1,
+          "setOrderIndex": 0,
+          "weight": 60,
+          "reps": 8
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 3,
+          "setOrderIndex": 0,
+          "weight": 200,
+          "reps": 5
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 1,
+          "status": "same",
+          "basis": "volume",
+          "delta": 0,
+          "best": {
+            "weight": 60,
+            "reps": 8
+          },
+          "previousBest": {
+            "weight": 60,
+            "reps": 8
+          }
+        }
+      ]
+    },
+    {
+      "id": "decimal-volume",
+      "name": "Decimal volumes: 262.5 -> 315, delta +52.5",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 52.5,
+          "reps": 5
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 52.5,
+          "reps": 6
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 1,
+          "status": "up",
+          "basis": "volume",
+          "delta": 52.5,
+          "best": {
+            "weight": 52.5,
+            "reps": 6
+          },
+          "previousBest": {
+            "weight": 52.5,
+            "reps": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": "zero-rep-current-exercise-skipped",
+      "name": "A current exercise with only reps <= 0 sets is not listed",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 60,
+          "reps": 0
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 3,
+          "date": 3000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 40,
+          "reps": 10
+        },
+        {
+          "exerciseId": 2,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 1,
+          "setOrderIndex": 0,
+          "weight": 40,
+          "reps": 11
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 2,
+          "status": "up",
+          "basis": "volume",
+          "delta": 40,
+          "best": {
+            "weight": 40,
+            "reps": 11
+          },
+          "previousBest": {
+            "weight": 40,
+            "reps": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "zero-rep-previous-rows-dropped-first",
+      "name": "Previous rows with reps <= 0 are dropped before picking the session: the newer all-zero-rep session is skipped",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 1,
+          "sessionId": 1,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 40,
+          "reps": 10
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 2,
+          "date": 2000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 99,
+          "reps": 0
+        },
+        {
+          "exerciseId": 1,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 40,
+          "reps": 12
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 1,
+          "status": "up",
+          "basis": "volume",
+          "delta": 80,
+          "best": {
+            "weight": 40,
+            "reps": 12
+          },
+          "previousBest": {
+            "weight": 40,
+            "reps": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "workout-order-and-cap-of-8",
+      "name": "Rows follow workout (block) order, not exercise id; only the first 8 of 9 are shown",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 19,
+          "sessionId": 1,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 19,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 11
+        },
+        {
+          "exerciseId": 18,
+          "sessionId": 1,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 18,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 1,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 11
+        },
+        {
+          "exerciseId": 17,
+          "sessionId": 1,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 17,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 2,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 11
+        },
+        {
+          "exerciseId": 16,
+          "sessionId": 1,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 16,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 3,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 11
+        },
+        {
+          "exerciseId": 15,
+          "sessionId": 1,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 15,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 4,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 11
+        },
+        {
+          "exerciseId": 14,
+          "sessionId": 1,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 14,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 5,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 11
+        },
+        {
+          "exerciseId": 13,
+          "sessionId": 1,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 13,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 6,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 11
+        },
+        {
+          "exerciseId": 12,
+          "sessionId": 1,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 12,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 7,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 11
+        },
+        {
+          "exerciseId": 11,
+          "sessionId": 1,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 11,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 8,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 11
+        }
+      ],
+      "expected": [
+        {
+          "exerciseId": 19,
+          "status": "up",
+          "basis": "volume",
+          "delta": 10,
+          "best": {
+            "weight": 10,
+            "reps": 11
+          },
+          "previousBest": {
+            "weight": 10,
+            "reps": 10
+          }
+        },
+        {
+          "exerciseId": 18,
+          "status": "up",
+          "basis": "volume",
+          "delta": 10,
+          "best": {
+            "weight": 10,
+            "reps": 11
+          },
+          "previousBest": {
+            "weight": 10,
+            "reps": 10
+          }
+        },
+        {
+          "exerciseId": 17,
+          "status": "up",
+          "basis": "volume",
+          "delta": 10,
+          "best": {
+            "weight": 10,
+            "reps": 11
+          },
+          "previousBest": {
+            "weight": 10,
+            "reps": 10
+          }
+        },
+        {
+          "exerciseId": 16,
+          "status": "up",
+          "basis": "volume",
+          "delta": 10,
+          "best": {
+            "weight": 10,
+            "reps": 11
+          },
+          "previousBest": {
+            "weight": 10,
+            "reps": 10
+          }
+        },
+        {
+          "exerciseId": 15,
+          "status": "up",
+          "basis": "volume",
+          "delta": 10,
+          "best": {
+            "weight": 10,
+            "reps": 11
+          },
+          "previousBest": {
+            "weight": 10,
+            "reps": 10
+          }
+        },
+        {
+          "exerciseId": 14,
+          "status": "up",
+          "basis": "volume",
+          "delta": 10,
+          "best": {
+            "weight": 10,
+            "reps": 11
+          },
+          "previousBest": {
+            "weight": 10,
+            "reps": 10
+          }
+        },
+        {
+          "exerciseId": 13,
+          "status": "up",
+          "basis": "volume",
+          "delta": 10,
+          "best": {
+            "weight": 10,
+            "reps": 11
+          },
+          "previousBest": {
+            "weight": 10,
+            "reps": 10
+          }
+        },
+        {
+          "exerciseId": 12,
+          "status": "up",
+          "basis": "volume",
+          "delta": 10,
+          "best": {
+            "weight": 10,
+            "reps": 11
+          },
+          "previousBest": {
+            "weight": 10,
+            "reps": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "hidden-when-shown-exercises-all-new",
+      "name": "The cap applies first: the 9th exercise has history but is cut, so the 8 shown are all new -> hidden",
+      "currentSession": {
+        "id": 5,
+        "date": 4000
+      },
+      "history": [
+        {
+          "exerciseId": 21,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 22,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 1,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 23,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 2,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 24,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 3,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 25,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 4,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 26,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 5,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 27,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 6,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 28,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 7,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 29,
+          "sessionId": 5,
+          "date": 4000,
+          "blockOrderIndex": 8,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 10
+        },
+        {
+          "exerciseId": 29,
+          "sessionId": 1,
+          "date": 1000,
+          "blockOrderIndex": 0,
+          "setOrderIndex": 0,
+          "weight": 10,
+          "reps": 9
+        }
+      ],
+      "expected": []
+    }
+  ]
+}
