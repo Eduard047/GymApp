@@ -4,6 +4,7 @@ import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -57,6 +58,19 @@ class NextSetFocusTest {
     @Test
     fun scrollDeltaAlignsTopOfRowTallerThanViewport() {
         assertEquals(50f, NextSetFocus.scrollDelta(50f, 1000f, 0f, 800f), 0f)
+    }
+
+    @Test
+    fun failedRecordForAwaitingSetClearsPendingFocus() {
+        assertTrue(NextSetFocus.recordFailureClearsAwaiting("a", "a", true, false))
+    }
+
+    @Test
+    fun otherSetsStaleMessagesAndRestTimerFailuresKeepPendingFocus() {
+        assertFalse(NextSetFocus.recordFailureClearsAwaiting("a", "b", true, false))
+        assertFalse(NextSetFocus.recordFailureClearsAwaiting("a", "a", false, false))
+        assertFalse(NextSetFocus.recordFailureClearsAwaiting("a", "a", true, true))
+        assertFalse(NextSetFocus.recordFailureClearsAwaiting(null, null, true, false))
     }
 
     private fun contract(): JSONObject {

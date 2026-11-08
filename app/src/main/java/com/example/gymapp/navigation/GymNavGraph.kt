@@ -246,6 +246,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -1068,6 +1069,7 @@ internal fun GymAppRoot(
         R.string.message_shared_workout_active_workout
     )
     val discardSharedLinkLabel = stringResource(R.string.action_discard_shared_link)
+    val liveWorkoutBlockedMessage = stringResource(R.string.live_workout_active_blocked)
     LaunchedEffect(
         uiIsolationKey,
         pendingSharedWorkout?.id,
@@ -3078,6 +3080,9 @@ internal fun GymAppRoot(
                                     addWorkoutDraftUiState.note.isNotBlank(),
                                 hasLiveTarget = hasSavedLiveWorkoutDraftTarget
                             )
+                            // Ignores repeat taps while a direct start is still running, so an
+                            // Unavailable result cannot repeat into the editor twice.
+                            var repeatLastWorkoutInFlight by remember { mutableStateOf(false) }
                             val resumeRetainedWorkoutEditor: () -> Boolean = {
                                 val shouldResume = activeWorkout == null &&
                                     hasRetainedWorkoutDraft
@@ -3122,25 +3127,54 @@ internal fun GymAppRoot(
                                     )
                                 },
                                 onRepeatLastWorkout = {
-                                    if (!resumeRetainedWorkoutEditor()) {
+                                    if (!repeatLastWorkoutInFlight &&
+                                        !resumeRetainedWorkoutEditor()
+                                    ) {
+                                        repeatLastWorkoutInFlight = true
                                         coroutineScope.launch {
-                                            when (viewModel.startRepeatLastWorkout()) {
-                                                RepeatLastWorkoutStart.Started,
-                                                RepeatLastWorkoutStart.AlreadyActive ->
-                                                    navController.navigate(
-                                                        AppDestination.ActiveWorkout.route
-                                                    ) {
-                                                        launchSingleTop = true
+                                            try {
+                                                when (viewModel.startRepeatLastWorkout()) {
+                                                    RepeatLastWorkoutStart.Started ->
+                                                        navController.navigate(
+                                                            AppDestination.ActiveWorkout.route
+                                                        ) {
+                                                            launchSingleTop = true
+                                                        }
+                                                    // A live-room reservation can own the slot with
+                                                    // no local workout to open: show the live-workout
+                                                    // block message instead of an empty route.
+                                                    RepeatLastWorkoutStart.AlreadyActive ->
+                                                        if (shouldOpenActiveWorkoutAfterBlockedStart(
+                                                                repository.observeActiveWorkout()
+                                                                    .first() != null
+                                                            )
+                                                        ) {
+                                                            navController.navigate(
+                                                                AppDestination.ActiveWorkout.route
+                                                            ) {
+                                                                launchSingleTop = true
+                                                            }
+                                                        } else {
+                                                            coroutineScope.launch {
+                                                                toastController.show(
+                                                                    liveWorkoutBlockedMessage
+                                                                )
+                                                            }
+                                                        }
+                                                    // Nothing to start directly (data limit, removed
+                                                    // exercise): hand the repeat to the editor, which
+                                                    // shows what needs fixing.
+                                                    RepeatLastWorkoutStart.Unavailable -> {
+                                                        addWorkoutDraftViewModel.repeatLastWorkout()
+                                                        navController.navigate(
+                                                            AppDestination.AddWorkout.route
+                                                        ) {
+                                                            launchSingleTop = true
+                                                        }
                                                     }
-                                                // Nothing to start directly (data limit, removed
-                                                // exercise): hand the repeat to the editor, which
-                                                // shows what needs fixing.
-                                                RepeatLastWorkoutStart.Unavailable -> {
-                                                    addWorkoutDraftViewModel.repeatLastWorkout()
-                                                    navController.navigate(
-                                                        AppDestination.AddWorkout.route
-                                                    )
                                                 }
+                                            } finally {
+                                                repeatLastWorkoutInFlight = false
                                             }
                                         }
                                     }
@@ -3619,12 +3653,21 @@ internal fun GymAppRoot(
 
                             LaunchedEffect(uiState.activeWorkoutStarted) {
                                 if (uiState.activeWorkoutStarted) {
-                                    navController.navigate(AppDestination.ActiveWorkout.route) {
-                                        popUpTo(backStackEntry.destination.id) {
-                                            inclusive = true
+                                    // AlreadyActive from a live-room reservation leaves no local
+                                    // workout to open: keep the editor and explain the block.
+                                    val hasLocalWorkout = repository.observeActiveWorkout()
+                                        .first() != null
+                                    if (shouldOpenActiveWorkoutAfterBlockedStart(hasLocalWorkout)) {
+                                        navController.navigate(AppDestination.ActiveWorkout.route) {
+                                            popUpTo(backStackEntry.destination.id) {
+                                                inclusive = true
+                                            }
                                         }
+                                        viewModel.consumeActiveWorkoutStarted()
+                                    } else {
+                                        viewModel.consumeActiveWorkoutStarted()
+                                        toastController.show(liveWorkoutBlockedMessage)
                                     }
-                                    viewModel.consumeActiveWorkoutStarted()
                                 }
                             }
 
@@ -5505,3 +5548,10 @@ private fun AppTopBar(
         )
     }
 }
+
+/**
+ * After an ordinary start came back `AlreadyActive`, the active-workout route only has something
+ * to show when a local workout exists; a live-room reservation alone has none.
+ */
+internal fun shouldOpenActiveWorkoutAfterBlockedStart(hasLocalActiveWorkout: Boolean): Boolean =
+    hasLocalActiveWorkout

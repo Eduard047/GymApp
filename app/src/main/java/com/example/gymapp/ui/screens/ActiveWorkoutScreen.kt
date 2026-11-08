@@ -581,6 +581,20 @@ fun ActiveWorkoutScreen(
         uiState.exercises.any { exercise -> exercise.sets.any { it.id == recordedId && it.isCompleted } }
     }
     val latestExercises by rememberUpdatedState(uiState.exercises)
+    // A failed Log for the awaiting set never shows it recorded; drop the pending focus so it cannot fire
+    // later for an unrelated record.
+    LaunchedEffect(uiState.message, uiState.messageSetId) {
+        if (NextSetFocus.recordFailureClearsAwaiting(
+                awaitingSetId = recordedSetAwaitingFocus,
+                messageSetId = uiState.messageSetId,
+                hasNewMessage = uiState.message != null && uiState.message != messageWhenRecordTapped,
+                messageIsRestTimerFailure =
+                    uiState.message?.resourceId == com.example.gymapp.R.string.message_rest_timer_save_failed
+            )
+        ) {
+            recordedSetAwaitingFocus = null
+        }
+    }
     LaunchedEffect(recordedSetNowDone) {
         val recordedId = recordedSetNowDone ?: return@LaunchedEffect
         val exercises = latestExercises

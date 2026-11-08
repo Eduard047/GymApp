@@ -11,6 +11,19 @@ internal data class NextSetPosition(val exerciseIndex: Int, val setIndex: Int)
  */
 internal object NextSetFocus {
     /**
+     * True when a new message names the set still awaiting focus and the record did not land: that
+     * set's Log failed, so the pending focus must be dropped. A rest-timer save failure after a
+     * successful record keeps it (the set is recorded and focus still advances).
+     */
+    fun recordFailureClearsAwaiting(
+        awaitingSetId: String?,
+        messageSetId: String?,
+        hasNewMessage: Boolean,
+        messageIsRestTimerFailure: Boolean
+    ): Boolean = awaitingSetId != null && hasNewMessage && messageSetId == awaitingSetId &&
+        !messageIsRestTimerFailure
+
+    /**
      * The first incomplete set after [recorded] in workout order (rest of its exercise, then the following
      * exercises); when none is left, the first incomplete set before it; null when every set is complete
      * (no focus change). Fully completed exercises hold no incomplete set, so they are skipped on their own.

@@ -1368,7 +1368,8 @@ class ActiveWorkoutViewModel(
                                 val finishRevision =
                                     activeWorkoutFinishRevisionAfterRecord(finishAfter, result)
                                 if (finishRevision != null) {
-                                    // Finishing follows immediately, so no batch undo is offered.
+                                    // Finishing follows immediately, so no batch undo is offered
+                                    // unless the finish does not happen.
                                     operationState.update {
                                         it.copy(
                                             isRecordingAll = false,
@@ -1377,23 +1378,16 @@ class ActiveWorkoutViewModel(
                                             messageSetId = null
                                         )
                                     }
-                                    performFinish(snapshot, finishRevision)
+                                    if (performFinish(snapshot, finishRevision)) {
+                                        return@launch
+                                    }
+                                    // The sets stay recorded: offer the same batch undo and stop the
+                                    // rest timer as a plain record-all, keeping the finish error.
+                                    offerBatchUndoAndStopRest(snapshot, parsed.updates, result.revision)
                                     return@launch
                                 }
-                                offerBatchUndo(
-                                    ActiveWorkoutBatchUndo(
-                                        setIdsInUndoOrder = parsed.updates.map { it.setId }.reversed(),
-                                        restoreUndoableSetId = snapshot.activeWorkout.undoableSetId,
-                                        revisionAfterBatch = result.revision,
-                                        liveRoomId = liveSync?.activeLiveUiState?.value?.activeRoomId
-                                    )
-                                )
-                                val restStopped = runCatching {
-                                    restTimerController.stopActiveWorkoutRest(
-                                        timerAccountKey,
-                                        snapshot.activeWorkout.startedAt
-                                    )
-                                }.getOrDefault(false)
+                                val restStopped =
+                                    offerBatchUndoAndStopRest(snapshot, parsed.updates, result.revision)
                                 operationState.update {
                                     it.copy(
                                         isRecordingAll = false,
@@ -2197,6 +2191,28 @@ class ActiveWorkoutViewModel(
     }
 
     /** Keeps the batch undo for [ACTIVE_WORKOUT_BATCH_UNDO_WINDOW_MILLIS], then drops it. */
+    /** Post-record handling of a record-all: offers the batch undo and stops the rest timer. */
+    private suspend fun offerBatchUndoAndStopRest(
+        snapshot: ActiveWorkoutDetails,
+        updates: List<ActiveWorkoutSetUpdate>,
+        revisionAfterBatch: Long
+    ): Boolean {
+        offerBatchUndo(
+            ActiveWorkoutBatchUndo(
+                setIdsInUndoOrder = updates.map { it.setId }.reversed(),
+                restoreUndoableSetId = snapshot.activeWorkout.undoableSetId,
+                revisionAfterBatch = revisionAfterBatch,
+                liveRoomId = liveSync?.activeLiveUiState?.value?.activeRoomId
+            )
+        )
+        return runCatching {
+            restTimerController.stopActiveWorkoutRest(
+                timerAccountKey,
+                snapshot.activeWorkout.startedAt
+            )
+        }.getOrDefault(false)
+    }
+
     private fun offerBatchUndo(batch: ActiveWorkoutBatchUndo) {
         batchUndoExpiryJob?.cancel()
         batchUndoState.value = batch
@@ -2251,8 +2267,9 @@ class ActiveWorkoutViewModel(
         }
     }
 
-    /** Finishes against [expectedRevision]; the caller has already set `isFinishing`. */
-    private suspend fun performFinish(snapshot: ActiveWorkoutDetails, expectedRevision: Long) {
+    /** Finishes against [expectedRevision]; the caller has already set `isFinishing`. True when finished. */
+    private suspend fun performFinish(snapshot: ActiveWorkoutDetails, expectedRevision: Long): Boolean {
+        var finished = false
         run {
             var preparation: LiveLocalMutationPreparation = LiveLocalMutationPreparation.Standalone
             var localCommitted = false
@@ -2267,11 +2284,12 @@ class ActiveWorkoutViewModel(
                             message = LocalizedText(R.string.live_workout_queue_save_failed)
                         )
                     }
-                    return
+                    return false
                 }
                 when (val result = repository.finishActiveWorkout(expectedRevision)) {
                     is FinishActiveWorkoutResult.Finished -> {
                         localCommitted = true
+                        finished = true
                         (preparation as? LiveLocalMutationPreparation.Prepared)?.let {
                             liveSync?.commitPreparedLocalMutation(it)
                         }
@@ -2330,6 +2348,7 @@ class ActiveWorkoutViewModel(
                 }
             }
         }
+        return finished
     }
 
     fun discardWorkout() {

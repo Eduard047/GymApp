@@ -103,4 +103,10 @@ class RepeatLastWorkoutTest {
         assertFalse(shouldShowRepeatLastWorkoutAction(withHistory, hasActiveWorkout = true, hasRetainedWorkoutDraft = false))
         assertFalse(shouldShowRepeatLastWorkoutAction(withHistory, hasActiveWorkout = false, hasRetainedWorkoutDraft = true))
     }
+
+    @Test
+    fun blockedStartOpensActiveWorkoutOnlyWhenALocalWorkoutExists() {
+        assertTrue(com.example.gymapp.navigation.shouldOpenActiveWorkoutAfterBlockedStart(true))
+        assertFalse(com.example.gymapp.navigation.shouldOpenActiveWorkoutAfterBlockedStart(false))
+    }
 }
