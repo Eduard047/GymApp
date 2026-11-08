@@ -1223,7 +1223,7 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
                     )
                     Text(
                         text = stringResource(R.string.active_workout_sets_caption),
-                        style = TextStyle(fontSize = 10.sp),
+                        style = TextStyle(fontSize = 11.sp),
                         color = softColor,
                         maxLines = 1
                     )
@@ -2284,7 +2284,7 @@ private fun RecordedConfirmationBanner(
     Surface(
         shape = GymControlShape,
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, primary.copy(alpha = 0.36f)),
+        border = BorderStroke(Dp.Hairline, MaterialTheme.colorScheme.outlineVariant),
         modifier = modifier
             .fillMaxWidth()
             .testTag(ACTIVE_WORKOUT_RECORDED_BANNER_TAG)

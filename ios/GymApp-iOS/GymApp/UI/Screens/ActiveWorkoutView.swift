@@ -908,7 +908,7 @@ struct ActiveWorkoutView: View {
                                         languageCode: gymCurrentLanguageCode()
                                     )
                                 )
-                                .gymScaledFont(size: 10, relativeTo: .caption2, maxScale: 1.3)
+                                .gymScaledFont(size: 11, relativeTo: .caption2, maxScale: 1.3)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.6)
                                 .foregroundStyle(GymTheme.onHeroSecondary)
@@ -1024,14 +1024,13 @@ struct ActiveWorkoutView: View {
                     VStack(alignment: .leading, spacing: GymTheme.Spacing.xSmall) {
                         Text(
                             gymText(
-                                "SPOTTER LENS",
-                                "СПОТТЕР-ЛІНЗА",
-                                "СПОТТЕР-ЛИНЗА",
+                                "Spotter lens",
+                                "Споттер-лінза",
+                                "Споттер-линза",
                                 languageCode: gymCurrentLanguageCode()
                             )
                         )
-                        .font(GymTheme.TypeScale.utility)
-                        .tracking(0.55)
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(GymTheme.primary)
 
                         Text(
@@ -1113,7 +1112,6 @@ struct ActiveWorkoutView: View {
         }
         .background {
             lensShape.fill(GymTheme.surface)
-            lensShape.fill(GymTheme.primary.opacity(0.025))
         }
         .overlay {
             lensShape.strokeBorder(
@@ -1130,7 +1128,6 @@ struct ActiveWorkoutView: View {
                 .accessibilityHidden(true)
         }
         .clipShape(lensShape)
-        .shadow(color: GymTheme.primary.opacity(0.1), radius: 12, x: 0, y: 6)
         .accessibilityElement(children: .contain)
     }
 
@@ -1940,7 +1937,7 @@ struct ActiveWorkoutView: View {
             }
         }
         .padding(10)
-        .background(GymTheme.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+        .background(GymTheme.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isSelected)
         .accessibilityValue(
@@ -4355,7 +4352,7 @@ struct ActiveWorkoutView: View {
         )
         .overlay {
             RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                .strokeBorder(GymTheme.primary.opacity(0.36), lineWidth: 1)
+                .strokeBorder(GymTheme.outlineSoft, lineWidth: GymTheme.hairlineWidth)
         }
         .accessibilityElement(children: .combine)
     }
