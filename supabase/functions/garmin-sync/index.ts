@@ -291,7 +291,7 @@ function capabilityClient(
     // the Edge invocation. An abort surfaces as an `error` result, which each
     // caller already maps to its generic failure response.
     global: {
-      fetch: (input, init) => {
+      fetch: (input: RequestInfo | URL, init?: RequestInit) => {
         const timeout = AbortSignal.timeout(RPC_TIMEOUT_MS);
         return fetch(input, {
           ...init,

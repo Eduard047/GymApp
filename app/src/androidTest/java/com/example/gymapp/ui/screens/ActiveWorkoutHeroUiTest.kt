@@ -544,6 +544,7 @@ class ActiveWorkoutHeroUiTest {
                     onAdjustRestTimer = onAdjustRestTimer,
                     onStopRestTimer = onStopRestTimer,
                     onFinishWorkout = {},
+                    onRecordRemainingAndFinish = {},
                     onDiscardWorkout = {},
                     onDismissMessage = {}
                 )

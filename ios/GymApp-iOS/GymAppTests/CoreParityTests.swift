@@ -116,8 +116,10 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(sessions[1].sets.map(\.setOrderIndex), [0, 1])
         XCTAssertEqual(sessions[0].setCount, 3)
         XCTAssertEqual(sessions[0].maxWeight, 70)
-        XCTAssertEqual(sessions[0].volume, 65 * 6 + 67.5 * 5 + 70 * 5, accuracy: 0.0001)
-        XCTAssertEqual(sessions[1].volume, 50 * 10 + 60 * 8, accuracy: 0.0001)
+        let expectedEveningVolume: Double = 65.0 * 6.0 + 67.5 * 5.0 + 70.0 * 5.0
+        XCTAssertEqual(sessions[0].volume, expectedEveningVolume, accuracy: 0.0001)
+        let expectedMorningVolume: Double = 50.0 * 10.0 + 60.0 * 8.0
+        XCTAssertEqual(sessions[1].volume, expectedMorningVolume, accuracy: 0.0001)
     }
 
     func testExerciseHistoryGroupingSplitsMonthsNewestFirst() {
