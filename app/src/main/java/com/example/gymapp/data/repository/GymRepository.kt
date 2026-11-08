@@ -677,6 +677,9 @@ class GymRepository(
     /** Current exercise rows (ids and names) for re-attaching local photos after a replace. */
     suspend fun getExercisesForMediaRemap(): List<ExerciseEntity> = exerciseDao.getExercisesSnapshot()
 
+    /** One catalog exercise straight from the database (e.g. one the picker just created). */
+    suspend fun getExerciseById(exerciseId: Long): ExerciseEntity? = exerciseDao.getById(exerciseId)
+
     suspend fun getExerciseDeletionSnapshot(exerciseId: Long): ExerciseDeletionSnapshot? {
         if (exerciseId <= 0) return null
         return database.withTransaction {

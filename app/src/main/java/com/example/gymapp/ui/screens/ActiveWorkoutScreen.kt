@@ -855,29 +855,6 @@ fun ActiveWorkoutScreen(
                 )
             }
 
-            if (uiState.liveConnectionMode == null && replacingExerciseId != null) {
-                item(key = "replace-exercise") {
-                    // The same catalog picker as "+ Add exercise" (already hides exercises in the workout),
-                    // opened from an exercise's menu; the pick swaps that exercise in place.
-                    ExerciseCatalogSelector(
-                        selectedExerciseId = null,
-                        exercises = addExerciseCatalog.exercises,
-                        frequentExerciseIds = addExerciseCatalog.frequentExerciseIds,
-                        recentExerciseIds = addExerciseCatalog.recentExerciseIds,
-                        exerciseWorkoutCounts = addExerciseCatalog.exerciseWorkoutCounts,
-                        exerciseMuscleIds = addExerciseCatalog.exerciseMuscleIds,
-                        exerciseMediaOwnerKey = exerciseMediaOwnerKey,
-                        externalOpen = true,
-                        onExternalDismiss = { replacingExerciseId = null },
-                        onExerciseSelected = { newExerciseId ->
-                            replacingExerciseId?.let { onReplaceExercise(it, newExerciseId) }
-                            replacingExerciseId = null
-                        },
-                        onCreateExercise = onCreateExercise
-                    )
-                }
-            }
-
             if (uiState.liveConnectionMode == null) {
                 item(key = "add-exercise") {
                     // Same picker and dashed button as the saved workout screen; hidden in live rooms.
@@ -1028,6 +1005,33 @@ fun ActiveWorkoutScreen(
             } },
             confirmButton = { if (adaptation.hasPreview) TextButton(onClick = onApplyAdaptation, enabled = !adaptation.isApplying) { Text(stringResource(R.string.training_apply_changes)) } },
             dismissButton = { TextButton(onClick = onDismissAdaptation, enabled = !adaptation.isApplying) { Text(stringResource(R.string.action_cancel)) } })
+    }
+
+    // Screen level, not a LazyColumn item: an off-screen item would never compose, so the sheet would
+    // not open (or open later, e.g. after process death) and a stray button would show in the list.
+    if (uiState.liveConnectionMode == null && replacingExerciseId != null) {
+        // The same catalog picker as "+ Add exercise" (already hides exercises in the workout),
+        // opened from an exercise's menu; the pick swaps that exercise in place.
+        ExerciseCatalogSelector(
+            selectedExerciseId = null,
+            exercises = addExerciseCatalog.exercises,
+            frequentExerciseIds = addExerciseCatalog.frequentExerciseIds,
+            recentExerciseIds = addExerciseCatalog.recentExerciseIds,
+            exerciseWorkoutCounts = addExerciseCatalog.exerciseWorkoutCounts,
+            exerciseMuscleIds = addExerciseCatalog.exerciseMuscleIds,
+            exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+            externalOpen = true,
+            trigger = {},
+            onExternalDismiss = { replacingExerciseId = null },
+            onExerciseSelected = { newExerciseId ->
+                replacingExerciseId?.let { onReplaceExercise(it, newExerciseId) }
+                replacingExerciseId = null
+            },
+            onCreateExercise = onCreateExercise
+        )
+    } else if (replacingExerciseId != null) {
+        // Live room joined meanwhile: nothing may replace, drop the stale request.
+        SideEffect { replacingExerciseId = null }
     }
 
     if (showFinishWorkoutConfirmation &&

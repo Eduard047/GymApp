@@ -504,6 +504,66 @@ class ActiveWorkoutViewModelTest {
     }
 
     @Test
+    fun replacementSetsDropASeedTheRepositoryWouldRefuse() {
+        val old = listOf(SetSeed(50.0, 8), SetSeed(52.5, 6))
+        // Reps above the repository's cap: seed dropped, old count and reps kept, weight 0 (also invalid).
+        val hugeReps = listOf(
+            historyEntry(1, 9L, 60.0, 8, 0),
+            historyEntry(2, 9L, 1_000_001.0, com.example.gymapp.data.repository.WorkoutDataLimits.MAX_REPS + 1, 1)
+        )
+        assertEquals(
+            listOf(SetSeed(0.0, 8), SetSeed(0.0, 6)),
+            activeWorkoutReplacementSets(old, hugeReps, 9L)
+        )
+        // Weight above the cap in the seed: dropped, and the invalid last weight is not reused either.
+        val hugeWeight = listOf(historyEntry(1, 9L, 2_000_000.0, 5, 0))
+        assertEquals(
+            listOf(SetSeed(0.0, 8), SetSeed(0.0, 6)),
+            activeWorkoutReplacementSets(old, hugeWeight, 9L)
+        )
+        // Negative weight is invalid too.
+        val negative = listOf(historyEntry(1, 9L, -5.0, 5, 0))
+        assertEquals(
+            listOf(SetSeed(0.0, 8), SetSeed(0.0, 6)),
+            activeWorkoutReplacementSets(old, negative, 9L)
+        )
+        // A valid seed is untouched, and never longer than one exercise may hold.
+        val many = (0 until 30).map { historyEntry(it + 1L, 9L, 40.0, 5, it) }
+        val seeded = activeWorkoutReplacementSets(old, many, 9L)
+        assertTrue(seeded.size in 1..com.example.gymapp.data.repository.WorkoutDataLimits.MAX_SETS_PER_EXERCISE)
+        assertTrue(seeded.all { it == SetSeed(40.0, 5) })
+    }
+
+    @Test
+    fun replaceResolvesAJustCreatedExerciseThroughTheLookupNotTheCatalog() = runBlocking {
+        val created = ExerciseEntity(id = 77L, name = "Cable Fly")
+        // The picker catalog flow has not caught up yet; the database lookup knows the new exercise.
+        assertEquals(
+            ActiveWorkoutEditBlock.Allowed,
+            activeWorkoutReplaceBlockResolving(
+                replaceWorkout(), "e1", 77L, inLiveRoom = false,
+                lookup = { id -> created.takeIf { it.id == id } }
+            )
+        )
+        // An id the database does not have is still refused.
+        assertEquals(
+            ActiveWorkoutEditBlock.Missing,
+            activeWorkoutReplaceBlockResolving(
+                replaceWorkout(), "e1", 78L, inLiveRoom = false,
+                lookup = { id -> created.takeIf { it.id == id } }
+            )
+        )
+        // The duplicate check still applies to a looked-up exercise.
+        assertEquals(
+            ActiveWorkoutEditBlock.Duplicate,
+            activeWorkoutReplaceBlockResolving(
+                replaceWorkout(), "e1", 4L, inLiveRoom = false,
+                lookup = { ExerciseEntity(id = 4L, name = "Row") }
+            )
+        )
+    }
+
+    @Test
     fun replaceOutcomeMessagesCoverTheRefusals() {
         assertEquals(
             R.string.replace_exercise_done,

@@ -356,10 +356,36 @@ internal fun activeWorkoutReplacementSets(
     history: List<ExerciseHistoryEntry>,
     newExerciseId: Long
 ): List<SetSeed> {
-    lastSessionSetSeed(history, newExerciseId)?.let { return it }
-    val weight = lastLoggedWeight(history, newExerciseId) ?: 0.0
+    // A seed the repository would refuse (too many sets, weight or reps out of range) is dropped like
+    // on iPhone, so a bad history row never turns a replace into "Workout changed".
+    lastSessionSetSeed(history, newExerciseId)
+        ?.takeIf { seed ->
+            seed.size in 1..WorkoutDataLimits.MAX_SETS_PER_EXERCISE &&
+                seed.all { WorkoutDataLimits.isValidWeight(it.weight) && WorkoutDataLimits.isValidReps(it.reps) }
+        }
+        ?.let { return it }
+    val weight = lastLoggedWeight(history, newExerciseId)
+        ?.takeIf { WorkoutDataLimits.isValidWeight(it) } ?: 0.0
     return oldSets.map { SetSeed(weight = weight, reps = it.reps) }
 }
+
+/**
+ * [activeWorkoutExerciseReplaceBlock] for a pick that is resolved through [lookup] (the database)
+ * rather than the picker catalog snapshot, so a just-created exercise is found.
+ */
+internal suspend fun activeWorkoutReplaceBlockResolving(
+    details: ActiveWorkoutDetails?,
+    exerciseId: String,
+    newExerciseId: Long,
+    inLiveRoom: Boolean,
+    lookup: suspend (Long) -> ExerciseEntity?
+): ActiveWorkoutEditBlock = activeWorkoutExerciseReplaceBlock(
+    details = details,
+    exerciseId = exerciseId,
+    newExercise = lookup(newExerciseId),
+    inLiveRoom = inLiveRoom,
+    operationInProgress = false
+)
 
 internal fun activeWorkoutReplaceExerciseOutcomeMessage(result: ReplaceActiveWorkoutExerciseResult): Int = when (result) {
     is ReplaceActiveWorkoutExerciseResult.Replaced -> R.string.replace_exercise_done
@@ -1734,46 +1760,56 @@ class ActiveWorkoutViewModel(
      * the rest timer (always owned by a recorded set) are untouched. Refused in live rooms.
      */
     fun replaceExercise(exerciseId: String, newExerciseId: Long) {
-        val snapshot = details.value
-        val newExercise = addExerciseCatalog.value.exercises.firstOrNull { it.id == newExerciseId }
-        val block = activeWorkoutExerciseReplaceBlock(
-            details = snapshot,
-            exerciseId = exerciseId,
-            newExercise = newExercise,
-            inLiveRoom = isInLiveRoom(),
-            operationInProgress = activeWorkoutOperationInProgress()
-        )
-        if (block == ActiveWorkoutEditBlock.Busy) return
-        if (block != ActiveWorkoutEditBlock.Allowed) {
-            val message = when (block) {
+        if (isInLiveRoom()) {
+            operationState.update {
+                it.copy(message = LocalizedText(R.string.training_adaptation_live_blocked), messageSetId = null)
+            }
+            return
+        }
+        if (activeWorkoutOperationInProgress()) return
+        if (details.value == null) {
+            operationState.update {
+                it.copy(message = LocalizedText(R.string.active_workout_changed), messageSetId = null)
+            }
+            return
+        }
+        operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
+        viewModelScope.launch {
+            var refusal: ActiveWorkoutEditBlock? = null
+            val result = runCatching {
+                // Looked up in the database, not in the picker catalog: an exercise created a moment
+                // ago in the picker may not have reached the catalog flow yet.
+                val snapshot = details.value
+                val block = activeWorkoutReplaceBlockResolving(
+                    details = snapshot,
+                    exerciseId = exerciseId,
+                    newExerciseId = newExerciseId,
+                    inLiveRoom = isInLiveRoom(),
+                    lookup = repository::getExerciseById
+                )
+                if (block != ActiveWorkoutEditBlock.Allowed) {
+                    refusal = block
+                    return@runCatching null
+                }
+                val workout = checkNotNull(snapshot)
+                val oldSets = workout.exercises.first { it.activeWorkoutExercise.id == exerciseId }.sets
+                    .map { SetSeed(weight = it.weight, reps = it.reps) }
+                val history = runCatching { allExerciseHistoryFlow.first() }.getOrDefault(emptyList())
+                val sets = activeWorkoutReplacementSets(oldSets, history, newExerciseId)
+                    .map { WorkoutSetDraft(weight = it.weight, reps = it.reps) }
+                repository.replaceActiveWorkoutExercise(
+                    exerciseId, newExerciseId, sets, workout.activeWorkout.revision
+                )
+            }.getOrNull()
+            val message = when (refusal) {
+                null -> if (result == null) R.string.active_workout_changed
+                else activeWorkoutReplaceExerciseOutcomeMessage(result)
                 ActiveWorkoutEditBlock.LiveRoom -> R.string.training_adaptation_live_blocked
                 ActiveWorkoutEditBlock.Duplicate -> R.string.active_workout_exercise_already_added
                 else -> R.string.active_workout_changed
             }
-            operationState.update { it.copy(message = LocalizedText(message), messageSetId = null) }
-            return
-        }
-        val workout = checkNotNull(snapshot)
-        val revision = workout.activeWorkout.revision
-        val oldSets = workout.exercises.first { it.activeWorkoutExercise.id == exerciseId }.sets
-            .map { SetSeed(weight = it.weight, reps = it.reps) }
-        operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
-        viewModelScope.launch {
-            val result = runCatching {
-                val history = runCatching { allExerciseHistoryFlow.first() }.getOrDefault(emptyList())
-                val sets = activeWorkoutReplacementSets(oldSets, history, newExerciseId)
-                    .map { WorkoutSetDraft(weight = it.weight, reps = it.reps) }
-                repository.replaceActiveWorkoutExercise(exerciseId, newExerciseId, sets, revision)
-            }.getOrNull()
             operationState.update {
-                it.copy(
-                    isRecordingAll = false,
-                    message = LocalizedText(
-                        if (result == null) R.string.active_workout_changed
-                        else activeWorkoutReplaceExerciseOutcomeMessage(result)
-                    ),
-                    messageSetId = null
-                )
+                it.copy(isRecordingAll = false, message = LocalizedText(message), messageSetId = null)
             }
         }
     }
