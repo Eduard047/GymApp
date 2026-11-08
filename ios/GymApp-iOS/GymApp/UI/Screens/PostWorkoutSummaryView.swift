@@ -130,6 +130,17 @@ func postWorkoutPreviousHistory(
     }
 }
 
+/// One resolved row of the "Compared with last time" card (title in the app language).
+struct SummaryVsLastRow: Identifiable, Equatable, Sendable {
+    let id: String
+    let title: String
+    let status: VsLastStatus
+    let basis: VsLastBasis?
+    let delta: Double?
+    let best: VsLastSet
+    let previousBest: VsLastSet?
+}
+
 @MainActor
 struct PostWorkoutSummaryView: View {
     @ObservedObject private var store: WorkoutStore
@@ -139,6 +150,8 @@ struct PostWorkoutSummaryView: View {
 
     @State private var feedbackErrorMessage: String?
     @State private var failedFeedback: WorkoutFeedback?
+    /// Computed once per history revision off the main actor, not on every body pass.
+    @State private var vsLastRows: [SummaryVsLastRow] = []
 
     private let workoutID: UUID
     private let onOpenDetail: (UUID) -> Void
@@ -183,6 +196,9 @@ struct PostWorkoutSummaryView: View {
                         if !trainedMuscles.isEmpty {
                             musclesPanel
                         }
+                        if !vsLastRows.isEmpty {
+                            vsLastPanel(vsLastRows)
+                        }
                         if !personalRecords.isEmpty {
                             personalRecordsPanel(personalRecords)
                         }
@@ -211,6 +227,7 @@ struct PostWorkoutSummaryView: View {
             languageCode: languageCode
         ))
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: store.derivedDataRevision) { await refreshVsLast() }
     }
 
     private var gamification: GamificationSnapshot {
@@ -272,6 +289,33 @@ struct PostWorkoutSummaryView: View {
                 store.exercise(id: exerciseID).map { gymExerciseName($0) }
             }
         )
+    }
+
+    /// Compares every exercise with its previous session (shared/exercise-vs-last-v1.json).
+    private func refreshVsLast() async {
+        guard let date = store.workout(id: workoutID)?.date else {
+            vsLastRows = []
+            return
+        }
+        let history = store.allExerciseHistory()
+        let id = workoutID
+        let rows = await Task.detached(priority: .userInitiated) {
+            GymExerciseVsLast.rows(history: history, workoutID: id, currentDate: date)
+        }.value
+        guard !Task.isCancelled else { return }
+        vsLastRows = rows.map { row in
+            SummaryVsLastRow(
+                id: row.exerciseID,
+                title: UUID(uuidString: row.exerciseID)
+                    .flatMap { store.exercise(id: $0) }
+                    .map { gymExerciseName($0) } ?? "—",
+                status: row.status,
+                basis: row.basis,
+                delta: row.delta,
+                best: row.best,
+                previousBest: row.previousBest
+            )
+        }
     }
 
     private func recordDetail(_ record: PostWorkoutPersonalRecord) -> String {
@@ -629,6 +673,113 @@ struct PostWorkoutSummaryView: View {
                         }
                         ProgressView(value: item.load, total: max(1, trainedMuscles.first?.load ?? 1))
                             .tint(GymTheme.heroAccent)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
+    }
+
+    /// "+20 kg" / "−3 reps" (true minus, no-break space before the unit); nil for "new" and "same".
+    private func vsLastDeltaText(_ row: SummaryVsLastRow) -> String? {
+        guard row.status == .up || row.status == .down, let delta = row.delta else { return nil }
+        let sign = delta > 0 ? "+" : "\u{2212}"
+        let magnitude = abs(delta)
+        if row.basis == .reps {
+            let count = Int(magnitude.rounded()).formatted(.number.locale(gymAppLocale()))
+            return sign + vsLastRepsText(count)
+        }
+        return sign + gymVolumeText(magnitude, languageCode: languageCode)
+    }
+
+    private func vsLastRepsText(_ count: String) -> String {
+        gymText(
+            "\(count)\u{00A0}reps",
+            "\(count)\u{00A0}повт.",
+            "\(count)\u{00A0}повт.",
+            languageCode: languageCode
+        )
+    }
+
+    private func vsLastSetText(_ set: VsLastSet) -> String {
+        guard set.weight > 0 else {
+            return vsLastRepsText(set.reps.formatted(.number.locale(gymAppLocale())))
+        }
+        let weight = set.weight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 2)))
+        return "\(weight) × \(set.reps.formatted(.number.locale(gymAppLocale())))"
+    }
+
+    /// "60 × 8 → 62,5 × 8", or just the current best for a new exercise or an unchanged best set.
+    private func vsLastBestText(_ row: SummaryVsLastRow) -> String {
+        let current = vsLastSetText(row.best)
+        guard let previous = row.previousBest, previous != row.best else { return current }
+        return "\(vsLastSetText(previous)) → \(current)"
+    }
+
+    private func vsLastStatusLabel(_ status: VsLastStatus) -> String {
+        switch status {
+        case .new: gymText("New", "Нове", "Новое", languageCode: languageCode)
+        case .up: gymText("Up", "Більше", "Больше", languageCode: languageCode)
+        case .down: gymText("Down", "Менше", "Меньше", languageCode: languageCode)
+        case .same: gymText("Same", "Так само", "Так же", languageCode: languageCode)
+        }
+    }
+
+    private func vsLastStatusColor(_ status: VsLastStatus) -> Color {
+        switch status {
+        case .up: GymTheme.secondary
+        case .down: GymTheme.error
+        case .new, .same: GymTheme.textSecondary
+        }
+    }
+
+    /// Per-exercise comparison with the previous session, flat tonal panel like the neighbours.
+    private func vsLastPanel(_ rows: [SummaryVsLastRow]) -> some View {
+        GymPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                GymSectionTitle(
+                    title: gymText(
+                        "Compared with last time",
+                        "Порівняно з минулим разом",
+                        "По сравнению с прошлым разом",
+                        languageCode: languageCode
+                    )
+                )
+                ForEach(rows) { row in
+                    let color = vsLastStatusColor(row.status)
+                    HStack(alignment: .center, spacing: 11) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(row.title)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(1)
+                            Text(vsLastBestText(row))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(GymTheme.textSecondary)
+                                .lineLimit(2)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        VStack(alignment: .trailing, spacing: 2) {
+                            HStack(spacing: 3) {
+                                if row.status == .up || row.status == .down {
+                                    Image(systemName: row.status == .up ? "arrow.up" : "arrow.down")
+                                        .font(.caption.weight(.bold))
+                                        .accessibilityLabel(row.status == .up
+                                            ? gymText("Higher than last time", "Більше, ніж минулого разу", "Больше, чем в прошлый раз", languageCode: languageCode)
+                                            : gymText("Lower than last time", "Менше, ніж минулого разу", "Меньше, чем в прошлый раз", languageCode: languageCode))
+                                }
+                                Text(vsLastStatusLabel(row.status))
+                                    .font(.subheadline.weight(.semibold))
+                                    .lineLimit(1)
+                            }
+                            .foregroundStyle(color)
+                            if let delta = vsLastDeltaText(row) {
+                                Text(delta)
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(color)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .layoutPriority(1)
                     }
                     .accessibilityElement(children: .combine)
                 }
