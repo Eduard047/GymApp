@@ -225,50 +225,15 @@ private fun MusclePeriodSelector(
     heatmap: MuscleHeatmapUiModel,
     onPeriodSelected: (MuscleMapPeriod) -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(IntrinsicSize.Min)
-            .selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        heatmap.periodOptions.forEach { option ->
-            Surface(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .selectable(
-                        selected = option.isSelected,
-                        role = Role.RadioButton,
-                        onClick = { onPeriodSelected(option.period) }
-                    ),
-                color = if (option.isSelected) {
-                    brandFillColor()
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                },
-                shape = GymCapsuleShape
-            ) {
-                Text(
-                    text = option.label,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 40.dp)
-                        .padding(horizontal = 8.dp, vertical = 10.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = if (option.isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (option.isSelected) {
-                        Color.White
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-    }
+    val selectedPeriod = heatmap.periodOptions.firstOrNull { it.isSelected }?.period
+        ?: heatmap.period
+    GymSegmentedControl(
+        items = heatmap.periodOptions.map { option ->
+            GymSegmentItem(value = option.period, label = option.label)
+        },
+        selected = selectedPeriod,
+        onSelected = onPeriodSelected
+    )
 }
 
 @Composable
