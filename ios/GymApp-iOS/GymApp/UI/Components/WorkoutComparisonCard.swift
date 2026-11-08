@@ -76,12 +76,8 @@ struct WorkoutComparisonCard: View {
         .frame(maxWidth: .infinity, minHeight: 74, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                .fill(GymTheme.surfaceVariant.opacity(0.58))
+                .fill(GymTheme.surfaceVariant)
         )
-        .overlay {
-            RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                .strokeBorder(GymTheme.outlineSoft.opacity(0.62), lineWidth: GymTheme.hairlineWidth)
-        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(tile.accessibility)
     }

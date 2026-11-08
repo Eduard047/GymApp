@@ -596,10 +596,6 @@ private struct GarminSessionInsightsCard: View {
             GymTheme.surfaceVariant.opacity(0.62),
             in: RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
         )
-        .overlay {
-            RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
-                .strokeBorder(GymTheme.outlineSoft.opacity(0.8), lineWidth: 1)
-        }
     }
 
     private func insightLine(
@@ -781,10 +777,6 @@ private struct GarminSetMetricsCard: View {
             GymTheme.surfaceVariant.opacity(0.54),
             in: RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
         )
-        .overlay {
-            RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
-                .strokeBorder(GymTheme.outlineSoft.opacity(0.8), lineWidth: 1)
-        }
         .accessibilityElement(children: .contain)
     }
 
