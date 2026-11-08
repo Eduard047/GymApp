@@ -11,9 +11,9 @@ class MetricTilesLayoutTest {
     private val row412 = 412f - 32f - 28f
 
     @Test
-    fun contentWidthSubtractsGapPaddingAndBorderOfEveryTile() {
-        // (300 - 10) / 2 - 2*12 - 2*1
-        assertEquals((300f - 10f) / 2f - 26f, MetricTilesLayout.contentWidthDp(row360), 0.001f)
+    fun contentWidthSubtractsGapAndPaddingOfEveryTile() {
+        // (300 - 10) / 2 - 2*12 (tiles have no border)
+        assertEquals((300f - 10f) / 2f - 24f, MetricTilesLayout.contentWidthDp(row360), 0.001f)
     }
 
     @Test
@@ -25,7 +25,7 @@ class MetricTilesLayoutTest {
 
     @Test
     fun tilesStackOnceATextNoLongerFitsHalfTheCard() {
-        // At 1.5x the same text is 158dp wide: too wide for the 360dp phone's 119dp, and for the 412dp phone's 135dp.
+        // At 1.5x the same text is 158dp wide: too wide for the 360dp phone's 121dp, and for the 412dp phone's 137dp.
         assertFalse(MetricTilesLayout.sideBySide(row360, listOf(90f, 158f)))
         assertFalse(MetricTilesLayout.sideBySide(row412, listOf(90f, 158f)))
         // At 1.2x (126dp) it still fits the 412dp phone but not the 360dp one.

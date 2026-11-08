@@ -191,7 +191,7 @@ private fun HeatmapMetricTiles(heatmap: MuscleHeatmapUiModel) {
         val sideBySide = remember(setsLabel, loadLabel, mappedLabel, maxWidth, density, labelStyle) {
             val gapDp = 8f
             val tileTextDp = (maxWidth.value - 2 * gapDp) / 3 -
-                2 * MetricTilesLayout.TilePaddingDp - 2 * MetricTilesLayout.TileBorderDp
+                2 * MetricTilesLayout.TilePaddingDp
             listOf(setsLabel, loadLabel, mappedLabel).all { label ->
                 label.split(' ', '\u00A0').filter { it.isNotEmpty() }.all { word ->
                     val widthDp = with(density) {

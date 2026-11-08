@@ -365,13 +365,12 @@ private fun TrainedMusclesCard(muscles: List<TrainedMuscleLoad>) {
 internal object MetricTilesLayout {
     const val TileGapDp = 10f
     const val TilePaddingDp = 12f
-    const val TileBorderDp = 1f
     const val TileCount = 2
 
     /** Width available to the text of one tile when the tiles share a row of [rowWidthDp]. */
     fun contentWidthDp(rowWidthDp: Float): Float {
         val tile = (rowWidthDp - (TileCount - 1) * TileGapDp) / TileCount
-        return tile - 2 * TilePaddingDp - 2 * TileBorderDp
+        return tile - 2 * TilePaddingDp
     }
 
     /** True while the widest text of every tile ([tileTextWidthsDp]) fits the tile without shrinking or cutting. */

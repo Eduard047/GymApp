@@ -296,15 +296,8 @@ public struct GymMetricTile: View {
         .frame(maxWidth: .infinity, minHeight: 74, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                .fill(onHero ? GymTheme.heroTile : GymTheme.surfaceVariant.opacity(0.58))
+                .fill(onHero ? GymTheme.heroTile : GymTheme.surfaceVariant)
         )
-        .overlay {
-            RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                .strokeBorder(
-                    onHero ? GymTheme.heroOutline : GymTheme.outlineSoft.opacity(0.62),
-                    lineWidth: GymTheme.hairlineWidth
-                )
-        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(gymLocalized(label, locale: locale))
         .accessibilityValue(gymLocalized(value, locale: locale))

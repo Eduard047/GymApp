@@ -419,11 +419,6 @@ fun MetricTile(
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
-    val borderColor = if (onHero) {
-        HeroTone.outline
-    } else {
-        MaterialTheme.colorScheme.outlineVariant
-    }
 
     val valueStyle = metricTileValueStyle(
         emphasized = emphasized,
@@ -440,17 +435,22 @@ fun MetricTile(
             .heightIn(min = 78.dp)
             .clip(shape)
             .background(tileContainerColor, shape)
-            .border(BorderStroke(MetricTilesLayout.TileBorderDp.dp, borderColor), shape)
             .padding(MetricTilesLayout.TilePaddingDp.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {
-        // Multi-word labels wrap at word boundaries; a single word shrinks to fit instead of breaking.
-        WordShrinkText(
+        // One label style for every tile of a row (like iOS): multi-word labels wrap at word
+        // boundaries up to two lines, a single word stays whole on one line; nothing shrinks per tile.
+        Text(
             text = label,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodySmall.copy(
+                hyphens = Hyphens.None,
+                lineBreak = LineBreak.Heading
+            ),
             fontWeight = FontWeight.SemiBold,
             color = labelColor,
-            maxLines = 2
+            maxLines = if (isSingleWordLabel(label)) 1 else 2,
+            softWrap = !isSingleWordLabel(label),
+            overflow = TextOverflow.Ellipsis
         )
         Text(
             text = value,
@@ -667,6 +667,10 @@ fun <T> GymSegmentedControl(
         val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
         val stackVertically = maxWidth < 280.dp || fontScale >= 1.8f
         val useTwoColumns = items.size >= 4 && (maxWidth < 480.dp || fontScale > 1.15f)
+        // One font scale for every segment label: whichever label overflows lowers it for all of them.
+        var labelScale by remember(items.map { it.label }, stackVertically, useTwoColumns, fontScale) {
+            mutableFloatStateOf(1f)
+        }
         val content: @Composable (GymSegmentItem<T>, Modifier) -> Unit = { item, itemModifier ->
             val isSelected = item.value == selected
             Surface(
@@ -703,11 +707,27 @@ fun <T> GymSegmentedControl(
                         .padding(horizontal = GymSpacing.Medium, vertical = GymSpacing.Small),
                     contentAlignment = Alignment.Center
                 ) {
-                    WordShrinkText(
+                    val singleWord = isSingleWordLabel(item.label)
+                    val labelStyle = MaterialTheme.typography.labelLarge.copy(
+                        hyphens = Hyphens.None,
+                        lineBreak = LineBreak.Heading
+                    )
+                    Text(
                         text = item.label,
-                        style = MaterialTheme.typography.labelLarge,
+                        style = labelStyle.copy(
+                            fontSize = labelStyle.fontSize.scaledBy(labelScale),
+                            lineHeight = labelStyle.lineHeight.scaledBy(labelScale)
+                        ),
                         fontWeight = FontWeight.SemiBold,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        maxLines = if (singleWord) 1 else 2,
+                        softWrap = !singleWord,
+                        overflow = TextOverflow.Ellipsis,
+                        onTextLayout = { layout ->
+                            if (layout.hasVisualOverflow && labelScale > WORD_SHRINK_MIN_SCALE) {
+                                labelScale = nextWordShrinkScale(labelScale)
+                            }
+                        }
                     )
                 }
             }
