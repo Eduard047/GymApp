@@ -273,9 +273,9 @@ fun ActiveWorkoutScreen(
     val keepScreenOn by rememberKeepScreenOnPreference().enabled.collectAsState()
     val hostView = LocalView.current
     DisposableEffect(hostView, keepScreenOn) {
-        val previous = hostView.keepScreenOn
         hostView.keepScreenOn = keepScreenOn
-        onDispose { hostView.keepScreenOn = previous }
+        // Always clear on exit: restoring a saved value could leave the flag on if two instances overlap.
+        onDispose { hostView.keepScreenOn = false }
     }
     // Device-local cues of this account (the owner key is its database name), loaded once off the main
     // thread; the revision re-reads them after a save. Cues of another owner are never shown.
