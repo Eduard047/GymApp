@@ -2282,7 +2282,7 @@ internal fun GymAppRoot(
             }
     }
 
-    var cloudConflictBackupInProgress by key(uiIsolationKey) { mutableStateOf(false) }
+    var cloudConflictBackupInProgress by key(uiIsolationKey) { remember { mutableStateOf(false) } }
     val cloudConflictBackupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->

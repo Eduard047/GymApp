@@ -1578,7 +1578,9 @@ final class ActivityOnlyWorkoutCloudSidecarTests: XCTestCase {
     }
 
     private func waitUntil(
-        timeout: Duration = .seconds(3),
+        // Account activation seeds the catalog and runs stubbed cloud calls; a hosted CI runner
+        // needs far longer than a developer machine. A fast machine still returns in milliseconds.
+        timeout: Duration = .seconds(20),
         condition: @escaping @MainActor () -> Bool
     ) async -> Bool {
         let clock = ContinuousClock()
