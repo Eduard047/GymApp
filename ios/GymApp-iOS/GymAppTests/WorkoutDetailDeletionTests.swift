@@ -111,32 +111,50 @@ final class WorkoutDetailDeletionTests: XCTestCase {
         XCTAssertTrue(summary.hasPersonalRecord)
     }
 
-    func testSavedWorkoutPersonalRecordUsesWorkoutIDAsSameDateTieBreak() {
+    func testSavedWorkoutPersonalRecordUsesStoredOrderAsSameDateTieBreak() {
         let exerciseID = UUID()
         let date = Date(timeIntervalSince1970: 1_700_000_000)
-        let baseline = StoredWorkoutPRBaseline(
-            history: [
-                historyEntry(
-                    exerciseID: exerciseID,
-                    workoutID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
-                    sessionDate: date,
-                    weight: 55,
-                    reps: 5
-                ),
-                historyEntry(
-                    exerciseID: exerciseID,
-                    workoutID: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!,
-                    sessionDate: date,
-                    weight: 95,
-                    reps: 5
-                )
-            ],
-            currentWorkoutDate: date,
-            currentWorkoutID: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
-        )
+        // uuid order (1 < 2 < 3) disagrees with stored order (3 first, then 2, then 1).
+        let storedFirst = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
+        let current = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let storedLast = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let history = [
+            historyEntry(exerciseID: exerciseID, workoutID: storedFirst, sessionDate: date,
+                         weight: 55, reps: 5, workoutOrderIndex: 0),
+            historyEntry(exerciseID: exerciseID, workoutID: current, sessionDate: date,
+                         weight: 60, reps: 5, workoutOrderIndex: 1),
+            historyEntry(exerciseID: exerciseID, workoutID: storedLast, sessionDate: date,
+                         weight: 95, reps: 5, workoutOrderIndex: 2)
+        ]
 
-        XCTAssertEqual(baseline.maxWeight, 55, accuracy: 0.0001)
-        XCTAssertEqual(baseline.maxEstimatedOneRepMax, 64.166_666_666_7, accuracy: 0.0001)
+        // Position taken from the current workout's own history entries.
+        let derived = StoredWorkoutPRBaseline(
+            history: history,
+            currentWorkoutDate: date,
+            currentWorkoutID: current
+        )
+        XCTAssertEqual(derived.maxWeight, 55, accuracy: 0.0001)
+        XCTAssertEqual(derived.maxEstimatedOneRepMax, 64.166_666_666_7, accuracy: 0.0001)
+
+        // Position passed by the caller (no entry of its own in this exercise's history).
+        let explicit = StoredWorkoutPRBaseline(
+            history: history.filter { $0.workoutID != current },
+            currentWorkoutDate: date,
+            currentWorkoutID: current,
+            currentWorkoutOrderIndex: 1
+        )
+        XCTAssertEqual(explicit, derived)
+
+        // Every position 0 (hand-built input): uuid is the final fallback.
+        let fallback = StoredWorkoutPRBaseline(
+            history: history.map {
+                historyEntry(exerciseID: exerciseID, workoutID: $0.workoutID, sessionDate: date,
+                             weight: $0.weight, reps: $0.reps)
+            },
+            currentWorkoutDate: date,
+            currentWorkoutID: current
+        )
+        XCTAssertEqual(fallback.maxWeight, 95, accuracy: 0.0001)
     }
 
     func testSavedWorkoutPersonalRecordRejectsZeroAndNegativeValuesAgainstZeroBaseline() {
@@ -290,7 +308,8 @@ final class WorkoutDetailDeletionTests: XCTestCase {
         workoutID: UUID = UUID(),
         sessionDate: Date = Date(timeIntervalSince1970: 1_699_000_000),
         weight: Double,
-        reps: Int
+        reps: Int,
+        workoutOrderIndex: Int = 0
     ) -> ExerciseHistoryEntry {
         ExerciseHistoryEntry(
             setID: UUID(),
@@ -300,7 +319,8 @@ final class WorkoutDetailDeletionTests: XCTestCase {
             exerciseName: "Stored Summary Exercise",
             weight: weight,
             reps: reps,
-            setOrderIndex: 0
+            setOrderIndex: 0,
+            workoutOrderIndex: workoutOrderIndex
         )
     }
 

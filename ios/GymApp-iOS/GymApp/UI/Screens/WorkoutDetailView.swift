@@ -1221,11 +1221,20 @@ struct StoredWorkoutPRBaseline: Equatable {
     init(
         history: [ExerciseHistoryEntry],
         currentWorkoutDate: Date,
-        currentWorkoutID: UUID
+        currentWorkoutID: UUID,
+        currentWorkoutOrderIndex: Int? = nil
     ) {
+        // Same instant: the workout stored first is earlier (Android: lower session id). The
+        // current workout's position comes from the caller, else from its own history entries;
+        // the uuid only decides when that position is unknown or equal (hand-built input).
+        let currentOrder = currentWorkoutOrderIndex
+            ?? history.first(where: { $0.workoutID == currentWorkoutID })?.workoutOrderIndex
         let priorHistory = history.filter { entry in
             if entry.sessionDate != currentWorkoutDate {
                 return entry.sessionDate < currentWorkoutDate
+            }
+            if let currentOrder, entry.workoutOrderIndex != currentOrder {
+                return entry.workoutOrderIndex < currentOrder
             }
             return entry.workoutID.uuidString < currentWorkoutID.uuidString
         }
@@ -2172,7 +2181,8 @@ struct WorkoutDetailView: View {
         let personalRecordBaseline = StoredWorkoutPRBaseline(
             history: store.exerciseHistory(exerciseID: block.exerciseID),
             currentWorkoutDate: workout.date,
-            currentWorkoutID: workout.id
+            currentWorkoutID: workout.id,
+            currentWorkoutOrderIndex: store.workouts.firstIndex { $0.id == workout.id }
         )
         let sameExerciseBlocks = workout.exercises.filter { $0.exerciseID == block.exerciseID }
         let summary = StoredWorkoutExerciseSummary(
