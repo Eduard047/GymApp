@@ -82,6 +82,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Group
@@ -173,6 +175,9 @@ import com.example.gymapp.data.repository.VoiceWorkoutCommand
 import com.example.gymapp.data.repository.VoiceWorkoutCommandParser
 import com.example.gymapp.data.repository.VoiceWorkoutDraftParser
 import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.GymModalBottomSheet
+import com.example.gymapp.ui.components.rememberDiscardGuardedSheetState
+import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.ExerciseDragHandle
@@ -268,6 +273,8 @@ fun ActiveWorkoutScreen(
     onRemoveExercise: (String) -> Unit = {},
     onMoveExercise: (String, Int) -> Unit = { _, _ -> },
     onMoveExerciseTo: (String, Int) -> Unit = { _, _ -> },
+    /** Saves the workout note from the editor (raw text; blank clears it). */
+    onUpdateNote: (String) -> Unit = {},
     addExerciseCatalog: ActiveWorkoutAddExerciseCatalog = ActiveWorkoutAddExerciseCatalog(),
     onAddExercise: (Long) -> Unit = {},
     /** Swaps a pending exercise (block id) for the picked catalog exercise in place. */
@@ -491,6 +498,7 @@ fun ActiveWorkoutScreen(
     }
     val onVoiceStarted: () -> Unit = { recordedConfirmation = null }
     var showDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
+    var showNoteEditor by rememberSaveable { mutableStateOf(false) }
     /** Block id whose "Replace exercise" picker is open. */
     var replacingExerciseId by rememberSaveable { mutableStateOf<String?>(null) }
     var showFinishWorkoutConfirmation by rememberSaveable { mutableStateOf(false) }
@@ -700,7 +708,12 @@ fun ActiveWorkoutScreen(
             }
 
             if (showSelfParticipant) {
-            uiState.note?.takeIf(String::isNotBlank)?.let { note ->
+            val storedNote = uiState.note?.takeIf(String::isNotBlank)
+            if (uiState.canEditNote) {
+                item(key = "workout-note") {
+                    ActiveWorkoutNoteRow(note = storedNote, onClick = { showNoteEditor = true })
+                }
+            } else storedNote?.let { note ->
                 item {
                     AppPanel(modifier = Modifier.fillMaxWidth()) {
                         Column(
@@ -1124,6 +1137,16 @@ fun ActiveWorkoutScreen(
         if (!finishNeedsConfirmation) showFinishWorkoutConfirmation = false
     }
 
+    if (showNoteEditor && uiState.canEditNote) {
+        ActiveWorkoutNoteEditor(
+            storedNote = uiState.note,
+            onSave = { raw ->
+                showNoteEditor = false
+                onUpdateNote(raw)
+            },
+            onDismiss = { showNoteEditor = false }
+        )
+    }
     if (showDiscardConfirmation) {
         AlertDialog(
             onDismissRequest = { if (!uiState.isDiscarding) showDiscardConfirmation = false },
@@ -3422,3 +3445,120 @@ internal fun formatActiveWorkoutStartedAt(
     zoneId: ZoneId = ZoneId.systemDefault(),
     is24Hour: Boolean = true
 ): String = TimeOfDayFormat.formatTime(timestamp, locale, is24Hour, zoneId)
+
+/** The tappable note row under the hero: "Add note" without a note, label + 2-line preview + chevron with one. */
+@Composable
+private fun ActiveWorkoutNoteRow(note: String?, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val addLabel = stringResource(R.string.active_workout_note_add)
+    val noteLabel = stringResource(R.string.label_note)
+    val spoken = if (note == null) addLabel else "$noteLabel: $note"
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.surfaceVariant.copy(alpha = if (note == null) 0.5f else 0.8f))
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = spoken }
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (note == null) {
+            Icon(
+                imageVector = Icons.Default.Edit,
+                contentDescription = null,
+                tint = colors.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+            Text(
+                text = addLabel,
+                style = MaterialTheme.typography.bodyLarge,
+                color = colors.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+        } else {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = noteLabel,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.primary
+                )
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = colors.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Bottom-sheet editor for the running workout's note. Explicit Save only; Cancel discards silently,
+ * and while the text differs from the stored note swiping down or tapping outside does not dismiss.
+ * The field cuts input beyond [WorkoutDataLimits.MAX_NOTE_LENGTH] code points.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun ActiveWorkoutNoteEditor(
+    storedNote: String?,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var draft by rememberSaveable { mutableStateOf(storedNote.orEmpty()) }
+    val dirty = draft != storedNote.orEmpty()
+    val valid = WorkoutDataLimits.isValidNote(draft)
+    val sheetState = rememberDiscardGuardedSheetState(hasUnsavedChanges = dirty, onHideBlocked = {})
+    GymModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { next ->
+                    draft = if (next.codePointCount(0, next.length) > WorkoutDataLimits.MAX_NOTE_LENGTH) {
+                        next.substring(0, next.offsetByCodePoints(0, WorkoutDataLimits.MAX_NOTE_LENGTH))
+                    } else {
+                        next
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.label_note)) },
+                placeholder = { Text(stringResource(R.string.hint_note)) },
+                minLines = 3,
+                maxLines = 8,
+                isError = !valid,
+                supportingText = {
+                    if (!valid) {
+                        Text(stringResource(R.string.active_workout_note_too_long))
+                    } else {
+                        Text("${draft.codePointCount(0, draft.length)} / ${WorkoutDataLimits.MAX_NOTE_LENGTH}")
+                    }
+                }
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+                Button(onClick = { onSave(draft) }, enabled = valid, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.action_save))
+                }
+            }
+        }
+    }
+}

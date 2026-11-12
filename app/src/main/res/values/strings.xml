@@ -407,6 +407,8 @@
 
     <string name="label_note">Note</string>
     <string name="hint_note">Session note</string>
+    <string name="active_workout_note_add">Add note</string>
+    <string name="active_workout_note_too_long">Note is too long</string>
     <string name="label_workout_date">Date</string>
     <string name="label_exercise">Exercise</string>
     <string name="label_select_exercise">Select exercise</string>

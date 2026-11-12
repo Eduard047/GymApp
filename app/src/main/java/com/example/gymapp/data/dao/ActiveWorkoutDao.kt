@@ -186,6 +186,23 @@ interface ActiveWorkoutDao {
         expectedRevision: Long
     ): Int
 
+    /** Writes the workout note with a revision bump; keeps the single-set undo target like the sibling. */
+    @Query(
+        """
+        UPDATE active_workouts
+        SET note = :note, revision = revision + 1
+        WHERE id = :activeWorkoutId
+            AND revision = :expectedRevision
+            AND revision >= 0
+            AND revision < 9223372036854775807
+        """
+    )
+    suspend fun updateNoteAdvancingRevision(
+        activeWorkoutId: Long,
+        note: String?,
+        expectedRevision: Long
+    ): Int
+
     @Query(
         """
         DELETE FROM active_workout_sets

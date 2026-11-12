@@ -32,6 +32,7 @@ import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.RecordActiveWorkoutSetResult
 import com.example.gymapp.data.repository.RecordActiveWorkoutSetsResult
 import com.example.gymapp.data.repository.MoveActiveWorkoutExerciseResult
+import com.example.gymapp.data.repository.UpdateActiveWorkoutNoteResult
 import com.example.gymapp.data.repository.RemoveActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.ReplaceActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.WorkoutSetDraft
@@ -142,6 +143,8 @@ data class ActiveWorkoutUiState(
     val isMissing: Boolean = false,
     val date: Long = 0L,
     val note: String? = null,
+    /** The workout note may be edited here: solo (no live room) and not finishing/discarding. */
+    val canEditNote: Boolean = false,
     val startedAt: Long = 0L,
     val revision: Long = 0L,
     val exercises: List<ActiveWorkoutExerciseUiState> = emptyList(),
@@ -437,6 +440,13 @@ internal fun activeWorkoutMoveExerciseOutcomeMessage(result: MoveActiveWorkoutEx
     MoveActiveWorkoutExerciseResult.Missing -> R.string.active_workout_missing
     MoveActiveWorkoutExerciseResult.LivePlanFrozen -> R.string.training_adaptation_live_blocked
     else -> R.string.active_workout_changed
+}
+
+internal fun activeWorkoutNoteOutcomeMessage(result: UpdateActiveWorkoutNoteResult): Int? = when (result) {
+    is UpdateActiveWorkoutNoteResult.Updated, UpdateActiveWorkoutNoteResult.NoChange -> null
+    UpdateActiveWorkoutNoteResult.LivePlanFrozen -> R.string.training_adaptation_live_blocked
+    UpdateActiveWorkoutNoteResult.Invalid -> R.string.active_workout_note_too_long
+    UpdateActiveWorkoutNoteResult.Missing, UpdateActiveWorkoutNoteResult.Stale -> R.string.active_workout_changed
 }
 
 internal fun activeWorkoutAddSetOutcomeMessage(result: AddActiveWorkoutSetResult): Int? = when (result) {
@@ -1027,6 +1037,8 @@ class ActiveWorkoutViewModel(
                 operation.finishedSessionId == null && !operation.wasDiscarded,
             date = activeWorkout?.activeWorkout?.date ?: 0L,
             note = activeWorkout?.activeWorkout?.note,
+            canEditNote = activeWorkout != null && live.activeRoomId == null &&
+                !operation.isFinishing && !operation.isDiscarding,
             startedAt = activeWorkout?.activeWorkout?.startedAt ?: 0L,
             revision = activeWorkout?.activeWorkout?.revision ?: 0L,
             exercises = exercises,
@@ -1897,6 +1909,39 @@ class ActiveWorkoutViewModel(
                     R.string.active_workout_changed
                 } else {
                     activeWorkoutMoveExerciseOutcomeMessage(result)
+                }
+                it.copy(
+                    isRecordingAll = false,
+                    message = message?.let { id -> LocalizedText(id) },
+                    messageSetId = null
+                )
+            }
+        }
+    }
+
+    /**
+     * Saves the workout note (explicit Save in the editor; [raw] is the field text, blank clears it).
+     * Refused in live rooms and while another active-workout operation runs. Undo, the rest timer and
+     * the set progress are untouched.
+     */
+    fun updateNote(raw: String) {
+        if (isInLiveRoom()) {
+            operationState.update {
+                it.copy(message = LocalizedText(R.string.training_adaptation_live_blocked), messageSetId = null)
+            }
+            return
+        }
+        if (activeWorkoutOperationInProgress()) return
+        val snapshot = details.value ?: return
+        val revision = snapshot.activeWorkout.revision
+        operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
+        viewModelScope.launch {
+            val result = runCatching { repository.updateActiveWorkoutNote(raw, revision) }.getOrNull()
+            operationState.update {
+                val message = if (result == null) {
+                    R.string.active_workout_changed
+                } else {
+                    activeWorkoutNoteOutcomeMessage(result)
                 }
                 it.copy(
                     isRecordingAll = false,

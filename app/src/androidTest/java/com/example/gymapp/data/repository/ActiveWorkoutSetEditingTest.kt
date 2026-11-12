@@ -383,6 +383,82 @@ class ActiveWorkoutSetEditingTest {
         }
     }
 
+    @Test
+    fun noteEditTrimsClearsSkipsUnchangedAndRejectsStaleOrInvalid() = runBlocking {
+        withDatabase("active-edit-note") { repository ->
+            start(repository, listOf(1))
+            assertNull(checkNotNull(repository.getActiveWorkoutSnapshot()).activeWorkout.note)
+            // Blank over no note: nothing is written.
+            assertEquals(
+                UpdateActiveWorkoutNoteResult.NoChange,
+                repository.updateActiveWorkoutNote("  \n ", expectedRevision = 0L)
+            )
+            assertEquals(0L, checkNotNull(repository.getActiveWorkoutSnapshot()).activeWorkout.revision)
+            assertEquals(
+                UpdateActiveWorkoutNoteResult.Updated(revision = 1L),
+                repository.updateActiveWorkoutNote("  Left shoulder tight \n", expectedRevision = 0L)
+            )
+            val saved = checkNotNull(repository.getActiveWorkoutSnapshot()).activeWorkout
+            assertEquals("Left shoulder tight", saved.note)
+            assertEquals(1L, saved.revision)
+            // The same normalized value writes nothing and keeps the revision.
+            assertEquals(
+                UpdateActiveWorkoutNoteResult.NoChange,
+                repository.updateActiveWorkoutNote("Left shoulder tight  ", expectedRevision = 1L)
+            )
+            assertEquals(1L, checkNotNull(repository.getActiveWorkoutSnapshot()).activeWorkout.revision)
+            assertEquals(
+                UpdateActiveWorkoutNoteResult.Stale,
+                repository.updateActiveWorkoutNote("Other", expectedRevision = 0L)
+            )
+            // 4001 code points are rejected (raw input is validated before trimming).
+            assertEquals(
+                UpdateActiveWorkoutNoteResult.Invalid,
+                repository.updateActiveWorkoutNote("x".repeat(4_001), expectedRevision = 1L)
+            )
+            assertEquals(
+                UpdateActiveWorkoutNoteResult.Invalid,
+                repository.updateActiveWorkoutNote("a\u0000b", expectedRevision = 1L)
+            )
+            assertEquals("Left shoulder tight", checkNotNull(repository.getActiveWorkoutSnapshot()).activeWorkout.note)
+            // Blank clears the note.
+            assertEquals(
+                UpdateActiveWorkoutNoteResult.Updated(revision = 2L),
+                repository.updateActiveWorkoutNote("   ", expectedRevision = 1L)
+            )
+            assertNull(checkNotNull(repository.getActiveWorkoutSnapshot()).activeWorkout.note)
+        }
+    }
+
+    @Test
+    fun finishSavesTheEditedNoteAsTheSessionNote() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "active-edit-note-finish-${UUID.randomUUID()}"
+        val database = GymDatabase.getInstance(context, databaseName)
+        try {
+            val repository = GymRepository(database, currentTimeMillis = { NOW })
+            start(repository, listOf(1))
+            val initial = checkNotNull(repository.getActiveWorkoutSnapshot())
+            assertEquals(
+                UpdateActiveWorkoutNoteResult.Updated(revision = 1L),
+                repository.updateActiveWorkoutNote(" Felt strong ", expectedRevision = 0L)
+            )
+            assertTrue(
+                repository.recordActiveWorkoutSet(initial.exercises[0].sets.single().id, 1L, 40.0, 8) is
+                    RecordActiveWorkoutSetResult.Recorded
+            )
+            val finished = repository.finishActiveWorkout(2L)
+            assertTrue(finished is FinishActiveWorkoutResult.Finished)
+            val session = checkNotNull(
+                database.workoutDao().getSessionDetailsSnapshot((finished as FinishActiveWorkoutResult.Finished).sessionId)
+            )
+            assertEquals("Felt strong", session.session.note)
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
     private suspend fun withDatabase(prefix: String, block: suspend (GymRepository) -> Unit) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "$prefix-${UUID.randomUUID()}"

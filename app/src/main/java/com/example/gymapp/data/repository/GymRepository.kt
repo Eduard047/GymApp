@@ -195,6 +195,17 @@ sealed interface MoveActiveWorkoutExerciseResult {
     data object LivePlanFrozen : MoveActiveWorkoutExerciseResult
 }
 
+sealed interface UpdateActiveWorkoutNoteResult {
+    data class Updated(val revision: Long) : UpdateActiveWorkoutNoteResult
+    /** The normalized note equals the stored one; nothing was written and the revision is unchanged. */
+    data object NoChange : UpdateActiveWorkoutNoteResult
+    data object Missing : UpdateActiveWorkoutNoteResult
+    data object Stale : UpdateActiveWorkoutNoteResult
+    /** The raw input breaks the note limits (length, bytes, control characters). */
+    data object Invalid : UpdateActiveWorkoutNoteResult
+    data object LivePlanFrozen : UpdateActiveWorkoutNoteResult
+}
+
 sealed interface AddActiveWorkoutExerciseResult {
     data class Added(val revision: Long, val activeExerciseId: String) : AddActiveWorkoutExerciseResult
     data object Missing : AddActiveWorkoutExerciseResult
@@ -2996,6 +3007,38 @@ class GymRepository(
                 check(activeWorkoutDao.updateExerciseOrderIndex(ACTIVE_WORKOUT_ID, reordered[index], index) == 1)
             }
             MoveActiveWorkoutExerciseResult.Moved(expectedRevision + 1L)
+        }
+    }
+
+    /**
+     * Saves the running workout's note (explicit Save in the editor). The raw input is validated first
+     * ([WorkoutDataLimits.isValidNote]), then trimmed (blank becomes no note). An unchanged note writes
+     * nothing and keeps the revision. Refused while a live room is bound to the workout.
+     */
+    suspend fun updateActiveWorkoutNote(
+        raw: String?,
+        expectedRevision: Long
+    ): UpdateActiveWorkoutNoteResult = activeWorkoutMutationMutex.withLock {
+        require(expectedRevision in 0 until Long.MAX_VALUE) {
+            "Active workout revision is invalid."
+        }
+        database.withTransaction {
+            val details = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
+                ?.sortedActiveWorkout()
+                ?: return@withTransaction UpdateActiveWorkoutNoteResult.Missing
+            requireValidStoredActiveWorkout(details)
+            if (details.activeWorkout.revision != expectedRevision) {
+                return@withTransaction UpdateActiveWorkoutNoteResult.Stale
+            }
+            if (activeWorkoutPlanIsLiveFrozen(details.activeWorkout.startedAt)) {
+                return@withTransaction UpdateActiveWorkoutNoteResult.LivePlanFrozen
+            }
+            if (!WorkoutDataLimits.isValidNote(raw)) return@withTransaction UpdateActiveWorkoutNoteResult.Invalid
+            val note = normalizedWorkoutNote(raw)
+            if (note == details.activeWorkout.note) return@withTransaction UpdateActiveWorkoutNoteResult.NoChange
+            val updated = activeWorkoutDao.updateNoteAdvancingRevision(ACTIVE_WORKOUT_ID, note, expectedRevision)
+            check(updated == 1) { "Active workout changed while saving the note." }
+            UpdateActiveWorkoutNoteResult.Updated(expectedRevision + 1L)
         }
     }
 

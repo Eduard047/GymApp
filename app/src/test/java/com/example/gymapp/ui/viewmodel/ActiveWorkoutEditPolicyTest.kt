@@ -12,6 +12,7 @@ import com.example.gymapp.data.repository.AddActiveWorkoutSetResult
 import com.example.gymapp.data.repository.DeleteActiveWorkoutSetResult
 import com.example.gymapp.data.repository.MoveActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.RemoveActiveWorkoutExerciseResult
+import com.example.gymapp.data.repository.UpdateActiveWorkoutNoteResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -353,5 +354,27 @@ class ActiveWorkoutEditPolicyTest {
     fun stepButtonTouchTargetIsAtLeast48dpAndNeverOverlapsItsPair() {
         assertEquals(144, com.example.gymapp.ui.screens.setEditorStepTouchWidthPx(total = 400, targetPx = 144, visiblePx = 84))
         assertEquals(100, com.example.gymapp.ui.screens.setEditorStepTouchWidthPx(total = 200, targetPx = 144, visiblePx = 84))
+    }
+
+    @Test
+    fun noteOutcomeMessagesAreSilentOnSuccessAndNoChange() {
+        assertNull(activeWorkoutNoteOutcomeMessage(UpdateActiveWorkoutNoteResult.Updated(2L)))
+        assertNull(activeWorkoutNoteOutcomeMessage(UpdateActiveWorkoutNoteResult.NoChange))
+        assertEquals(
+            R.string.training_adaptation_live_blocked,
+            activeWorkoutNoteOutcomeMessage(UpdateActiveWorkoutNoteResult.LivePlanFrozen)
+        )
+        assertEquals(
+            R.string.active_workout_note_too_long,
+            activeWorkoutNoteOutcomeMessage(UpdateActiveWorkoutNoteResult.Invalid)
+        )
+        assertEquals(
+            R.string.active_workout_changed,
+            activeWorkoutNoteOutcomeMessage(UpdateActiveWorkoutNoteResult.Stale)
+        )
+        assertEquals(
+            R.string.active_workout_changed,
+            activeWorkoutNoteOutcomeMessage(UpdateActiveWorkoutNoteResult.Missing)
+        )
     }
 }

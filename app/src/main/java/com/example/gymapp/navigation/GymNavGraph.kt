@@ -4013,6 +4013,7 @@ internal fun GymAppRoot(
                                 onRemoveExercise = viewModel::removeExercise,
                                 onMoveExercise = viewModel::moveExercise,
                                 onMoveExerciseTo = viewModel::moveExerciseTo,
+                                onUpdateNote = viewModel::updateNote,
                                 addExerciseCatalog = addExerciseCatalog,
                                 onAddExercise = viewModel::addExercise,
                                 onReplaceExercise = viewModel::replaceExercise,

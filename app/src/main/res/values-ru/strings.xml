@@ -407,6 +407,8 @@
 
     <string name="label_note">Заметка</string>
     <string name="hint_note">Заметка к тренировке</string>
+    <string name="active_workout_note_add">Добавить заметку</string>
+    <string name="active_workout_note_too_long">Заметка слишком длинная</string>
     <string name="label_workout_date">Дата</string>
     <string name="label_exercise">Упражнение</string>
     <string name="label_select_exercise">Выбери упражнение</string>
