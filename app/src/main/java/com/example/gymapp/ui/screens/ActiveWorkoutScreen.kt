@@ -231,6 +231,7 @@ import com.example.gymapp.util.safeGetString
 
 internal const val ACTIVE_WORKOUT_ELAPSED_METRIC_TAG = "active_workout_elapsed_metric"
 internal const val ACTIVE_WORKOUT_VOLUME_METRIC_TAG = "active_workout_volume_metric"
+internal const val ACTIVE_WORKOUT_REMAINING_ESTIMATE_TAG = "active_workout_remaining_estimate"
 internal const val ACTIVE_WORKOUT_COMPLETED_METRIC_TAG = "active_workout_completed_metric"
 /** How long a tapped Log waits for the workout state before its haptic is dropped. */
 private const val RECORD_HAPTIC_WAIT_MS = 1500L
@@ -1279,7 +1280,28 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
     } else {
         formattedStringResource(R.string.active_workout_hero_summary, elapsed, setsDone)
     }
-    val summary = if (volumeText != null) "$baseSummary, $volumeText" else baseSummary
+    // "N sets left · ~M min" from the unrecorded sets; hidden when none are left. A running rest timer is ignored.
+    val remainingEstimate = RemainingWorkoutEstimate.estimate(
+        uiState.exercises.map { exercise -> exercise.sets.count { set -> !set.isCompleted } }
+    )
+    val setsLeftText = remainingEstimate?.let {
+        formattedPluralStringResource(R.plurals.remaining_estimate_sets_left, it.setsLeft, it.setsLeft)
+    }
+    val remainingEstimateText = remainingEstimate?.let {
+        formattedStringResource(
+            R.string.remaining_estimate_line,
+            setsLeftText.orEmpty(),
+            formattedStringResource(R.string.remaining_estimate_time, it.minutes)
+        )
+    }
+    val remainingEstimateDescription = remainingEstimate?.let {
+        formattedStringResource(
+            R.string.remaining_estimate_cd,
+            setsLeftText.orEmpty(),
+            formattedPluralStringResource(R.plurals.remaining_estimate_minutes_cd, it.minutes, it.minutes)
+        )
+    }
+    val summary = listOfNotNull(baseSummary, volumeText, remainingEstimateDescription).joinToString(", ")
     val targetFraction = (completed.toFloat() / total.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
     val reduceMotion = rememberReduceMotion()
     // The ring sweeps to the new fraction (spring, no bounce); reduced motion snaps. The count text never animates.
@@ -1342,6 +1364,16 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
                             .tabularDigits(),
                         color = softColor,
                         maxLines = 1
+                    )
+                }
+                if (remainingEstimateText != null) {
+                    // Same tier and colour as the volume line; wraps at large font sizes instead of truncating.
+                    Text(
+                        text = remainingEstimateText,
+                        modifier = Modifier.testTag(ACTIVE_WORKOUT_REMAINING_ESTIMATE_TAG),
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+                            .tabularDigits(),
+                        color = softColor
                     )
                 }
                 if (currentExerciseName != null) {
