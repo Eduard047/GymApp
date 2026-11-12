@@ -2976,6 +2976,128 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertEqual(movedDown.undoableSetID, a[0].id)
     }
 
+    func testUpdateNoteBumpsRevisionTrimsAndSkipsUnchangedWrites() throws {
+        let context = try makeContext(account: "active-note-edit")
+        let now = Date(timeIntervalSince1970: 1_800_000_500)
+        let started = try startSingleSet(context, setID: UUID(), weight: 50, reps: 5, now: now)
+        XCTAssertNil(started.note)
+
+        // Blank on a draft without a note changes nothing.
+        let blank = try context.active.updateNote(
+            draftID: started.id, raw: " \n ", expectedRevision: started.revision,
+            isSolo: { true }, now: now.addingTimeInterval(1)
+        )
+        XCTAssertEqual(blank, started)
+
+        let edited = try context.active.updateNote(
+            draftID: started.id, raw: "  Left shoulder tight \n", expectedRevision: started.revision,
+            isSolo: { true }, now: now.addingTimeInterval(2)
+        )
+        XCTAssertEqual(edited.note, "Left shoulder tight")
+        XCTAssertEqual(edited.revision, started.revision + 1)
+        XCTAssertEqual(context.active.draft, edited)
+
+        // The same normalized value writes nothing, even with different surrounding whitespace.
+        let same = try context.active.updateNote(
+            draftID: edited.id, raw: "Left shoulder tight  ", expectedRevision: edited.revision,
+            isSolo: { true }, now: now.addingTimeInterval(3)
+        )
+        XCTAssertEqual(same, edited)
+        XCTAssertEqual(context.active.draft?.revision, edited.revision)
+
+        // Stale revision and invalid input are refused without changing the draft.
+        XCTAssertThrowsError(try context.active.updateNote(
+            draftID: edited.id, raw: "x", expectedRevision: started.revision,
+            isSolo: { true }, now: now.addingTimeInterval(4)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .staleDraft) }
+        XCTAssertThrowsError(try context.active.updateNote(
+            draftID: edited.id, raw: "a\u{0000}b", expectedRevision: edited.revision,
+            isSolo: { true }, now: now.addingTimeInterval(4)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .invalidDraft) }
+        XCTAssertThrowsError(try context.active.updateNote(
+            draftID: edited.id, raw: String(repeating: "x", count: 4_001), expectedRevision: edited.revision,
+            isSolo: { true }, now: now.addingTimeInterval(4)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .invalidDraft) }
+        XCTAssertEqual(context.active.draft, edited)
+
+        // Blank removes the note.
+        let cleared = try context.active.updateNote(
+            draftID: edited.id, raw: "", expectedRevision: edited.revision,
+            isSolo: { true }, now: now.addingTimeInterval(5)
+        )
+        XCTAssertNil(cleared.note)
+        XCTAssertEqual(cleared.revision, edited.revision + 1)
+    }
+
+    func testUpdateNoteRefusedWhenNotSoloOrFinishing() throws {
+        var activeWriteCount = 0
+        let context = try makeContext(
+            account: "active-note-refused",
+            envelopeWriter: { data, url in
+                activeWriteCount += 1
+                if activeWriteCount == 4 { throw InjectedFailure.cleanupWrite }
+                try data.write(
+                    to: url,
+                    options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+                )
+            }
+        )
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_600)
+        let ids = [UUID(), UUID(), UUID()]
+        let started = try startThreeSets(context, ids: ids, startedAt: startedAt)
+        XCTAssertThrowsError(try context.active.updateNote(
+            draftID: started.id, raw: "note", expectedRevision: started.revision,
+            isSolo: { false }, now: startedAt.addingTimeInterval(1)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .invalidDraft) }
+        XCTAssertEqual(context.active.draft, started)
+
+        let recorded = try context.active.recordSet(
+            draftID: started.id, setID: ids[0], expectedRevision: started.revision,
+            now: startedAt.addingTimeInterval(20)
+        )
+        XCTAssertThrowsError(try context.active.finish(
+            draftID: recorded.id, expectedRevision: recorded.revision,
+            into: context.history, now: startedAt.addingTimeInterval(30)
+        ))
+        let locked = try XCTUnwrap(context.active.draft)
+        XCTAssertNotNil(locked.commitIntent)
+        XCTAssertThrowsError(try context.active.updateNote(
+            draftID: locked.id, raw: "late note", expectedRevision: locked.revision,
+            isSolo: { true }, now: startedAt.addingTimeInterval(31)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .workoutFinishing) }
+        XCTAssertEqual(context.active.draft, locked)
+    }
+
+    func testFinishCarriesEditedNoteAndStaleAdaptationSourceIsRejectedAfterNoteEdit() throws {
+        let context = try makeContext(account: "active-note-finish")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_700)
+        let setID = UUID()
+        let started = try startSingleSet(context, setID: setID, weight: 40, reps: 10, now: startedAt)
+        let edited = try context.active.updateNote(
+            draftID: started.id, raw: " Felt strong ", expectedRevision: started.revision,
+            isSolo: { true }, now: startedAt.addingTimeInterval(5)
+        )
+        // An adaptation computed from the pre-edit draft must not overwrite the edit.
+        XCTAssertThrowsError(try context.active.applyAdaptation(
+            source: started, candidate: started, isSolo: { true }
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .staleDraft) }
+        XCTAssertEqual(context.active.draft, edited)
+
+        let recorded = try context.active.recordSet(
+            draftID: edited.id, setID: setID, expectedRevision: edited.revision,
+            now: startedAt.addingTimeInterval(60)
+        )
+        XCTAssertEqual(recorded.note, "Felt strong")
+        _ = try context.active.finish(
+            draftID: recorded.id, expectedRevision: recorded.revision,
+            into: context.history, now: startedAt.addingTimeInterval(120)
+        )
+        let backup = try context.history.makeBackup(
+            owner: BackupOwner(accountID: "active-note-finish", userID: nil, email: nil, remote: false)
+        )
+        XCTAssertEqual(try XCTUnwrap(backup.sessions.first).note, "Felt strong")
+    }
+
     func testMoveExerciseToIndexMovesSeveralPlacesInOneWriteAndRefusesInvalid() throws {
         let context = try makeContext(account: "active-move-exercise-to")
         let now = Date(timeIntervalSince1970: 1_800_000_000)

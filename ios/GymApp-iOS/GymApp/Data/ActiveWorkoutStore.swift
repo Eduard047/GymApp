@@ -1025,6 +1025,38 @@ final class ActiveWorkoutStore: ObservableObject {
         }
     }
 
+    /// Edits the workout note in a single write: validated and trimmed by `WorkoutNoteRules`
+    /// (invalid raw input throws `invalidDraft`), `nil` or whitespace only removes it. Returns the
+    /// draft unchanged, without a revision bump, when the normalized value equals the stored note.
+    /// Refused while a live room or reservation freezes the plan, while finishing, and on a stale
+    /// revision. The plan template is not touched.
+    @discardableResult
+    func updateNote(
+        draftID: UUID,
+        raw: String?,
+        expectedRevision: UInt64,
+        isSolo: () -> Bool,
+        now: Date = Date()
+    ) throws -> ActiveWorkoutDraft {
+        try assertStructuralChangeAllowed(isSolo: isSolo)
+        let current = try currentDraft(draftID: draftID, expectedRevision: expectedRevision)
+        guard current.commitIntent == nil else { throw ActiveWorkoutStoreError.workoutFinishing }
+        let normalized: String?
+        do {
+            normalized = try WorkoutNoteRules.normalized(raw)
+        } catch {
+            throw ActiveWorkoutStoreError.invalidDraft
+        }
+        guard normalized != current.note else { return current }
+        return try mutate(
+            draftID: draftID,
+            expectedRevision: expectedRevision,
+            now: now
+        ) { candidate in
+            candidate.note = normalized
+        }
+    }
+
     private func assertStructuralChangeAllowed(isSolo: () -> Bool) throws {
         guard isSolo() else { throw ActiveWorkoutStoreError.invalidDraft }
         do {

@@ -106,6 +106,16 @@ func activeWorkoutCanRemoveExercise(
     exerciseCount > 1 && !hasCommitIntent && !isLivePlanFrozen
 }
 
+/// The workout note is editable only on the own tab, not while finishing and not when a
+/// live room freezes the plan. `ActiveWorkoutStore.updateNote` enforces the same rules.
+func activeWorkoutCanEditNote(
+    hasCommitIntent: Bool,
+    isLivePlanFrozen: Bool,
+    isOwnTab: Bool
+) -> Bool {
+    !hasCommitIntent && !isLivePlanFrozen && isOwnTab
+}
+
 /// The active-workout file owns the rest deadline. RestTimerManager is a
 /// recoverable countdown projection, so a crash between their writes is healed
 /// in this direction only and can never extend the committed rest interval.
@@ -191,6 +201,7 @@ struct ActiveWorkoutView: View {
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
     /// The exercise whose device-local cue is being edited (see `ExerciseCueStore`).
     @State private var cueEditTarget: ExerciseCueEditTarget?
+    @State private var showingNoteEditor = false
     /// The account's cues, read once on appear and on account change, and again after a save.
     @State private var loadedCues = AccountScopedMap<String>.empty
     /// The exercise whose custom rest is being edited, and the account's custom rests (read like the cues).
@@ -388,6 +399,8 @@ struct ActiveWorkoutView: View {
                         if !liveWorkoutCoordinator.isAttachedToCurrentDraft ||
                             liveParticipantSelection == .current {
                             progressPanel(draft)
+
+                            workoutNoteRow(draft)
 
                             if let statusMessage {
                                 GymStatusBanner(message: statusMessage, isError: statusIsError)
@@ -725,6 +738,16 @@ struct ActiveWorkoutView: View {
                     return result
                 },
                 onCancel: { cueEditTarget = nil }
+            )
+        }
+        .sheet(isPresented: $showingNoteEditor) {
+            WorkoutNoteEditorSheet(
+                initialNote: currentDraft?.note,
+                onSave: { raw in
+                    saveNote(raw)
+                    showingNoteEditor = false
+                },
+                onCancel: { showingNoteEditor = false }
             )
         }
         .sheet(item: $restEditTarget) { target in
@@ -4208,6 +4231,107 @@ struct ActiveWorkoutView: View {
             hasCommitIntent: draft.commitIntent != nil,
             isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
         ) && (!liveWorkoutCoordinator.isAttachedToCurrentDraft || liveParticipantSelection == .current)
+    }
+
+    // MARK: Workout note
+
+    /// Row under the hero: "Add note" when empty, a 2-line preview when set. Editing is offered
+    /// only where `activeWorkoutCanEditNote` allows it; otherwise an existing note is read-only.
+    @ViewBuilder
+    private func workoutNoteRow(_ draft: ActiveWorkoutDraft) -> some View {
+        let canEdit = activeWorkoutCanEditNote(
+            hasCommitIntent: draft.commitIntent != nil,
+            isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft,
+            isOwnTab: !liveWorkoutCoordinator.isAttachedToCurrentDraft || liveParticipantSelection == .current
+        )
+        if let note = draft.note {
+            if canEdit {
+                Button { showingNoteEditor = true } label: {
+                    workoutNoteRowContent(note: note, showsChevron: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(gymWorkoutNoteLabel()), \(note)")
+                .accessibilityAddTraits(.isButton)
+            } else {
+                workoutNoteRowContent(note: note, showsChevron: false)
+                    .accessibilityElement(children: .combine)
+            }
+        } else if canEdit {
+            Button { showingNoteEditor = true } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "pencil")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GymTheme.textSecondary)
+                    Text(gymWorkoutNoteAddLabel())
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
+                        .fill(GymTheme.surfaceVariant.opacity(0.62))
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(gymWorkoutNoteAddLabel())
+            .accessibilityAddTraits(.isButton)
+        }
+    }
+
+    private func workoutNoteRowContent(note: String, showsChevron: Bool) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(gymWorkoutNoteLabel())
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
+                Text(note)
+                    .font(.subheadline)
+                    .foregroundStyle(GymTheme.textPrimary)
+                    .gymLineLimit(2, accessibility: 6)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
+            }
+            Spacer(minLength: 0)
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .padding(.top, 4)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
+                .fill(GymTheme.surfaceVariant.opacity(0.62))
+        )
+        .contentShape(Rectangle())
+    }
+
+    /// Saves the note through the store, which trims, validates, skips an unchanged value and
+    /// refuses while the plan is frozen, while finishing and on a stale revision.
+    private func saveNote(_ raw: String) {
+        guard let draft = currentDraft else { return }
+        guard !liveWorkoutCoordinator.planIsFrozenForCurrentDraft else {
+            show(LiveWorkoutSidecarError.invalidState)
+            return
+        }
+        do {
+            _ = try activeWorkoutStore.updateNote(
+                draftID: draft.id,
+                raw: raw,
+                expectedRevision: draft.revision,
+                isSolo: { !liveWorkoutCoordinator.planIsFrozenForCurrentDraft }
+            )
+        } catch {
+            show(error)
+        }
     }
 
     /// Drag-and-drop commit: one store write that moves the block to `index`

@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "description": "Workout note rule shared by Android (normalizedWorkoutNote + WorkoutDataLimits.isValidNote) and iOS (WorkoutNoteRules.normalized) for editing the note during an active workout. Validation runs on the raw input first: at most maxCodePoints Unicode code points (never graphemes or UTF-16 units), at most maxUtf8Bytes UTF-8 bytes, no control characters other than tab, line feed and carriage return. A valid input is then trimmed of leading and trailing whitespace; internal newlines and tabs are kept; an empty result stores no note (null). 'input' and 'stored' are either a string or {\"repeat\": s, \"count\": n} meaning s repeated n times.",
+  "maxCodePoints": 4000,
+  "maxUtf8Bytes": 16000,
+  "cases": [
+    {
+      "name": "plain",
+      "input": "Left shoulder tight",
+      "valid": true,
+      "stored": "Left shoulder tight"
+    },
+    {
+      "name": "empty",
+      "input": "",
+      "valid": true,
+      "stored": null
+    },
+    {
+      "name": "whitespace only",
+      "input": "  \n\t  ",
+      "valid": true,
+      "stored": null
+    },
+    {
+      "name": "surrounding whitespace trimmed",
+      "input": "  \nFelt strong\n  ",
+      "valid": true,
+      "stored": "Felt strong"
+    },
+    {
+      "name": "internal blank line kept",
+      "input": "Squat ok\n\nBench heavy",
+      "valid": true,
+      "stored": "Squat ok\n\nBench heavy"
+    },
+    {
+      "name": "internal tab kept",
+      "input": "a\tb",
+      "valid": true,
+      "stored": "a\tb"
+    },
+    {
+      "name": "cyrillic",
+      "input": " Тянет левое плечо ",
+      "valid": true,
+      "stored": "Тянет левое плечо"
+    },
+    {
+      "name": "exactly max ascii",
+      "input": {
+        "repeat": "x",
+        "count": 4000
+      },
+      "valid": true,
+      "stored": {
+        "repeat": "x",
+        "count": 4000
+      }
+    },
+    {
+      "name": "one over max ascii",
+      "input": {
+        "repeat": "x",
+        "count": 4001
+      },
+      "valid": false
+    },
+    {
+      "name": "max astral emoji counts code points not utf16 units",
+      "input": {
+        "repeat": "💪",
+        "count": 4000
+      },
+      "valid": true,
+      "stored": {
+        "repeat": "💪",
+        "count": 4000
+      }
+    },
+    {
+      "name": "astral emoji one over",
+      "input": {
+        "repeat": "💪",
+        "count": 4001
+      },
+      "valid": false
+    },
+    {
+      "name": "combining marks count as code points not graphemes",
+      "input": {
+        "repeat": "é",
+        "count": 2001
+      },
+      "valid": false
+    },
+    {
+      "name": "combining marks at limit",
+      "input": {
+        "repeat": "é",
+        "count": 2000
+      },
+      "valid": true,
+      "stored": {
+        "repeat": "é",
+        "count": 2000
+      }
+    },
+    {
+      "name": "null control rejected",
+      "input": "a\u0000b",
+      "valid": false
+    },
+    {
+      "name": "escape control rejected",
+      "input": "a\u001bb",
+      "valid": false
+    },
+    {
+      "name": "carriage return and line feed kept inside",
+      "input": "a\r\nb",
+      "valid": true,
+      "stored": "a\r\nb"
+    }
+  ]
+}
