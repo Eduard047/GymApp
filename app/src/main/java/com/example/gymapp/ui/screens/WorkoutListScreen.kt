@@ -76,7 +76,22 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
+import com.example.gymapp.ui.components.rememberReduceMotion
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -96,6 +111,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
@@ -160,7 +176,15 @@ import com.example.gymapp.util.formatVolumeTotal
 import com.example.gymapp.ui.viewmodel.shouldShowRepeatLastWorkoutAction
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
+import kotlinx.coroutines.FlowPreview
 
+// Give the keyboard up to this long to open, and treat its height as final after it stops changing.
+private const val HISTORY_SEARCH_IME_WAIT_MILLIS = 1_500L
+private const val HISTORY_SEARCH_IME_SETTLE_MILLIS = 250L
+
+@OptIn(FlowPreview::class)
 @Composable
 fun WorkoutListScreen(
     uiState: WorkoutListUiState,
@@ -229,6 +253,27 @@ fun WorkoutListScreen(
     }
     val listState = rememberLazyListState()
     val listScope = rememberCoroutineScope()
+    // Bring the history search field to the top of the list when it gains focus, once the keyboard has
+    // finished opening, so the field and the first results stay above the keyboard (the list itself
+    // is resized by imePadding()). Snaps instead of animating when animations are turned off.
+    var listTopInRoot by remember { mutableFloatStateOf(0f) }
+    val imeInsets = WindowInsets.ime
+    val imeDensity = LocalDensity.current
+    val reduceMotion = rememberReduceMotion()
+    val revealHistorySearch: (() -> Float?) -> Unit = { fieldTopInRoot ->
+        listScope.launch {
+            withTimeoutOrNull(HISTORY_SEARCH_IME_WAIT_MILLIS) {
+                snapshotFlow { imeInsets.getBottom(imeDensity) }
+                    .distinctUntilChanged()
+                    .debounce(HISTORY_SEARCH_IME_SETTLE_MILLIS)
+                    .first { it > 0 }
+            } ?: return@launch
+            val fieldTop = fieldTopInRoot() ?: return@launch
+            val delta = fieldTop - listTopInRoot - with(imeDensity) { GymSpacing.Small.toPx() }
+            if (kotlin.math.abs(delta) < 1f) return@launch
+            if (reduceMotion) listState.scrollBy(delta) else listState.animateScrollBy(delta)
+        }
+    }
     val showsFirstWorkoutActivation =
         uiState.showFirstWorkoutActivation && activeWorkoutFocus == null
     // Items before the history panel: header, then either the activation card (+ hint) or the focus lens.
@@ -262,7 +307,10 @@ fun WorkoutListScreen(
     }
 
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .imePadding()
+            .onGloballyPositioned { listTopInRoot = it.positionInRoot().y },
         state = listState,
         contentPadding = PaddingValues(
             start = screenHorizontalPadding,
@@ -368,7 +416,8 @@ fun WorkoutListScreen(
                         workouts = historyWorkouts,
                         pastWorkouts = uiState.pastWorkouts,
                         sessionExerciseNames = uiState.sessionExerciseNames,
-                        onSessionClick = onSessionClick
+                        onSessionClick = onSessionClick,
+                        onSearchFocused = revealHistorySearch
                     )
                 }
             }
@@ -958,9 +1007,12 @@ private fun TrainingHistoryPanel(
     pastWorkouts: List<WorkoutSessionSummary>,
     sessionExerciseNames: Map<Long, List<String>>,
     onSessionClick: (Long) -> Unit,
+    onSearchFocused: (fieldTopInRoot: () -> Float?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    var searchFieldCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var searchFieldFocused by remember { mutableStateOf(false) }
     // Survives rotation / process recreation of the screen, never persisted across app restarts.
     var searchQuery by rememberSaveable { mutableStateOf("") }
     val isSearching = searchQuery.isNotBlank()
@@ -976,6 +1028,15 @@ private fun TrainingHistoryPanel(
         }
     }
     val visibleWorkouts = if (isSearching) searchResults else workouts
+    // On focus, and again when the first characters bring in results (the list could not scroll
+    // that far while it was still short): keep the field at the top with the results under it.
+    LaunchedEffect(searchFieldFocused, isSearching) {
+        if (searchFieldFocused) {
+            onSearchFocused {
+                searchFieldCoordinates?.takeIf { it.isAttached }?.positionInRoot()?.y
+            }
+        }
+    }
     val focusManager = LocalFocusManager.current
     val rangeFormatter = remember(locale) {
         // English reads month-day ("Oct 5"), matching formatShortDate, iOS and the PWA.
@@ -1236,7 +1297,10 @@ private fun TrainingHistoryPanel(
                 onValueChange = { searchQuery = it.take(EXERCISE_SEARCH_QUERY_MAX_CHARS) },
                 placeholder = stringResource(R.string.history_search_placeholder),
                 clearDescription = stringResource(R.string.exercise_search_clear),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onGloballyPositioned { searchFieldCoordinates = it }
+                    .onFocusChanged { state -> searchFieldFocused = state.hasFocus },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
             )
