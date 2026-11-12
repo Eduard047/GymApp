@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "description": "Active-workout 'N sets left, about M min' golden cases run by Android RemainingWorkoutEstimateGoldenTest and iOS RemainingWorkoutEstimateGoldenTests. Input: for each exercise of the active workout, remainingSets = its sets not yet recorded (negative counts as 0). setsLeft = sum of remainingSets. exercisesLeft = number of exercises with remainingSets > 0. When setsLeft is 0 the estimate is absent (null) and the line is hidden. Otherwise minutes = max(1, minutesPerExercise * exercisesLeft + minutesPerSet * setsLeft). This is the same flat model as the plan-duration estimate min(90, max(10, 3 * exerciseCount + 2 * setCount)) in shared/training-minutes-v1.json applied to the remaining work, without that estimate's 10-minute floor and 90-minute cap (plan-sanity bounds that would turn one remaining set into '~10 min'). The model works in whole minutes, so there is no seconds rounding; no per-exercise rest is added because the base estimate has none. A running rest timer is ignored.",
+  "minutesPerExercise": 3,
+  "minutesPerSet": 2,
+  "cases": [
+    { "id": "no-exercises", "exercises": [], "expected": null },
+    { "id": "everything-recorded", "exercises": [ { "remainingSets": 0 }, { "remainingSets": 0 } ], "expected": null },
+    { "id": "one-set-left", "exercises": [ { "remainingSets": 1 } ], "expected": { "setsLeft": 1, "minutes": 5 } },
+    { "id": "one-exercise-three-sets", "exercises": [ { "remainingSets": 3 } ], "expected": { "setsLeft": 3, "minutes": 9 } },
+    { "id": "recorded-exercises-do-not-count", "exercises": [ { "remainingSets": 0 }, { "remainingSets": 0 }, { "remainingSets": 5 } ], "expected": { "setsLeft": 5, "minutes": 13 } },
+    { "id": "mixed-exercises", "exercises": [ { "remainingSets": 0 }, { "remainingSets": 2 }, { "remainingSets": 4 }, { "remainingSets": 1 } ], "expected": { "setsLeft": 7, "minutes": 23 } },
+    { "id": "one-set-in-each-of-five-exercises", "exercises": [ { "remainingSets": 1 }, { "remainingSets": 1 }, { "remainingSets": 1 }, { "remainingSets": 1 }, { "remainingSets": 1 } ], "expected": { "setsLeft": 5, "minutes": 25 } },
+    { "id": "negative-count-is-zero", "exercises": [ { "remainingSets": -2 }, { "remainingSets": 2 } ], "expected": { "setsLeft": 2, "minutes": 7 } },
+    { "id": "only-negative-counts-is-empty", "exercises": [ { "remainingSets": -1 } ], "expected": null },
+    { "id": "large-workout-is-not-capped", "exercises": [ { "remainingSets": 5 }, { "remainingSets": 5 }, { "remainingSets": 5 }, { "remainingSets": 5 }, { "remainingSets": 5 }, { "remainingSets": 5 }, { "remainingSets": 5 }, { "remainingSets": 5 }, { "remainingSets": 5 }, { "remainingSets": 5 } ], "expected": { "setsLeft": 50, "minutes": 130 } }
+  ]
+}

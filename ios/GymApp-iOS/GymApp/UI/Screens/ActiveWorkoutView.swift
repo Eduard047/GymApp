@@ -953,6 +953,14 @@ struct ActiveWorkoutView: View {
                                     .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
                             }
 
+                            if let remaining = RemainingWorkoutEstimate.estimate(draft: draft) {
+                                Text(RemainingWorkoutEstimate.text(remaining, languageCode: gymCurrentLanguageCode()))
+                                    .font(.caption.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(GymTheme.onHeroSecondary)
+                                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
                             if let exerciseName {
                                 Text(
                                     gymText(
@@ -1066,6 +1074,12 @@ struct ActiveWorkoutView: View {
         )
         if let volumeLine = heroVolumeLine(draft) {
             base += ", \(volumeLine)"
+        }
+        if let remaining = RemainingWorkoutEstimate.estimate(draft: draft) {
+            base += ", " + RemainingWorkoutEstimate.accessibilityText(
+                remaining,
+                languageCode: gymCurrentLanguageCode()
+            )
         }
         guard let exerciseName else { return base }
         return base + gymText(
