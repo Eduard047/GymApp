@@ -636,6 +636,21 @@
         <item quantity="many">Залишилось %1$d підходів</item>
         <item quantity="other">Залишилось %1$d підходу</item>
     </plurals>
+    <plurals name="remaining_estimate_sets_left">
+        <item quantity="one">Залишився %1$d&#160;підхід</item>
+        <item quantity="few">Залишилось %1$d&#160;підходи</item>
+        <item quantity="many">Залишилось %1$d&#160;підходів</item>
+        <item quantity="other">Залишилось %1$d&#160;підходу</item>
+    </plurals>
+    <string name="remaining_estimate_time">~%1$d&#160;хв</string>
+    <string name="remaining_estimate_line">%1$s · %2$s</string>
+    <plurals name="remaining_estimate_minutes_cd">
+        <item quantity="one">%1$d хвилина</item>
+        <item quantity="few">%1$d хвилини</item>
+        <item quantity="many">%1$d хвилин</item>
+        <item quantity="other">%1$d хвилини</item>
+    </plurals>
+    <string name="remaining_estimate_cd">%1$s, приблизно %2$s</string>
     <string name="active_workout_finish_log_as_planned">Записати як у плані</string>
     <string name="active_workout_finish_confirm_title">Завершити тренування?</string>
     <plurals name="finish_remaining_body">
@@ -980,6 +995,8 @@
     </plurals>
     <string name="training_history_empty_week">Цього тижня тренувань поки немає.</string>
     <string name="training_history_empty_month">Цього місяця тренувань поки немає.</string>
+    <string name="history_search_placeholder">Пошук за вправою</string>
+    <string name="history_search_empty">Немає тренувань із такою вправою</string>
     <string name="weekly_training_summary_title">Цього тижня</string>
     <string name="cd_previous_week">Попередній тиждень</string>
     <string name="cd_next_week">Наступний тиждень</string>

@@ -1,5 +1,7 @@
 package com.example.gymapp.ui.components
 
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.text.TextStyle
@@ -130,13 +132,17 @@ fun GymSearchField(
     onValueChange: (String) -> Unit,
     placeholder: String,
     clearDescription: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default
 ) {
     TextField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier.semantics { contentDescription = placeholder },
         singleLine = true,
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
         shape = GymControlShape,
         leadingIcon = {
             Icon(Icons.Default.Search, contentDescription = null)

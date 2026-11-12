@@ -288,6 +288,16 @@ data class WeeklyTrainingSummaryUiModel(
     val volumeDeltaPercent: Int? = null
 )
 
+/** Past workouts for the history search: valid timestamp, not in the future, newest first. */
+internal fun pastWorkoutsNewestFirst(
+    sessions: List<WorkoutSessionSummary>,
+    nowMillis: Long
+): List<WorkoutSessionSummary> = sessions.asSequence()
+    .take(WorkoutDataLimits.MAX_SESSIONS)
+    .filter { WorkoutDataLimits.isValidTimestamp(it.session.date) && it.session.date <= nowMillis }
+    .sortedByDescending { it.session.date }
+    .toList()
+
 /** Same rule as `getLatestSessionDetails`: activity-only sessions (no sets) cannot be repeated. */
 internal fun canRepeatLastWorkout(sessions: List<WorkoutSessionSummary>): Boolean =
     sessions.any { it.setCount > 0 }
@@ -332,6 +342,10 @@ data class WorkoutListUiState(
     val historyPeriod: TrainingHistoryPeriod = TrainingHistoryPeriod.Week,
     val monthLabel: String = DateTimeUtils.monthLabel(0),
     val sessions: List<WorkoutSessionSummary> = emptyList(),
+    /** Today only: every past (not future-dated) workout, newest first. The history search runs on this full set. */
+    val pastWorkouts: List<WorkoutSessionSummary> = emptyList(),
+    /** Today only: stored exercise names per workout id, in workout order, for the history search. */
+    val sessionExerciseNames: Map<Long, List<String>> = emptyMap(),
     val hasAnyWorkout: Boolean = false,
     /** A stored workout with sets exists, so "Repeat last workout" has something to seed. */
     val hasRepeatableWorkout: Boolean = false,
@@ -439,6 +453,15 @@ class WorkoutListViewModel(
         } else {
             flowOf(emptyList())
         }
+    /** Names per workout for the Today history search; empty on the other surfaces. */
+    private val sessionExerciseNamesFlow: Flow<Map<Long, List<String>>> =
+        if (surface.needsTodayPlan) {
+            repository.observeSessionExerciseNames().map { rows ->
+                rows.groupBy({ it.sessionId }, { it.exerciseName })
+            }.flowOn(Dispatchers.Default)
+        } else {
+            flowOf(emptyMap())
+        }
     private val muscleMappingsFlow: Flow<List<ExerciseMuscleMappingEntity>> =
         if (surface.needsProgressInsights) {
             repository.observeExerciseMuscleMappings()
@@ -462,17 +485,19 @@ class WorkoutListViewModel(
     private val sourceState = combine(
         sessionsFlow,
         allSessionsFlow,
-        exerciseHistoryFlow,
+        combine(exerciseHistoryFlow, sessionExerciseNamesFlow) { history, names -> history to names },
         weekOffset,
         historyPeriod
-    ) { month, allSessions, exerciseHistory, selectedWeekOffset, selectedHistoryPeriod ->
+    ) { month, allSessions, historyAndNames, selectedWeekOffset, selectedHistoryPeriod ->
+        val (exerciseHistory, sessionExerciseNames) = historyAndNames
         WorkoutListSourceState(
             offset = month.offset,
             weekOffset = selectedWeekOffset,
             historyPeriod = selectedHistoryPeriod,
             sessions = month.sessions,
             allSessions = allSessions,
-            exerciseHistory = exerciseHistory
+            exerciseHistory = exerciseHistory,
+            sessionExerciseNames = sessionExerciseNames
         )
     }
 
@@ -639,6 +664,12 @@ class WorkoutListViewModel(
             historyPeriod = selectedHistoryPeriod,
             monthLabel = DateTimeUtils.monthLabel(offset, currentLocale(), zoneId),
             sessions = sessions,
+            pastWorkouts = if (surface.needsTodayPlan) {
+                pastWorkoutsNewestFirst(allSessions, nowMillis)
+            } else {
+                emptyList()
+            },
+            sessionExerciseNames = source.sessionExerciseNames,
             hasAnyWorkout = allSessions.isNotEmpty(),
             hasRepeatableWorkout = canRepeatLastWorkout(allSessions),
             showFirstWorkoutActivation = surface.needsTodayPlan &&
@@ -2361,7 +2392,8 @@ private data class WorkoutListSourceState(
     val historyPeriod: TrainingHistoryPeriod,
     val sessions: List<WorkoutSessionSummary>,
     val allSessions: List<WorkoutSessionSummary>,
-    val exerciseHistory: List<ExerciseHistoryEntry>
+    val exerciseHistory: List<ExerciseHistoryEntry>,
+    val sessionExerciseNames: Map<Long, List<String>> = emptyMap()
 )
 
 internal data class WorkoutRecommendationContext(

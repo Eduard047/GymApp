@@ -60,6 +60,7 @@ import com.example.gymapp.ui.viewmodel.TodayFriendTapAction
 import com.example.gymapp.ui.viewmodel.TodayFriendEntryState
 import com.example.gymapp.ui.viewmodel.TodayFriendChoice
 import com.example.gymapp.ui.components.GymModalBottomSheet
+import com.example.gymapp.ui.components.GymSearchField
 import com.example.gymapp.ui.components.GymSheetCloseRow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.filled.Group
@@ -92,6 +93,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
@@ -361,6 +366,8 @@ fun WorkoutListScreen(
                         onCurrentMonth = onCurrentMonth,
                         onNextMonth = onNextMonth,
                         workouts = historyWorkouts,
+                        pastWorkouts = uiState.pastWorkouts,
+                        sessionExerciseNames = uiState.sessionExerciseNames,
                         onSessionClick = onSessionClick
                     )
                 }
@@ -948,10 +955,28 @@ private fun TrainingHistoryPanel(
     onCurrentMonth: () -> Unit,
     onNextMonth: () -> Unit,
     workouts: List<WorkoutSessionSummary>,
+    pastWorkouts: List<WorkoutSessionSummary>,
+    sessionExerciseNames: Map<Long, List<String>>,
     onSessionClick: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    // Survives rotation / process recreation of the screen, never persisted across app restarts.
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    val isSearching = searchQuery.isNotBlank()
+    // Search runs on every past workout (before the week/month grouping); the period header and its
+    // totals above stay computed from the unfiltered period data.
+    val searchResults = remember(isSearching, searchQuery, pastWorkouts, sessionExerciseNames) {
+        if (isSearching) {
+            filterWorkoutsByExerciseQuery(pastWorkouts, searchQuery) { workout ->
+                sessionExerciseNames[workout.session.id].orEmpty()
+            }.take(HISTORY_SEARCH_DISPLAY_LIMIT)
+        } else {
+            emptyList()
+        }
+    }
+    val visibleWorkouts = if (isSearching) searchResults else workouts
+    val focusManager = LocalFocusManager.current
     val rangeFormatter = remember(locale) {
         // English reads month-day ("Oct 5"), matching formatShortDate, iOS and the PWA.
         val pattern = if (locale.language.equals("en", ignoreCase = true)) "MMM d" else "d MMM"
@@ -1206,10 +1231,21 @@ private fun TrainingHistoryPanel(
                     .height(1.dp)
                     .background(MaterialTheme.colorScheme.outlineVariant)
             )
-            if (workouts.isEmpty()) {
+            GymSearchField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it.take(EXERCISE_SEARCH_QUERY_MAX_CHARS) },
+                placeholder = stringResource(R.string.history_search_placeholder),
+                clearDescription = stringResource(R.string.exercise_search_clear),
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
+            )
+            if (visibleWorkouts.isEmpty()) {
                 Text(
                     text = stringResource(
-                        if (period == TrainingHistoryPeriod.Week) {
+                        if (isSearching) {
+                            R.string.history_search_empty
+                        } else if (period == TrainingHistoryPeriod.Week) {
                             R.string.training_history_empty_week
                         } else {
                             R.string.training_history_empty_month
@@ -1219,7 +1255,7 @@ private fun TrainingHistoryPanel(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                workouts.forEachIndexed { index, session ->
+                visibleWorkouts.forEachIndexed { index, session ->
                     if (index > 0) {
                         Box(
                             modifier = Modifier

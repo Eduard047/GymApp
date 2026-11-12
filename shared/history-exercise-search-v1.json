@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "description": "Search of past workouts by exercise name, shared by Android (filterWorkoutsByExerciseQuery) and iOS. The query is trimmed; a blank query keeps every workout. A workout matches when ANY of its stored exercise names matches the trimmed query with the exercise-picker matcher (the same normalization, aliases, transliteration and token rules as shared/exercise-search-v1.json). The order of the input workouts is kept (UIs render at most displayLimit of the newest matches; the filter itself is uncapped); a workout with no exercises never matches a non-blank query. Expectations come from the real picker matcher: for example жим also matches Push Up / Dips because their Ukrainian names (Віджимання) contain it mid-word.",
+  "displayLimit": 30,
+  "workouts": [
+    { "id": "w1", "exerciseNames": ["Bench Press", "Barbell Row"] },
+    { "id": "w2", "exerciseNames": ["Squat", "Calf Raise"] },
+    { "id": "w3", "exerciseNames": ["Жим штанги лежачи"] },
+    { "id": "w4", "exerciseNames": ["Pull Up", "Deadlift"] },
+    { "id": "w5", "exerciseNames": ["Зелёная тяга"] },
+    { "id": "w6", "exerciseNames": ["Румунська тяга"] },
+    { "id": "w7", "exerciseNames": [] },
+    { "id": "w8", "exerciseNames": ["Moon Press"] },
+    { "id": "w9", "exerciseNames": ["Dumbbell Bench Press"] },
+    { "id": "w10", "exerciseNames": ["Push Up", "Dips"] }
+  ],
+  "cases": [
+    { "id": "blank-keeps-all", "query": "", "expectedWorkoutIds": ["w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "w10"] },
+    { "id": "spaces-only-keeps-all", "query": "   ", "expectedWorkoutIds": ["w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "w10"] },
+    { "id": "bench-english", "query": "bench", "expectedWorkoutIds": ["w1", "w3", "w9"] },
+    { "id": "bench-upper-case", "query": "BENCH", "expectedWorkoutIds": ["w1", "w3", "w9"] },
+    { "id": "bench-trimmed", "query": "  bench  ", "expectedWorkoutIds": ["w1", "w3", "w9"] },
+    { "id": "zhim-russian", "query": "жим", "expectedWorkoutIds": ["w1", "w3", "w9", "w10"] },
+    { "id": "zhim-lying-two-tokens", "query": "жим лежачи", "expectedWorkoutIds": ["w1", "w3", "w9"] },
+    { "id": "deadlift-english", "query": "deadlift", "expectedWorkoutIds": ["w4", "w6"] },
+    { "id": "tyaga-ukrainian", "query": "тяга", "expectedWorkoutIds": ["w1", "w4", "w5", "w6"] },
+    { "id": "partial-word", "query": "dead", "expectedWorkoutIds": ["w4", "w6"] },
+    { "id": "custom-exercise", "query": "moon", "expectedWorkoutIds": ["w8"] },
+    { "id": "yo-typed-as-ye", "query": "зеленая", "expectedWorkoutIds": ["w5"] },
+    { "id": "yo-typed-as-yo", "query": "зелёная", "expectedWorkoutIds": ["w5"] },
+    { "id": "russian-name-of-builtin", "query": "подтягивания", "expectedWorkoutIds": ["w4"] },
+    { "id": "latin-for-cyrillic", "query": "zhim", "expectedWorkoutIds": ["w1", "w3", "w9", "w10"] },
+    { "id": "no-match", "query": "xyzzy", "expectedWorkoutIds": [] }
+  ]
+}

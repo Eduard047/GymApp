@@ -7,6 +7,7 @@ import androidx.room.Query
 import androidx.room.Update
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.LastLoggedSet
+import com.example.gymapp.data.entity.SessionExerciseNameRow
 import com.example.gymapp.data.entity.WorkoutExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.entity.WorkoutSessionEntity
@@ -282,6 +283,16 @@ interface WorkoutDao {
         """
     )
     fun getAllExerciseHistory(): Flow<List<ExerciseHistoryEntry>>
+
+    @Query(
+        """
+        SELECT we.sessionId AS sessionId, e.name AS exerciseName
+        FROM workout_exercises we
+        INNER JOIN exercises e ON e.id = we.exerciseId
+        ORDER BY we.sessionId ASC, we.orderIndex ASC
+        """
+    )
+    fun getSessionExerciseNames(): Flow<List<SessionExerciseNameRow>>
 
     @Query(
         """

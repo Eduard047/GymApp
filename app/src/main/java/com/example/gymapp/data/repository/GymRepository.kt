@@ -19,6 +19,7 @@ import com.example.gymapp.data.entity.ExerciseLoadProfileEntity
 import com.example.gymapp.data.entity.ExerciseWeightOptionEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.LastLoggedSet
+import com.example.gymapp.data.entity.SessionExerciseNameRow
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
 import com.example.gymapp.data.entity.GarminLatinNameEntity
 import com.example.gymapp.data.entity.GarminWorkoutReceiptEntity
@@ -1169,6 +1170,11 @@ class GymRepository(
 
     fun observeAllExerciseHistory(): Flow<List<ExerciseHistoryEntry>> {
         return workoutDao.getAllExerciseHistory()
+            .catch { emit(emptyList()) }
+    }
+
+    fun observeSessionExerciseNames(): Flow<List<SessionExerciseNameRow>> {
+        return workoutDao.getSessionExerciseNames()
             .catch { emit(emptyList()) }
     }
 

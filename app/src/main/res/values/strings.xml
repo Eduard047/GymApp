@@ -624,6 +624,17 @@
         <item quantity="one">%1$d set left</item>
         <item quantity="other">%1$d sets left</item>
     </plurals>
+    <plurals name="remaining_estimate_sets_left">
+        <item quantity="one">%1$d&#160;set left</item>
+        <item quantity="other">%1$d&#160;sets left</item>
+    </plurals>
+    <string name="remaining_estimate_time">~%1$d&#160;min</string>
+    <string name="remaining_estimate_line">%1$s · %2$s</string>
+    <plurals name="remaining_estimate_minutes_cd">
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
+    </plurals>
+    <string name="remaining_estimate_cd">%1$s, about %2$s</string>
     <string name="active_workout_finish_log_as_planned">Log as planned</string>
     <string name="active_workout_finish_confirm_title">Finish workout?</string>
     <plurals name="finish_remaining_body">
@@ -946,6 +957,8 @@
     </plurals>
     <string name="training_history_empty_week">No workouts in this week yet.</string>
     <string name="training_history_empty_month">No workouts in this month yet.</string>
+    <string name="history_search_placeholder">Search by exercise</string>
+    <string name="history_search_empty">No workouts with this exercise</string>
     <string name="weekly_training_summary_title">This week</string>
     <string name="cd_previous_week">Previous week</string>
     <string name="cd_next_week">Next week</string>

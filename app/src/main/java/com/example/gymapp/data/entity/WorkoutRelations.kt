@@ -41,6 +41,12 @@ data class LastLoggedSet(
     val reps: Int
 )
 
+/** One exercise block of a stored workout, used to search past workouts by exercise name. */
+data class SessionExerciseNameRow(
+    val sessionId: Long,
+    val exerciseName: String
+)
+
 data class ExerciseHistoryEntry(
     val setId: Long,
     val sessionId: Long,

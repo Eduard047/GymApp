@@ -483,6 +483,9 @@ public struct WorkoutsView: View {
     @State private var weekOffset = 0
     @State private var historyPeriod: TrainingHistoryPeriod = .week
     @State private var historyReturnWorkoutID: UUID?
+    /// Past-workout search by exercise name in the training-history panel; view state only.
+    @State private var historySearchQuery = ""
+    @FocusState private var historySearchFocused: Bool
     @State private var activationProfile: TrainingProfile
     @State private var activationEffort: SmartWorkoutEffort = .standard
     @State private var activationDismissed: Bool
@@ -1642,7 +1645,27 @@ public struct WorkoutsView: View {
                     }
 
                     Divider().overlay(GymTheme.outlineSoft)
-                    if workouts.isEmpty {
+                    if hasHistorySearchableWorkouts {
+                        historySearchField
+                    }
+                    if isSearchingHistory {
+                        let results = historySearchResults()
+                        if results.isEmpty {
+                            Text(gymText(
+                                "No workouts with this exercise",
+                                "Немає тренувань із такою вправою",
+                                "Нет тренировок с таким упражнением",
+                                languageCode: languageCode
+                            ))
+                            .font(.subheadline)
+                            .foregroundStyle(GymTheme.textSecondary)
+                        } else {
+                            ForEach(Array(results.enumerated()), id: \.element.id) { index, workout in
+                                if index > 0 { Divider().overlay(GymTheme.outlineSoft) }
+                                trainingHistoryRow(workout)
+                            }
+                        }
+                    } else if workouts.isEmpty {
                         Text(historyPeriod == .week
                             ? gymText(
                                 "No workouts in this week yet.",
@@ -1677,6 +1700,66 @@ public struct WorkoutsView: View {
             }
         }
         .id("workout-history")
+    }
+
+    private var isSearchingHistory: Bool {
+        !historySearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var hasHistorySearchableWorkouts: Bool {
+        !store.workouts.isEmpty
+    }
+
+    /// Matches among ALL past workouts (not in the future), newest first, capped for display. The
+    /// period header, strip/grid and totals stay computed from the unfiltered period data.
+    private func historySearchResults() -> [WorkoutSessionSummary] {
+        let namesByExerciseID = Dictionary(
+            store.exercises.map { ($0.id, $0.name) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var namesByWorkoutID: [UUID: [String]] = [:]
+        for workout in store.workouts {
+            namesByWorkoutID[workout.id] = workout.exercises.compactMap { namesByExerciseID[$0.exerciseID] }
+        }
+        let past = store.workoutSummaries
+            .filter { $0.date <= referenceDate }
+            .sorted { $0.date > $1.date }
+        return Array(
+            HistoryExerciseSearch.filter(past, query: historySearchQuery) { workout in
+                namesByWorkoutID[workout.workoutID] ?? []
+            }.prefix(HistoryExerciseSearch.displayLimit)
+        )
+    }
+
+    private var historySearchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(GymTheme.textSecondary)
+                .accessibilityHidden(true)
+            TextField(
+                gymText("Search by exercise", "Пошук за вправою", "Поиск по упражнению", languageCode: languageCode),
+                text: $historySearchQuery
+            )
+            .textInputAutocapitalization(.words)
+            .submitLabel(.search)
+            .focused($historySearchFocused)
+            .onSubmit { historySearchFocused = false }
+            .onChange(of: historySearchQuery) { _, value in
+                if value.count > HistoryExerciseSearch.maximumQueryCharacters {
+                    historySearchQuery = String(value.prefix(HistoryExerciseSearch.maximumQueryCharacters))
+                }
+            }
+            if !historySearchQuery.isEmpty {
+                Button {
+                    historySearchQuery = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(GymTheme.textSecondary)
+                }
+                .accessibilityLabel(gymText("Clear search", "Очистити пошук", "Очистить поиск", languageCode: languageCode))
+            }
+        }
+        .gymTextFieldChrome()
     }
 
     private var selectedHistoryOffset: Int {
