@@ -1931,7 +1931,13 @@ class ActiveWorkoutViewModel(
             }
             return
         }
-        if (activeWorkoutOperationInProgress()) return
+        if (activeWorkoutOperationInProgress()) {
+            // The editor is already closed: say the note was not saved instead of dropping it silently.
+            operationState.update {
+                it.copy(message = LocalizedText(R.string.active_workout_changed), messageSetId = null)
+            }
+            return
+        }
         val snapshot = details.value ?: return
         val revision = snapshot.activeWorkout.revision
         operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
