@@ -336,10 +336,19 @@ final class AppState: ObservableObject {
     /// when there is no active draft and no account is being prepared.
     func handleActiveWorkoutURL(_ url: URL) -> Bool {
         guard ActiveWorkoutDeepLink.isActiveWorkoutURL(url) else { return false }
-        if activeWorkoutStore.draft != nil || isPreparingAccount {
+        requestActiveWorkoutOpen()
+        return true
+    }
+
+    /// Asks the tab shell to open the active workout (Live Activity URL or rest-notification
+    /// tap). Does nothing without an active draft; a normal open is the fallback.
+    func requestActiveWorkoutOpen() {
+        if ActiveWorkoutDeepLink.shouldRequestOpen(
+            hasDraft: activeWorkoutStore.draft != nil,
+            isPreparingAccount: isPreparingAccount
+        ) {
             activeWorkoutOpenRequest = UUID()
         }
-        return true
     }
 
     func consumeActiveWorkoutOpenRequest() {

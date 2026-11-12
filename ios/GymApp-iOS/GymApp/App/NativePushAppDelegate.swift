@@ -87,6 +87,12 @@ final class NativePushAppDelegate: NSObject, UIApplicationDelegate,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
+        if ActiveWorkoutDeepLink.isRestNotification(identifier: response.notification.request.identifier),
+           response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+            ActiveWorkoutDeepLink.noteNotificationTap()
+            completionHandler()
+            return
+        }
         Self.manager?.handleLocalNotificationTap(
             identifier: response.notification.request.identifier,
             userInfo: response.notification.request.content.userInfo

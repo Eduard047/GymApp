@@ -46,4 +46,33 @@ final class ActiveWorkoutDeepLinkTests: XCTestCase {
         XCTAssertEqual(D.pendingOpenAction(requestPending: true, hasDraft: false, timedOut: true), .drop)
         XCTAssertEqual(D.pendingOpenTimeout, 4)
     }
+
+    func testOpenIsRequestedOnlyWithADraftOrAPreparingAccount() {
+        typealias D = ActiveWorkoutDeepLink
+        XCTAssertTrue(D.shouldRequestOpen(hasDraft: true, isPreparingAccount: false))
+        XCTAssertTrue(D.shouldRequestOpen(hasDraft: false, isPreparingAccount: true))
+        XCTAssertFalse(D.shouldRequestOpen(hasDraft: false, isPreparingAccount: false))
+    }
+
+    func testOnlyRestNotificationIdentifiersAreActiveWorkoutNotifications() {
+        typealias D = ActiveWorkoutDeepLink
+        XCTAssertTrue(D.isRestNotification(identifier: "gymapp.rest.abc.1f"))
+        XCTAssertTrue(D.isRestNotification(identifier: "gymapp.rest.legacy"))
+        XCTAssertFalse(D.isRestNotification(identifier: "gymapp.push.abc"))
+        XCTAssertFalse(D.isRestNotification(identifier: "gymapp.rest"))
+        XCTAssertFalse(D.isRestNotification(identifier: ""))
+    }
+
+    @MainActor
+    func testNotificationTapIsConsumedOnceAndExpires() {
+        typealias D = ActiveWorkoutDeepLink
+        let t0 = Date()
+        _ = D.takeNotificationTap(now: t0)
+        XCTAssertFalse(D.takeNotificationTap(now: t0))
+        D.noteNotificationTap(now: t0)
+        XCTAssertTrue(D.takeNotificationTap(now: t0.addingTimeInterval(1)))
+        XCTAssertFalse(D.takeNotificationTap(now: t0.addingTimeInterval(1)))
+        D.noteNotificationTap(now: t0)
+        XCTAssertFalse(D.takeNotificationTap(now: t0.addingTimeInterval(D.notificationTapTimeout + 1)))
+    }
 }

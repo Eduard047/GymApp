@@ -983,6 +983,7 @@ private struct MainTabShell: View {
             // sidecar (process-wide), so no wiring is needed from this view.
             appState.liveActivityController.refresh()
             openPendingPushRouteIfNeeded()
+            openActiveWorkoutFromNotificationTapIfNeeded()
             openRequestedActiveWorkoutIfNeeded()
             if activeWorkoutStore.recoveryMessage != nil {
                 appState.show(
@@ -1064,6 +1065,9 @@ private struct MainTabShell: View {
         .onChange(of: activeWorkoutStore.draft?.id) { _, _ in
             openRequestedActiveWorkoutIfNeeded()
             openRequestedStartWorkoutShortcutIfNeeded()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ActiveWorkoutDeepLink.notificationTapRequested)) { _ in
+            openActiveWorkoutFromNotificationTapIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: StartWorkoutShortcut.requestedNotification)) { _ in
             openRequestedStartWorkoutShortcutIfNeeded()
@@ -1447,6 +1451,13 @@ private struct MainTabShell: View {
         tutorialIsManualReplay = interruption.isManualReplay
         tutorialAutomaticPresentationSuppressedForSession =
             interruption.suppressAutomaticPresentationForSession
+    }
+
+    /// Rest-complete notification tap: same request path as the Live Activity URL.
+    private func openActiveWorkoutFromNotificationTapIfNeeded() {
+        guard ActiveWorkoutDeepLink.takeNotificationTap() else { return }
+        appState.requestActiveWorkoutOpen()
+        openRequestedActiveWorkoutIfNeeded()
     }
 
     /// Live Activity / Dynamic Island tap: show the active workout if one exists.
