@@ -9,12 +9,12 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -279,14 +279,24 @@ internal fun ProfileScreen(
         val pendingAttentionCount = (friendsState.dashboard?.incoming?.size ?: 0) +
             (friendsState.workoutInbox?.pendingIncomingCount ?: 0) +
             (liveWorkoutState.inbox?.invitations?.size ?: 0)
-        ProfileIdentityHeader(
-            label = accountState.accountLabel.ifBlank {
-                stringResource(R.string.title_profile)
-            },
-            isCloudAccount = accountState.isCloudAccount,
-            friendCount = friendsState.dashboard?.friends?.size ?: 0,
-            pendingCount = pendingAttentionCount
-        )
+        val identityLabel = accountState.accountLabel.ifBlank {
+            stringResource(R.string.title_profile)
+        }
+        val identityFriendCount = friendsState.dashboard?.friends?.size ?: 0
+        if (accountState.isCloudAccount) {
+            // With the Training/Settings switcher the identity card stays pinned above it.
+            ProfileIdentityHeader(
+                label = identityLabel,
+                isCloudAccount = true,
+                friendCount = identityFriendCount,
+                pendingCount = pendingAttentionCount,
+                modifier = Modifier.padding(
+                    start = screenHorizontalPadding,
+                    top = GymSpacing.Small,
+                    end = screenHorizontalPadding
+                )
+            )
+        }
         if (accountState.isCloudAccount) {
             ProfileSectionSwitcher(
                 selected = selectedSection,
@@ -333,6 +343,18 @@ internal fun ProfileScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
             ) {
+                if (!accountState.isCloudAccount) {
+                    // Like the first cell of iOS Settings: the identity card scrolls with the list
+                    // instead of staying pinned and slicing the rows that pass under it.
+                    item {
+                        ProfileIdentityHeader(
+                            label = identityLabel,
+                            isCloudAccount = false,
+                            friendCount = identityFriendCount,
+                            pendingCount = pendingAttentionCount
+                        )
+                    }
+                }
                 profileSettingsContent(
                     accountState = accountState,
                     context = context,
@@ -536,17 +558,11 @@ private fun ProfileIdentityHeader(
     label: String,
     isCloudAccount: Boolean,
     friendCount: Int,
-    pendingCount: Int
+    pendingCount: Int,
+    modifier: Modifier = Modifier
 ) {
-    val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     AppPanel(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                start = screenHorizontalPadding,
-                top = GymSpacing.Small,
-                end = screenHorizontalPadding
-            ),
+        modifier = modifier.fillMaxWidth(),
         highlighted = true
     ) {
         Row(
@@ -702,8 +718,7 @@ private fun LazyListScope.profileSettingsContent(
                 icon = Icons.AutoMirrored.Outlined.HelpOutline,
                 title = stringResource(R.string.profile_help_title),
                 subtitle = stringResource(R.string.profile_help_replay_tour),
-                onClick = onShowTutorial,
-                trailing = SettingsRowTrailing.None
+                onClick = onShowTutorial
             )
         }
     }
@@ -913,13 +928,14 @@ private fun GarminDeviceCard(
             }
             // Always available: the reset is also the explicit user action that clears a pending
             // reset left by an account change, and the SDK device list can be empty while it is not ready.
-            OutlinedButton(
+            // Rare and destructive, so it is a low-emphasis text button (the app's destructive text style).
+            TextButton(
                 onClick = onResetGarminPairing,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(
+                modifier = Modifier.heightIn(min = 48.dp),
+                contentPadding = PaddingValues(horizontal = 0.dp),
+                colors = ButtonDefaults.textButtonColors(
                     contentColor = MaterialTheme.colorScheme.error
-                ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                )
             ) {
                 Text(stringResource(R.string.garmin_reset_pairing_action))
             }

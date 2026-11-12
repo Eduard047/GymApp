@@ -930,6 +930,10 @@ private struct MainTabShell: View {
                     .padding(.horizontal, GymTheme.screenHorizontalInset)
                     .padding(.top, 6)
                     .padding(.bottom, 6)
+                    // Page-colored strip behind the banner and its 6pt gaps: the
+                    // scrolling list clips cleanly at the banner's lower edge
+                    // instead of showing sliced rows between banner and content.
+                    .background(GymTheme.background)
                 }
             }
         }

@@ -852,11 +852,8 @@ struct ProfileView: View {
             }
             Spacer(minLength: 4)
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                .fill(GymTheme.surfaceVariant)
-        )
+        // Flat inside the panel: no nested tonal card (card-in-card).
+        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
 
