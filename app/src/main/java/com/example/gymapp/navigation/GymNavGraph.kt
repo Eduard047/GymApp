@@ -17,6 +17,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
@@ -151,6 +152,7 @@ import com.example.gymapp.ui.components.rememberGymHazeState
 import com.example.gymapp.ui.components.rememberReduceMotion
 import com.example.gymapp.ui.components.LocalGymToastController
 import com.example.gymapp.ui.components.shouldShowContinueWorkoutBar
+import com.example.gymapp.ui.screens.ActiveWorkoutFinishAction
 import com.example.gymapp.ui.screens.ActiveWorkoutOverflowMenu
 import com.example.gymapp.ui.screens.ActiveWorkoutScreen
 import com.example.gymapp.ui.screens.ActiveWorkoutToolbarState
@@ -2838,8 +2840,19 @@ internal fun GymAppRoot(
                         } else {
                             null
                         },
-                        actions = if (isActiveWorkoutRoute && activeWorkoutToolbarState.showsOverflow) {
-                            { ActiveWorkoutOverflowMenu(activeWorkoutToolbarState) }
+                        actions = if (isActiveWorkoutRoute &&
+                            (activeWorkoutToolbarState.showsOverflow || activeWorkoutToolbarState.showsFinish)
+                        ) {
+                            {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (activeWorkoutToolbarState.showsFinish) {
+                                        ActiveWorkoutFinishAction(activeWorkoutToolbarState)
+                                    }
+                                    if (activeWorkoutToolbarState.showsOverflow) {
+                                        ActiveWorkoutOverflowMenu(activeWorkoutToolbarState)
+                                    }
+                                }
+                            }
                         } else {
                             null
                         },
@@ -4025,7 +4038,6 @@ internal fun GymAppRoot(
                                 onReplaceExercise = viewModel::replaceExercise,
                                 onCreateExercise = viewModel::createExerciseForPicker,
                                 onRecordSet = viewModel::recordSet,
-                                onRecordAllPendingSets = viewModel::recordAllPendingSets,
                                 onUndoSet = viewModel::undoSet,
                                 onUndoRecordedBatch = viewModel::undoRecordedBatch,
                                 onPreviewAdaptation = viewModel::previewAdaptation,

@@ -39,4 +39,47 @@ class WeightInputParserTest {
         assertEquals(0.0, parseWeightInputOrNull(resolveWeightFieldCommit("0", "80")))
         assertEquals(12.5, parseWeightInputOrNull(resolveWeightFieldCommit("12,5", "80")))
     }
+
+    @Test
+    fun leadingZerosBeforeADigitAreStripped() {
+        assertEquals("6", normalizeWeightInput("006"))
+        assertEquals("60", normalizeWeightInput("0060"))
+        assertEquals("60", normalizeWeightInput("060"))
+        assertEquals("0.5", normalizeWeightInput("00.5"))
+        assertEquals("0,5", normalizeWeightInput("00,5"))
+        assertEquals("100", normalizeWeightInput("0100"))
+    }
+
+    @Test
+    fun zeroAndDecimalsAreKept() {
+        assertEquals("0", normalizeWeightInput("0"))
+        assertEquals("0", normalizeWeightInput("00"))
+        assertEquals("", normalizeWeightInput(""))
+        assertEquals("0.5", normalizeWeightInput("0.5"))
+        assertEquals("0,5", normalizeWeightInput("0,5"))
+        assertEquals("60", normalizeWeightInput("60"))
+        assertEquals("100.5", normalizeWeightInput("100.5"))
+        assertEquals("60.", normalizeWeightInput("60."))
+    }
+
+    @Test
+    fun typingOverASelectedZeroGivesTheTypedValue() {
+        // "0" fully selected, then "6" then "0": the field never shows "006".
+        assertEquals(NormalizedWeightEdit("6", 1, 1), normalizeWeightEdit("6", 1, 1))
+        assertEquals(NormalizedWeightEdit("60", 2, 2), normalizeWeightEdit("60", 2, 2))
+    }
+
+    @Test
+    fun typingAtTheEndOfAZeroWithoutSelectionDropsTheZeros() {
+        // Caret after "0", the user types "60": "060" then caret moves with the dropped zero.
+        assertEquals(NormalizedWeightEdit("60", 2, 2), normalizeWeightEdit("060", 3, 3))
+        assertEquals(NormalizedWeightEdit("6", 1, 1), normalizeWeightEdit("006", 3, 3))
+        assertEquals(NormalizedWeightEdit("0.5", 3, 3), normalizeWeightEdit("00.5", 4, 4))
+    }
+
+    @Test
+    fun selectionNeverEscapesTheNormalizedText() {
+        assertEquals(NormalizedWeightEdit("6", 0, 1), normalizeWeightEdit("006", 0, 3))
+        assertEquals(NormalizedWeightEdit("5", 0, 0), normalizeWeightEdit("005", 1, 1))
+    }
 }

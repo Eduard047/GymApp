@@ -961,6 +961,7 @@ struct GymSetEditorCapsules: View {
                 .gymScaledFont(size: weightValueFontSize, weight: .semibold, monospacedDigit: true, maxScale: 1.6)
                 .foregroundStyle(GymTheme.textPrimary)
                 .focused($weightFieldFocused)
+                .gymWeightFieldEditing(isFocused: weightFieldFocused)
                 .fixedSize()
                 .disabled(disabled)
                 .accessibilityLabel(

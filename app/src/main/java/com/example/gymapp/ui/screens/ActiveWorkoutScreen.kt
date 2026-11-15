@@ -285,7 +285,6 @@ fun ActiveWorkoutScreen(
     onReplaceExercise: (String, Long) -> Unit = { _, _ -> },
     onCreateExercise: (suspend (String) -> Long)? = null,
     onRecordSet: (String) -> Unit,
-    onRecordAllPendingSets: () -> Unit,
     onUndoSet: (String) -> Unit,
     onUndoRecordedBatch: () -> Unit = {},
     onAdjustRestTimer: (Int) -> Unit,
@@ -524,11 +523,15 @@ fun ActiveWorkoutScreen(
         !uiState.isFinishing &&
         !uiState.isDiscarding &&
         uiState.exercises.any { exercise -> exercise.sets.any { set -> !set.isCompleted } }
+    // The finish action lives in the top bar; a live room has no finish there (it ends with the room).
+    val finishAvailable = !uiState.isLoading && !uiState.isMissing && uiState.liveConnectionMode == null
     SideEffect {
         toolbarState?.let { toolbar ->
             toolbar.showsOverflow = overflowAvailable
             toolbar.canAdapt = adaptAvailable
             toolbar.canDiscard = !operationInProgress
+            toolbar.showsFinish = finishAvailable
+            toolbar.canFinish = finishAvailable && uiState.completedSetCount > 0 && !operationInProgress
             toolbar.previewAdaptation = onPreviewAdaptation
         }
     }
@@ -540,6 +543,18 @@ fun ActiveWorkoutScreen(
         if (discardRequested) {
             showDiscardConfirmation = true
             toolbarState?.discardRequested = false
+        }
+    }
+    val finishRequested = toolbarState?.finishRequested == true
+    LaunchedEffect(finishRequested) {
+        if (finishRequested) {
+            toolbarState?.finishRequested = false
+            if (finishAvailable && uiState.completedSetCount > 0 && !operationInProgress) {
+                when (activeWorkoutFinishDecision(uiState.completedSetCount, uiState.totalSetCount)) {
+                    ActiveWorkoutFinishDecision.FinishNow -> onFinishWorkout()
+                    is ActiveWorkoutFinishDecision.ConfirmUnlogged -> showFinishWorkoutConfirmation = true
+                }
+            }
         }
     }
 
@@ -927,70 +942,6 @@ fun ActiveWorkoutScreen(
                 }
             }
 
-            item {
-                AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        SectionTitle(
-                            eyebrow = "",
-                            title = stringResource(R.string.action_finish_workout)
-                        )
-                        if (uiState.completedSetCount < uiState.totalSetCount) {
-                            OutlinedButton(
-                                onClick = {
-                                    recordedSetAwaitingFocus = null
-                                    onRecordAllPendingSets()
-                                },
-                                enabled = !operationInProgress,
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                            ) {
-                                if (uiState.isRecordingAll) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier
-                                            .padding(end = 8.dp)
-                                            .size(18.dp),
-                                        strokeWidth = 2.dp
-                                    )
-                                }
-                                Text(text = stringResource(R.string.action_save_all_pending_sets))
-                            }
-                        }
-                        Button(
-                            onClick = {
-                                if (activeWorkoutFinishNeedsConfirmation(
-                                        uiState.completedSetCount,
-                                        uiState.totalSetCount
-                                    )
-                                ) {
-                                    showFinishWorkoutConfirmation = true
-                                } else {
-                                    onFinishWorkout()
-                                }
-                            },
-                            enabled = uiState.completedSetCount > 0 && !operationInProgress,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                        ) {
-                            if (uiState.isFinishing) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier
-                                        .padding(end = 8.dp)
-                                        .size(18.dp),
-                                    strokeWidth = 2.dp,
-                                    color = LocalContentColor.current
-                                )
-                            } else {
-                                Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null)
-                            }
-                            Text(
-                                text = stringResource(R.string.action_finish_workout),
-                                modifier = Modifier.padding(start = 8.dp)
-                            )
-                        }
-                    }
-                }
-            }
             } else {
                 item {
                     Text(
@@ -1083,7 +1034,7 @@ fun ActiveWorkoutScreen(
     if (showFinishWorkoutConfirmation &&
         activeWorkoutFinishNeedsConfirmation(uiState.completedSetCount, uiState.totalSetCount)
     ) {
-        val remainingSetCount = uiState.totalSetCount - uiState.completedSetCount
+        val unloggedSetCount = activeWorkoutUnloggedSetCount(uiState.completedSetCount, uiState.totalSetCount)
         AlertDialog(
             onDismissRequest = { showFinishWorkoutConfirmation = false },
             title = { Text(text = stringResource(R.string.active_workout_finish_confirm_title)) },
@@ -1091,8 +1042,8 @@ fun ActiveWorkoutScreen(
                 Text(
                     text = formattedPluralStringResource(
                         R.plurals.finish_remaining_body,
-                        remainingSetCount,
-                        remainingSetCount
+                        unloggedSetCount,
+                        unloggedSetCount
                     )
                 )
             },
@@ -1102,7 +1053,18 @@ fun ActiveWorkoutScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     horizontalAlignment = Alignment.End
                 ) {
+                    // Finish saves only what was logged; marking the rest as done is the explicit second choice.
                     Button(
+                        onClick = {
+                            showFinishWorkoutConfirmation = false
+                            onFinishWorkout()
+                        },
+                        enabled = !operationInProgress,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    ) {
+                        Text(text = stringResource(R.string.active_workout_toolbar_finish))
+                    }
+                    TextButton(
                         onClick = {
                             showFinishWorkoutConfirmation = false
                             onRecordRemainingAndFinish()
@@ -1110,26 +1072,13 @@ fun ActiveWorkoutScreen(
                         enabled = !operationInProgress,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                     ) {
-                        Text(text = stringResource(R.string.finish_remaining_log_and_finish))
-                    }
-                    TextButton(
-                        onClick = {
-                            showFinishWorkoutConfirmation = false
-                            onFinishWorkout()
-                        },
-                        enabled = !operationInProgress,
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        ),
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    ) {
-                        Text(text = stringResource(R.string.finish_remaining_finish_without))
+                        Text(text = stringResource(R.string.finish_remaining_mark_all_done))
                     }
                     TextButton(
                         onClick = { showFinishWorkoutConfirmation = false },
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                     ) {
-                        Text(text = stringResource(R.string.finish_remaining_keep))
+                        Text(text = stringResource(R.string.action_cancel))
                     }
                 }
             }
@@ -1198,6 +1147,39 @@ internal fun activeWorkoutFinishNeedsConfirmation(completedSetCount: Int, totalS
     totalSetCount > completedSetCount
 
 /**
+ * "Finish without it" for exactly one unlogged set, "Finish without them" otherwise. Not a plural
+ * resource: Russian/Ukrainian "one" also covers 21, 31, ... and those read "without them".
+ */
+internal fun activeWorkoutFinishWithoutLabelRes(unloggedSetCount: Int): Int =
+    if (unloggedSetCount == 1) {
+        R.string.active_workout_finish_exercise_without_it
+    } else {
+        R.string.active_workout_finish_exercise_without_them
+    }
+
+/** Number of planned sets that are not logged yet. */
+internal fun activeWorkoutUnloggedSetCount(completedSetCount: Int, totalSetCount: Int): Int =
+    (totalSetCount - completedSetCount).coerceAtLeast(0)
+
+/** What tapping the top bar's Finish does: finish straight away, or ask about the unlogged sets first. */
+internal sealed interface ActiveWorkoutFinishDecision {
+    data object FinishNow : ActiveWorkoutFinishDecision
+    data class ConfirmUnlogged(val unloggedSetCount: Int) : ActiveWorkoutFinishDecision
+}
+
+internal fun activeWorkoutFinishDecision(
+    completedSetCount: Int,
+    totalSetCount: Int
+): ActiveWorkoutFinishDecision =
+    if (activeWorkoutFinishNeedsConfirmation(completedSetCount, totalSetCount)) {
+        ActiveWorkoutFinishDecision.ConfirmUnlogged(
+            activeWorkoutUnloggedSetCount(completedSetCount, totalSetCount)
+        )
+    } else {
+        ActiveWorkoutFinishDecision.FinishNow
+    }
+
+/**
  * What the navigation bar needs from the active workout screen: whether to show the overflow menu,
  * which actions it may offer, and the callbacks it triggers. The screen publishes it, the bar reads
  * it, so the Minimize/overflow controls live in the toolbar like on iOS.
@@ -1208,6 +1190,9 @@ class ActiveWorkoutToolbarState {
     var canAdapt by mutableStateOf(false)
     var canDiscard by mutableStateOf(false)
     var discardRequested by mutableStateOf(false)
+    var showsFinish by mutableStateOf(false)
+    var canFinish by mutableStateOf(false)
+    var finishRequested by mutableStateOf(false)
     var previewAdaptation: (String, Int, Long?) -> Unit = { _, _, _ -> }
 
     internal fun reset() {
@@ -1215,7 +1200,35 @@ class ActiveWorkoutToolbarState {
         canAdapt = false
         canDiscard = false
         discardRequested = false
+        showsFinish = false
+        canFinish = false
+        finishRequested = false
         previewAdaptation = { _, _, _ -> }
+    }
+}
+
+/** The top bar's trailing «Finish»: accent semibold text with a 48dp hit area, no ripple. */
+@Composable
+fun ActiveWorkoutFinishAction(state: ActiveWorkoutToolbarState) {
+    val enabled = state.canFinish
+    Box(
+        modifier = Modifier
+            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .clickable(
+                enabled = enabled,
+                role = Role.Button,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { state.finishRequested = true }
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = stringResource(R.string.active_workout_toolbar_finish),
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.4f),
+            maxLines = 1
+        )
     }
 }
 
@@ -2021,7 +2034,10 @@ private fun ActiveWorkoutExerciseCard(
     }
 }
 
-/** "N sets left": log as planned, skip them (when a skip candidate exists), or cancel. */
+/**
+ * "Finish exercise?": finish without the unlogged sets (when a skip candidate exists), mark them as
+ * done, or cancel. Finishing without them is the primary action.
+ */
 @Composable
 private fun ActiveWorkoutFinishExerciseDialog(
     unrecordedCount: Int,
@@ -2032,33 +2048,42 @@ private fun ActiveWorkoutFinishExerciseDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
+        title = { Text(stringResource(R.string.active_workout_finish_exercise_title)) },
+        text = {
             Text(
                 formattedPluralStringResource(
-                    R.plurals.active_workout_finish_sets_left,
+                    R.plurals.active_workout_finish_exercise_unlogged,
                     unrecordedCount,
                     unrecordedCount
                 )
             )
         },
-        // The three actions live in the confirm slot so the dialog has no empty button row below them.
+        // The actions live in the confirm slot so the dialog has no empty button row below them.
         confirmButton = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalAlignment = Alignment.End
             ) {
-                Button(
-                    onClick = onLogAsPlanned,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                ) {
-                    Text(stringResource(R.string.active_workout_finish_log_as_planned))
-                }
                 if (canSkip) {
-                    OutlinedButton(
+                    Button(
                         onClick = onSkip,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                     ) {
-                        Text(stringResource(R.string.active_workout_finish_skip_them))
+                        Text(stringResource(activeWorkoutFinishWithoutLabelRes(unrecordedCount)))
+                    }
+                    TextButton(
+                        onClick = onLogAsPlanned,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    ) {
+                        Text(stringResource(R.string.active_workout_finish_exercise_mark_done))
+                    }
+                } else {
+                    Button(
+                        onClick = onLogAsPlanned,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    ) {
+                        Text(stringResource(R.string.active_workout_finish_exercise_mark_done))
                     }
                 }
                 TextButton(

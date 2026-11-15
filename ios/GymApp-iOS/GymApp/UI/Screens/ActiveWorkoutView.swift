@@ -429,8 +429,6 @@ struct ActiveWorkoutView: View {
                             ) {
                                 addExerciseButton
                             }
-
-                            finishPanel(draft)
                         } else {
                             livePeerProgressPanel(draft)
                             if let snapshot = liveWorkoutCoordinator.snapshot,
@@ -624,6 +622,16 @@ struct ActiveWorkoutView: View {
                     )
                 )
             }
+            ToolbarItem(placement: .confirmationAction) {
+                Button {
+                    if let draft = currentDraft { requestFinish(draft) }
+                } label: {
+                    Text(ActiveWorkoutFinishCopy.finishButton(languageCode: gymCurrentLanguageCode()))
+                        .fontWeight(.semibold)
+                }
+                .tint(GymTheme.primary)
+                .disabled((currentDraft?.completedSetCount ?? 0) == 0)
+            }
         }
         .interactiveDismissDisabled(false)
         .alert(
@@ -803,35 +811,17 @@ struct ActiveWorkoutView: View {
             .gymSheetPresentation(.full)
         }
         .alert(
-            gymText(
-                "Finish workout?", "Завершити тренування?", "Завершить тренировку?",
-                languageCode: gymCurrentLanguageCode()
-            ),
+            ActiveWorkoutFinishCopy.workoutTitle(languageCode: gymCurrentLanguageCode()),
             isPresented: $showingFinishConfirmation
         ) {
-            Button(
-                gymText(
-                    "Log remaining and finish", "Записати решту й завершити",
-                    "Записать остальные и завершить",
-                    languageCode: gymCurrentLanguageCode()
-                )
-            ) {
+            Button(ActiveWorkoutFinishCopy.finishButton(languageCode: gymCurrentLanguageCode())) {
+                if let draft = currentDraft { finish(draft) }
+            }
+            Button(ActiveWorkoutFinishCopy.markAllDoneButton(languageCode: gymCurrentLanguageCode())) {
                 recordRemainingAndFinish()
             }
             Button(
-                gymText(
-                    "Finish without them", "Завершити без них", "Завершить без них",
-                    languageCode: gymCurrentLanguageCode()
-                ),
-                role: .destructive
-            ) {
-                if let draft = currentDraft { finish(draft) }
-            }
-            Button(
-                gymText(
-                    "Keep training", "Продовжити тренування", "Продолжить тренировку",
-                    languageCode: gymCurrentLanguageCode()
-                ),
+                ActiveWorkoutFinishCopy.cancelButton(languageCode: gymCurrentLanguageCode()),
                 role: .cancel
             ) {}
         } message: {
@@ -1809,11 +1799,16 @@ struct ActiveWorkoutView: View {
                         // Attached here (not at the screen root) so iOS anchors
                         // the confirmation to this Finish button.
                         .confirmationDialog(
-                            finishExerciseDialogTitle(unrecordedCount: pendingFinishExerciseUnrecordedCount),
+                            ActiveWorkoutFinishCopy.exerciseTitle(languageCode: gymCurrentLanguageCode()),
                             isPresented: finishExerciseConfirmationBinding(for: exercise),
                             titleVisibility: .visible
                         ) {
                             finishExerciseDialogActions
+                        } message: {
+                            Text(ActiveWorkoutFinishCopy.exerciseMessage(
+                                unlogged: pendingFinishExerciseUnrecordedCount,
+                                languageCode: gymCurrentLanguageCode()
+                            ))
                         }
                     }
                 }
@@ -2048,6 +2043,7 @@ struct ActiveWorkoutView: View {
                 .fixedSize()
                 .disabled(fieldsDisabled)
                 .focused($focusedWeightSetID, equals: set.id)
+                .gymWeightFieldEditing(isFocused: focusedWeightSetID == set.id)
                 .overlay(alignment: .bottom) {
                     Rectangle()
                         .fill(focusedWeightSetID == set.id ? GymTheme.primary : Color.clear)
@@ -3010,61 +3006,6 @@ struct ActiveWorkoutView: View {
         )
     }
 
-    private func finishPanel(_ draft: ActiveWorkoutDraft) -> some View {
-        GymPanel(highlighted: true) {
-            VStack(alignment: .leading, spacing: 12) {
-                GymSectionTitle(
-                    title: gymText(
-                        "Complete this workout",
-                        "Завершити тренування",
-                        "Завершить тренировку",
-                        languageCode: gymCurrentLanguageCode()
-                    )
-                )
-                Button {
-                    recordAllSets(draft)
-                } label: {
-                    Label(
-                        gymText(
-                            "Log all remaining sets",
-                            "Записати решту підходів",
-                            "Записать оставшиеся подходы",
-                            languageCode: gymCurrentLanguageCode()
-                        ),
-                        systemImage: "checkmark.circle"
-                    )
-                }
-                .buttonStyle(GymSecondaryButtonStyle())
-                .disabled(
-                    draft.completedSetCount == draft.plannedSetCount ||
-                        draft.commitIntent != nil
-                )
-                Button {
-                    requestFinish(draft)
-                } label: {
-                    Label(
-                        draft.commitIntent == nil
-                            ? gymText(
-                                "Finish and view summary",
-                                "Завершити й переглянути підсумок",
-                                "Завершить и посмотреть итог",
-                                languageCode: gymCurrentLanguageCode()
-                            )
-                            : gymText(
-                                "Retry finish",
-                                "Повторити завершення",
-                                "Повторить завершение",
-                                languageCode: gymCurrentLanguageCode()
-                            ),
-                        systemImage: "checkmark.seal.fill"
-                    )
-                }
-                .buttonStyle(GymPrimaryButtonStyle())
-                .disabled(draft.completedSetCount == 0)
-            }
-        }
-    }
-
     private func weightBinding(setID: UUID) -> Binding<Double> {
         Binding(
             get: { activeSet(id: setID)?.weight ?? 0 },
@@ -3807,15 +3748,6 @@ struct ActiveWorkoutView: View {
     @ViewBuilder
     private var finishExerciseDialogActions: some View {
         if let pair = pendingFinishExercisePair {
-            Button(
-                gymText(
-                    "Log as planned", "Записати як у плані", "Записать как в плане",
-                    languageCode: gymCurrentLanguageCode()
-                )
-            ) {
-                saveExercise(pair.exercise, draft: pair.draft)
-                pendingFinishExerciseID = nil
-            }
             // Hidden (not just disabled) whenever it would not be
             // possible: skipping replaces the shared plan's set list,
             // which `ActiveWorkoutStore.applyAdaptation` itself refuses
@@ -3826,8 +3758,8 @@ struct ActiveWorkoutView: View {
             if !liveWorkoutCoordinator.planIsFrozenForCurrentDraft,
                WorkoutAdaptation.buildSkipCandidate(pair.draft, exerciseBlockID: pair.exercise.id) != nil {
                 Button(
-                    gymText(
-                        "Skip them", "Пропустити їх", "Пропустить их",
+                    ActiveWorkoutFinishCopy.exerciseFinishWithoutButton(
+                        unlogged: pendingFinishExerciseUnrecordedCount,
                         languageCode: gymCurrentLanguageCode()
                     )
                 ) {
@@ -3835,9 +3767,13 @@ struct ActiveWorkoutView: View {
                     pendingFinishExerciseID = nil
                 }
             }
+            Button(ActiveWorkoutFinishCopy.exerciseMarkDoneButton(languageCode: gymCurrentLanguageCode())) {
+                saveExercise(pair.exercise, draft: pair.draft)
+                pendingFinishExerciseID = nil
+            }
         }
         Button(
-            gymText("Cancel", "Скасувати", "Отмена", languageCode: gymCurrentLanguageCode()),
+            ActiveWorkoutFinishCopy.cancelButton(languageCode: gymCurrentLanguageCode()),
             role: .cancel
         ) {
             pendingFinishExerciseID = nil
@@ -3864,23 +3800,6 @@ struct ActiveWorkoutView: View {
 
     private var pendingFinishExerciseUnrecordedCount: Int {
         pendingFinishExercisePair?.exercise.sets.lazy.filter { !$0.isCompleted }.count ?? 0
-    }
-
-    /// "Осталось N подходов": platform-neutral count phrase reused as the
-    /// confirmation dialog's title.
-    private func finishExerciseDialogTitle(unrecordedCount: Int) -> String {
-        let countPhrase = gymCount(
-            unrecordedCount,
-            englishOne: "set", englishMany: "sets",
-            ukrainianOne: "підхід", ukrainianFew: "підходи", ukrainianMany: "підходів",
-            languageCode: gymCurrentLanguageCode()
-        )
-        return gymText(
-            "\(countPhrase) left",
-            "Залишилось \(countPhrase)",
-            "Осталось \(countPhrase)",
-            languageCode: gymCurrentLanguageCode()
-        )
     }
 
     /// Routes the exercise card's "Finish" button through a confirmation
@@ -4514,10 +4433,13 @@ struct ActiveWorkoutView: View {
     /// workout). A locked commit intent (retry) and fully completed workouts
     /// finish immediately.
     private func requestFinish(_ draft: ActiveWorkoutDraft) {
-        if draft.commitIntent == nil, draft.completedSetCount < draft.plannedSetCount {
-            showingFinishConfirmation = true
-        } else {
-            finish(draft)
+        switch ActiveWorkoutFinishDecision.decide(
+            planned: draft.plannedSetCount,
+            completed: draft.completedSetCount,
+            hasCommitIntent: draft.commitIntent != nil
+        ) {
+        case .finishNow: finish(draft)
+        case .confirmUnlogged: showingFinishConfirmation = true
         }
     }
 
@@ -4526,11 +4448,8 @@ struct ActiveWorkoutView: View {
             (currentDraft?.plannedSetCount ?? 0) - (currentDraft?.completedSetCount ?? 0),
             0
         )
-        return gymText(
-            "\(remaining) \(remaining == 1 ? "set is" : "sets are") not logged yet.",
-            "\(remaining) \(gymPlural(remaining, one: "підхід", few: "підходи", many: "підходів", languageCode: "uk")) ще не записано.",
-            "\(remaining) \(gymPlural(remaining, one: "подход ещё не записан", few: "подхода ещё не записаны", many: "подходов ещё не записаны", languageCode: "ru")).",
-            languageCode: gymCurrentLanguageCode()
+        return ActiveWorkoutFinishCopy.workoutMessage(
+            unlogged: remaining, languageCode: gymCurrentLanguageCode()
         )
     }
 

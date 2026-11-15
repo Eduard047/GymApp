@@ -72,7 +72,12 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import android.os.SystemClock
+import com.example.gymapp.util.normalizeWeightEdit
 import com.example.gymapp.util.parseWeightInputOrNull
 import com.example.gymapp.util.resolveWeightFieldCommit
 import androidx.compose.ui.Alignment
@@ -1258,9 +1263,36 @@ internal fun SetWeightField(
         val measured = measurer.measure(text, style, maxLines = 1).size.width
         with(density) { measured.coerceIn(digit, widest).toDp() + 6.dp }
     }
+    // Tapping the field selects the whole value so the first digits replace it ("0" then "60" is
+    // 60, not 006). The text always comes from [value]; only the selection and IME composition are
+    // kept here, and leading zeros are stripped as the text changes.
+    var fieldState by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
+    var selectAllUntil by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(focused) {
+        if (focused) {
+            fieldState = fieldState.copy(selection = TextRange(0, currentValue.length))
+            selectAllUntil = SystemClock.uptimeMillis() + SELECT_ALL_ON_FOCUS_WINDOW_MS
+        } else {
+            selectAllUntil = 0L
+        }
+    }
     BasicTextField(
-        value = value,
-        onValueChange = onValueChange,
+        value = fieldState.copy(text = value),
+        onValueChange = { edit ->
+            if (edit.text == currentValue && edit.selection.collapsed && SystemClock.uptimeMillis() < selectAllUntil) {
+                // The tap that focused the field is placing the caret: keep the select-all instead.
+                fieldState = fieldState.copy(selection = TextRange(0, currentValue.length))
+            } else {
+                val normalized = normalizeWeightEdit(edit.text, edit.selection.start, edit.selection.end)
+                fieldState = TextFieldValue(
+                    text = normalized.text,
+                    selection = TextRange(normalized.selectionStart, normalized.selectionEnd),
+                    composition = if (normalized.text == edit.text) edit.composition else null
+                )
+                selectAllUntil = 0L
+                if (normalized.text != currentValue) currentOnValueChange(normalized.text)
+            }
+        },
         enabled = enabled,
         singleLine = true,
         textStyle = style,
@@ -1300,6 +1332,9 @@ internal fun SetWeightField(
         }
     )
 }
+
+/** How long after focus a collapsed caret placement is read as the focusing tap and overridden by select-all. */
+private const val SELECT_ALL_ON_FOCUS_WINDOW_MS = 400L
 
 /** Weight and reps step capsules side by side (stacked at large font scales). */
 @Composable

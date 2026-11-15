@@ -390,14 +390,14 @@ class ActiveWorkoutHeroUiTest {
 
         composeRule.onNodeWithText(
             composeRule.activity.resources.getQuantityString(
-                R.plurals.active_workout_finish_sets_left,
+                R.plurals.active_workout_finish_exercise_unlogged,
                 1,
                 1
             )
         ).assertIsDisplayed()
         assertEquals(0, saved)
         composeRule.onNodeWithText(
-            composeRule.activity.getString(R.string.active_workout_finish_skip_them)
+            composeRule.activity.getString(R.string.active_workout_finish_exercise_without_it)
         ).performClick()
         assertEquals(1, skipped)
         assertEquals(0, saved)
@@ -415,10 +415,10 @@ class ActiveWorkoutHeroUiTest {
             composeRule.activity.getString(R.string.active_workout_save_exercise)
         ).performScrollTo().performClick()
         composeRule.onNodeWithText(
-            composeRule.activity.getString(R.string.active_workout_finish_skip_them)
+            composeRule.activity.getString(R.string.active_workout_finish_exercise_without_it)
         ).assertDoesNotExist()
         composeRule.onNodeWithText(
-            composeRule.activity.getString(R.string.active_workout_finish_log_as_planned)
+            composeRule.activity.getString(R.string.active_workout_finish_exercise_mark_done)
         ).performClick()
         assertEquals(1, saved)
     }
@@ -539,7 +539,6 @@ class ActiveWorkoutHeroUiTest {
                     onAddSet = {},
                     onSkipRemainingSets = onSkipRemainingSets,
                     onRecordSet = onRecordSet,
-                    onRecordAllPendingSets = {},
                     onUndoSet = onUndoSet,
                     onAdjustRestTimer = onAdjustRestTimer,
                     onStopRestTimer = onStopRestTimer,
