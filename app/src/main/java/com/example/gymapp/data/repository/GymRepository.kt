@@ -3187,6 +3187,9 @@ class GymRepository(
         }
     }
 
+    /** Saved workouts in this account's database; used only to recognise a user's very first workout. */
+    suspend fun savedWorkoutCount(): Int = withContext(Dispatchers.IO) { workoutDao.getSessionCount() }
+
     suspend fun finishActiveWorkout(
         expectedRevision: Long
     ): FinishActiveWorkoutResult = activeWorkoutMutationMutex.withLock {

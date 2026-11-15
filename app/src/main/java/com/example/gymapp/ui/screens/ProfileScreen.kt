@@ -40,6 +40,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.HowToReg
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.TrackChanges
@@ -63,6 +64,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.semantics.Role
+import com.example.gymapp.ui.components.rememberConversionAnalytics
 import com.example.gymapp.util.rememberHapticsPreference
 import com.example.gymapp.util.rememberKeepScreenOnPreference
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -696,6 +698,7 @@ private fun LazyListScope.profileSettingsContent(
             ProfileHapticsRow()
             SettingsRowDivider()
             ProfileKeepScreenOnRow()
+            ProfileAdMeasurementRow()
             if (trainingProfile != null) {
                 SettingsRowDivider()
                 SettingsRow(
@@ -767,6 +770,31 @@ private fun ProfileKeepScreenOnRow() {
             value = enabled,
             role = Role.Switch,
             onValueChange = preference::setEnabled
+        ),
+        trailing = SettingsRowTrailing.None,
+        trailingContent = { Switch(checked = enabled, onCheckedChange = null, colors = gymSwitchColors()) }
+    )
+}
+
+/**
+ * Ad-measurement row: the same consent the first-launch prompt asks for, changeable at any time.
+ * Hidden in builds that cannot measure. The whole row is the toggle.
+ */
+@Composable
+private fun ProfileAdMeasurementRow() {
+    val analytics = rememberConversionAnalytics()
+    if (!analytics.available) return
+    val consent by analytics.consent.collectAsState()
+    val enabled = consent == true
+    SettingsRowDivider()
+    SettingsRow(
+        icon = Icons.Outlined.Campaign,
+        title = stringResource(R.string.analytics_setting_title),
+        subtitle = stringResource(R.string.analytics_setting_subtitle),
+        modifier = Modifier.toggleable(
+            value = enabled,
+            role = Role.Switch,
+            onValueChange = analytics::setConsent
         ),
         trailing = SettingsRowTrailing.None,
         trailingContent = { Switch(checked = enabled, onCheckedChange = null, colors = gymSwitchColors()) }

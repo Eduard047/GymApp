@@ -2,6 +2,7 @@
 
 import android.app.Application
 import android.content.Context
+import com.example.gymapp.analytics.ConversionAnalytics
 import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.CloudAccountDeletionJournal
 import com.example.gymapp.auth.CloudAuthManager
@@ -60,6 +61,7 @@ class GymApplication : Application() {
         )
     }
     val languageManager: LanguageManager by lazy { LanguageManager(this) }
+    val conversionAnalytics: ConversionAnalytics by lazy { ConversionAnalytics(this) }
     val hapticsPreference: HapticsPreference by lazy { HapticsPreference(this) }
     val keepScreenOnPreference: KeepScreenOnPreference by lazy { KeepScreenOnPreference(this) }
     val trainingProfileManager: TrainingProfileManager by lazy { TrainingProfileManager(this) }
@@ -182,6 +184,7 @@ class GymApplication : Application() {
         }
         garminManager.initialize()
         nativePushManager.initialize()
+        runGuarded("conversion analytics") { conversionAnalytics.applyStoredChoice() }
     }
 
     private inline fun runGuarded(step: String, block: () -> Unit) {

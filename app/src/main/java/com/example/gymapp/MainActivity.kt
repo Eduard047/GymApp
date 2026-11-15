@@ -58,6 +58,7 @@ class MainActivity : AppCompatActivity() {
                     restTimerController = app.restTimerController,
                     sharedWorkoutInbox = app.sharedWorkoutInbox,
                     pushManager = app.pushManager,
+                    conversionAnalytics = app.conversionAnalytics,
                     pushNavigationInbox = app.pushNavigationInbox,
                     activeWorkoutOpenInbox = app.activeWorkoutOpenInbox
                 )

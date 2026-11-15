@@ -17,11 +17,10 @@ import androidx.core.net.toUri
 import com.example.gymapp.BuildConfig
 import com.example.gymapp.MainActivity
 import com.example.gymapp.R
+import com.example.gymapp.analytics.GymFirebaseApp
 import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.CloudAuthManager
 import com.google.android.gms.tasks.Task
-import com.google.firebase.FirebaseApp
-import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.FirebaseMessaging
 import java.security.MessageDigest
 import java.util.concurrent.Executors
@@ -813,15 +812,7 @@ internal class AndroidPushManager(
     }
 
     private fun initializeFirebaseMessaging(): FirebaseMessaging? = runCatching {
-        val options = FirebaseOptions.Builder()
-            .setProjectId(BuildConfig.FIREBASE_PROJECT_ID)
-            .setApplicationId(BuildConfig.FIREBASE_APPLICATION_ID)
-            .setApiKey(BuildConfig.FIREBASE_API_KEY)
-            .setGcmSenderId(BuildConfig.FIREBASE_SENDER_ID)
-            .build()
-        runCatching { FirebaseApp.getInstance() }.getOrElse {
-            checkNotNull(FirebaseApp.initializeApp(applicationContext, options))
-        }
+        check(GymFirebaseApp.ensureInitialized(applicationContext))
         FirebaseMessaging.getInstance()
     }.getOrNull()
 

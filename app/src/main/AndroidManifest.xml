@@ -31,6 +31,27 @@
             android:name="firebase_messaging_notification_delegation_enabled"
             android:value="false" />
 
+        <!-- Conversion measurement is opt-in: everything is off and denied until the user allows it
+             in the consent prompt or Settings (see analytics/ConversionAnalytics.kt). -->
+        <meta-data
+            android:name="firebase_analytics_collection_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="google_analytics_automatic_screen_reporting_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="google_analytics_default_allow_analytics_storage"
+            android:value="false" />
+        <meta-data
+            android:name="google_analytics_default_allow_ad_storage"
+            android:value="false" />
+        <meta-data
+            android:name="google_analytics_default_allow_ad_user_data"
+            android:value="false" />
+        <meta-data
+            android:name="google_analytics_default_allow_ad_personalization_signals"
+            android:value="false" />
+
         <!-- Launcher shortcut trampoline. The launcher starts shortcut targets with NEW_TASK|CLEAR_TASK,
              which would destroy a live MainActivity (and the unsaved workout plan). It has its own
              task affinity so that CLEAR_TASK only ever clears this transient task, and it forwards

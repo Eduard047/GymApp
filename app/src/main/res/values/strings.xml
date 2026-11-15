@@ -1168,6 +1168,12 @@
     <string name="language_button">Language</string>
     <string name="settings_haptics_title">Haptics</string>
     <string name="keep_awake_setting_title">Keep screen on during workouts</string>
+    <string name="analytics_consent_title">Help measure our ads?</string>
+    <string name="analytics_consent_body">GymApp can measure which ads bring people who actually start training. This uses an app identifier and two events: account created and first workout finished. No workout data or email is sent. You can change this any time in Settings.</string>
+    <string name="analytics_consent_allow">Allow</string>
+    <string name="analytics_consent_deny">Don\'t allow</string>
+    <string name="analytics_setting_title">Ad measurement</string>
+    <string name="analytics_setting_subtitle">Helps measure which ads bring people who train. No workout data or email is sent.</string>
     <string name="language_name_english">English</string>
     <string name="language_name_ukrainian">Українська</string>
     <string name="language_name_russian">Русский</string>
@@ -1537,7 +1543,7 @@
     <string name="account_backup_title">Backup</string>
     <string name="account_backup_hint">Make one before switching phones</string>
     <string name="account_open_in_browser">Opens in your browser</string>
-    <string name="account_privacy_caption">GymApp has no advertising, cross-app tracking, or sale of personal data.</string>
+    <string name="account_privacy_caption">GymApp never sells personal data. Optional ad measurement runs only with your consent.</string>
     <string name="account_sign_out_local_title">Sign out of profile</string>
     <string name="account_sign_out_local_hint">Workouts stay on this device</string>
     <string name="account_sign_out_cloud_title">Sign out</string>

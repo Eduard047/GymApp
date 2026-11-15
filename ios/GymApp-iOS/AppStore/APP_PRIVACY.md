@@ -4,6 +4,8 @@ Use this as the source of truth for App Store Connect **App Privacy**. It reflec
 
 Apple references: [App privacy details](https://developer.apple.com/app-store/app-privacy-details/), [Manage app privacy](https://developer.apple.com/help/app-store-connect/manage-app-information/manage-app-privacy/), [privacy manifests](https://developer.apple.com/documentation/bundleresources/privacy-manifest-files), and [User Privacy and Data Use](https://developer.apple.com/app-store/user-privacy-and-data-use/).
 
+> **Platform scope (2026-11-15):** every answer below is for the iPhone app and stays “no analytics”. The Android app differs: it adds optional, consent-gated Google Analytics for Firebase for Google Ads conversion measurement (see `app/PLAY_DATA_SAFETY.md` and section 6 of the published privacy policy). Analytics on iPhone is deferred; if it is ever added, update `PrivacyInfo.xcprivacy`, these answers, the privacy policy, and App Store Connect before uploading that build.
+
 ## Top-level answers
 
 - **Does this app or its third-party partners collect data from this app?** Yes.

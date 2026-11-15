@@ -131,6 +131,19 @@ fun firebaseClientBuildConfigs(): Map<String, FirebaseClientBuildConfig> {
 fun buildConfigString(value: String): String =
     "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
+/**
+ * The same values the google-services plugin would generate. Firebase Analytics reads its app id
+ * from `google_app_id`; all four are set together so the auto-initialized default app matches the
+ * BuildConfig options used by push. Builds without a Firebase client define none of them.
+ */
+fun com.android.build.api.dsl.BuildType.firebaseResValues(client: FirebaseClientBuildConfig?) {
+    if (client == null) return
+    resValue("string", "google_app_id", client.applicationId)
+    resValue("string", "google_api_key", client.apiKey)
+    resValue("string", "gcm_defaultSenderId", client.senderId)
+    resValue("string", "project_id", client.projectId)
+}
+
 val firebaseClients = firebaseClientBuildConfigs()
 val productionFirebaseClient = firebaseClients["com.setforge.gymapp"]
 val developmentFirebaseClient = firebaseClients["com.setforge.gymapp.dev"]
@@ -216,6 +229,7 @@ android {
             } else {
                 productionFirebaseClient
             }
+            firebaseResValues(firebaseClient)
             buildConfigField(
                 "boolean",
                 "FIREBASE_CONFIGURED",
@@ -252,6 +266,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            firebaseResValues(productionFirebaseClient)
             buildConfigField(
                 "boolean",
                 "FIREBASE_CONFIGURED",
@@ -288,6 +303,7 @@ android {
             manifestPlaceholders["authCallbackScheme"] = "com.setforge.gymapp.dev"
             buildConfigField("String", "AUTH_CALLBACK_SCHEME", "\"com.setforge.gymapp.dev\"")
             buildConfigField("String", "AUTH_BRIDGE_VARIANT_QUERY", "\"&variant=qa\"")
+            firebaseResValues(developmentFirebaseClient)
             buildConfigField(
                 "boolean",
                 "FIREBASE_CONFIGURED",
@@ -360,6 +376,9 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation(platform("com.google.firebase:firebase-bom:34.16.0"))
     implementation("com.google.firebase:firebase-messaging")
+    // Conversion measurement only; every call lives in analytics/ConversionAnalytics.kt and
+    // stays off until the user consents (manifest defaults are all denied).
+    implementation("com.google.firebase:firebase-analytics")
     implementation(platform("io.github.jan-tennert.supabase:bom:2.6.1"))
     implementation("io.github.jan-tennert.supabase:realtime-kt")
     implementation("io.ktor:ktor-client-okhttp:2.3.12")
