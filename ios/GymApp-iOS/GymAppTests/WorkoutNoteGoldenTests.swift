@@ -9,7 +9,7 @@ final class WorkoutNoteGoldenTests: XCTestCase {
         XCTAssertEqual(root["maxCodePoints"] as? Int, WorkoutNoteRules.maxCodePoints)
         XCTAssertEqual(root["maxUtf8Bytes"] as? Int, WorkoutNoteRules.maxUTF8Bytes)
         let cases = try XCTUnwrap(root["cases"] as? [[String: Any]])
-        XCTAssertGreaterThanOrEqual(cases.count, 15)
+        XCTAssertGreaterThanOrEqual(cases.count, 18)
 
         for item in cases {
             let name = try XCTUnwrap(item["name"] as? String)
@@ -24,6 +24,13 @@ final class WorkoutNoteGoldenTests: XCTestCase {
                 XCTAssertEqual(actual, expected, name)
             } else {
                 XCTAssertThrowsError(try WorkoutNoteRules.normalized(input), name)
+                let expectedFailure: WorkoutNoteRules.Failure
+                switch try XCTUnwrap(item["failure"] as? String, name) {
+                case "tooLong": expectedFailure = .tooLong
+                case "controlCharacter": expectedFailure = .controlCharacter
+                default: return XCTFail("Unknown failure in \(name)")
+                }
+                XCTAssertEqual(WorkoutNoteRules.failure(input), expectedFailure, name)
             }
         }
     }
@@ -45,6 +52,54 @@ final class WorkoutNoteGoldenTests: XCTestCase {
         XCTAssertFalse(activeWorkoutCanEditNote(hasCommitIntent: true, isLivePlanFrozen: false, isOwnTab: true))
         XCTAssertFalse(activeWorkoutCanEditNote(hasCommitIntent: false, isLivePlanFrozen: true, isOwnTab: true))
         XCTAssertFalse(activeWorkoutCanEditNote(hasCommitIntent: false, isLivePlanFrozen: false, isOwnTab: false))
+    }
+
+    func testFailureMessagesAreSpecificAndLocalized() {
+        XCTAssertEqual(
+            gymWorkoutNoteFailureMessage(.tooLong, languageCode: "en"), "Note is too long"
+        )
+        XCTAssertEqual(
+            gymWorkoutNoteFailureMessage(.controlCharacter, languageCode: "en"),
+            "Note contains an unsupported character"
+        )
+        XCTAssertEqual(
+            gymWorkoutNoteFailureMessage(.controlCharacter, languageCode: "uk"),
+            "Нотатка містить непідтримуваний символ"
+        )
+        XCTAssertEqual(
+            gymWorkoutNoteFailureMessage(.controlCharacter, languageCode: "ru"),
+            "Заметка содержит неподдерживаемый символ"
+        )
+        XCTAssertEqual(
+            gymWorkoutNoteSaveErrorMessage(ActiveWorkoutStoreError.noteEditBlocked, languageCode: "en"),
+            "The note cannot be changed during a shared workout."
+        )
+        XCTAssertEqual(
+            gymWorkoutNoteSaveErrorMessage(ActiveWorkoutStoreError.noteEditBlocked, languageCode: "uk"),
+            "Нотатку не можна змінити під час спільного тренування."
+        )
+        XCTAssertEqual(
+            gymWorkoutNoteSaveErrorMessage(ActiveWorkoutStoreError.noteEditBlocked, languageCode: "ru"),
+            "Заметку нельзя изменить во время совместной тренировки."
+        )
+        XCTAssertEqual(
+            gymWorkoutNoteSaveErrorMessage(ActiveWorkoutStoreError.storageUnavailable, languageCode: "ru"),
+            "Заметку не удалось сохранить. Твой текст остался здесь."
+        )
+    }
+
+    func testEditorClosesOnlyWhenTheSaveSucceeds() {
+        XCTAssertNil(gymWorkoutNoteSaveOutcome(languageCode: "en") {})
+        for error in [
+            ActiveWorkoutStoreError.staleDraft,
+            .noteEditBlocked,
+            .storageUnavailable,
+            .noteTooLong,
+            .noteUnsupportedCharacter,
+            .workoutFinishing
+        ] {
+            XCTAssertNotNil(gymWorkoutNoteSaveOutcome(languageCode: "en") { throw error }, "\(error)")
+        }
     }
 
     private func text(_ value: Any, _ name: String) throws -> String {

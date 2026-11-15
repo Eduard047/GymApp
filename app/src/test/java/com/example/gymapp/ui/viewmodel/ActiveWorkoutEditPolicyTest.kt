@@ -14,7 +14,9 @@ import com.example.gymapp.data.repository.MoveActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.RemoveActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.UpdateActiveWorkoutNoteResult
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ActiveWorkoutEditPolicyTest {
@@ -360,13 +362,21 @@ class ActiveWorkoutEditPolicyTest {
     fun noteOutcomeMessagesAreSilentOnSuccessAndNoChange() {
         assertNull(activeWorkoutNoteOutcomeMessage(UpdateActiveWorkoutNoteResult.Updated(2L)))
         assertNull(activeWorkoutNoteOutcomeMessage(UpdateActiveWorkoutNoteResult.NoChange))
+    }
+
+    @Test
+    fun everyRefusedNoteSaveReturnsAMessageSoTheEditorStaysOpen() {
         assertEquals(
-            R.string.training_adaptation_live_blocked,
+            R.string.active_workout_note_live_blocked,
             activeWorkoutNoteOutcomeMessage(UpdateActiveWorkoutNoteResult.LivePlanFrozen)
         )
         assertEquals(
             R.string.active_workout_note_too_long,
-            activeWorkoutNoteOutcomeMessage(UpdateActiveWorkoutNoteResult.Invalid)
+            activeWorkoutNoteOutcomeMessage(UpdateActiveWorkoutNoteResult.TooLong)
+        )
+        assertEquals(
+            R.string.active_workout_note_unsupported_character,
+            activeWorkoutNoteOutcomeMessage(UpdateActiveWorkoutNoteResult.UnsupportedCharacter)
         )
         assertEquals(
             R.string.active_workout_changed,
@@ -376,5 +386,15 @@ class ActiveWorkoutEditPolicyTest {
             R.string.active_workout_changed,
             activeWorkoutNoteOutcomeMessage(UpdateActiveWorkoutNoteResult.Missing)
         )
+        // A thrown write (storage failure) arrives as a null result.
+        assertEquals(R.string.active_workout_note_save_failed, activeWorkoutNoteOutcomeMessage(null))
+    }
+
+    @Test
+    fun noteEditorClosesWhenEditingStopsBeingAllowed() {
+        assertTrue(activeWorkoutNoteEditorOpen(requested = true, canEditNote = true))
+        assertFalse(activeWorkoutNoteEditorOpen(requested = true, canEditNote = false))
+        assertFalse(activeWorkoutNoteEditorOpen(requested = false, canEditNote = true))
+        assertFalse(activeWorkoutNoteEditorOpen(requested = false, canEditNote = false))
     }
 }

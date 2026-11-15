@@ -14,7 +14,21 @@ enum WorkoutNoteRules {
 
     /// True when `raw` passes the raw-input checks, before any trimming.
     static func isValid(_ raw: String) -> Bool {
-        (try? validate(raw)) != nil
+        failure(raw) == nil
+    }
+
+    /// Why `raw` is refused, or nil when it is valid. Length (code points, UTF-8 bytes) is judged
+    /// before control characters, so an input that is both too long and unsafe reports `.tooLong`.
+    /// Mirrors `WorkoutDataLimits.noteFailure` on Android (shared/workout-note-v1.json).
+    static func failure(_ raw: String) -> Failure? {
+        if raw.unicodeScalars.count > maxCodePoints || raw.utf8.count > maxUTF8Bytes {
+            return .tooLong
+        }
+        let unsafe = raw.unicodeScalars.contains { scalar in
+            scalar.properties.generalCategory == .control
+                && scalar != "\t" && scalar != "\n" && scalar != "\r"
+        }
+        return unsafe ? .controlCharacter : nil
     }
 
     /// Cuts `raw` to at most `maxCodePoints` Unicode code points (never graphemes).
@@ -33,15 +47,6 @@ enum WorkoutNoteRules {
     }
 
     private static func validate(_ raw: String) throws {
-        var codePoints = 0
-        for scalar in raw.unicodeScalars {
-            codePoints += 1
-            if codePoints > maxCodePoints { throw Failure.tooLong }
-            if scalar.properties.generalCategory == .control,
-               scalar != "\t", scalar != "\n", scalar != "\r" {
-                throw Failure.controlCharacter
-            }
-        }
-        if raw.utf8.count > maxUTF8Bytes { throw Failure.tooLong }
+        if let failure = failure(raw) { throw failure }
     }
 }

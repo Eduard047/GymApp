@@ -14,17 +14,28 @@ class WorkoutNoteGoldenTest {
         assertEquals(WorkoutDataLimits.MAX_NOTE_LENGTH, contract.getInt("maxCodePoints"))
         assertEquals(WorkoutDataLimits.MAX_NOTE_BYTES, contract.getInt("maxUtf8Bytes"))
         val cases = contract.getJSONArray("cases")
-        assertTrue(cases.length() >= 15)
+        assertTrue(cases.length() >= 18)
         val mismatches = mutableListOf<String>()
         for (index in 0 until cases.length()) {
             val case = cases.getJSONObject(index)
             val name = case.getString("name")
             val input = text(case.get("input"))
             val valid = case.getBoolean("valid")
-            val actualValid = WorkoutDataLimits.isValidNote(input)
+            val actualFailure = WorkoutDataLimits.noteFailure(input)
+            val actualValid = actualFailure == null
             if (actualValid != valid) {
                 mismatches += "$name: expected valid=$valid but was $actualValid"
                 continue
+            }
+            if (!valid) {
+                val expectedFailure = when (case.getString("failure")) {
+                    "tooLong" -> WorkoutDataLimits.NoteFailure.TOO_LONG
+                    "controlCharacter" -> WorkoutDataLimits.NoteFailure.CONTROL_CHARACTER
+                    else -> error("Unknown failure in case $name")
+                }
+                if (actualFailure != expectedFailure) {
+                    mismatches += "$name: expected failure=$expectedFailure but was $actualFailure"
+                }
             }
             if (valid) {
                 val expected = if (case.isNull("stored")) null else text(case.get("stored"))

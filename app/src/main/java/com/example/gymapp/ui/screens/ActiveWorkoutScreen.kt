@@ -209,6 +209,7 @@ import com.example.gymapp.ui.viewmodel.ActiveWorkoutExerciseUiState
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutSetUiState
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutUiState
 import com.example.gymapp.ui.viewmodel.DeletedPendingSet
+import com.example.gymapp.ui.viewmodel.activeWorkoutNoteEditorOpen
 import com.example.gymapp.ui.viewmodel.activeWorkoutOperationInProgress
 import com.example.gymapp.ui.viewmodel.parseActiveWorkoutSetInput
 import com.example.gymapp.ui.viewmodel.LiveConnectionMode
@@ -273,8 +274,11 @@ fun ActiveWorkoutScreen(
     onRemoveExercise: (String) -> Unit = {},
     onMoveExercise: (String, Int) -> Unit = { _, _ -> },
     onMoveExerciseTo: (String, Int) -> Unit = { _, _ -> },
-    /** Saves the workout note from the editor (raw text; blank clears it). */
-    onUpdateNote: (String) -> Unit = {},
+    /**
+     * Saves the workout note from the editor (raw text; blank clears it). The callback gets null on success
+     * and otherwise the message resource the open editor shows; a refused save keeps the typed text.
+     */
+    onUpdateNote: (String, (Int?) -> Unit) -> Unit = { _, onResult -> onResult(null) },
     addExerciseCatalog: ActiveWorkoutAddExerciseCatalog = ActiveWorkoutAddExerciseCatalog(),
     onAddExercise: (Long) -> Unit = {},
     /** Swaps a pending exercise (block id) for the picked catalog exercise in place. */
@@ -1137,12 +1141,22 @@ fun ActiveWorkoutScreen(
         if (!finishNeedsConfirmation) showFinishWorkoutConfirmation = false
     }
 
-    if (showNoteEditor && uiState.canEditNote) {
+    // A live room or a finish can start while the editor is open: close it (the typed text is dropped)
+    // instead of leaving a stale request that would reopen the editor later.
+    LaunchedEffect(showNoteEditor, uiState.canEditNote) {
+        if (showNoteEditor && !activeWorkoutNoteEditorOpen(showNoteEditor, uiState.canEditNote)) {
+            showNoteEditor = false
+        }
+    }
+    if (activeWorkoutNoteEditorOpen(showNoteEditor, uiState.canEditNote)) {
         ActiveWorkoutNoteEditor(
             storedNote = uiState.note,
-            onSave = { raw ->
-                showNoteEditor = false
-                onUpdateNote(raw)
+            onSave = { raw, showError ->
+                onUpdateNote(raw) { error ->
+                    // Close only on a saved note; any refusal keeps the editor and the typed text.
+                    if (error == null) showNoteEditor = false
+                    showError(error)
+                }
             },
             onDismiss = { showNoteEditor = false }
         )
@@ -3511,12 +3525,22 @@ private fun ActiveWorkoutNoteRow(note: String?, onClick: () -> Unit) {
 @Composable
 private fun ActiveWorkoutNoteEditor(
     storedNote: String?,
-    onSave: (String) -> Unit,
+    /** Saves the text; the callback gets null when it was saved, otherwise the error message resource. */
+    onSave: (String, (Int?) -> Unit) -> Unit,
     onDismiss: () -> Unit
 ) {
     var draft by rememberSaveable { mutableStateOf(storedNote.orEmpty()) }
+    /** The refusal from the last Save (stale, shared workout, storage); cleared when the text changes. */
+    var saveError by rememberSaveable { mutableStateOf<Int?>(null) }
+    var saving by remember { mutableStateOf(false) }
     val dirty = draft != storedNote.orEmpty()
-    val valid = WorkoutDataLimits.isValidNote(draft)
+    val failure = WorkoutDataLimits.noteFailure(draft)
+    val valid = failure == null
+    val errorText = when {
+        failure == WorkoutDataLimits.NoteFailure.TOO_LONG -> R.string.active_workout_note_too_long
+        failure == WorkoutDataLimits.NoteFailure.CONTROL_CHARACTER -> R.string.active_workout_note_unsupported_character
+        else -> saveError
+    }
     val sheetState = rememberDiscardGuardedSheetState(hasUnsavedChanges = dirty, onHideBlocked = {})
     GymModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
@@ -3528,6 +3552,7 @@ private fun ActiveWorkoutNoteEditor(
             OutlinedTextField(
                 value = draft,
                 onValueChange = { next ->
+                    saveError = null
                     draft = if (next.codePointCount(0, next.length) > WorkoutDataLimits.MAX_NOTE_LENGTH) {
                         next.substring(0, next.offsetByCodePoints(0, WorkoutDataLimits.MAX_NOTE_LENGTH))
                     } else {
@@ -3539,10 +3564,10 @@ private fun ActiveWorkoutNoteEditor(
                 placeholder = { Text(stringResource(R.string.hint_note)) },
                 minLines = 3,
                 maxLines = 8,
-                isError = !valid,
+                isError = errorText != null,
                 supportingText = {
-                    if (!valid) {
-                        Text(stringResource(R.string.active_workout_note_too_long))
+                    if (errorText != null) {
+                        Text(stringResource(errorText))
                     } else {
                         Text("${draft.codePointCount(0, draft.length)} / ${WorkoutDataLimits.MAX_NOTE_LENGTH}")
                     }
@@ -3555,7 +3580,18 @@ private fun ActiveWorkoutNoteEditor(
                 OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
                     Text(stringResource(R.string.action_cancel))
                 }
-                Button(onClick = { onSave(draft) }, enabled = valid, modifier = Modifier.weight(1f)) {
+                Button(
+                    onClick = {
+                        saving = true
+                        saveError = null
+                        onSave(draft) { error ->
+                            saving = false
+                            saveError = error
+                        }
+                    },
+                    enabled = valid && !saving,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Text(stringResource(R.string.action_save))
                 }
             }

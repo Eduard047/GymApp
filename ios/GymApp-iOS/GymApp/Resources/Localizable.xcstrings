@@ -1178,6 +1178,38 @@
         }
       }
     },
+    "Note contains an unsupported character" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заметка содержит неподдерживаемый символ"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нотатка містить непідтримуваний символ"
+          }
+        }
+      }
+    },
+    "Note is too long" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заметка слишком длинная"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нотатка задовга"
+          }
+        }
+      }
+    },
     "Off" : {
       "localizations" : {
         "ru" : {
@@ -1222,6 +1254,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Скасувати можна лише останній записаний підхід."
+          }
+        }
+      }
+    },
+    "The note cannot be changed during a shared workout." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заметку нельзя изменить во время совместной тренировки."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нотатку не можна змінити під час спільного тренування."
           }
         }
       }

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "Workout note rule shared by Android (normalizedWorkoutNote + WorkoutDataLimits.isValidNote) and iOS (WorkoutNoteRules.normalized) for editing the note during an active workout. Validation runs on the raw input first: at most maxCodePoints Unicode code points (never graphemes or UTF-16 units), at most maxUtf8Bytes UTF-8 bytes, no control characters other than tab, line feed and carriage return. A valid input is then trimmed of leading and trailing whitespace; internal newlines and tabs are kept; an empty result stores no note (null). 'input' and 'stored' are either a string or {\"repeat\": s, \"count\": n} meaning s repeated n times.",
+  "description": "Workout note rule shared by Android (normalizedWorkoutNote + WorkoutDataLimits.isValidNote) and iOS (WorkoutNoteRules.normalized) for editing the note during an active workout. Validation runs on the raw input first: at most maxCodePoints Unicode code points (never graphemes or UTF-16 units), at most maxUtf8Bytes UTF-8 bytes, no control characters other than tab, line feed and carriage return. A valid input is then trimmed of leading and trailing whitespace; internal newlines and tabs are kept; an empty result stores no note (null). 'input' and 'stored' are either a string or {\"repeat\": s, \"count\": n} meaning s repeated n times. Invalid cases carry 'failure': 'tooLong' (code points or UTF-8 bytes over the limit) or 'controlCharacter'; length is judged before control characters, so an input that is both reports tooLong.",
   "maxCodePoints": 4000,
   "maxUtf8Bytes": 16000,
   "cases": [
@@ -64,7 +64,8 @@
         "repeat": "x",
         "count": 4001
       },
-      "valid": false
+      "valid": false,
+      "failure": "tooLong"
     },
     {
       "name": "max astral emoji counts code points not utf16 units",
@@ -84,7 +85,8 @@
         "repeat": "💪",
         "count": 4001
       },
-      "valid": false
+      "valid": false,
+      "failure": "tooLong"
     },
     {
       "name": "combining marks count as code points not graphemes",
@@ -92,7 +94,8 @@
         "repeat": "é",
         "count": 2001
       },
-      "valid": false
+      "valid": false,
+      "failure": "tooLong"
     },
     {
       "name": "combining marks at limit",
@@ -109,18 +112,35 @@
     {
       "name": "null control rejected",
       "input": "a\u0000b",
-      "valid": false
+      "valid": false,
+      "failure": "controlCharacter"
     },
     {
       "name": "escape control rejected",
       "input": "a\u001bb",
-      "valid": false
+      "valid": false,
+      "failure": "controlCharacter"
     },
     {
       "name": "carriage return and line feed kept inside",
       "input": "a\r\nb",
       "valid": true,
       "stored": "a\r\nb"
+    },
+    {
+      "name": "too long and control character reports too long",
+      "input": {
+        "repeat": "\u0001",
+        "count": 4001
+      },
+      "valid": false,
+      "failure": "tooLong"
+    },
+    {
+      "name": "delete control rejected",
+      "input": "a\u007fb",
+      "valid": false,
+      "failure": "controlCharacter"
     }
   ]
 }

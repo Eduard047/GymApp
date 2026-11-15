@@ -3013,11 +3013,11 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertThrowsError(try context.active.updateNote(
             draftID: edited.id, raw: "a\u{0000}b", expectedRevision: edited.revision,
             isSolo: { true }, now: now.addingTimeInterval(4)
-        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .invalidDraft) }
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .noteUnsupportedCharacter) }
         XCTAssertThrowsError(try context.active.updateNote(
             draftID: edited.id, raw: String(repeating: "x", count: 4_001), expectedRevision: edited.revision,
             isSolo: { true }, now: now.addingTimeInterval(4)
-        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .invalidDraft) }
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .noteTooLong) }
         XCTAssertEqual(context.active.draft, edited)
 
         // Blank removes the note.
@@ -3048,7 +3048,7 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertThrowsError(try context.active.updateNote(
             draftID: started.id, raw: "note", expectedRevision: started.revision,
             isSolo: { false }, now: startedAt.addingTimeInterval(1)
-        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .invalidDraft) }
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .noteEditBlocked) }
         XCTAssertEqual(context.active.draft, started)
 
         let recorded = try context.active.recordSet(

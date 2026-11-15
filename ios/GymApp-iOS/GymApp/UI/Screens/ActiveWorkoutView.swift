@@ -744,8 +744,9 @@ struct ActiveWorkoutView: View {
             WorkoutNoteEditorSheet(
                 initialNote: currentDraft?.note,
                 onSave: { raw in
-                    saveNote(raw)
-                    showingNoteEditor = false
+                    let message = saveNote(raw)
+                    if message == nil { showingNoteEditor = false }
+                    return message
                 },
                 onCancel: { showingNoteEditor = false }
             )
@@ -851,6 +852,10 @@ struct ActiveWorkoutView: View {
         }
         .onChange(of: liveWorkoutCoordinator.attachedRoomID) { _, roomID in
             if roomID == nil { liveParticipantSelection = .current }
+        }
+        .onChange(of: canEditNoteNow) { _, allowed in
+            // A live room or a finish can start while the editor is open; close it like Android does.
+            if !allowed { showingNoteEditor = false }
         }
         .onDisappear {
             cancelVoiceCommand()
@@ -4315,23 +4320,28 @@ struct ActiveWorkoutView: View {
     }
 
     /// Saves the note through the store, which trims, validates, skips an unchanged value and
-    /// refuses while the plan is frozen, while finishing and on a stale revision.
-    private func saveNote(_ raw: String) {
-        guard let draft = currentDraft else { return }
-        guard !liveWorkoutCoordinator.planIsFrozenForCurrentDraft else {
-            show(LiveWorkoutSidecarError.invalidState)
-            return
-        }
-        do {
+    /// refuses while the plan is frozen, while finishing and on a stale revision. Returns nil when
+    /// saved, otherwise the message the open editor shows (it stays open with the typed text).
+    private func saveNote(_ raw: String) -> String? {
+        gymWorkoutNoteSaveOutcome {
+            guard let draft = currentDraft else { throw ActiveWorkoutStoreError.noActiveWorkout }
             _ = try activeWorkoutStore.updateNote(
                 draftID: draft.id,
                 raw: raw,
                 expectedRevision: draft.revision,
                 isSolo: { !liveWorkoutCoordinator.planIsFrozenForCurrentDraft }
             )
-        } catch {
-            show(error)
         }
+    }
+
+    /// True while the note may be edited here (own tab, not finishing, plan not frozen).
+    private var canEditNoteNow: Bool {
+        guard let draft = currentDraft else { return false }
+        return activeWorkoutCanEditNote(
+            hasCommitIntent: draft.commitIntent != nil,
+            isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft,
+            isOwnTab: !liveWorkoutCoordinator.isAttachedToCurrentDraft || liveParticipantSelection == .current
+        )
     }
 
     /// Drag-and-drop commit: one store write that moves the block to `index`

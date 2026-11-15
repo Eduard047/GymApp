@@ -21,6 +21,17 @@ enum ActiveWorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
     case limitExceeded
     case lastSetRequired
     case exerciseAlreadyInWorkout
+    case noteTooLong
+    case noteUnsupportedCharacter
+    case noteEditBlocked
+
+    /// The store error for a raw note refused by `WorkoutNoteRules`.
+    static func note(_ failure: WorkoutNoteRules.Failure) -> ActiveWorkoutStoreError {
+        switch failure {
+        case .tooLong: .noteTooLong
+        case .controlCharacter: .noteUnsupportedCharacter
+        }
+    }
 
     var errorDescription: String? {
         switch self {
@@ -62,6 +73,12 @@ enum ActiveWorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
             "An exercise keeps at least one set. Remove the exercise instead."
         case .exerciseAlreadyInWorkout:
             "This exercise is already in the workout."
+        case .noteTooLong:
+            "Note is too long"
+        case .noteUnsupportedCharacter:
+            "Note contains an unsupported character"
+        case .noteEditBlocked:
+            "The note cannot be changed during a shared workout."
         }
     }
 }
@@ -1026,10 +1043,11 @@ final class ActiveWorkoutStore: ObservableObject {
     }
 
     /// Edits the workout note in a single write: validated and trimmed by `WorkoutNoteRules`
-    /// (invalid raw input throws `invalidDraft`), `nil` or whitespace only removes it. Returns the
-    /// draft unchanged, without a revision bump, when the normalized value equals the stored note.
-    /// Refused while a live room or reservation freezes the plan, while finishing, and on a stale
-    /// revision. The plan template is not touched.
+    /// (invalid raw input throws `noteTooLong` / `noteUnsupportedCharacter`), `nil` or whitespace
+    /// only removes it. Returns the draft unchanged, without a revision bump, when the normalized
+    /// value equals the stored note. Refused (`noteEditBlocked`) while a live room freezes the plan,
+    /// while a reservation holds the slot, while finishing, and on a stale revision. The plan
+    /// template is not touched.
     @discardableResult
     func updateNote(
         draftID: UUID,
@@ -1038,15 +1056,14 @@ final class ActiveWorkoutStore: ObservableObject {
         isSolo: () -> Bool,
         now: Date = Date()
     ) throws -> ActiveWorkoutDraft {
+        guard isSolo() else { throw ActiveWorkoutStoreError.noteEditBlocked }
         try assertStructuralChangeAllowed(isSolo: isSolo)
         let current = try currentDraft(draftID: draftID, expectedRevision: expectedRevision)
         guard current.commitIntent == nil else { throw ActiveWorkoutStoreError.workoutFinishing }
-        let normalized: String?
-        do {
-            normalized = try WorkoutNoteRules.normalized(raw)
-        } catch {
-            throw ActiveWorkoutStoreError.invalidDraft
+        if let raw, let failure = WorkoutNoteRules.failure(raw) {
+            throw ActiveWorkoutStoreError.note(failure)
         }
+        let normalized = try WorkoutNoteRules.normalized(raw)
         guard normalized != current.note else { return current }
         return try mutate(
             draftID: draftID,

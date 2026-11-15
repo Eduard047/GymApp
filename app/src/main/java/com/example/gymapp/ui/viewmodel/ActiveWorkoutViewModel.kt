@@ -442,12 +442,22 @@ internal fun activeWorkoutMoveExerciseOutcomeMessage(result: MoveActiveWorkoutEx
     else -> R.string.active_workout_changed
 }
 
-internal fun activeWorkoutNoteOutcomeMessage(result: UpdateActiveWorkoutNoteResult): Int? = when (result) {
+/**
+ * The message to show in the note editor, or null when the note was saved or already matched.
+ * A null [result] means the write threw (storage failure). Every non-null outcome keeps the editor open.
+ */
+internal fun activeWorkoutNoteOutcomeMessage(result: UpdateActiveWorkoutNoteResult?): Int? = when (result) {
+    null -> R.string.active_workout_note_save_failed
     is UpdateActiveWorkoutNoteResult.Updated, UpdateActiveWorkoutNoteResult.NoChange -> null
-    UpdateActiveWorkoutNoteResult.LivePlanFrozen -> R.string.training_adaptation_live_blocked
-    UpdateActiveWorkoutNoteResult.Invalid -> R.string.active_workout_note_too_long
+    UpdateActiveWorkoutNoteResult.LivePlanFrozen -> R.string.active_workout_note_live_blocked
+    UpdateActiveWorkoutNoteResult.TooLong -> R.string.active_workout_note_too_long
+    UpdateActiveWorkoutNoteResult.UnsupportedCharacter -> R.string.active_workout_note_unsupported_character
     UpdateActiveWorkoutNoteResult.Missing, UpdateActiveWorkoutNoteResult.Stale -> R.string.active_workout_changed
 }
+
+/** The note editor stays open only while the user asked for it and the workout still allows editing the note. */
+internal fun activeWorkoutNoteEditorOpen(requested: Boolean, canEditNote: Boolean): Boolean =
+    requested && canEditNote
 
 internal fun activeWorkoutAddSetOutcomeMessage(result: AddActiveWorkoutSetResult): Int? = when (result) {
     is AddActiveWorkoutSetResult.Added -> null
@@ -1924,39 +1934,30 @@ class ActiveWorkoutViewModel(
     /**
      * Saves the workout note (explicit Save in the editor; [raw] is the field text, blank clears it).
      * Refused in live rooms and while another active-workout operation runs. Undo, the rest timer and
-     * the set progress are untouched.
+     * the set progress are untouched. [onResult] receives null when the note is saved (or unchanged) and
+     * otherwise the string resource to show inside the still-open editor, so a refused save never
+     * discards the typed text.
      */
-    fun updateNote(raw: String) {
+    fun updateNote(raw: String, onResult: (Int?) -> Unit = {}) {
         if (isInLiveRoom()) {
-            operationState.update {
-                it.copy(message = LocalizedText(R.string.training_adaptation_live_blocked), messageSetId = null)
-            }
+            onResult(R.string.active_workout_note_live_blocked)
             return
         }
         if (activeWorkoutOperationInProgress()) {
-            // The editor is already closed: say the note was not saved instead of dropping it silently.
-            operationState.update {
-                it.copy(message = LocalizedText(R.string.active_workout_changed), messageSetId = null)
-            }
+            onResult(R.string.active_workout_changed)
             return
         }
-        val snapshot = details.value ?: return
+        val snapshot = details.value
+        if (snapshot == null) {
+            onResult(R.string.active_workout_changed)
+            return
+        }
         val revision = snapshot.activeWorkout.revision
         operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
         viewModelScope.launch {
             val result = runCatching { repository.updateActiveWorkoutNote(raw, revision) }.getOrNull()
-            operationState.update {
-                val message = if (result == null) {
-                    R.string.active_workout_changed
-                } else {
-                    activeWorkoutNoteOutcomeMessage(result)
-                }
-                it.copy(
-                    isRecordingAll = false,
-                    message = message?.let { id -> LocalizedText(id) },
-                    messageSetId = null
-                )
-            }
+            operationState.update { it.copy(isRecordingAll = false, messageSetId = null) }
+            onResult(activeWorkoutNoteOutcomeMessage(result))
         }
     }
 

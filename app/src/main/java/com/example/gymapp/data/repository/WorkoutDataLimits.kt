@@ -62,15 +62,28 @@ object WorkoutDataLimits {
             name.none(Char::isISOControl) &&
             name.isNotBlank()
 
-    fun isValidNote(note: String?): Boolean =
-        note == null || (
-            note.length <= MAX_NOTE_LENGTH * 2 &&
-                utf8ByteLengthAtMost(note, MAX_NOTE_BYTES) != null &&
-                note.codePointCount(0, note.length) <= MAX_NOTE_LENGTH &&
-                note.all { character ->
-                    !character.isISOControl() || character == '\n' || character == '\r' || character == '\t'
-                }
-            )
+    fun isValidNote(note: String?): Boolean = noteFailure(note) == null
+
+    /**
+     * Why a raw note is refused, or null when it is valid. Length (code points, UTF-8 bytes) is judged
+     * before control characters, so an input that is both too long and unsafe reports [NoteFailure.TOO_LONG].
+     * Mirrors `WorkoutNoteRules.Failure` on iOS; the shared cases live in `shared/workout-note-v1.json`.
+     */
+    fun noteFailure(note: String?): NoteFailure? {
+        if (note == null) return null
+        if (note.length > MAX_NOTE_LENGTH * 2 ||
+            utf8ByteLengthAtMost(note, MAX_NOTE_BYTES) == null ||
+            note.codePointCount(0, note.length) > MAX_NOTE_LENGTH
+        ) {
+            return NoteFailure.TOO_LONG
+        }
+        val unsafe = note.any { character ->
+            character.isISOControl() && character != '\n' && character != '\r' && character != '\t'
+        }
+        return if (unsafe) NoteFailure.CONTROL_CHARACTER else null
+    }
+
+    enum class NoteFailure { TOO_LONG, CONTROL_CHARACTER }
 
     fun isBackupProjectionWithinLimit(
         exerciseCount: Int,

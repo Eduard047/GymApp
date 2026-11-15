@@ -409,6 +409,9 @@
     <string name="hint_note">Session note</string>
     <string name="active_workout_note_add">Add note</string>
     <string name="active_workout_note_too_long">Note is too long</string>
+    <string name="active_workout_note_unsupported_character">Note contains an unsupported character</string>
+    <string name="active_workout_note_live_blocked">The note cannot be changed during a shared workout.</string>
+    <string name="active_workout_note_save_failed">The note could not be saved. Your text is still here.</string>
     <string name="label_workout_date">Date</string>
     <string name="label_exercise">Exercise</string>
     <string name="label_select_exercise">Select exercise</string>

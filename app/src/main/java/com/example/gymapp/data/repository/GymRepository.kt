@@ -201,8 +201,10 @@ sealed interface UpdateActiveWorkoutNoteResult {
     data object NoChange : UpdateActiveWorkoutNoteResult
     data object Missing : UpdateActiveWorkoutNoteResult
     data object Stale : UpdateActiveWorkoutNoteResult
-    /** The raw input breaks the note limits (length, bytes, control characters). */
-    data object Invalid : UpdateActiveWorkoutNoteResult
+    /** The raw input exceeds the code point or UTF-8 byte limit. */
+    data object TooLong : UpdateActiveWorkoutNoteResult
+    /** The raw input holds a control character other than tab, line feed and carriage return. */
+    data object UnsupportedCharacter : UpdateActiveWorkoutNoteResult
     data object LivePlanFrozen : UpdateActiveWorkoutNoteResult
 }
 
@@ -3033,7 +3035,13 @@ class GymRepository(
             if (activeWorkoutPlanIsLiveFrozen(details.activeWorkout.startedAt)) {
                 return@withTransaction UpdateActiveWorkoutNoteResult.LivePlanFrozen
             }
-            if (!WorkoutDataLimits.isValidNote(raw)) return@withTransaction UpdateActiveWorkoutNoteResult.Invalid
+            when (WorkoutDataLimits.noteFailure(raw)) {
+                WorkoutDataLimits.NoteFailure.TOO_LONG ->
+                    return@withTransaction UpdateActiveWorkoutNoteResult.TooLong
+                WorkoutDataLimits.NoteFailure.CONTROL_CHARACTER ->
+                    return@withTransaction UpdateActiveWorkoutNoteResult.UnsupportedCharacter
+                null -> Unit
+            }
             val note = normalizedWorkoutNote(raw)
             if (note == details.activeWorkout.note) return@withTransaction UpdateActiveWorkoutNoteResult.NoChange
             val updated = activeWorkoutDao.updateNoteAdvancingRevision(ACTIVE_WORKOUT_ID, note, expectedRevision)

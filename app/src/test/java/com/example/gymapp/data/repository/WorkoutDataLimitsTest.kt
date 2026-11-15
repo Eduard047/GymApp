@@ -1,6 +1,8 @@
 package com.example.gymapp.data.repository
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -118,6 +120,11 @@ class WorkoutDataLimitsTest {
         assertTrue(WorkoutDataLimits.isValidNote("€".repeat(4_000)))
         assertTrue(WorkoutDataLimits.isValidNote("line one\nline two"))
         assertFalse(WorkoutDataLimits.isValidNote("unsafe\u0001note"))
+        assertNull(WorkoutDataLimits.noteFailure(null))
+        assertNull(WorkoutDataLimits.noteFailure("tab\tand\r\nnewline"))
+        assertEquals(WorkoutDataLimits.NoteFailure.CONTROL_CHARACTER, WorkoutDataLimits.noteFailure("unsafe\u0001note"))
+        assertEquals(WorkoutDataLimits.NoteFailure.TOO_LONG, WorkoutDataLimits.noteFailure("x".repeat(4_001)))
+        assertEquals(WorkoutDataLimits.NoteFailure.TOO_LONG, WorkoutDataLimits.noteFailure("\u0001".repeat(4_001)))
         assertFalse(WorkoutDataLimits.isValidExerciseName("unsafe\u0001name"))
 
         val oversizedString =

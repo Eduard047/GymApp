@@ -413,11 +413,11 @@ class ActiveWorkoutSetEditingTest {
             )
             // 4001 code points are rejected (raw input is validated before trimming).
             assertEquals(
-                UpdateActiveWorkoutNoteResult.Invalid,
+                UpdateActiveWorkoutNoteResult.TooLong,
                 repository.updateActiveWorkoutNote("x".repeat(4_001), expectedRevision = 1L)
             )
             assertEquals(
-                UpdateActiveWorkoutNoteResult.Invalid,
+                UpdateActiveWorkoutNoteResult.UnsupportedCharacter,
                 repository.updateActiveWorkoutNote("a\u0000b", expectedRevision = 1L)
             )
             assertEquals("Left shoulder tight", checkNotNull(repository.getActiveWorkoutSnapshot()).activeWorkout.note)
