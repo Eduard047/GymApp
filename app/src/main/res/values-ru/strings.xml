@@ -1162,7 +1162,7 @@
     <string name="splash_wordmark">GymApp</string>
     <string name="splash_loading">Готовим твою сессию…</string>
 
-    <string name="exercise_history_sessions">Тренировки</string>
+    <string name="exercise_history_sessions">Выполнено раз</string>
     <string name="exercise_history_max_weight">Макс. вес</string>
     <string name="exercise_history_volume">Общий объём</string>
     <string name="exercise_history_empty">Для этого упражнения ещё нет истории</string>
@@ -1457,7 +1457,7 @@
     <string name="exercise_card_auto_mapping">Автосопоставление</string>
     <string name="exercise_card_muscle_groups">Группы мышц</string>
     <string name="exercise_load_option_count">Весов: %1$d</string>
-    <string name="exercise_load_profile_action">Веса тренажера</string>
+    <string name="exercise_load_profile_action">Шаг веса</string>
     <string name="exercise_load_profile_eyebrow">Настройка тренажера</string>
     <string name="exercise_load_profile_supporting">Укажи точные веса, доступные на этом тренажёре. Умный тренер будет рекомендовать только эти положения; ручные веса и история не изменятся.</string>
     <string name="exercise_load_direction_title">Что делает упражнение тяжелее?</string>
@@ -1848,4 +1848,27 @@
     <string name="vs_last_best_set_change">%1$s → %2$s</string>
     <string name="vs_last_arrow_up_description">Больше, чем в прошлый раз</string>
     <string name="vs_last_arrow_down_description">Меньше, чем в прошлый раз</string>
+    <string name="exercise_detail_title">Упражнение</string>
+    <string name="exercise_detail_best_header">Лучший результат</string>
+    <string name="exercise_detail_best_set">Лучший подход</string>
+    <string name="exercise_detail_best_reps">Повторений: %1$d</string>
+    <string name="exercise_detail_one_rm">Расчётный 1ПМ</string>
+    <string name="exercise_detail_last_performed">Последний раз</string>
+    <string name="exercise_detail_history_all">Вся история</string>
+    <string name="exercise_detail_muscles_header">Мышцы</string>
+    <string name="exercise_detail_muscles_primary">Основные</string>
+    <string name="exercise_detail_muscles_secondary">Дополнительные</string>
+    <string name="exercise_detail_muscles_edit">Изменить мышцы</string>
+    <string name="exercise_detail_favorite_add">В избранное</string>
+    <string name="exercise_detail_favorite_remove">Убрать из избранного</string>
+    <string name="exercise_detail_edit">Изменить</string>
+    <string name="exercise_filter_button">Фильтр</string>
+    <string name="exercise_filter_remove_named">Убрать фильтр: %1$s</string>
+    <string name="exercise_equipment_barbell">Штанга</string>
+    <string name="exercise_equipment_dumbbell">Гантели</string>
+    <string name="exercise_equipment_cable">Блок</string>
+    <string name="exercise_equipment_machine">Тренажёр</string>
+    <string name="exercise_equipment_plate">Диск</string>
+    <string name="exercise_equipment_band">Резинка</string>
+    <string name="exercise_equipment_bodyweight">Свой вес</string>
 </resources>

@@ -6,6 +6,7 @@ import android.content.ClipData
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessibilityNew
@@ -1025,6 +1027,7 @@ fun ExerciseListScreen(
     var muscleFilter by rememberSaveable { mutableStateOf<String?>(null) }
     var sortMode by rememberSaveable { mutableStateOf(ExerciseSortMode.Name) }
     var favoritesOnly by rememberSaveable { mutableStateOf(false) }
+    var showFullHistory by rememberSaveable { mutableStateOf(false) }
     val languageTag = currentAppLanguageTag()
     val musclesByExercise = remember(uiState.muscleMappings) {
         uiState.muscleMappings.associate { mapping -> mapping.exerciseName to mapping.muscleIds.toSet() }
@@ -1148,18 +1151,19 @@ fun ExerciseListScreen(
 
         item {
             Box(modifier = Modifier.padding(bottom = GymSpacing.Large)) {
-            ExerciseSearchAndFilters(
+            ExerciseLibrarySearchAndFilter(
                 query = searchQuery,
                 onQueryChange = { searchQuery = it.take(EXERCISE_SEARCH_QUERY_MAX_CHARS) },
                 bodyFilter = bodyFilter,
-                onBodyFilterChange = { bodyFilter = it },
                 muscleFilter = muscleFilter,
-                onMuscleFilterChange = { muscleFilter = it },
-                sortMode = sortMode,
-                onSortModeChange = { sortMode = it },
                 favoritesOnly = favoritesOnly,
-                onFavoritesOnlyChange = { favoritesOnly = it },
-                resultCount = filteredExercises.size
+                onFilterChange = { favorites, body, muscle ->
+                    favoritesOnly = favorites
+                    bodyFilter = body
+                    muscleFilter = muscle
+                },
+                sortMode = sortMode,
+                onSortModeChange = { sortMode = it }
             )
             }
         }
@@ -1186,196 +1190,26 @@ fun ExerciseListScreen(
                 )
             }
         } else {
-            items(
+            itemsIndexed(
                 items = filteredExercises,
-                key = { it.id }
-            ) { exercise ->
-                var menuExpanded by remember(exercise.id) { mutableStateOf(false) }
+                key = { _, exercise -> exercise.id }
+            ) { index, exercise ->
                 val isBuiltIn = BuiltInExerciseCatalog.definitionForName(exercise.name) != null
-                val displayExerciseName = localizedExerciseName(exercise.name)
-                val searchMatchReason = exerciseSearchMatch(exercise.name, searchQuery, musclesByExercise[exercise.name])?.reason
-                val fullWidthTitle = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
-                val titleContent: @Composable (Modifier) -> Unit = { titleModifier ->
-                    Column(
-                        modifier = titleModifier,
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        Text(
-                            text = displayExerciseName,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            // Names wrap by words (up to four lines) rather than being cut off with an ellipsis.
-                            maxLines = 4,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (searchMatchReason != null) {
-                            Text(
-                                text = localizedExerciseSearchMatchReason(searchMatchReason),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-                // Inset-grouped row, same as the exercise picker: consecutive rows share one tonal container
-                // (outer corners only on the first and last row), split by a hairline inset past the thumbnail.
-                val isFirstRow = exercise.id == filteredExercises.first().id
-                val isLastRow = exercise.id == filteredExercises.last().id
-                val groupRadius = 12.dp
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(
-                        topStart = if (isFirstRow) groupRadius else 0.dp,
-                        topEnd = if (isFirstRow) groupRadius else 0.dp,
-                        bottomStart = if (isLastRow) groupRadius else 0.dp,
-                        bottomEnd = if (isLastRow) groupRadius else 0.dp
-                    ),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                    contentColor = MaterialTheme.colorScheme.onSurface
-                ) {
-                  Box {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        if (fullWidthTitle) {
-                            titleContent(Modifier.fillMaxWidth())
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            ExerciseMediaPreview(
-                                exerciseId = exercise.id,
-                                exerciseName = exercise.name,
-                                ownerKey = exerciseMediaOwnerKey,
-                                width = 60.dp,
-                                height = 60.dp,
-                                playBadgeSize = 20.dp
-                            )
-                            if (fullWidthTitle) {
-                                Spacer(Modifier.weight(1f))
-                            } else {
-                                titleContent(Modifier.weight(1f))
-                            }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(0.dp)
-                            ) {
-                                IconButton(
-                                    onClick = { onToggleFavorite(exercise) },
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .semantics { selected = exercise.isFavorite }
-                                ) {
-                                    Icon(
-                                        imageVector = if (exercise.isFavorite) {
-                                            Icons.Default.Favorite
-                                        } else {
-                                            Icons.Default.FavoriteBorder
-                                        },
-                                        contentDescription = formattedStringResource(
-                                            if (exercise.isFavorite) {
-                                                R.string.exercise_favorite_remove
-                                            } else {
-                                                R.string.exercise_favorite_add
-                                            },
-                                            displayExerciseName
-                                        ),
-                                        tint = if (exercise.isFavorite) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        }
-                                    )
-                                }
-                                Box {
-                                    IconButton(
-                                        onClick = { menuExpanded = true },
-                                        modifier = Modifier.size(44.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.MoreVert,
-                                            contentDescription = formattedStringResource(R.string.cd_more_actions_named, displayExerciseName)
-                                        )
-                                    }
-                            DropdownMenu(
-                                expanded = menuExpanded,
-                                onDismissRequest = { menuExpanded = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.exercise_card_history)) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onExerciseClick(exercise.id)
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.History, contentDescription = null) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.exercise_card_muscle_groups)) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onEditExerciseMapping(exercise.name)
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.AccessibilityNew, contentDescription = null) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.exercise_load_profile_action)) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onEditExerciseLoadProfile(exercise)
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.FormatListNumbered, contentDescription = null) }
-                                )
-                                if (!isBuiltIn) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.exercise_action_rename)) },
-                                        onClick = {
-                                            menuExpanded = false
-                                            onStartRenameExercise(exercise)
-                                        },
-                                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
-                                    )
-                                }
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.action_delete)) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onDeleteExercise(exercise)
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.Delete,
-                                            contentDescription = formattedStringResource(
-                                                R.string.cd_delete_exercise_named,
-                                                displayExerciseName
-                                            ),
-                                            tint = MaterialTheme.colorScheme.error
-                                        )
-                                    }
-                                )
-                            }
-                            }
-                            }
-                        }
-                    }
-                    if (!isLastRow) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .padding(start = if (fullWidthTitle) 12.dp else 82.dp)
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                        )
-                    }
-                  }
-                }
+                ExerciseLibraryRow(
+                    exercise = exercise,
+                    isBuiltIn = isBuiltIn,
+                    muscleIds = musclesByExercise[exercise.name],
+                    searchMatchReason = exerciseSearchMatch(exercise.name, searchQuery, musclesByExercise[exercise.name])?.reason,
+                    exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                    isFirst = index == 0,
+                    isLast = index == filteredExercises.lastIndex,
+                    onOpen = { onExerciseClick(exercise.id) },
+                    onToggleFavorite = { onToggleFavorite(exercise) },
+                    onEditMuscles = { onEditExerciseMapping(exercise.name) },
+                    onEditWeightSteps = { onEditExerciseLoadProfile(exercise) },
+                    onRename = { onStartRenameExercise(exercise) },
+                    onDelete = { onDeleteExercise(exercise) }
+                )
             }
         }
     }
@@ -1459,22 +1293,43 @@ fun ExerciseListScreen(
 
     val selectedExerciseId = uiState.selectedExerciseId
     val selectedExerciseName = uiState.selectedExerciseName
-    if (selectedExerciseId != null && selectedExerciseName != null) {
-        GymModalBottomSheet(
-            onDismissRequest = onDismissHistory
-        ) {
-            GymSheetCloseRow(onClose = onDismissHistory, modifier = Modifier.padding(horizontal = 12.dp))
-            ExerciseHistoryBottomSheetContent(
-                exerciseId = selectedExerciseId,
-                exerciseName = selectedExerciseName,
-                exerciseMediaOwnerKey = exerciseMediaOwnerKey,
-                history = uiState.selectedExerciseHistory,
-                onEditExerciseMapping = {
-                    onDismissHistory()
-                    onEditExerciseMapping(selectedExerciseName)
-                }
-            )
+    val selectedExercise = uiState.exercises.firstOrNull { it.id == selectedExerciseId }
+    if (selectedExerciseId != null && selectedExercise != null && selectedExerciseName != null) {
+        BackHandler(onBack = onDismissHistory)
+        ExerciseDetailScreen(
+            exercise = selectedExercise,
+            history = uiState.selectedExerciseHistory,
+            muscleIds = musclesByExercise[selectedExercise.name]?.toList().orEmpty(),
+            exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+            bottomContentInset = bottomContentInset,
+            onBack = onDismissHistory,
+            onToggleFavorite = { onToggleFavorite(selectedExercise) },
+            onShowAllHistory = { showFullHistory = true },
+            onEditMuscles = { onEditExerciseMapping(selectedExercise.name) },
+            onEditWeightSteps = { onEditExerciseLoadProfile(selectedExercise) },
+            onEdit = { onStartRenameExercise(selectedExercise) },
+            onDelete = { onDeleteExercise(selectedExercise) },
+            modifier = modifier
+        )
+        if (showFullHistory) {
+            GymModalBottomSheet(
+                onDismissRequest = { showFullHistory = false }
+            ) {
+                GymSheetCloseRow(onClose = { showFullHistory = false }, modifier = Modifier.padding(horizontal = 12.dp))
+                ExerciseHistoryBottomSheetContent(
+                    exerciseId = selectedExerciseId,
+                    exerciseName = selectedExerciseName,
+                    exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                    history = uiState.selectedExerciseHistory,
+                    onEditExerciseMapping = {
+                        showFullHistory = false
+                        onEditExerciseMapping(selectedExerciseName)
+                    }
+                )
+            }
         }
+    } else if (showFullHistory) {
+        showFullHistory = false
     }
 
     val mappingExerciseName = uiState.mappingEditorExerciseName

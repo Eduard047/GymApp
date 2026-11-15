@@ -79,7 +79,9 @@ fun ExerciseMediaPreview(
     height: Dp = 64.dp,
     editable: Boolean = true,
     playBadgeSize: Dp = 28.dp,
-    cornerRadius: Dp = 13.dp
+    cornerRadius: Dp = 13.dp,
+    /** False for a plain thumbnail inside a tappable row: no own tap target and no media sheet. */
+    interactive: Boolean = true
 ) {
     require(ownerKey.isNotBlank()) { "Exercise media must be bound to an active account." }
     var showSheet by remember(exerciseId, ownerKey) { mutableStateOf(false) }
@@ -125,12 +127,18 @@ fun ExerciseMediaPreview(
     Surface(
         modifier = modifier
             .size(width = width, height = height)
-            .clickable(
-                onClickLabel = formattedStringResource(
-                    R.string.exercise_media_open_preview_named,
-                    localizedExerciseName(exerciseName)
-                )
-            ) { showSheet = true },
+            .then(
+                if (interactive) {
+                    Modifier.clickable(
+                        onClickLabel = formattedStringResource(
+                            R.string.exercise_media_open_preview_named,
+                            localizedExerciseName(exerciseName)
+                        )
+                    ) { showSheet = true }
+                } else {
+                    Modifier
+                }
+            ),
         shape = RoundedCornerShape(cornerRadius),
         color = MaterialTheme.colorScheme.surfaceVariant
     ) {
@@ -196,7 +204,7 @@ fun ExerciseMediaPreview(
         }
     }
 
-    if (showSheet) {
+    if (showSheet && interactive) {
         ExerciseMediaSheet(
             exerciseId = exerciseId,
             exerciseName = exerciseName,

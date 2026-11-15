@@ -225,17 +225,10 @@ struct ExercisesView: View {
 
     var body: some View {
         GymBackground {
-            ScrollView {
-                LazyVStack(spacing: GymTheme.contentSpacing) {
-                    header
-
-                    exerciseLibrary
-                }
-                .padding(.horizontal, GymTheme.screenHorizontalInset)
-                .padding(.top, GymTheme.screenVerticalInset)
-                .padding(.bottom, GymTheme.screenBottomInset)
-            }
-            .scrollDismissesKeyboard(.interactively)
+            exerciseList
+        }
+        .navigationDestination(for: UUID.self) { exerciseID in
+            ExerciseDetailView(exerciseID: exerciseID, perform: performDetailAction)
         }
         .sheet(item: $presentedSheet, content: presentedContent)
         .alert(item: $activeAlert, content: makeAlert)
@@ -309,69 +302,92 @@ struct ExercisesView: View {
         .accessibilityHint(gymLocalized("Adds a custom exercise to your library"))
     }
 
-    private var exerciseLibrary: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                searchField
-                filterMenuButton
-            }
-
-            exerciseFilters
-
-            if filteredExercises.isEmpty {
-                GymPanel {
-                    GymContentUnavailableView {
-                        Label(
-                            gymLocalized(store.exercises.isEmpty ? "No exercises yet" : "No matches"),
-                            systemImage: store.exercises.isEmpty ? "dumbbell" : "magnifyingglass"
-                        )
-                    } description: {
-                        Text(
-                            store.exercises.isEmpty
-                                ? gymText(
-                                    "Add a custom exercise to start building your library.",
-                                    "Додай власну вправу, щоб почати формувати бібліотеку.",
-                                    "Добавь своё упражнение, чтобы начать формировать библиотеку.",
-                                    languageCode: gymCurrentLanguageCode()
-                                )
-                                : gymText(
-                                    "Try another name, body area, or muscle group.",
-                                    "Спробуй іншу назву, частину тіла або групу м’язів.",
-                                    "Попробуй другое название, часть тела или группу мышц.",
-                                    languageCode: gymCurrentLanguageCode()
-                                )
-                        )
-                    } actions: {
-                        if store.exercises.isEmpty {
-                            Button("Add exercise") { presentedSheet = .addExercise }
-                                .buttonStyle(GymPrimaryButtonStyle())
-                        } else {
-                            Button("Clear filters", action: clearFilters)
-                                .buttonStyle(GymSecondaryButtonStyle())
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
+    private var exerciseList: some View {
+        let manualMuscles = MuscleMappingEngine.manualContributionMap(from: store.muscleMappings)
+        let exercises = filteredExercises
+        return List {
+            Section {
+                header
+                searchRow
+                if let token = activeFilterTitle {
+                    filterToken(token)
                 }
+            }
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: GymTheme.Spacing.small, trailing: 0))
+
+            if exercises.isEmpty {
+                Section {
+                    emptyState
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets())
             } else {
-                // One tonal container for the whole library, rows split by hairlines inset past the thumbnail,
-                // like the exercise picker (and Android).
-                GymPanel(contentPadding: EdgeInsets()) {
-                    LazyVStack(spacing: 0) {
-                        ForEach(filteredExercises) { exercise in
-                            if exercise.id != filteredExercises.first?.id {
-                                Divider()
-                                    .padding(.leading, dynamicTypeSize.isAccessibilitySize ? 12 : 82)
-                            }
-                            exerciseCard(exercise)
-                        }
+                Section {
+                    ForEach(exercises) { exercise in
+                        exerciseRow(exercise, manualMuscles: manualMuscles)
                     }
                 }
+                .listRowBackground(GymTheme.surface)
+                .listRowSeparatorTint(GymTheme.outline.opacity(0.4))
             }
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .listSectionSpacing(.compact)
+        .contentMargins(.top, GymTheme.screenVerticalInset, for: .scrollContent)
+        .contentMargins(.bottom, GymTheme.screenBottomInset, for: .scrollContent)
+        .scrollDismissesKeyboard(.interactively)
+    }
+
+    private var emptyState: some View {
+        GymPanel {
+            GymContentUnavailableView {
+                Label(
+                    gymLocalized(store.exercises.isEmpty ? "No exercises yet" : "No matches"),
+                    systemImage: store.exercises.isEmpty ? "dumbbell" : "magnifyingglass"
+                )
+            } description: {
+                Text(
+                    store.exercises.isEmpty
+                        ? gymText(
+                            "Add a custom exercise to start building your library.",
+                            "Додай власну вправу, щоб почати формувати бібліотеку.",
+                            "Добавь своё упражнение, чтобы начать формировать библиотеку.",
+                            languageCode: gymCurrentLanguageCode()
+                        )
+                        : gymText(
+                            "Try another name, body area, or muscle group.",
+                            "Спробуй іншу назву, частину тіла або групу м’язів.",
+                            "Попробуй другое название, часть тела или группу мышц.",
+                            languageCode: gymCurrentLanguageCode()
+                        )
+                )
+            } actions: {
+                if store.exercises.isEmpty {
+                    Button("Add exercise") { presentedSheet = .addExercise }
+                        .buttonStyle(GymPrimaryButtonStyle())
+                } else {
+                    Button("Clear filters", action: clearFilters)
+                        .buttonStyle(GymSecondaryButtonStyle())
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    /// One search field (36pt, radius 10 fill) and the single filter button.
+    private var searchRow: some View {
+        HStack(spacing: 6) {
+            searchField
+            filterMenuButton
         }
     }
 
     private var searchField: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(GymTheme.textSecondary)
                 .accessibilityHidden(true)
@@ -384,21 +400,40 @@ struct ExercisesView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(GymTheme.textSecondary)
+                        .frame(minWidth: 28, minHeight: 36)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
             }
         }
-        .gymTextFieldChrome()
+        .padding(.horizontal, 10)
+        .frame(minHeight: 36)
+        .background(GymTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var isFilterCustomized: Bool {
-        favoritesOnly || bodyFilter != .all || sortMode != .name
+        favoritesOnly || bodyFilter != .all || muscleFilter != nil || sortMode != .name
     }
 
     private var filterMenuButton: some View {
         Menu {
             Toggle(isOn: $favoritesOnly) {
                 Label(gymLocalized("Favorites"), systemImage: "heart")
+            }
+
+            Menu {
+                Picker(gymText("Muscle group", "Група м’язів", "Группа мышц", languageCode: gymCurrentLanguageCode()), selection: $muscleFilter) {
+                    Text(gymLocalized("All muscles")).tag(String?.none)
+                    ForEach(MuscleMappingEngine.muscleDefinitions) { muscle in
+                        Text(muscleTitle(muscle)).tag(Optional(muscle.id))
+                    }
+                }
+            } label: {
+                Label(
+                    gymText("Muscle group", "Група м’язів", "Группа мышц", languageCode: gymCurrentLanguageCode()),
+                    systemImage: "figure.strengthtraining.traditional"
+                )
             }
 
             Picker(gymLocalized("Category"), selection: $bodyFilter) {
@@ -413,66 +448,71 @@ struct ExercisesView: View {
                 }
             }
         } label: {
-            ZStack(alignment: .topTrailing) {
-                Image(
-                    systemName: isFilterCustomized
-                        ? "line.3.horizontal.decrease.circle.fill"
-                        : "line.3.horizontal.decrease.circle"
-                )
-                .font(.title3)
-                .foregroundStyle(isFilterCustomized ? GymTheme.primary : GymTheme.textSecondary)
-                .frame(width: 44, height: 44)
-
-                if isFilterCustomized {
-                    Circle()
-                        .fill(GymTheme.brandFill)
-                        .frame(width: 9, height: 9)
-                        .offset(x: -8, y: 8)
-                        .accessibilityHidden(true)
-                }
-            }
+            Image(
+                systemName: isFilterCustomized
+                    ? "line.3.horizontal.decrease.circle.fill"
+                    : "line.3.horizontal.decrease.circle"
+            )
+            .font(.title3)
+            .foregroundStyle(isFilterCustomized ? GymTheme.primary : GymTheme.textSecondary)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
         }
         .accessibilityLabel(gymLocalized("Filters"))
         .accessibilityAddTraits(isFilterCustomized ? .isSelected : [])
     }
 
-    private var exerciseFilters: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 8) {
-                filterChip(
-                    title: gymLocalized("All muscles"),
-                    isSelected: muscleFilter == nil
-                ) {
-                    muscleFilter = nil
-                }
-                ForEach(MuscleMappingEngine.muscleDefinitions) { muscle in
-                    filterChip(
-                        title: gymText(muscle.titleEn, muscle.titleUk, muscle.titleRu, languageCode: gymCurrentLanguageCode()),
-                        isSelected: muscleFilter == muscle.id
-                    ) {
-                        muscleFilter = muscleFilter == muscle.id ? nil : muscle.id
-                    }
-                }
-            }
-        }
-        .scrollIndicators(.hidden)
+    private func muscleTitle(_ muscle: MuscleDefinition) -> String {
+        gymText(muscle.titleEn, muscle.titleUk, muscle.titleRu, languageCode: gymCurrentLanguageCode())
     }
 
-    private func filterChip(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.subheadline.weight(isSelected ? .semibold : .regular))
-                .foregroundStyle(isSelected ? Color.white : GymTheme.textPrimary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule().fill(isSelected ? GymTheme.brandFill : GymTheme.surfaceVariant)
-                )
+    /// Text of the one removable filter token, or nil when no filter is active.
+    private var activeFilterTitle: String? {
+        var parts: [String] = []
+        if favoritesOnly { parts.append(gymLocalized("Favorites")) }
+        if bodyFilter != .all { parts.append(bodyFilter.localizedTitle) }
+        if let muscleFilter,
+           let muscle = MuscleMappingEngine.muscleDefinitions.first(where: { $0.id == muscleFilter }) {
+            parts.append(muscleTitle(muscle))
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private func filterToken(_ title: String) -> some View {
+        HStack {
+            Button {
+                withAnimation(GymMotion.quick) {
+                    favoritesOnly = false
+                    bodyFilter = .all
+                    muscleFilter = nil
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.subheadline.weight(.medium))
+                        .gymLineLimit(1)
+                    Image(systemName: "xmark")
+                        .font(.caption.weight(.bold))
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(GymTheme.primary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(GymTheme.primary.opacity(0.14), in: Capsule())
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                gymText(
+                    "Remove filter: \(title)",
+                    "Прибрати фільтр: \(title)",
+                    "Убрать фильтр: \(title)",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func clearFilters() {
@@ -482,122 +522,133 @@ struct ExercisesView: View {
         favoritesOnly = false
     }
 
-    private func exerciseCard(_ exercise: Exercise) -> some View {
+    private func exerciseRow(
+        _ exercise: Exercise,
+        manualMuscles: [String: [MuscleContribution]]
+    ) -> some View {
         let displayName = gymExerciseName(exercise)
-
-        let media = ExerciseMediaButton(
+        let info = ExerciseInfo(exercise: exercise, manualMuscles: manualMuscles)
+        let isCustom = catalogDefinition(for: exercise) == nil
+        let thumbnail = ExerciseMediaThumbnail(
             rawExerciseName: exercise.name,
             catalogKey: exercise.catalogKey,
             exerciseID: exercise.id,
             ownerKey: store.accountStorageKey,
-            width: 60,
-            height: 60,
-            playOverlayDiameter: 20
+            editable: false,
+            width: 44,
+            height: 44,
+            playOverlayDiameter: 14,
+            cornerRadius: 10,
+            action: {}
         )
-        let nameText = Text(displayName)
-            .font(.headline)
-            .gymLineLimit(2)
-            .foregroundStyle(GymTheme.textPrimary)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityAddTraits(.isHeader)
-        let actions = HStack(spacing: 0) {
-            favoriteButton(exercise, displayName: displayName)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        var title = Text(gymExerciseDisplayName(displayName))
+        if exercise.isFavorite {
+            title = title
+                + Text("\u{00A0}")
+                + Text(Image(systemName: "heart.fill"))
+                    .font(.caption)
+                    .foregroundColor(GymTheme.primary)
+        }
 
-            Menu {
-                Button {
-                    presentedSheet = .history(exercise)
-                } label: {
-                    Label("History", systemImage: "clock.arrow.circlepath")
+        return NavigationLink(value: exercise.id) {
+            HStack(spacing: 12) {
+                thumbnail
+                VStack(alignment: .leading, spacing: 2) {
+                    title
+                        .font(.body)
+                        .foregroundStyle(GymTheme.textPrimary)
+                        .gymLineLimit(2, accessibility: nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let subtitle = info.subtitle {
+                        Text(subtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(GymTheme.textSecondary)
+                            .gymLineLimit(1, accessibility: 2)
+                    }
                 }
+            }
+            .padding(.vertical, 4)
+        }
+        .accessibilityValue(exercise.isFavorite ? favoriteAccessibilityValue(exercise) : "")
+        .alignmentGuide(.listRowSeparatorLeading) { _ in 72 }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button {
+                toggleFavorite(exercise)
+            } label: {
+                Label(
+                    exercise.isFavorite
+                        ? gymText("Unfavorite", "Прибрати", "Убрать", languageCode: gymCurrentLanguageCode())
+                        : gymText("Favorite", "В обране", "В избранное", languageCode: gymCurrentLanguageCode()),
+                    systemImage: exercise.isFavorite ? "heart.slash" : "heart"
+                )
+            }
+            .tint(GymTheme.primaryAction)
+        }
+        .contextMenu {
+            Button {
+                presentedSheet = .history(exercise)
+            } label: {
+                Label("History", systemImage: "clock.arrow.circlepath")
+            }
 
-                Button {
-                    presentedSheet = .muscles(exercise)
-                } label: {
-                    Label("Muscle groups", systemImage: "figure.strengthtraining.traditional")
-                }
+            Button {
+                presentedSheet = .muscles(exercise)
+            } label: {
+                Label("Muscle groups", systemImage: "figure.strengthtraining.traditional")
+            }
 
+            Button {
+                presentedSheet = .editExercise(exercise)
+            } label: {
+                Label(gymLocalized("Weight steps"), systemImage: "scalemass")
+            }
+
+            if isCustom {
                 Button {
                     presentedSheet = .editExercise(exercise)
                 } label: {
-                    Label("Machine weights", systemImage: "scalemass")
+                    Label(gymText("Edit", "Змінити", "Изменить", languageCode: gymCurrentLanguageCode()), systemImage: "pencil")
                 }
+            }
 
-                if catalogDefinition(for: exercise) == nil {
-                    Button {
-                        presentedSheet = .editExercise(exercise)
-                    } label: {
-                        Label("Rename", systemImage: "pencil")
-                    }
-                }
+            Divider()
 
-                Divider()
-
-                Button(role: .destructive) {
-                    activeAlert = .delete(
-                        ExerciseLibraryDeletionTarget(
-                            store: store,
-                            exercise: exercise,
-                            displayName: displayName
-                        )
-                    )
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
+            Button(role: .destructive) {
+                requestDelete(exercise)
             } label: {
-                Image(systemName: "ellipsis.circle")
-                    .font(.title3)
-                    .frame(minWidth: 44, minHeight: 44)
-            }
-            .accessibilityLabel(
-                gymText(
-                    "More actions for \(displayName)",
-                    "Більше дій для «\(displayName)»",
-                    "Другие действия для «\(displayName)»",
-                    languageCode: gymCurrentLanguageCode()
-                )
-            )
-        }
-
-        return Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                // Media and actions share a row; the name gets the full width below.
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 10) {
-                        media
-                        Spacer(minLength: 4)
-                        actions
-                    }
-                    nameText
-                }
-            } else {
-                HStack(alignment: .center, spacing: 10) {
-                    media
-                    nameText
-                    Spacer(minLength: 4)
-                    actions
-                }
+                Label("Delete", systemImage: "trash")
             }
         }
-        .padding(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func favoriteButton(_ exercise: Exercise, displayName: String) -> some View {
-        Button {
-            do {
-                _ = try store.toggleExerciseFavorite(id: exercise.id)
-            } catch {
-                appState.show(message: errorMessage(error), isError: true)
-            }
-        } label: {
-            Image(systemName: exercise.isFavorite ? "heart.fill" : "heart")
-                .font(.title3)
-                .foregroundStyle(exercise.isFavorite ? GymTheme.primary : GymTheme.textSecondary)
-                .frame(minWidth: 44, minHeight: 44)
+    private func requestDelete(_ exercise: Exercise) {
+        activeAlert = .delete(
+            ExerciseLibraryDeletionTarget(
+                store: store,
+                exercise: exercise,
+                displayName: gymExerciseName(exercise)
+            )
+        )
+    }
+
+    private func toggleFavorite(_ exercise: Exercise) {
+        do {
+            _ = try store.toggleExerciseFavorite(id: exercise.id)
+        } catch {
+            appState.show(message: errorMessage(error), isError: true)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(favoriteAccessibilityLabel(exercise, displayName: displayName))
-        .accessibilityValue(favoriteAccessibilityValue(exercise))
+    }
+
+    private func performDetailAction(_ action: ExerciseDetailAction, _ exercise: Exercise) {
+        switch action {
+        case .history: presentedSheet = .history(exercise)
+        case .muscles: presentedSheet = .muscles(exercise)
+        case .edit: presentedSheet = .editExercise(exercise)
+        case .toggleFavorite: toggleFavorite(exercise)
+        case .delete: requestDelete(exercise)
+        }
     }
 
     private func favoriteAccessibilityLabel(_ exercise: Exercise, displayName: String) -> String {
@@ -697,7 +748,7 @@ struct ExercisesView: View {
             NavigationStack {
                 let displayName = gymExerciseName(exercise)
                 ExerciseEditorSheet(
-                    title: catalogDefinition(for: exercise) == nil ? "Edit exercise" : "Machine weights",
+                    title: catalogDefinition(for: exercise) == nil ? "Edit exercise" : "Weight steps",
                     initialName: displayName,
                     initialMachineLoadProfile: exercise.machineLoadProfile,
                     defaultLoadDirection: defaultLoadDirection(for: exercise),
@@ -1222,7 +1273,11 @@ private struct ExerciseHistorySheet: View {
 
     @ViewBuilder
     private var metricTiles: some View {
-        GymMetricTile(label: "Sessions", value: stats.sessionCount.formatted(.number.locale(gymAppLocale())), singleLineLabel: true)
+        GymMetricTile(
+            label: gymText("Times done", "Виконано разів", "Выполнено раз", languageCode: gymCurrentLanguageCode()),
+            value: stats.sessionCount.formatted(.number.locale(gymAppLocale())),
+            singleLineLabel: true
+        )
         GymMetricTile(
             label: "Max weight",
             value: "\(stats.maxWeight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0...2)))) \(gymLocalized("kg"))",
@@ -1462,6 +1517,377 @@ private struct ExerciseMuscleMappingSheet: View {
             dismiss()
         } catch {
             self.error = gymErrorMessage(error)
+        }
+    }
+}
+
+// MARK: - Exercise detail
+
+fileprivate enum ExerciseDetailAction {
+    case history
+    case muscles
+    case edit
+    case toggleFavorite
+    case delete
+}
+
+/// Primary and secondary muscles plus equipment of one exercise, from the same sources the rest of
+/// the app uses: a saved manual mapping, else the built-in catalog, else the name guess. The
+/// strongest muscles (weight 0.95 and up) are primary; a catalog exercise's first muscle always is.
+fileprivate struct ExerciseInfo {
+    let primaryMuscleIDs: [String]
+    let secondaryMuscleIDs: [String]
+    let equipmentID: String?
+
+    init(exercise: Exercise, manualMuscles: [String: [MuscleContribution]]) {
+        let contributions = MuscleMappingEngine.contributions(
+            for: exercise.name,
+            manualMappings: manualMuscles
+        )
+        let sorted = contributions.enumerated()
+            .sorted {
+                $0.element.weight != $1.element.weight
+                    ? $0.element.weight > $1.element.weight
+                    : $0.offset < $1.offset
+            }
+            .map(\.element)
+        let strong = sorted.filter { $0.weight >= 0.95 }.map(\.muscleID)
+        let primary = strong.isEmpty ? sorted.prefix(1).map(\.muscleID) : strong
+        primaryMuscleIDs = primary
+        secondaryMuscleIDs = sorted.map(\.muscleID).filter { !primary.contains($0) }
+
+        let key = exercise.catalogKey ?? BuiltInExerciseCatalog.canonicalKey(forName: exercise.name)
+        let equipment = key.flatMap { ExerciseSearchVocabulary.equipmentIdsByKey[$0] } ?? []
+        equipmentID = equipment.first(where: { $0 != "bodyweight" }) ?? equipment.first
+    }
+
+    static func muscleTitle(_ id: String) -> String? {
+        MuscleMappingEngine.muscleDefinitions.first(where: { $0.id == id }).map {
+            gymText($0.titleEn, $0.titleUk, $0.titleRu, languageCode: gymCurrentLanguageCode())
+        }
+    }
+
+    static func equipmentTitle(_ id: String) -> String? {
+        let language = gymCurrentLanguageCode()
+        switch id {
+        case "band": return gymText("Band", "Гумка", "Резинка", languageCode: language)
+        case "barbell": return gymText("Barbell", "Штанга", "Штанга", languageCode: language)
+        case "bodyweight": return gymText("Bodyweight", "Власна вага", "Свой вес", languageCode: language)
+        case "cable": return gymText("Cable", "Блок", "Блок", languageCode: language)
+        case "dumbbell": return gymText("Dumbbells", "Гантелі", "Гантели", languageCode: language)
+        case "machine": return gymText("Machine", "Тренажер", "Тренажёр", languageCode: language)
+        case "plate": return gymText("Plate", "Диск", "Блин", languageCode: language)
+        default: return nil
+        }
+    }
+
+    var primaryMuscleTitles: [String] { primaryMuscleIDs.compactMap(Self.muscleTitle) }
+    var secondaryMuscleTitles: [String] { secondaryMuscleIDs.compactMap(Self.muscleTitle) }
+    var equipmentTitle: String? { equipmentID.flatMap(Self.equipmentTitle) }
+
+    /// "Грудь · Гантели": first primary muscle, then equipment when known.
+    var subtitle: String? {
+        let parts = [primaryMuscleTitles.first, equipmentTitle].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}
+
+/// One row of a detail group: title (and optional subtitle) on the left, an optional value and
+/// chevron on the right. Rows with an action are buttons; the rest are plain text.
+private struct ExerciseDetailRow: View {
+    let title: String
+    var subtitle: String?
+    var value: String?
+    var showsChevron = false
+    var isDestructive = false
+    var action: (() -> Void)?
+
+    var body: some View {
+        if let action {
+            Button(action: action) { label }
+                .buttonStyle(.plain)
+        } else {
+            label
+        }
+    }
+
+    private var label: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.body)
+                    .foregroundStyle(isDestructive ? GymTheme.error : GymTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 6)
+            if let value {
+                Text(value)
+                    .font(.body)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary.opacity(0.7))
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.vertical, 8)
+        .frame(minHeight: 48)
+        .contentShape(Rectangle())
+    }
+}
+
+/// The pushed screen behind an exercise row: preview and name, best result, recent history,
+/// muscles, and the actions that used to hide in the row's overflow menu.
+@MainActor
+private struct ExerciseDetailView: View {
+    private static let recentSessionLimit = 5
+
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: WorkoutStore
+
+    let exerciseID: UUID
+    let perform: (ExerciseDetailAction, Exercise) -> Void
+
+    var body: some View {
+        GymBackground {
+            if let exercise = store.exercise(id: exerciseID) {
+                content(exercise)
+            } else {
+                // Deleted from this screen (or elsewhere): leave instead of showing a stale page.
+                Color.clear.onAppear { dismiss() }
+            }
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .gymTopBannerInset()
+    }
+
+    private func content(_ exercise: Exercise) -> some View {
+        let language = gymCurrentLanguageCode()
+        let displayName = gymExerciseName(exercise)
+        let history = store.exerciseHistory(exerciseID: exercise.id)
+        let stats = store.progressStats(exerciseID: exercise.id)
+        let sessions = ExerciseHistoryGrouping.months(from: history).flatMap(\.sessions)
+        let info = ExerciseInfo(
+            exercise: exercise,
+            manualMuscles: MuscleMappingEngine.manualContributionMap(from: store.muscleMappings)
+        )
+        let isCustom = BuiltInExerciseCatalog.canonicalKey(forName: exercise.name) == nil
+            && BuiltInExerciseCatalog.definition(forKey: exercise.catalogKey) == nil
+
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                header(exercise, displayName: displayName, info: info)
+
+                if !sessions.isEmpty {
+                    bestGroup(stats: stats, history: history, sessions: sessions)
+                }
+
+                historyGroup(exercise, sessions: sessions, language: language)
+
+                musclesGroup(exercise, info: info, language: language)
+
+                actionsGroup(exercise, isCustom: isCustom, language: language)
+            }
+            .padding(.horizontal, GymTheme.screenHorizontalInset)
+            .padding(.top, GymTheme.screenVerticalInset)
+            .padding(.bottom, GymTheme.screenBottomInset)
+        }
+    }
+
+    // MARK: Header
+
+    private func header(_ exercise: Exercise, displayName: String, info: ExerciseInfo) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ExerciseMediaButton(
+                rawExerciseName: exercise.name,
+                catalogKey: exercise.catalogKey,
+                exerciseID: exercise.id,
+                ownerKey: store.accountStorageKey,
+                width: 200,
+                height: 136,
+                playOverlayDiameter: 32,
+                cornerRadius: 14
+            )
+            .frame(maxWidth: .infinity)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(gymExerciseDisplayName(displayName))
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(GymTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                if let subtitle = info.subtitle {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(GymTheme.textSecondary)
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+    }
+
+    // MARK: Best result
+
+    private func bestGroup(
+        stats: ExerciseProgressStats,
+        history: [ExerciseHistoryEntry],
+        sessions: [ExerciseHistoryGrouping.Session]
+    ) -> some View {
+        let language = gymCurrentLanguageCode()
+        let best = history.max {
+            $0.weight != $1.weight ? $0.weight < $1.weight : $0.reps < $1.reps
+        }
+        let locale = gymAppLocale()
+        return ProgressGroup(
+            title: gymText("Best result", "Найкращий результат", "Лучший результат", languageCode: language)
+        ) {
+            if let best {
+                ExerciseDetailRow(
+                    title: gymText("Best set", "Найкращий підхід", "Лучший подход", languageCode: language),
+                    value: Self.setText(best.weight, best.reps)
+                )
+            }
+            if stats.bestEstimatedOneRepMax > 0 {
+                ProgressRowDivider()
+                ExerciseDetailRow(
+                    title: gymText("Estimated 1RM", "Оцінка 1ПМ", "Оценка 1ПМ", languageCode: language),
+                    value: "\(stats.bestEstimatedOneRepMax.formatted(.number.locale(locale).precision(.fractionLength(0 ... 1))))\u{00A0}\(gymLocalized("kg"))"
+                )
+            }
+            if let last = sessions.first {
+                ProgressRowDivider()
+                ExerciseDetailRow(
+                    title: gymText("Last performed", "Останнє виконання", "Последний раз", languageCode: language),
+                    value: gymShortDate(last.date)
+                )
+            }
+            ProgressRowDivider()
+            ExerciseDetailRow(
+                title: gymText("Times done", "Виконано разів", "Выполнено раз", languageCode: language),
+                value: stats.sessionCount.formatted(.number.locale(locale))
+            )
+        }
+    }
+
+    // MARK: History
+
+    private func historyGroup(
+        _ exercise: Exercise,
+        sessions: [ExerciseHistoryGrouping.Session],
+        language: String
+    ) -> some View {
+        let recent = Array(sessions.prefix(Self.recentSessionLimit))
+        return ProgressGroup(title: gymText("History", "Історія", "История", languageCode: language)) {
+            if recent.isEmpty {
+                ExerciseDetailRow(
+                    title: gymText("No history yet", "Історії ще немає", "Истории пока нет", languageCode: language)
+                )
+            } else {
+                ForEach(Array(recent.enumerated()), id: \.element.id) { offset, session in
+                    if offset > 0 { ProgressRowDivider() }
+                    sessionRow(session, language: language)
+                }
+                if sessions.count > recent.count {
+                    ProgressRowDivider()
+                    ExerciseDetailRow(
+                        title: gymText("All history", "Уся історія", "Вся история", languageCode: language),
+                        showsChevron: true
+                    ) {
+                        perform(.history, exercise)
+                    }
+                }
+            }
+        }
+    }
+
+    private func sessionRow(_ session: ExerciseHistoryGrouping.Session, language: String) -> some View {
+        let sets = gymPlural(
+            session.setCount,
+            en: ("set", "sets"),
+            uk: ("підхід", "підходи", "підходів"),
+            ru: ("подход", "подхода", "подходов"),
+            languageCode: language
+        )
+        let best = session.sets.max {
+            $0.weight != $1.weight ? $0.weight < $1.weight : $0.reps < $1.reps
+        }
+        return ExerciseDetailRow(
+            title: gymShortDate(session.date),
+            subtitle: "\(session.setCount)\u{00A0}\(sets)",
+            value: best.map { Self.setText($0.weight, $0.reps) }
+        )
+    }
+
+    private static func setText(_ weight: Double, _ reps: Int) -> String {
+        let weightText = weight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 2)))
+        return "\(weightText)\u{00A0}\(gymLocalized("kg")) × \(reps)"
+    }
+
+    // MARK: Muscles
+
+    private func musclesGroup(_ exercise: Exercise, info: ExerciseInfo, language: String) -> some View {
+        ProgressGroup(title: gymText("Muscles", "М’язи", "Мышцы", languageCode: language)) {
+            ExerciseDetailRow(
+                title: gymText("Primary", "Основні", "Основные", languageCode: language),
+                value: info.primaryMuscleTitles.isEmpty
+                    ? "—"
+                    : info.primaryMuscleTitles.joined(separator: ", ")
+            )
+            if !info.secondaryMuscleTitles.isEmpty {
+                ProgressRowDivider()
+                ExerciseDetailRow(
+                    title: gymText("Secondary", "Додаткові", "Дополнительные", languageCode: language),
+                    value: info.secondaryMuscleTitles.joined(separator: ", ")
+                )
+            }
+            ProgressRowDivider()
+            ExerciseDetailRow(
+                title: gymText("Edit muscles", "Змінити м’язи", "Изменить мышцы", languageCode: language),
+                showsChevron: true
+            ) {
+                perform(.muscles, exercise)
+            }
+        }
+    }
+
+    // MARK: Actions
+
+    private func actionsGroup(_ exercise: Exercise, isCustom: Bool, language: String) -> some View {
+        ProgressGroup {
+            ExerciseDetailRow(
+                title: exercise.isFavorite
+                    ? gymText("Remove from favorites", "Прибрати з обраного", "Убрать из избранного", languageCode: language)
+                    : gymText("Add to favorites", "Додати в обране", "В избранное", languageCode: language)
+            ) {
+                perform(.toggleFavorite, exercise)
+            }
+            ProgressRowDivider()
+            ExerciseDetailRow(title: gymLocalized("Weight steps"), showsChevron: true) {
+                perform(.edit, exercise)
+            }
+            if isCustom {
+                ProgressRowDivider()
+                ExerciseDetailRow(
+                    title: gymText("Edit", "Змінити", "Изменить", languageCode: language),
+                    showsChevron: true
+                ) {
+                    perform(.edit, exercise)
+                }
+            }
+            ProgressRowDivider()
+            ExerciseDetailRow(title: gymLocalized("Delete", languageCode: language), isDestructive: true) {
+                perform(.delete, exercise)
+            }
         }
     }
 }

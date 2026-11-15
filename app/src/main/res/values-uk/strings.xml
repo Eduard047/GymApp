@@ -1162,7 +1162,7 @@
     <string name="splash_wordmark">GymApp</string>
     <string name="splash_loading">Готуємо твою сесію…</string>
 
-    <string name="exercise_history_sessions">Тренування</string>
+    <string name="exercise_history_sessions">Виконано разів</string>
     <string name="exercise_history_max_weight">Макс. вага</string>
     <string name="exercise_history_volume">Загальний обсяг</string>
     <string name="exercise_history_empty">Для цієї вправи ще немає історії</string>
@@ -1457,7 +1457,7 @@
     <string name="exercise_card_auto_mapping">Автозіставлення</string>
     <string name="exercise_card_muscle_groups">Групи м’язів</string>
     <string name="exercise_load_option_count">Ваг: %1$d</string>
-    <string name="exercise_load_profile_action">Ваги тренажера</string>
+    <string name="exercise_load_profile_action">Крок ваги</string>
     <string name="exercise_load_profile_eyebrow">Налаштування тренажера</string>
     <string name="exercise_load_profile_supporting">Вкажи точні ваги, доступні на цьому тренажері. Розумний тренер рекомендуватиме лише ці положення; ручні ваги та історія не зміняться.</string>
     <string name="exercise_load_direction_title">Що робить вправу важчою?</string>
@@ -1848,4 +1848,27 @@
     <string name="vs_last_best_set_change">%1$s → %2$s</string>
     <string name="vs_last_arrow_up_description">Більше, ніж минулого разу</string>
     <string name="vs_last_arrow_down_description">Менше, ніж минулого разу</string>
+    <string name="exercise_detail_title">Вправа</string>
+    <string name="exercise_detail_best_header">Найкращий результат</string>
+    <string name="exercise_detail_best_set">Найкращий підхід</string>
+    <string name="exercise_detail_best_reps">Повторень: %1$d</string>
+    <string name="exercise_detail_one_rm">Розрахунковий 1ПМ</string>
+    <string name="exercise_detail_last_performed">Востаннє</string>
+    <string name="exercise_detail_history_all">Уся історія</string>
+    <string name="exercise_detail_muscles_header">М’язи</string>
+    <string name="exercise_detail_muscles_primary">Основні</string>
+    <string name="exercise_detail_muscles_secondary">Додаткові</string>
+    <string name="exercise_detail_muscles_edit">Змінити м’язи</string>
+    <string name="exercise_detail_favorite_add">В обране</string>
+    <string name="exercise_detail_favorite_remove">Прибрати з обраного</string>
+    <string name="exercise_detail_edit">Змінити</string>
+    <string name="exercise_filter_button">Фільтр</string>
+    <string name="exercise_filter_remove_named">Прибрати фільтр: %1$s</string>
+    <string name="exercise_equipment_barbell">Штанга</string>
+    <string name="exercise_equipment_dumbbell">Гантелі</string>
+    <string name="exercise_equipment_cable">Блок</string>
+    <string name="exercise_equipment_machine">Тренажер</string>
+    <string name="exercise_equipment_plate">Диск</string>
+    <string name="exercise_equipment_band">Гумка</string>
+    <string name="exercise_equipment_bodyweight">Власна вага</string>
 </resources>

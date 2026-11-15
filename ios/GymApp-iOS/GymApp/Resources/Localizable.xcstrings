@@ -8388,22 +8388,6 @@
         }
       }
     },
-    "Machine weights" : {
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Веса тренажёра"
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ваги тренажера"
-          }
-        }
-      }
-    },
     "Maintenance" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -15102,6 +15086,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Вага"
+          }
+        }
+      }
+    },
+    "Weight steps" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Шаг веса"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Крок ваги"
           }
         }
       }

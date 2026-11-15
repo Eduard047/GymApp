@@ -1120,7 +1120,7 @@
     <string name="splash_wordmark">GymApp</string>
     <string name="splash_loading">Preparing your session…</string>
 
-    <string name="exercise_history_sessions">Sessions</string>
+    <string name="exercise_history_sessions">Times done</string>
     <string name="exercise_history_max_weight">Max weight</string>
     <string name="exercise_history_volume">Total volume</string>
     <string name="exercise_history_empty">No history for this exercise yet</string>
@@ -1407,7 +1407,7 @@
     <string name="exercise_card_auto_mapping">Auto mapping</string>
     <string name="exercise_card_muscle_groups">Muscle groups</string>
     <string name="exercise_load_option_count">%1$d weights</string>
-    <string name="exercise_load_profile_action">Machine weights</string>
+    <string name="exercise_load_profile_action">Weight steps</string>
     <string name="exercise_load_profile_eyebrow">Machine setup</string>
     <string name="exercise_load_profile_supporting">Enter the exact weights available on this machine. Smart Coach will only recommend these positions; manual workout weights and history stay unchanged.</string>
     <string name="exercise_load_direction_title">What makes the exercise harder?</string>
@@ -1792,4 +1792,27 @@
     <string name="vs_last_best_set_change">%1$s → %2$s</string>
     <string name="vs_last_arrow_up_description">Higher than last time</string>
     <string name="vs_last_arrow_down_description">Lower than last time</string>
+    <string name="exercise_detail_title">Exercise</string>
+    <string name="exercise_detail_best_header">Best result</string>
+    <string name="exercise_detail_best_set">Best set</string>
+    <string name="exercise_detail_best_reps">Reps: %1$d</string>
+    <string name="exercise_detail_one_rm">Estimated 1RM</string>
+    <string name="exercise_detail_last_performed">Last performed</string>
+    <string name="exercise_detail_history_all">All history</string>
+    <string name="exercise_detail_muscles_header">Muscles</string>
+    <string name="exercise_detail_muscles_primary">Primary</string>
+    <string name="exercise_detail_muscles_secondary">Secondary</string>
+    <string name="exercise_detail_muscles_edit">Edit muscles</string>
+    <string name="exercise_detail_favorite_add">Add to favorites</string>
+    <string name="exercise_detail_favorite_remove">Remove from favorites</string>
+    <string name="exercise_detail_edit">Edit</string>
+    <string name="exercise_filter_button">Filter</string>
+    <string name="exercise_filter_remove_named">Remove filter: %1$s</string>
+    <string name="exercise_equipment_barbell">Barbell</string>
+    <string name="exercise_equipment_dumbbell">Dumbbells</string>
+    <string name="exercise_equipment_cable">Cable</string>
+    <string name="exercise_equipment_machine">Machine</string>
+    <string name="exercise_equipment_plate">Plate</string>
+    <string name="exercise_equipment_band">Band</string>
+    <string name="exercise_equipment_bodyweight">Bodyweight</string>
 </resources>

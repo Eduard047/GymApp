@@ -14,7 +14,10 @@ test("Android persisted-delete controls name the exact visible target", async ()
       readFile("app/src/main/res/values/strings.xml", "utf8"),
       readFile("app/src/main/res/values-uk/strings.xml", "utf8"),
       readFile("app/src/main/res/values-ru/strings.xml", "utf8"),
-      readFile("app/src/main/java/com/example/gymapp/ui/screens/ExerciseListScreen.kt", "utf8"),
+      Promise.all([
+        readFile("app/src/main/java/com/example/gymapp/ui/screens/ExerciseListScreen.kt", "utf8"),
+        readFile("app/src/main/java/com/example/gymapp/ui/screens/ExerciseLibraryComponents.kt", "utf8")
+      ]).then(parts => parts.join("\n")),
       readFile("app/src/main/java/com/example/gymapp/ui/screens/WorkoutDetailScreen.kt", "utf8"),
       readFile("app/src/main/java/com/example/gymapp/ui/screens/ExerciseProgressScreen.kt", "utf8"),
       readFile("app/src/main/java/com/example/gymapp/ui/screens/WorkoutListScreen.kt", "utf8")

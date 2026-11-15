@@ -19821,12 +19821,35 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(missions.contains("private var missionPeriodControl"))
         XCTAssertTrue(activeWorkout.contains("if dynamicTypeSize.isAccessibilitySize"))
         XCTAssertTrue(activeWorkout.contains("private func liveSetIndicators"))
-        XCTAssertTrue(exercises.contains("isSelected: muscleFilter == nil"))
-        XCTAssertTrue(exercises.contains("isSelected: muscleFilter == muscle.id"))
-        XCTAssertTrue(exercises.contains(
-            "private func filterChip(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View"
-        ))
-        XCTAssertTrue(exercises.contains(".accessibilityAddTraits(isSelected ? .isSelected : [])"))
+        // Package D: one filter button + one removable token instead of a chip row; the filter
+        // button still reports its selected state.
+        XCTAssertFalse(exercises.contains("private func filterChip("))
+        XCTAssertTrue(exercises.contains("private func filterToken(_ title: String) -> some View"))
+        XCTAssertTrue(exercises.contains(".accessibilityAddTraits(isFilterCustomized ? .isSelected : [])"))
+    }
+
+    func testIOSExercisesListOpensDetailAndMovesRowActionsToSwipeAndContextMenu() throws {
+        let exercises = try iosSource("GymApp/UI/Screens/ExercisesView.swift")
+        // Rows push a detail screen that keeps the shell banner inset.
+        XCTAssertTrue(exercises.contains("NavigationLink(value: exercise.id)"))
+        XCTAssertTrue(exercises.contains(".navigationDestination(for: UUID.self)"))
+        XCTAssertTrue(exercises.contains("private struct ExerciseDetailView: View"))
+        XCTAssertTrue(exercises.contains(".gymTopBannerInset()"))
+        // Favourite is a swipe action; the old overflow items live in a context menu.
+        XCTAssertTrue(exercises.contains(".swipeActions(edge: .trailing, allowsFullSwipe: true)"))
+        XCTAssertTrue(exercises.contains(".contextMenu {"))
+        XCTAssertFalse(exercises.contains("ellipsis.circle"))
+        XCTAssertFalse(exercises.contains("private func favoriteButton("))
+        // 44pt preview with radius 10, names through the no-break helper.
+        XCTAssertTrue(exercises.contains("width: 44,\n            height: 44,"))
+        XCTAssertTrue(exercises.contains("cornerRadius: 10,"))
+        XCTAssertTrue(exercises.contains("gymExerciseDisplayName(displayName)"))
+        // Copy: "Machine weights" is now "Weight steps"; the history count is "Times done".
+        XCTAssertFalse(exercises.contains("\"Machine weights\""))
+        XCTAssertTrue(exercises.contains("\"Weight steps\""))
+        XCTAssertTrue(exercises.contains("\"Выполнено раз\""))
+        XCTAssertEqual(gymLocalized("Weight steps", languageCode: "ru"), "Шаг веса")
+        XCTAssertEqual(gymLocalized("Weight steps", languageCode: "uk"), "Крок ваги")
     }
 
     func testIOSWorkoutFeedbackIsANativeSegmentedControlWithAccessibleFallback() throws {
