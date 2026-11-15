@@ -119,7 +119,7 @@ internal val GymSheetHandleTopPadding: Dp = 8.dp
 
 /** DESIGN `scrim`: rgba(7,19,33,0.40) in light, rgba(0,0,0,0.56) in dark. */
 internal fun gymSheetScrimColor(isDark: Boolean): Color =
-    if (isDark) Color(0f, 0f, 0f, 0.56f) else Color(7 / 255f, 19 / 255f, 33 / 255f, 0.40f)
+    if (isDark) Color(0f, 0f, 0f, 0.56f) else Color(0f, 0f, 0f, 0.40f)
 
 @Composable
 private fun GymSheetDragHandle() {

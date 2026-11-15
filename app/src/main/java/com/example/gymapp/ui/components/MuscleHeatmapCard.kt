@@ -417,7 +417,7 @@ private fun MuscleBodyMapCanvas(
 ) {
     // Every region is one step of the shared blue scale; the idle figure is step 0.
     val dark = isSystemInDarkTheme()
-    val outlineColor = if (dark) Color(0xFFA7B6CB).copy(alpha = 0.45f) else Color(0xFF60708A).copy(alpha = 0.55f)
+    val outlineColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (dark) 0.45f else 0.55f)
     val frontRegions = remember {
         SOURCE_FRONT_MUSCLE_REGIONS.map(::parseSourceRegion)
     }

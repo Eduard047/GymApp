@@ -9,21 +9,21 @@ import WidgetKit
 /// sync with `ios/GymApp-iOS/GymApp/UI/Theme/GymTheme.swift`.
 private enum LiveActivityColor {
     /// `tonal-hero` background of the lock-screen card.
-    static let surface = adaptive(light: 0xEEF4FF, dark: 0x10233A)
+    static let surface = adaptive(light: 0xFFFFFF, dark: 0x1C1C1E)
     /// `hairline-hero`: card border and progress track.
-    static let hairline = adaptive(light: 0xDCE5F2, dark: 0x22395A)
+    static let hairline = adaptive(light: 0xE5E5EA, dark: 0x38383A)
     /// `text-on-hero`.
-    static let text = adaptive(light: 0x10233F, dark: 0xF2F6FC)
+    static let text = adaptive(light: 0x000000, dark: 0xFFFFFF)
     /// `text-muted` (supporting text on the hero surface).
-    static let textMuted = adaptive(light: 0x596881, dark: 0xA7B6CB)
+    static let textMuted = adaptive(light: 0x666669, dark: 0x98989F)
     /// `tonal-hero-tile`: secondary capsule fill.
-    static let tile = adaptive(light: 0xFFFFFF, dark: 0x172C47)
+    static let tile = adaptive(light: 0xF2F2F7, dark: 0x2C2C2E)
     /// `accent-mark`: progress fill, glyphs, countdown.
-    static let mark = adaptive(light: 0x216BD7, dark: 0x7FB2FF)
+    static let mark = adaptive(light: 0x007AFF, dark: 0x0A84FF)
     /// `accent-text-hero` / `accent-text`: secondary capsule label.
-    static let actionText = adaptive(light: 0x1F64C9, dark: 0x8BB9FF)
+    static let actionText = adaptive(light: 0x0062CC, dark: 0x409CFF)
     /// `accent-fill`: primary capsule, carries white text.
-    static let fill = adaptive(light: 0x216BD7, dark: 0x2E72D2)
+    static let fill = adaptive(light: 0x007AFF, dark: 0x0A84FF)
     static let onFill = Color.white
 
     private static func adaptive(light: UInt32, dark: UInt32) -> Color {

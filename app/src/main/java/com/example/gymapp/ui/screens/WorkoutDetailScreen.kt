@@ -136,13 +136,14 @@ import com.example.gymapp.util.keepNumberWithUnit
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
 
+// Apple system grey / blue / green / yellow / orange / red (dark set; non-text marks, >= 3:1 on the dark surface).
 private val GARMIN_ZONE_COLORS = listOf(
-    Color(0xFF718096),
-    Color(0xFF4EA8DE),
-    Color(0xFF48BB78),
-    Color(0xFFF6C453),
-    Color(0xFFF28C45),
-    Color(0xFFE45756)
+    Color(0xFF8E8E93),
+    Color(0xFF0A84FF),
+    Color(0xFF30D158),
+    Color(0xFFFFD60A),
+    Color(0xFFFF9F0A),
+    Color(0xFFFF453A)
 )
 
 internal data class WorkoutDetailControlVisibility(

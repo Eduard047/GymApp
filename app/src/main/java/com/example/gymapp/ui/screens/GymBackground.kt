@@ -7,7 +7,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
-/** Flat screen background: Air Canvas in light, Deep Water in dark (the theme background). */
+/** Flat screen background: system grouped background (#F2F2F7) in light, black in dark (the theme background). */
 @Composable
 fun GymBackground(
     modifier: Modifier = Modifier,

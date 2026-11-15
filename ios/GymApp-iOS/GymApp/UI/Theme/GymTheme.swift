@@ -3,8 +3,8 @@ import UIKit
 
 /// Shared visual tokens for the native GymApp interface.
 ///
-/// Airy blue-white surfaces keep content quiet while aquatic color is reserved
-/// for focus, selection, and progress. Material stays on the functional layer.
+/// Neutral Apple system palette: black / grouped-gray grounds with system blue
+/// reserved for focus, selection, and progress. Material stays on the functional layer.
 public enum GymTheme {
     /// Fluid Focus spacing follows a compact four-point rhythm. Screen code can
     /// use these names instead of drifting between nearly identical insets.
@@ -27,68 +27,78 @@ public enum GymTheme {
         public static let utility = Font.system(.caption, design: .monospaced, weight: .semibold)
     }
 
-    public static let primary = adaptive(light: 0x216BD7, dark: 0x8BB9FF)
-    public static let primaryAction = adaptive(light: 0x216BD7, dark: 0x2E72D2)
-    /// Brand blue (`active-current` in DESIGN.md) tuned as a *fill* that carries
-    /// `onPrimary` (white) text/icons directly on top of it, e.g. a solid button
-    /// or hero card background. Unlike `primary` (a light-mode-only accent that
-    /// intentionally pales in dark mode for use as foreground/tint), this stays
-    /// dark enough in both appearances for white-on-fill contrast: light
-    /// #216BD7 keeps ~5.1:1, dark #2E72D2 keeps ~4.7:1 against white.
-    public static let brandFill = adaptive(light: 0x216BD7, dark: 0x2E72D2)
+    /// Accent tint and small accent text. Apple system blue, split by contrast:
+    /// light #0062CC (system blue #007AFF darkened, same hue) is 5.2:1 on #F2F2F7
+    /// and 4.62:1 on #E5E5EA; dark #409CFF is 6.0:1 on #1C1C1E and 4.92:1 on #2C2C2E.
+    public static let primary = adaptive(light: 0x0062CC, dark: 0x409CFF)
+    public static let primaryAction = adaptive(light: 0x007AFF, dark: 0x0A84FF)
+    /// Apple system blue as a *fill* that carries `onPrimary` (white) text/icons
+    /// directly on top of it, e.g. a solid button or hero card background. Filled
+    /// button labels need 3:1: white is 4.02:1 on light #007AFF and 3.65:1 on dark
+    /// #0A84FF. `primary` is the text-safe variant for small text and tints.
+    public static let brandFill = adaptive(light: 0x007AFF, dark: 0x0A84FF)
     public static let onPrimary = Color.white
-    public static let secondary = adaptive(light: 0x23815E, dark: 0x77DDB7)
-    public static let tertiary = adaptive(light: 0x6753D6, dark: 0xB4A6FF)
+    /// Recovery / success. Text-safe in both appearances: light #1C7430 (system green
+    /// #34C759 darkened) is 5.24:1 on #F2F2F7; dark #30D158 is 6.89:1 on #2C2C2E.
+    public static let secondary = adaptive(light: 0x1C7430, dark: 0x30D158)
+    /// Momentum violet. Light system indigo #5856D6 (5.06:1 on #F2F2F7); dark #7D7AFF
+    /// is the text-safe indigo (4.94:1 on #1C1C1E).
+    public static let tertiary = adaptive(light: 0x5856D6, dark: 0x7D7AFF)
     /// Effort coral (`record` in DESIGN.md): PR / record marks only.
-    public static let record = adaptive(light: 0xFF6F66, dark: 0xFF9D94)
-    /// Label on a solid `record` fill: deep navy (about 5.7:1 on #FF6F66, 8:1 on #FF9D94).
-    public static let onRecord = adaptive(light: 0x10233F, dark: 0x10233F)
+    public static let record = adaptive(light: 0xFF6961, dark: 0xFF6961)
+    /// Label on a solid `record` fill: black (7.45:1 on #FF6961).
+    public static let onRecord = adaptive(light: 0x000000, dark: 0x000000)
 
-    public static let background = adaptive(light: 0xF7FAFF, dark: 0x071321)
-    public static let surface = adaptive(light: 0xFFFFFF, dark: 0x0D1D30)
-    public static let surfaceVariant = adaptive(light: 0xEAF2FF, dark: 0x142A43)
+    public static let background = adaptive(light: 0xF2F2F7, dark: 0x000000)
+    public static let surface = adaptive(light: 0xFFFFFF, dark: 0x1C1C1E)
+    public static let surfaceVariant = adaptive(light: 0xE5E5EA, dark: 0x2C2C2E)
 
-    public static let textPrimary = adaptive(light: 0x10233F, dark: 0xF4F8FF)
-    public static let textSecondary = adaptive(light: 0x60708A, dark: 0xAABBD1)
-    public static let outline = adaptive(light: 0xB7C4D7, dark: 0x49617D)
-    public static let outlineSoft = adaptive(light: 0xDCE5F2, dark: 0x263E59)
-    public static let error = adaptive(light: 0xB42318, dark: 0xFFB4AC)
+    public static let textPrimary = adaptive(light: 0x000000, dark: 0xFFFFFF)
+    /// Light #666669 is 5.13:1 on #F2F2F7 and 4.56:1 on #E5E5EA (system gray #6C6C70
+    /// is 4.16:1 there); dark #98989F is 5.94:1 on #1C1C1E and 4.86:1 on #2C2C2E.
+    public static let textSecondary = adaptive(light: 0x666669, dark: 0x98989F)
+    public static let outline = adaptive(light: 0xC6C6C8, dark: 0x545458)
+    public static let outlineSoft = adaptive(light: 0xE5E5EA, dark: 0x38383A)
+    /// Destructive / error. Text-safe: light #D70015 (system red text variant) is 4.83:1 on
+    /// #F2F2F7 (4.29:1 on #E5E5EA); dark #FF6961 is the accessible system red (4.94:1 on #2C2C2E).
+    public static let error = adaptive(light: 0xD70015, dark: 0xFF6961)
     /// Text/icons on a solid `error` fill (`on-destructive` in DESIGN.md): white on
-    /// light #B42318, deep red #690005 on the pale dark-mode #FFB4AC.
-    public static let onError = adaptive(light: 0xFFFFFF, dark: 0x690005)
-    /// Caution (`warning` in DESIGN.md): light #C87908, dark #FFC56B.
-    public static let warning = adaptive(light: 0xC87908, dark: 0xFFC56B)
+    /// light #D70015, black on dark #FF6961 (7.45:1; white would be 2.6:1).
+    public static let onError = adaptive(light: 0xFFFFFF, dark: 0x000000)
+    /// Caution (`warning` in DESIGN.md): light #BD3100 (system orange text variant,
+    /// 5.22:1 on #F2F2F7), dark #FF9F0A (8.28:1 on #1C1C1E).
+    public static let warning = adaptive(light: 0xBD3100, dark: 0xFF9F0A)
 
-    /// Flat tonal hero/brand surface (no gradient): light #EEF4FF, dark #10233A.
-    public static let heroSurface = adaptive(light: 0xEEF4FF, dark: 0x10233A)
-    /// Hairline border of the tonal hero surface; also the progress track on it.
-    public static let heroOutline = adaptive(light: 0xDCE5F2, dark: 0x22395A)
+    /// Flat hero/brand surface (no gradient): light #FFFFFF, dark #1C1C1E.
+    public static let heroSurface = adaptive(light: 0xFFFFFF, dark: 0x1C1C1E)
+    /// Hairline border of the hero surface; also the progress track on it.
+    public static let heroOutline = adaptive(light: 0xE5E5EA, dark: 0x38383A)
     /// Title and key numbers on `heroSurface` (Clear Label).
-    public static let onHero = adaptive(light: 0x10233F, dark: 0xF2F6FC)
-    /// Supporting text on `heroSurface` (Muted Label), >= 5.0:1 in both modes
-    /// (light #596881 is 5.11:1 on #EEF4FF; same hue as #60708A, darker only).
-    public static let onHeroSecondary = adaptive(light: 0x596881, dark: 0xA7B6CB)
+    public static let onHero = adaptive(light: 0x000000, dark: 0xFFFFFF)
+    /// Supporting text on `heroSurface` (Muted Label), >= 4.5:1 on `heroSurface` and
+    /// `heroTile` in both modes (same values as `textSecondary`).
+    public static let onHeroSecondary = adaptive(light: 0x666669, dark: 0x98989F)
     /// Inner tiles, pills and chips sitting on `heroSurface`.
-    public static let heroTile = adaptive(light: 0xFFFFFF, dark: 0x172C47)
-    /// The single emphasised value, progress fill and link-like label on `heroSurface`.
-    public static let heroAccent = adaptive(light: 0x216BD7, dark: 0x7FB2FF)
+    public static let heroTile = adaptive(light: 0xF2F2F7, dark: 0x2C2C2E)
+    /// The single emphasised value, progress fill and link-like label on `heroSurface`
+    /// (fill/stroke colour: system blue, 4.02:1 on white and 4.66:1 on #1C1C1E).
+    public static let heroAccent = adaptive(light: 0x007AFF, dark: 0x0A84FF)
     /// Emphasised or link-like *text* on `heroSurface` / `heroTile`. Use this instead of
-    /// `heroAccent` for glyphs; `heroAccent` stays the fill/stroke colour. Light
-    /// #1F64C9 is 5.11:1 on #EEF4FF (same hue as #216BD7, darker only).
-    public static let heroAccentText = adaptive(light: 0x1F64C9, dark: 0x7FB2FF)
-    /// Secondary action label on `heroSurface` / `heroTile`, >= 5.0:1 on both
-    /// (light #1F64C9 is 5.11:1 on #EEF4FF). Dark is the shared `accent-text`
-    /// #8BB9FF (the former #8AB8FF collapsed into it).
-    public static let heroActionLabel = adaptive(light: 0x1F64C9, dark: 0x7FB2FF)
+    /// `heroAccent` for glyphs. Light #0062CC is 5.8:1 on white and 5.2:1 on #F2F2F7;
+    /// dark #409CFF is 6.0:1 on #1C1C1E and 4.92:1 on #2C2C2E.
+    public static let heroAccentText = adaptive(light: 0x0062CC, dark: 0x409CFF)
+    /// Secondary action label on `heroSurface` / `heroTile` (same values as
+    /// `heroAccentText`).
+    public static let heroActionLabel = adaptive(light: 0x0062CC, dark: 0x409CFF)
 
     // MARK: One blue heat scale (activity heatmap and muscle map)
     // Five opaque steps on `heroSurface`: 0 = empty, 1...4 = load. Single hue,
     // lightness monotone (deeper in light, brighter in dark). No gradients or alpha.
 
-    private static let heatLightFills: [UInt32] = [0xFFFFFF, 0xC4D9F8, 0x7FAAEB, 0x216BD7, 0x164396]
-    private static let heatDarkFills: [UInt32] = [0x172C47, 0x1E4378, 0x2B63B0, 0x4A8EEF, 0x7FB2FF]
-    private static let heatLightText: [UInt32] = [0x10233F, 0x10233F, 0x10233F, 0xFFFFFF, 0xFFFFFF]
-    private static let heatDarkText: [UInt32] = [0xF2F6FC, 0xF2F6FC, 0xF2F6FC, 0x071321, 0x071321]
+    private static let heatLightFills: [UInt32] = [0xE5E5EA, 0xCCE4FF, 0x99C9FF, 0x4DA3FF, 0x007AFF]
+    private static let heatDarkFills: [UInt32] = [0x2C2C2E, 0x0B3A6E, 0x0A5AAE, 0x0A73E6, 0x0A84FF]
+    private static let heatLightText: [UInt32] = [0x000000, 0x000000, 0x000000, 0x000000, 0x000000]
+    private static let heatDarkText: [UInt32] = [0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0x000000]
 
     /// Maps a 0...1 intensity to a heat step: (0, .25] -> 1 ... (.75, 1] -> 4; 0 -> 0.
     public static func heatStep(intensity: Double) -> Int {
@@ -109,14 +119,14 @@ public enum GymTheme {
     }
 
     /// "Today" ring drawn outside the cell (Active Current mark).
-    public static let heatRing = adaptive(light: 0x216BD7, dark: 0x7FB2FF)
+    public static let heatRing = adaptive(light: 0x007AFF, dark: 0x0A84FF)
 
     /// Hairline between muscle-map regions (Muted Label at 55% light, 45% dark).
     public static let heatRegionStroke = Color(
         uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark
-                ? UIColor(rgb: 0xA7B6CB, alpha: 0.45)
-                : UIColor(rgb: 0x60708A, alpha: 0.55)
+                ? UIColor(rgb: 0x98989F, alpha: 0.45)
+                : UIColor(rgb: 0x666669, alpha: 0.55)
         }
     )
 

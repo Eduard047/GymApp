@@ -10,61 +10,51 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonElevation
 import androidx.compose.material3.IconButtonColors
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 
 /*
- * Solid primary actions. In the dark appearance `colorScheme.primary` is the pale Active Current
- * `#8BB9FF`, which is right for text, icons, and marks but fails as a fill with a white label.
- * Filled primary controls therefore use the dedicated dark fill `#2E72D2` with white content
- * (4.7:1), matching iOS and the web app; the light appearance keeps `colorScheme.primary` /
- * `onPrimary` (`#216BD7` with white, 5.1:1) unchanged.
+ * Solid primary actions. `colorScheme.primary` is the text-safe accent blue (`#0062CC` light,
+ * `#409CFF` dark: >= 4.6:1 on every surface), right for text and icons but not the Apple fill.
+ * Filled primary controls therefore use the system blue fill per appearance (`#007AFF` light,
+ * `#0A84FF` dark) with a white label (4.02:1 / 3.65:1, filled-button labels need >= 3:1), matching iOS
+ * and the web app.
  */
 
 /**
- * DESIGN.md `accent-mark`: chart lines, rings, today marks and progress fills. Light equals
- * `colorScheme.primary`; dark is `#7FB2FF` (the pale `colorScheme.primary` `#8BB9FF` stays for text and icons).
+ * DESIGN.md `accent-mark`: chart lines, rings, today marks and progress fills. System blue per
+ * appearance (`#007AFF` light, `#0A84FF` dark); `colorScheme.primary` stays for text and icons.
  */
 @Composable
 fun accentMarkColor(): Color =
-    if (isSystemInDarkTheme()) AccentMarkNight else MaterialTheme.colorScheme.primary
+    if (isSystemInDarkTheme()) AccentMarkNight else SystemBlue
 
 /** Container of a solid primary control (button, FAB). */
 @Composable
 fun primaryActionContainerColor(): Color =
-    if (isSystemInDarkTheme()) BrandFillNight else MaterialTheme.colorScheme.primary
+    if (isSystemInDarkTheme()) BrandFillNight else BrandFill
 
 /** Label/icon color on a solid primary control. */
 @Composable
-fun primaryActionContentColor(): Color =
-    if (isSystemInDarkTheme()) Color.White else MaterialTheme.colorScheme.onPrimary
+fun primaryActionContentColor(): Color = Color.White
 
-/** Default colors of a filled primary [Button]; light appearance is identical to Material's default. */
+/** Default colors of a filled primary [Button]. */
 @Composable
 fun primaryButtonColors(): ButtonColors =
-    if (isSystemInDarkTheme()) {
-        ButtonDefaults.buttonColors(
-            containerColor = primaryActionContainerColor(),
-            contentColor = primaryActionContentColor()
-        )
-    } else {
-        ButtonDefaults.buttonColors()
-    }
+    ButtonDefaults.buttonColors(
+        containerColor = primaryActionContainerColor(),
+        contentColor = primaryActionContentColor()
+    )
 
 /** Default colors of a filled primary icon button. */
 @Composable
 fun primaryFilledIconButtonColors(): IconButtonColors =
-    if (isSystemInDarkTheme()) {
-        IconButtonDefaults.filledIconButtonColors(
-            containerColor = primaryActionContainerColor(),
-            contentColor = primaryActionContentColor()
-        )
-    } else {
-        IconButtonDefaults.filledIconButtonColors()
-    }
+    IconButtonDefaults.filledIconButtonColors(
+        containerColor = primaryActionContainerColor(),
+        contentColor = primaryActionContentColor()
+    )
 
 /**
  * Drop-in for `androidx.compose.material3.Button` whose default colors follow [primaryButtonColors].

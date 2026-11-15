@@ -1,4 +1,4 @@
 <resources>
-    <color name="launch_background">#FF071321</color>
-    <color name="active_workout_notification">#FF8BB9FF</color>
+    <color name="launch_background">#FF000000</color>
+    <color name="active_workout_notification">#FF0A84FF</color>
 </resources>

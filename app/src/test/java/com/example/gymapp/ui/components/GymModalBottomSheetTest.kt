@@ -13,7 +13,7 @@ class GymModalBottomSheetTest {
     @Test
     fun scrimMatchesDesignTokensPerTheme() {
         assertEquals(Color(0f, 0f, 0f, 0.56f), gymSheetScrimColor(isDark = true))
-        assertEquals(Color(7 / 255f, 19 / 255f, 33 / 255f, 0.40f), gymSheetScrimColor(isDark = false))
+        assertEquals(Color(0f, 0f, 0f, 0.40f), gymSheetScrimColor(isDark = false))
     }
 
     @Test

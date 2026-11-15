@@ -12,65 +12,88 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = CobaltNight,
-    onPrimary = Night,
-    primaryContainer = Color(0xFF173D70),
+    primary = SystemBlueTextNight,
+    onPrimary = Color.Black,
+    primaryContainer = BlueSoftNight,
     onPrimaryContainer = Frost,
-    secondary = Color(0xFF77DDB7),
-    onSecondary = Night,
-    secondaryContainer = Color(0xFF163F3A),
+    secondary = RecoveryGreenNight,
+    onSecondary = Color.Black,
+    secondaryContainer = Color(0xFF20402A),
     onSecondaryContainer = Frost,
-    tertiary = AmberNight,
-    onTertiary = Night,
-    tertiaryContainer = Color(0xFF3A315F),
+    tertiary = MomentumVioletNight,
+    onTertiary = Color.Black,
+    tertiaryContainer = Color(0xFF292946),
     onTertiaryContainer = Frost,
     error = DestructiveNight,
     onError = OnDestructiveNight,
+    errorContainer = Color(0xFF4E2524),
+    onErrorContainer = Frost,
     background = Night,
     surface = NightSurface,
-    surfaceVariant = NightSurfaceAlt,
-    // Dialogs, menus and date pickers read these roles; keep them on the GymApp inner-tile
-    // colour instead of the stock Material violet-grey container.
+    surfaceVariant = NightRaised,
+    // Neutral surfaces never take a primary tint (no tonal-elevation blue).
+    surfaceTint = Color.Transparent,
+    // Dialogs, menus and date pickers read these roles; keep them on the raised-tile colour
+    // instead of the stock Material violet-grey container.
     // Sheets use GymModalBottomSheet (solid surface container); these roles stay on the screen background.
+    surfaceDim = Night,
+    surfaceBright = NightRaised,
+    surfaceContainerLowest = Night,
     surfaceContainerLow = Night,
     surfaceContainer = HeroTileNight,
     surfaceContainerHigh = HeroTileNight,
+    surfaceContainerHighest = NightFill,
+    inverseSurface = Mist,
+    inverseOnSurface = Ink,
+    inversePrimary = SystemBlue,
     onSurfaceVariant = FrostMuted,
     onSurface = Frost,
     onBackground = Frost,
-    outline = Color(0xFF49617D),
-    outlineVariant = Color(0xFF263E59)
+    outline = NightOutline,
+    outlineVariant = NightSeparator,
+    scrim = Color.Black
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Cobalt,
+    primary = SystemBlueText,
     onPrimary = Color.White,
-    primaryContainer = CobaltSoft,
-    onPrimaryContainer = Navy,
-    secondary = RecoveryMint,
+    primaryContainer = BlueSoft,
+    onPrimaryContainer = Ink,
+    secondary = RecoveryGreen,
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFE6FBF4),
+    secondaryContainer = Color(0xFFE3F7E8),
     onSecondaryContainer = Ink,
     tertiary = MomentumViolet,
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFEDE9FF),
+    tertiaryContainer = Color(0xFFEBEBFA),
     onTertiaryContainer = Ink,
     error = DestructiveLight,
     onError = Color.White,
+    errorContainer = Color(0xFFFFE7E6),
+    onErrorContainer = Ink,
     background = Canvas,
     surface = Paper,
     surfaceVariant = Mist,
-    // Dialogs, menus and date pickers read these roles; keep them on the GymApp inner-tile
-    // colour instead of the stock Material violet-grey container.
+    surfaceTint = Color.Transparent,
+    // Dialogs, menus and date pickers read these roles; keep them on white instead of the stock
+    // Material violet-grey container.
     // Sheets use GymModalBottomSheet (solid surface container); these roles stay on the screen background.
+    surfaceDim = Mist,
+    surfaceBright = Paper,
+    surfaceContainerLowest = Paper,
     surfaceContainerLow = Canvas,
-    surfaceContainer = HeroTile,
-    surfaceContainerHigh = HeroTile,
+    surfaceContainer = Paper,
+    surfaceContainerHigh = Paper,
+    surfaceContainerHighest = Mist,
+    inverseSurface = NightRaised,
+    inverseOnSurface = Frost,
+    inversePrimary = SystemBlueNight,
     onSurfaceVariant = InkMuted,
     onSurface = Ink,
     onBackground = Ink,
-    outline = Color(0xFFB7C4D7),
-    outlineVariant = Color(0xFFDCE5F2)
+    outline = SeparatorLight,
+    outlineVariant = Mist,
+    scrim = Color.Black
 )
 
 @Composable

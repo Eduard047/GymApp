@@ -463,7 +463,7 @@ private struct GymReorderItemModifier: ViewModifier {
         let followOffset = isActive ? coordinator.dragOffset : 0
         let shadowColor = colorScheme == .dark
             ? Color.black.opacity(0.40)
-            : Color(red: 16 / 255, green: 35 / 255, blue: 63 / 255).opacity(0.16)
+            : Color.black.opacity(0.16)
         content
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                 coordinator.heights[id] = height

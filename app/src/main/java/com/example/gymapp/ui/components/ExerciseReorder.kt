@@ -345,7 +345,7 @@ internal fun rememberExerciseReorderState(listState: LazyListState): ExerciseReo
     }
     SideEffect {
         state.reduceMotion = reduceMotion
-        state.shadowColor = if (dark) Color.Black.copy(alpha = 0.40f) else Color(0xFF10233F).copy(alpha = 0.16f)
+        state.shadowColor = if (dark) Color.Black.copy(alpha = 0.40f) else Color.Black.copy(alpha = 0.16f)
     }
     // Backgrounding or leaving the screen mid-drag snaps back without a write.
     val lifecycleOwner = LocalLifecycleOwner.current

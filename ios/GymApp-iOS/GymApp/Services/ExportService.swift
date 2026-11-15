@@ -159,8 +159,8 @@ enum ExportService {
         let bottom: CGFloat = page.height - 44
         let lineHeight: CGFloat = 16
         let maxWidth = page.width - marginX * 2
-        let ink = UIColor(red: 20 / 255, green: 32 / 255, blue: 44 / 255, alpha: 1)
-        let bodyInk = UIColor(red: 45 / 255, green: 56 / 255, blue: 70 / 255, alpha: 1)
+        let ink = UIColor(red: 28 / 255, green: 28 / 255, blue: 30 / 255, alpha: 1)
+        let bodyInk = UIColor(red: 58 / 255, green: 58 / 255, blue: 60 / 255, alpha: 1)
         let titleAttributes: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: 18), .foregroundColor: ink]
         let headingAttributes: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: 12), .foregroundColor: ink]
         let bodyAttributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 10), .foregroundColor: bodyInk]

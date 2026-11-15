@@ -804,7 +804,7 @@ struct AddWorkoutView: View {
                                 )
                                 .background(
                                     selectedEffort == effort
-                                        ? GymTheme.primary
+                                        ? GymTheme.brandFill
                                         : GymTheme.primary.opacity(0.1),
                                     in: Capsule()
                                 )

@@ -84,6 +84,7 @@ import com.example.gymapp.ui.theme.HeroAccent
 import com.example.gymapp.ui.theme.HeroAccentText
 import com.example.gymapp.ui.theme.HeroActionLabel
 import com.example.gymapp.ui.theme.HeroAccentNight
+import com.example.gymapp.ui.theme.HeroAccentTextNight
 import com.example.gymapp.ui.theme.HeroActionLabelNight
 import com.example.gymapp.ui.theme.HeroOutline
 import com.example.gymapp.ui.theme.HeroOutlineNight
@@ -204,7 +205,7 @@ fun AppPanel(
 
 /**
  * Flat tonal hero palette (iOS `GymTheme.heroSurface`, PWA `--hero-surface`): one solid fill, a
- * hairline outline, dark text, solid white / navy inner tiles and a solid blue primary capsule.
+ * hairline outline, dark text, light-grey / raised-grey inner tiles and a solid blue primary capsule.
  */
 object HeroTone {
     val surface: Color @Composable get() = if (isSystemInDarkTheme()) HeroSurfaceNight else HeroSurface
@@ -215,7 +216,7 @@ object HeroTone {
     /** Progress fill and the one emphasized value per card. */
     val accent: Color @Composable get() = if (isSystemInDarkTheme()) HeroAccentNight else HeroAccent
     /** Text and glyph colour for the emphasized value; [accent] stays the fill colour. */
-    val accentText: Color @Composable get() = if (isSystemInDarkTheme()) HeroAccentNight else HeroAccentText
+    val accentText: Color @Composable get() = if (isSystemInDarkTheme()) HeroAccentTextNight else HeroAccentText
     /** Progress track (same as the outline). */
     val track: Color @Composable get() = outline
     /** Label colour of secondary (tonal or text) actions. */
@@ -226,14 +227,14 @@ object HeroTone {
 @Composable
 fun heroPrimaryButtonColors(): ButtonColors = brandButtonColors()
 
-/** Tonal secondary action inside a hero card: white / navy fill with an Active Current label. */
+/** Tonal secondary action inside a hero card: tile fill with an accent-blue label. */
 @Composable
 fun heroSecondaryButtonColors(): ButtonColors = ButtonDefaults.buttonColors(
     containerColor = HeroTone.tile,
     contentColor = HeroTone.actionLabel
 )
 
-/** Secondary outlined action inside a hero card: tonal white / navy fill, hairline, blue label. */
+/** Secondary outlined action inside a hero card: tonal tile fill, hairline, blue label. */
 @Composable
 fun heroSecondaryOutlinedColors(): ButtonColors = ButtonDefaults.outlinedButtonColors(
     containerColor = HeroTone.tile,
@@ -558,7 +559,7 @@ fun InfoPill(
     onHero: Boolean = false,
     maxLines: Int = 2
 ) {
-    // On a hero card the pill is a solid white / navy chip with the title colour; otherwise it is
+    // On a hero card the pill is a solid tile-coloured chip with the title colour; otherwise it is
     // a 12% tint of the accent.
     Surface(
         modifier = modifier,
