@@ -60,8 +60,7 @@ fun ContinueWorkoutBar(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
         color = HeroTone.surface,
-        shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, HeroTone.outline)
+        shape = RoundedCornerShape(20.dp)
     ) {
         Row(
             modifier = Modifier

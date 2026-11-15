@@ -71,7 +71,6 @@ import com.example.gymapp.ui.components.Weightlifter
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -179,6 +178,7 @@ import com.example.gymapp.util.formattedPluralStringResource
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import kotlinx.coroutines.FlowPreview
+import com.example.gymapp.ui.theme.TintedButton
 
 // Give the keyboard up to this long to open, and treat its height as final after it stops changing.
 private const val HISTORY_SEARCH_IME_WAIT_MILLIS = 1_500L
@@ -325,7 +325,7 @@ fun WorkoutListScreen(
                     title = stringResource(R.string.today_title),
                     trailing = if (uiState.hasAnyWorkout) {
                         {
-                            OutlinedButton(
+                            TintedButton(
                                 onClick = {
                                     listScope.launch { listState.animateScrollToItem(historyItemIndex) }
                                 },
@@ -651,7 +651,6 @@ private fun FocusLens(
             .fillMaxWidth()
             .clip(lensShape)
             .background(HeroTone.surface)
-            .border(BorderStroke(1.dp, HeroTone.outline), lensShape)
             .padding(if (hasCompletedToday) 18.dp else 22.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
@@ -760,7 +759,7 @@ private fun FocusLens(
         }
 
         if (!hasCompletedToday) {
-            OutlinedButton(
+            TintedButton(
                 onClick = { showPlanDetails = !showPlanDetails },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -811,7 +810,7 @@ private fun FocusLens(
             }
             // A solo workout keeps the pill visible, but a tap only asks to finish it first.
             friendPill(true)
-            OutlinedButton(
+            TintedButton(
                 onClick = { showActiveOptions = !showActiveOptions },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -838,7 +837,7 @@ private fun FocusLens(
                 )
             }
             if (showActiveOptions) {
-                OutlinedButton(
+                TintedButton(
                     onClick = onDiscardWorkout,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
                     shape = RoundedCornerShape(50),
@@ -865,7 +864,7 @@ private fun FocusLens(
                     fontWeight = FontWeight.Bold
                 )
             }
-            OutlinedButton(
+            TintedButton(
                 onClick = onCancelRetainedPlan,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
                 colors = heroSecondaryOutlinedColors(),
@@ -874,7 +873,7 @@ private fun FocusLens(
                 Text(stringResource(R.string.today_cancel_plan))
             }
         } else if (hasCompletedToday) {
-            OutlinedButton(
+            TintedButton(
                 onClick = onStartWorkout,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
                 colors = heroSecondaryOutlinedColors(),
@@ -906,7 +905,7 @@ private fun FocusLens(
                 Text(stringResource(R.string.today_train_anyway))
             }
             token?.let { launchToken ->
-                OutlinedButton(
+                TintedButton(
                     onClick = { onOpenPlan(launchToken) },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
                     colors = heroSecondaryOutlinedColors(),
@@ -949,7 +948,7 @@ private fun FocusLens(
                 )
             }
             launchToken?.let { token ->
-                OutlinedButton(
+                TintedButton(
                     onClick = { onOpenPlan(token) },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
                     colors = heroSecondaryOutlinedColors(),
@@ -967,7 +966,7 @@ private fun FocusLens(
                 hasRetainedWorkoutDraft = hasRetainedWorkoutDraft
             )
         ) {
-            OutlinedButton(
+            TintedButton(
                 onClick = onRepeatLastWorkout,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
                 colors = heroSecondaryOutlinedColors(),
@@ -1798,7 +1797,6 @@ private fun FirstWorkoutActivationCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
             .background(HeroTone.surface)
-            .border(BorderStroke(1.dp, HeroTone.outline), RoundedCornerShape(28.dp))
             .padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
@@ -1821,7 +1819,7 @@ private fun FirstWorkoutActivationCard(
                     fontWeight = FontWeight.Bold
                 )
             }
-            OutlinedButton(
+            TintedButton(
                 onClick = onCancelPlan,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
                 colors = heroSecondaryOutlinedColors(),
@@ -1966,7 +1964,7 @@ private fun TrainWithFriendPill(
             else -> R.string.today_friend_hint_pick
         }
     )
-    OutlinedButton(
+    TintedButton(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
@@ -2087,11 +2085,7 @@ private fun <T> ActivationChoiceRow(
                                 modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                                 color = if (isSelected) brandFillColor() else HeroTone.tile,
                                 contentColor = if (isSelected) Color.White else HeroTone.actionLabel,
-                                shape = RoundedCornerShape(50),
-                                border = BorderStroke(
-                                    1.dp,
-                                    if (isSelected) Color.Transparent else HeroTone.outline
-                                )
+                                shape = RoundedCornerShape(50)
                             ) {
                                 Box(
                                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),

@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -48,7 +47,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -102,6 +100,7 @@ import com.example.gymapp.ui.theme.GymDataTypography
 import com.example.gymapp.ui.theme.GymPanelShape
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.ui.theme.TintedButton
 
 private val DefaultAdaptiveContentWidth = 760.dp
 
@@ -182,18 +181,12 @@ fun AppPanel(
     val shape = GymPanelShape
     // A highlighted panel is the flat tonal hero surface with dark text, never a solid-blue fill.
     val panelColor = if (highlighted) HeroTone.surface else containerColor
-    val strokeColor = if (highlighted) {
-        HeroTone.outline
-    } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
-    }
 
     Surface(
         modifier = modifier,
         shape = shape,
         color = panelColor,
         contentColor = contentColor,
-        border = BorderStroke(1.dp, strokeColor),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
@@ -227,22 +220,25 @@ object HeroTone {
 @Composable
 fun heroPrimaryButtonColors(): ButtonColors = brandButtonColors()
 
-/** Tonal secondary action inside a hero card: tile fill with an accent-blue label. */
+/** Tinted secondary action inside a hero card: accent 15% capsule, accent label, no border. */
 @Composable
-fun heroSecondaryButtonColors(): ButtonColors = ButtonDefaults.buttonColors(
-    containerColor = HeroTone.tile,
-    contentColor = HeroTone.actionLabel
-)
+fun heroSecondaryButtonColors(): ButtonColors {
+    val primary = MaterialTheme.colorScheme.primary
+    return ButtonDefaults.buttonColors(
+        containerColor = primary.copy(alpha = 0.15f),
+        contentColor = HeroTone.actionLabel,
+        disabledContainerColor = primary.copy(alpha = 0.07f),
+        disabledContentColor = HeroTone.actionLabel.copy(alpha = 0.38f)
+    )
+}
 
-/** Secondary outlined action inside a hero card: tonal tile fill, hairline, blue label. */
+/** Secondary action inside a hero card used with an outlined button: same borderless tinted capsule. */
 @Composable
-fun heroSecondaryOutlinedColors(): ButtonColors = ButtonDefaults.outlinedButtonColors(
-    containerColor = HeroTone.tile,
-    contentColor = HeroTone.actionLabel
-)
+fun heroSecondaryOutlinedColors(): ButtonColors = heroSecondaryButtonColors()
 
+/** Secondary hero actions carry no outline; the tint is the affordance. */
 @Composable
-fun heroSecondaryBorder(): BorderStroke = BorderStroke(1.dp, HeroTone.outline)
+fun heroSecondaryBorder(): BorderStroke? = null
 
 /** Text-style secondary action inside a hero card (no fill). */
 @Composable
@@ -265,7 +261,6 @@ fun HeroPanel(
         shape = shape,
         color = HeroTone.surface,
         contentColor = title,
-        border = BorderStroke(1.dp, HeroTone.outline),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
@@ -311,7 +306,6 @@ fun BrandHeroPanel(
             modifier = modifier
                 .clip(GymPanelShape)
                 .background(HeroTone.surface)
-                .border(BorderStroke(1.dp, HeroTone.outline), GymPanelShape)
                 .padding(contentPadding)
         ) {
             content()
@@ -565,8 +559,7 @@ fun InfoPill(
         modifier = modifier,
         color = if (onHero) HeroTone.tile else accent.copy(alpha = 0.12f),
         contentColor = if (onHero) HeroTone.title else accent,
-        shape = RoundedCornerShape(999.dp),
-        border = BorderStroke(1.dp, if (onHero) HeroTone.outline else accent.copy(alpha = 0.22f))
+        shape = RoundedCornerShape(999.dp)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
@@ -1019,7 +1012,7 @@ fun SocialActionCard(
                 Text(primaryLabel, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             if (!secondaryLabel.isNullOrBlank() && onSecondary != null) {
-                OutlinedButton(
+                TintedButton(
                     onClick = onSecondary,
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth().heightIn(min = GymSpacing.MinimumTouch)

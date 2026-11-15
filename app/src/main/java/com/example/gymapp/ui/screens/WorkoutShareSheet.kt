@@ -18,7 +18,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import com.example.gymapp.ui.components.GymModalBottomSheet
 import com.example.gymapp.ui.components.GymSheetCloseRow
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
@@ -43,6 +42,7 @@ import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.HeroTone
 import com.example.gymapp.ui.components.heroSecondaryOutlinedColors
 import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.ui.theme.TintedButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -115,7 +115,7 @@ internal fun WorkoutShareSheet(
                             style = MaterialTheme.typography.bodyMedium,
                             color = HeroTone.supporting
                         )
-                        OutlinedButton(
+                        TintedButton(
                             onClick = onShareLink,
                             colors = heroSecondaryOutlinedColors(),
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -221,7 +221,7 @@ private fun WorkoutShareFriendRow(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
+                TintedButton(
                     onClick = onSendCopy,
                     enabled = sendCopyEnabled,
                     contentPadding = PaddingValues(horizontal = 8.dp),

@@ -47,7 +47,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.example.gymapp.ui.components.GymModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -88,6 +87,7 @@ import com.example.gymapp.ui.util.currentAppLanguageTag
 import java.util.UUID
 import kotlinx.coroutines.delay
 import com.example.gymapp.util.safeGetString
+import com.example.gymapp.ui.theme.TintedButton
 
 enum class VoiceTranscriptionError {
     Unavailable,
@@ -509,7 +509,7 @@ internal fun VoiceWorkoutDraftSheet(
                         val listeningState = stringResource(
                             if (isListening) R.string.voice_workout_state_listening else R.string.voice_workout_state_ready
                         )
-                        OutlinedButton(
+                        TintedButton(
                             onClick = ::toggleListening,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -644,7 +644,7 @@ internal fun VoiceWorkoutDraftSheet(
                                 .fillMaxWidth()
                                 .testTag("voice_workout_apply_add")
                         ) { Text(stringResource(R.string.voice_workout_add)) }
-                        OutlinedButton(
+                        TintedButton(
                             onClick = { showReplaceConfirmation = true },
                             enabled = canApply,
                             modifier = Modifier
@@ -729,7 +729,7 @@ private fun VoiceWorkoutBlockEditor(
         }
         Box {
             val chooseLabel = stringResource(R.string.voice_workout_choose_exercise)
-            OutlinedButton(
+            TintedButton(
                 onClick = { menuOpen = true },
                 modifier = Modifier
                     .fillMaxWidth()

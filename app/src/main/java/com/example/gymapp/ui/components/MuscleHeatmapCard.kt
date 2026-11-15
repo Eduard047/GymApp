@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -72,6 +71,7 @@ import java.util.Locale
 import kotlin.math.min
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
+import com.example.gymapp.ui.theme.TintedButton
 
 /** Legend swatches share the 4dp rounding of the iOS `HeatStepSwatch`, so they read as the squares they explain. */
 internal val HeatLegendShape = RoundedCornerShape(4.dp)
@@ -339,7 +339,7 @@ fun ExerciseMuscleBreakdownCard(
                     }
                 }
                 if (onEditMapping != null) {
-                    OutlinedButton(onClick = onEditMapping) {
+                    TintedButton(onClick = onEditMapping) {
                         Text(
                             text = stringResource(R.string.muscle_heatmap_map_action),
                             maxLines = 1,
@@ -524,9 +524,8 @@ private fun SelectedMuscleHighlight(
     val muscle = heatmap.muscles.firstOrNull { it.id == heatmap.selectedMuscleId } ?: return
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = HeroTone.surface,
-        shape = MaterialTheme.shapes.small,
-        border = androidx.compose.foundation.BorderStroke(1.dp, HeroTone.outline)
+        color = HeroTone.tile,
+        shape = MaterialTheme.shapes.small
     ) {
         Text(
             text = formattedStringResource(
@@ -567,12 +566,8 @@ private fun SelectedMuscleExercises(
             heatmap.selectedMuscleExercises.forEach { exercise ->
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
-                    shape = MaterialTheme.shapes.small,
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.54f)
-                    )
+                    color = HeroTone.tile,
+                    shape = MaterialTheme.shapes.small
                 ) {
                     Row(
                         modifier = Modifier.padding(10.dp),
@@ -687,12 +682,8 @@ private fun ExerciseMappingRow(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
-        shape = MaterialTheme.shapes.small,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-        )
+        color = HeroTone.tile,
+        shape = MaterialTheme.shapes.small
     ) {
         Row(
             modifier = Modifier.padding(10.dp),
@@ -731,7 +722,7 @@ private fun ExerciseMappingRow(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            OutlinedButton(onClick = { onEditExerciseMapping(exercise.exerciseName) }) {
+            TintedButton(onClick = { onEditExerciseMapping(exercise.exerciseName) }) {
                 Text(
                     text = stringResource(R.string.muscle_heatmap_map_action),
                     maxLines = 1,
@@ -756,11 +747,7 @@ private fun ManualMappingEditor(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-        shape = MaterialTheme.shapes.medium,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
-        )
+        shape = MaterialTheme.shapes.medium
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -798,17 +785,18 @@ private fun ManualMappingEditor(
                             color = if (selected) {
                                 MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
                             } else {
-                                MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
+                                HeroTone.tile
                             },
                             shape = GymCapsuleShape,
-                            border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                if (selected) {
+                            // Only the selected chip keeps its outline: it carries the state.
+                            border = if (selected) {
+                                androidx.compose.foundation.BorderStroke(
+                                    1.dp,
                                     MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                                } else {
-                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-                                }
-                            )
+                                )
+                            } else {
+                                null
+                            }
                         ) {
                             Text(
                                 text = muscle.label,
@@ -828,7 +816,7 @@ private fun ManualMappingEditor(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedButton(
+                TintedButton(
                     onClick = onClose,
                     modifier = Modifier.weight(1f)
                 ) {

@@ -3,10 +3,14 @@
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material.icons.automirrored.outlined.ShowChart as OutlinedShowChart
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.TrackChanges
+import androidx.compose.material.icons.outlined.CalendarToday as OutlinedCalendarToday
+import androidx.compose.material.icons.outlined.FitnessCenter as OutlinedFitnessCenter
+import androidx.compose.material.icons.outlined.Person as OutlinedPerson
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.gymapp.R
 
@@ -107,4 +111,17 @@ sealed class AppDestination(
             return "friend/$profileId"
         }
     }
+}
+
+/**
+ * Tab-bar glyph pair (outline, filled): the outline shows while the tab is unselected, the filled one
+ * while it is selected. Destinations that are not tabs fall back to [AppDestination.icon] for both.
+ * Progress uses a line chart that has no distinct filled form, so only its colour changes.
+ */
+fun AppDestination.tabIcons(): Pair<ImageVector, ImageVector> = when (this) {
+    AppDestination.Workouts -> Icons.Outlined.OutlinedCalendarToday to icon
+    AppDestination.Exercises -> Icons.Outlined.OutlinedFitnessCenter to icon
+    AppDestination.Progress -> Icons.AutoMirrored.Outlined.OutlinedShowChart to icon
+    AppDestination.Profile -> Icons.Outlined.OutlinedPerson to icon
+    else -> icon to icon
 }

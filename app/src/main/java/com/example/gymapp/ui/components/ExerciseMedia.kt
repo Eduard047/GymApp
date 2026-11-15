@@ -23,7 +23,6 @@ import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -57,6 +56,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.ui.theme.TintedButton
 
 private data class ExerciseMediaFrames(
     val custom: Bitmap?,
@@ -319,7 +319,7 @@ private fun ExerciseMediaSheet(
                     hasBundledFrames = frames.bundled.isNotEmpty()
                 )
                 if (removal != null) {
-                    OutlinedButton(
+                    TintedButton(
                         onClick = {
                             scope.launch {
                                 val deleted = withContext(Dispatchers.IO) {

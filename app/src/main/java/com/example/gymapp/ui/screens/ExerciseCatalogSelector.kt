@@ -29,7 +29,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import com.example.gymapp.ui.components.GymModalBottomSheet
 import com.example.gymapp.ui.components.GymSheetTitleRow
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -62,6 +61,7 @@ import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.viewmodel.RECENT_EXERCISES_MAX
 import com.example.gymapp.util.formattedPluralStringResource
+import com.example.gymapp.ui.theme.TintedButton
 
 /** Which flow the catalog sheet serves: adding an exercise to a workout, or choosing one to view. */
 internal enum class ExerciseSelectorMode { Add, Choose }
@@ -160,7 +160,7 @@ internal fun ExerciseCatalogSelector(
     if (trigger != null) {
         trigger { internalExpanded = true }
     } else {
-        OutlinedButton(
+        TintedButton(
             onClick = { internalExpanded = true },
             modifier = modifier.fillMaxWidth()
         ) {
@@ -476,11 +476,7 @@ private fun CreateExercisePanel(
         modifier = Modifier.fillMaxWidth(),
         shape = GymPanelShape,
         color = androidx.compose.material3.MaterialTheme.colorScheme.surface,
-        contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
-        border = BorderStroke(
-            1.dp,
-            androidx.compose.material3.MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
-        )
+        contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
     ) {
         Column(
             modifier = Modifier

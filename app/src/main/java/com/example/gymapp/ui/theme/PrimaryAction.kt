@@ -10,6 +10,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonElevation
 import androidx.compose.material3.IconButtonColors
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -80,6 +81,49 @@ fun Button(
         shape = shape,
         colors = colors,
         elevation = elevation,
+        border = border,
+        contentPadding = contentPadding,
+        interactionSource = interactionSource,
+        content = content
+    )
+}
+
+/** Colors of a [TintedButton]: accent 15% fill with an accent label (disabled: 7% fill, 38% label). */
+@Composable
+fun tintedButtonColors(): ButtonColors {
+    val primary = MaterialTheme.colorScheme.primary
+    return ButtonDefaults.buttonColors(
+        containerColor = primary.copy(alpha = 0.15f),
+        contentColor = primary,
+        disabledContainerColor = primary.copy(alpha = 0.07f),
+        disabledContentColor = primary.copy(alpha = 0.38f)
+    )
+}
+
+/**
+ * Secondary action: a borderless tinted capsule (same style as the active-workout footer "+ Set"),
+ * the replacement for Material's outlined button. A caller may still pass [border] for a state that carries
+ * meaning (e.g. a destructive confirmation).
+ */
+@Composable
+fun TintedButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    shape: Shape = GymCapsuleShape,
+    colors: ButtonColors = tintedButtonColors(),
+    border: BorderStroke? = null,
+    contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+    interactionSource: MutableInteractionSource? = null,
+    content: @Composable RowScope.() -> Unit
+) {
+    androidx.compose.material3.Button(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        shape = shape,
+        colors = colors,
+        elevation = null,
         border = border,
         contentPadding = contentPadding,
         interactionSource = interactionSource,

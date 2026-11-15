@@ -74,7 +74,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.minimumInteractiveComponentSize
 import com.example.gymapp.ui.components.GymModalBottomSheet
 import com.example.gymapp.ui.components.GymSheetTitleRow
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -165,6 +164,7 @@ import java.util.Locale
 import androidx.compose.material3.LocalContentColor
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
+import com.example.gymapp.ui.theme.TintedButton
 
 /** Lazy items (coach panel, exercises header) that precede the exercise cards in the plan editor. */
 private const val PLAN_EDITOR_LEADING_ITEM_COUNT = 2
@@ -455,7 +455,7 @@ fun AddWorkoutScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    OutlinedButton(
+                    TintedButton(
                         onClick = openAddExercisePicker,
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -665,7 +665,7 @@ fun AddWorkoutScreen(
                         eyebrow = stringResource(R.string.label_workout_date),
                         title = stringResource(R.string.label_note)
                     )
-                    OutlinedButton(
+                    TintedButton(
                         onClick = {
                             showWorkoutDatePicker(
                                 context = context,
@@ -741,7 +741,7 @@ fun AddWorkoutScreen(
                                 .testTag("workout_plan_preset_message")
                         )
                     }
-                    OutlinedButton(
+                    TintedButton(
                         onClick = onRepeatLastWorkout,
                         enabled = uiState.canRepeatFromLast && !uiState.isTemplateLoading,
                         modifier = Modifier.fillMaxWidth()
@@ -754,7 +754,7 @@ fun AddWorkoutScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    OutlinedButton(
+                    TintedButton(
                         onClick = onOpenTemplatePicker,
                         enabled = uiState.workoutTemplates.isNotEmpty() && !uiState.isTemplateLoading,
                         modifier = Modifier.fillMaxWidth()
@@ -789,7 +789,7 @@ fun AddWorkoutScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    OutlinedButton(
+                    TintedButton(
                         onClick = onSyncPlanToWatch,
                         modifier = Modifier.fillMaxWidth(),
                         enabled = selectedExerciseCount > 0 &&
@@ -842,7 +842,7 @@ fun AddWorkoutScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (workoutPlanAllowsGenericShare(hasLiveInviteTarget)) {
-                    OutlinedButton(
+                    TintedButton(
                         onClick = onShareWorkout,
                         modifier = Modifier.fillMaxWidth(),
                         enabled = selectedExerciseCount > 0 && !uiState.isSaving
@@ -1347,7 +1347,7 @@ private fun WorkoutTemplatePickerContent(
 
         item {
             HorizontalDivider()
-            OutlinedButton(
+            TintedButton(
                 onClick = onDismiss,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1782,7 +1782,7 @@ private fun SmartWorkoutAlternativePickerContent(
         }
 
         item {
-            OutlinedButton(
+            TintedButton(
                 onClick = onDismiss,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -1911,7 +1911,7 @@ private fun ExerciseSelector(
         ).filter { exercise -> !frequentOnly || exercise.id in frequentExerciseIds }
     }
 
-    OutlinedButton(
+    TintedButton(
         onClick = { expanded = true },
         modifier = modifier.fillMaxWidth()
     ) {
@@ -1995,7 +1995,7 @@ private fun ExerciseSelector(
                         }
                     } else {
                         items(visibleExercises, key = { it.id }) { exercise ->
-                            OutlinedButton(
+                            TintedButton(
                                 onClick = {
                                     onExerciseSelected(exercise.id)
                                     expanded = false

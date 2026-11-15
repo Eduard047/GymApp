@@ -33,6 +33,7 @@ import com.example.gymapp.data.repository.WeeklyReviewInsight
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
+import com.example.gymapp.ui.theme.TintedButton
 
 @Composable
 fun WeeklyReviewCard(
@@ -106,7 +107,7 @@ fun WeeklyReviewCard(
                     .wrapContentHeight(Alignment.CenterVertically)
             )
             review.insights.forEach { insight ->
-                OutlinedButton(onClick = { evidence = insight }, modifier = Modifier.fillMaxWidth()) {
+                TintedButton(onClick = { evidence = insight }, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Text(localizedExerciseName(insight.current.exerciseName))
                         Text(formattedStringResource(R.string.training_rep_comparison, insight.current.weight, insight.previous.reps, insight.current.reps))

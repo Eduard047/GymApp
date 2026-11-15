@@ -102,7 +102,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import com.example.gymapp.ui.components.GymToastResult
 import com.example.gymapp.ui.components.LocalGymToastController
@@ -234,6 +233,7 @@ import com.example.gymapp.util.formatSessionVolume
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
 import com.example.gymapp.util.safeGetString
+import com.example.gymapp.ui.theme.TintedButton
 
 internal const val ACTIVE_WORKOUT_ELAPSED_METRIC_TAG = "active_workout_elapsed_metric"
 internal const val ACTIVE_WORKOUT_VOLUME_METRIC_TAG = "active_workout_volume_metric"
@@ -2596,7 +2596,6 @@ private fun RecordedConfirmationBanner(
     Surface(
         shape = GymControlShape,
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(Dp.Hairline, MaterialTheme.colorScheme.outlineVariant),
         modifier = modifier
             .fillMaxWidth()
             .testTag(ACTIVE_WORKOUT_RECORDED_BANNER_TAG)
@@ -3628,7 +3627,7 @@ private fun ActiveWorkoutNoteEditor(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                TintedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
                     Text(stringResource(R.string.action_cancel))
                 }
                 Button(

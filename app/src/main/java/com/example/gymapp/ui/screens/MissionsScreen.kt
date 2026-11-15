@@ -173,11 +173,6 @@ private fun MissionPeriodSelector(
             .semantics { contentDescription = groupLabel }
             .clip(GymCompactShape)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f))
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.66f),
-                shape = GymCompactShape
-            )
             .padding(3.dp)
             .selectableGroup(),
         horizontalArrangement = Arrangement.spacedBy(3.dp)

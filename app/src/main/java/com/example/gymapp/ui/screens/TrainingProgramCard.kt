@@ -18,6 +18,7 @@ import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.util.TrainingProgramStore
 import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.ui.theme.TintedButton
 
 @Composable
 internal fun TrainingProgramCard(owner: String, sessions: List<WorkoutSessionSummary>, profile: TrainingProfile, onPrepare: () -> Unit) {
@@ -53,7 +54,7 @@ internal fun TrainingProgramCard(owner: String, sessions: List<WorkoutSessionSum
             AppPanel(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.training_program_save_error), color = MaterialTheme.colorScheme.error)
-                    OutlinedButton(onClick = { refresh(store.reload()) }, Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    TintedButton(onClick = { refresh(store.reload()) }, Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                         Text(stringResource(R.string.training_program_reload))
                     }
                 }
@@ -93,7 +94,7 @@ internal fun TrainingProgramCard(owner: String, sessions: List<WorkoutSessionSum
                                     Text(stringResource(R.string.training_program_prepare))
                                 }
                                 store.matchingSession(program, next, sessions)?.let { session ->
-                                    OutlinedButton(onClick = { refresh(store.link(session.session.id, sessions)) },
+                                    TintedButton(onClick = { refresh(store.link(session.session.id, sessions)) },
                                         Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = !failed) {
                                         Text(stringResource(R.string.training_program_link) + ": " + DateTimeUtils.formatDate(session.session.date))
                                     }
@@ -107,7 +108,7 @@ internal fun TrainingProgramCard(owner: String, sessions: List<WorkoutSessionSum
                                 Button(onClick = { confirmation = "replace" to program.id }, Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = !failed) {
                                     Text(stringResource(R.string.training_program_new))
                                 }
-                                if (next != null) OutlinedButton(onClick = { refresh(store.reopen()) },
+                                if (next != null) TintedButton(onClick = { refresh(store.reopen()) },
                                     Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = !failed) {
                                     Text(stringResource(R.string.training_program_reopen))
                                 }
@@ -120,7 +121,7 @@ internal fun TrainingProgramCard(owner: String, sessions: List<WorkoutSessionSum
                             }
                             if (expanded) {
                                 if (program.status == "active") {
-                                    OutlinedButton(onClick = { refresh(store.rescheduleNext()) }, Modifier.fillMaxWidth(), enabled = !failed) {
+                                    TintedButton(onClick = { refresh(store.rescheduleNext()) }, Modifier.fillMaxWidth(), enabled = !failed) {
                                         Text(stringResource(R.string.training_program_move))
                                     }
                                     TextButton(onClick = { refresh(store.updateStatus("paused")) }, Modifier.fillMaxWidth(), enabled = !failed) {

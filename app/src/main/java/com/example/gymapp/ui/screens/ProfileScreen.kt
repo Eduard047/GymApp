@@ -31,7 +31,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
@@ -110,6 +109,7 @@ import com.example.gymapp.sync.CloudSyncUiStatus
 import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.getString
 import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.ui.theme.TintedButton
 
 private enum class ProfileSection {
     Training,
@@ -947,7 +947,7 @@ private fun GarminDeviceCard(
             }
             // Without the Garmin SDK there is nothing to open, so the card only states that.
             if (state.sdkReady) {
-                OutlinedButton(
+                TintedButton(
                     onClick = onOpenGarminApp,
                     modifier = Modifier.fillMaxWidth()
                 ) {

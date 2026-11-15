@@ -60,7 +60,6 @@ import com.example.gymapp.ui.components.rememberDiscardGuardedSheetState
 import com.example.gymapp.ui.components.GymMotion
 import com.example.gymapp.ui.components.rememberReduceMotion
 import com.example.gymapp.ui.components.GymSheetCloseRow
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -145,6 +144,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.safeGetString
+import com.example.gymapp.ui.theme.TintedButton
 
 private const val BACKUP_PREVIEW_CHARS = 4_000
 private const val MAX_PDF_PAGES = 24
@@ -1628,13 +1628,13 @@ private fun ExerciseLoadProfileBottomSheetContent(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedButton(
+                TintedButton(
                     onClick = { onApplyPreset(2.5) },
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(stringResource(R.string.exercise_load_preset_2_5))
                 }
-                OutlinedButton(
+                TintedButton(
                     onClick = { onApplyPreset(5.0) },
                     modifier = Modifier.weight(1f)
                 ) {
@@ -1677,7 +1677,7 @@ private fun ExerciseLoadProfileBottomSheetContent(
         }
         if (hasExistingProfile) {
             item {
-                OutlinedButton(
+                TintedButton(
                     onClick = onClear,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -1686,7 +1686,7 @@ private fun ExerciseLoadProfileBottomSheetContent(
             }
         }
         item {
-            OutlinedButton(
+            TintedButton(
                 onClick = onDismiss,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -1705,8 +1705,7 @@ private fun ExerciseMetricPill(
     Surface(
         color = accent.copy(alpha = 0.10f),
         contentColor = accent,
-        shape = CircleShape,
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.22f))
+        shape = CircleShape
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
@@ -2060,7 +2059,7 @@ private fun ExerciseMappingBottomSheetContent(
         }
         if (hasCatalogDefault) {
             item {
-                OutlinedButton(
+                TintedButton(
                     onClick = onUseAutomatic,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -2073,7 +2072,7 @@ private fun ExerciseMappingBottomSheetContent(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedButton(
+                TintedButton(
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f)
                 ) {
@@ -2133,7 +2132,7 @@ private fun RenameExerciseBottomSheetContent(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            OutlinedButton(
+            TintedButton(
                 onClick = onDismiss,
                 modifier = Modifier.weight(1f)
             ) {
@@ -2203,7 +2202,7 @@ internal fun BackupToolsSettingsRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedButton(
+                    TintedButton(
                         onClick = onExportBackup,
                         modifier = Modifier.weight(1f)
                     ) {
@@ -2213,7 +2212,7 @@ internal fun BackupToolsSettingsRow(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    OutlinedButton(
+                    TintedButton(
                         onClick = onOpenImport,
                         modifier = Modifier.weight(1f)
                     ) {
@@ -2224,7 +2223,7 @@ internal fun BackupToolsSettingsRow(
                         )
                     }
                 }
-                OutlinedButton(
+                TintedButton(
                     onClick = onExportDiagnostics,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -2293,7 +2292,7 @@ internal fun BackupJsonBottomSheetContent(
                 ) {
                     Text(stringResource(R.string.backup_copy_json))
                 }
-                OutlinedButton(
+                TintedButton(
                     onClick = {
                         shareError = null
                         scope.launch {
@@ -2320,7 +2319,7 @@ internal fun BackupJsonBottomSheetContent(
             }
         }
         item {
-            OutlinedButton(
+            TintedButton(
                 onClick = {
                     shareError = null
                     scope.launch {
@@ -2355,7 +2354,7 @@ internal fun BackupJsonBottomSheetContent(
             }
         }
         item {
-            OutlinedButton(
+            TintedButton(
                 onClick = onDismiss,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -2382,7 +2381,7 @@ internal fun BackupJsonBottomSheetContent(
                 }
             },
             dismissButton = {
-                OutlinedButton(onClick = { showClipboardWarning = false }) {
+                TintedButton(onClick = { showClipboardWarning = false }) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }
@@ -2429,7 +2428,7 @@ internal fun ImportBackupBottomSheetContent(
             maxLines = 12,
             placeholder = { Text(stringResource(R.string.backup_import_placeholder)) }
         )
-        OutlinedButton(
+        TintedButton(
             onClick = { filePicker.launch(BACKUP_FILE_MIME_TYPES) },
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -2446,7 +2445,7 @@ internal fun ImportBackupBottomSheetContent(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            OutlinedButton(
+            TintedButton(
                 onClick = onDismiss,
                 modifier = Modifier.weight(1f)
             ) {

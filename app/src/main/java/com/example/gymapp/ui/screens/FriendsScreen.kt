@@ -30,7 +30,6 @@ import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
@@ -94,6 +93,7 @@ import java.util.Locale
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
 import com.example.gymapp.util.safeGetString
+import com.example.gymapp.ui.theme.TintedButton
 
 @Composable
 internal fun FinishedLiveWorkoutDialog(
@@ -311,7 +311,7 @@ internal fun FriendsScreen(
         }
         if (uiState.workoutInbox?.hasAnotherBoundedPage() == true) {
             item {
-                OutlinedButton(
+                TintedButton(
                     onClick = onLoadMoreWorkoutInvites,
                     enabled = !uiState.isInboxLoading,
                     modifier = Modifier.fillMaxWidth()
@@ -707,7 +707,7 @@ private fun LazyListScope.liveWorkoutLobby(
                             state.confirmedRestoringRoomId != invitation.roomId,
                         modifier = Modifier.weight(1f)
                     ) { Text(stringResource(R.string.live_workout_accept_action)) }
-                    OutlinedButton(
+                    TintedButton(
                         onClick = { onDecline(invitation) },
                         enabled = "respond-${invitation.roomId}" !in state.actionsInFlight &&
                             state.confirmedRestoringRoomId != invitation.roomId,
@@ -758,7 +758,7 @@ private fun LazyListScope.liveWorkoutLobby(
                         }
                         null -> Unit
                     }
-                    OutlinedButton(
+                    TintedButton(
                         onClick = { onClose(room) },
                         enabled = "close-${room.roomId}" !in state.actionsInFlight,
                         modifier = Modifier.weight(1f)
@@ -849,7 +849,7 @@ private fun TrainingCircleCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                OutlinedButton(onClick = onRefresh, enabled = !isLoading) {
+                TintedButton(onClick = onRefresh, enabled = !isLoading) {
                     if (isLoading) {
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     } else {
@@ -1034,13 +1034,13 @@ private fun FriendConnectionCard(
                 fontWeight = FontWeight.SemiBold
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onCopy, modifier = Modifier.weight(1f)) {
+                TintedButton(onClick = onCopy, modifier = Modifier.weight(1f)) {
                     Text(
                         if (copied) stringResource(R.string.friend_code_copied)
                         else stringResource(R.string.friend_code_copy)
                     )
                 }
-                OutlinedButton(onClick = onShare, modifier = Modifier.weight(1f)) {
+                TintedButton(onClick = onShare, modifier = Modifier.weight(1f)) {
                     Text(stringResource(R.string.friend_code_share))
                 }
             }
@@ -1127,7 +1127,7 @@ private fun IncomingFriendRequestCard(
                 Button(onClick = onAccept, enabled = !isLoading) {
                     Text(stringResource(R.string.action_accept))
                 }
-                OutlinedButton(onClick = onDecline, enabled = !isLoading) {
+                TintedButton(onClick = onDecline, enabled = !isLoading) {
                     Text(stringResource(R.string.action_decline))
                 }
             }
@@ -1161,7 +1161,7 @@ private fun OutgoingFriendRequestCard(
                 Text(request.displayName, style = MaterialTheme.typography.titleMedium)
                 Text(stringResource(R.string.friend_request_pending), style = MaterialTheme.typography.bodySmall)
             }
-            OutlinedButton(onClick = onCancel, enabled = !isLoading) {
+            TintedButton(onClick = onCancel, enabled = !isLoading) {
                 Text(stringResource(R.string.action_cancel))
             }
         }
@@ -1205,7 +1205,7 @@ private fun FriendRankingCard(place: Int, friend: SocialFriend, onOpen: () -> Un
                     )
                 }
             }
-            OutlinedButton(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
+            TintedButton(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.friend_open_details))
             }
         }
@@ -1388,11 +1388,11 @@ private fun IncomingWorkoutInviteCard(
                     Button(onClick = onAccept, enabled = !isLoading) {
                         Text(stringResource(R.string.action_accept))
                     }
-                    OutlinedButton(onClick = onDecline, enabled = !isLoading) {
+                    TintedButton(onClick = onDecline, enabled = !isLoading) {
                         Text(stringResource(R.string.action_decline))
                     }
                 }
-                "accepted" -> OutlinedButton(onClick = onReuse, enabled = !isLoading) {
+                "accepted" -> TintedButton(onClick = onReuse, enabled = !isLoading) {
                     Text(stringResource(R.string.workout_invite_use_copy))
                 }
             }
@@ -1429,7 +1429,7 @@ private fun OutgoingWorkoutInviteCard(
             )
             Text(socialInviteStatusLabel(invite.status), style = MaterialTheme.typography.bodySmall)
             if (invite.status == "pending") {
-                OutlinedButton(onClick = onCancel, enabled = !isLoading) {
+                TintedButton(onClick = onCancel, enabled = !isLoading) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }
@@ -1450,7 +1450,7 @@ private fun BlockedProfileCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(profile.displayName, modifier = Modifier.weight(1f))
-            OutlinedButton(onClick = onUnblock, enabled = !isLoading) {
+            TintedButton(onClick = onUnblock, enabled = !isLoading) {
                 Text(stringResource(R.string.friend_unblock_action))
             }
         }

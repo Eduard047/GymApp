@@ -32,7 +32,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import com.example.gymapp.ui.components.GymModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -72,6 +71,7 @@ import com.example.gymapp.util.TimeOfDayFormat
 import com.example.gymapp.util.asString
 import java.util.Locale
 import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.ui.theme.TintedButton
 
 internal const val PROFILE_SUPPORT_URL = "https://gymapptracker.com/support.html"
 internal const val PROFILE_PRIVACY_URL = "https://gymapptracker.com/privacy-policy.html"
@@ -450,7 +450,7 @@ private fun PushNotificationCard(
                 )
             }
             if (blockedBySystem) {
-                OutlinedButton(
+                TintedButton(
                     onClick = onDisable,
                     enabled = !state.isSyncing,
                     modifier = Modifier.fillMaxWidth()
@@ -458,7 +458,7 @@ private fun PushNotificationCard(
                     Text(stringResource(R.string.push_disable_action))
                 }
             } else if (state.configured && systemBlocked) {
-                OutlinedButton(
+                TintedButton(
                     onClick = onOpenSettings,
                     enabled = !state.isSyncing,
                     modifier = Modifier.fillMaxWidth()

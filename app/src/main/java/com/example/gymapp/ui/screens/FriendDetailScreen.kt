@@ -17,7 +17,6 @@ import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
@@ -63,6 +62,7 @@ import java.time.ZoneId
 import java.util.Locale
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
+import com.example.gymapp.ui.theme.TintedButton
 
 @Composable
 internal fun FriendDetailScreen(
@@ -318,12 +318,12 @@ internal fun FriendDetailScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) { Text(stringResource(R.string.friend_manage_toggle)) }
                     if (manageExpanded) {
-                        OutlinedButton(
+                        TintedButton(
                             onClick = { confirmAction = FriendSafetyAction.Remove },
                             enabled = !actionInFlight,
                             modifier = Modifier.fillMaxWidth()
                         ) { Text(stringResource(R.string.friend_remove_action)) }
-                        OutlinedButton(
+                        TintedButton(
                             onClick = { confirmAction = FriendSafetyAction.Block },
                             enabled = !actionInFlight,
                             modifier = Modifier.fillMaxWidth()

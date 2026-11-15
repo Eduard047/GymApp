@@ -60,7 +60,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -135,6 +134,7 @@ import com.example.gymapp.util.formatVolumeTotal
 import com.example.gymapp.util.keepNumberWithUnit
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
+import com.example.gymapp.ui.theme.TintedButton
 
 // Apple system grey / blue / green / yellow / orange / red (dark set; non-text marks, >= 3:1 on the dark surface).
 private val GARMIN_ZONE_COLORS = listOf(
@@ -2358,7 +2358,7 @@ private fun WorkoutDetailsEditPanel(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
-            OutlinedButton(
+            TintedButton(
                 onClick = { showDatePicker = true },
                 modifier = Modifier
                     .fillMaxWidth()

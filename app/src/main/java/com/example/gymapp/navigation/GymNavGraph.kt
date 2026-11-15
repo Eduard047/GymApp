@@ -15,7 +15,6 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,25 +28,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -58,6 +45,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.CompositionLocalProvider
+import com.example.gymapp.ui.components.AppleBackButton
+import com.example.gymapp.ui.components.AppleNavigationBar
+import com.example.gymapp.ui.components.AppleTabBar
+import com.example.gymapp.ui.components.AppleTabItem
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -78,7 +69,6 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -126,7 +116,6 @@ import com.example.gymapp.push.SocialPushType
 import com.example.gymapp.push.matchesSession
 import com.example.gymapp.ui.components.FIRST_RUN_TUTORIAL_STEPS
 import com.example.gymapp.ui.components.FIRST_RUN_TUTORIAL_VERSION
-import com.example.gymapp.ui.components.FitSingleLineLabel
 import com.example.gymapp.ui.components.AnalyticsConsentDialog
 import com.example.gymapp.ui.components.FirstRunTutorialOverlay
 import com.example.gymapp.ui.components.TutorialAnchorRegistry
@@ -135,19 +124,16 @@ import com.example.gymapp.ui.components.tutorialAnchor
 import com.example.gymapp.ui.screens.AddWorkoutScreen
 import com.example.gymapp.ui.components.ActiveWorkoutDiscardDialog
 import com.example.gymapp.ui.components.ContinueWorkoutBar
-import com.example.gymapp.ui.components.GymGlassMaterial
 import com.example.gymapp.ui.components.GymToastDuration
 import com.example.gymapp.ui.components.GymToastHost
 import com.example.gymapp.ui.components.GymToastResult
 import com.example.gymapp.ui.components.gymDrillEnter
-import com.example.gymapp.ui.components.gymGlass
 import com.example.gymapp.ui.components.gymGlassSource
 import com.example.gymapp.ui.components.gymDrillExit
 import com.example.gymapp.ui.components.gymDrillPopEnter
 import com.example.gymapp.ui.components.gymDrillPopExit
 import com.example.gymapp.ui.components.gymTabEnter
 import com.example.gymapp.ui.components.gymTabExit
-import com.example.gymapp.ui.components.rememberGymGlassActive
 import com.example.gymapp.ui.components.rememberGymHazeState
 import com.example.gymapp.ui.components.rememberReduceMotion
 import com.example.gymapp.ui.components.LocalGymToastController
@@ -1096,7 +1082,9 @@ internal fun GymAppRoot(
     val isBottomTabRoute = AppDestination.bottomTabs.any { it.route == currentRoute }
     val hasInContentRootHeader = currentRoute == AppDestination.Workouts.route ||
         currentRoute == AppDestination.Exercises.route
-    val hasTopAppBar = !(isBottomTabRoute && hasInContentRootHeader)
+    // Only a root tab with a bar title (Progress, Profile) still uses the collapsing M3 bar; pushed screens
+    // get the fixed AppleNavigationBar, which has no scroll offset to coordinate.
+    val hasCollapsingTopAppBar = isBottomTabRoute && !hasInContentRootHeader
     val cloudSession = (authState.session as? AccountSession.Cloud)
         ?.takeUnless { authState.needsPasswordUpdate }
     val rootGraphRoute = remember(uiIsolationKey) { "gym-root-$uiIsolationKey" }
@@ -2803,7 +2791,7 @@ internal fun GymAppRoot(
                     .then(
                         // With no bar on screen its scroll offset limit is never measured, so
                         // the connection would swallow list scrolling.
-                        if (hasTopAppBar) {
+                        if (hasCollapsingTopAppBar) {
                             Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection)
                         } else {
                             Modifier
@@ -2861,147 +2849,60 @@ internal fun GymAppRoot(
                 },
                 bottomBar = {
                     if (isBottomTabRoute) {
-                        Box(
-                            modifier = Modifier
-                                .onSizeChanged { tabBarHeightPx = it.height }
-                                .fillMaxWidth()
-                                .navigationBarsPadding()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            contentAlignment = Alignment.BottomCenter
-                        ) {
-                            // Glass only where content really scrolls under the bar; everywhere else (and
-                            // below API 31 or with battery saver) it stays the solid surface with its hairline (no shadow).
-                            val barGlass = scrollsUnderTabBar && rememberGymGlassActive(glassState)
-                            Surface(
-                                modifier = Modifier.gymGlass(
-                                    state = if (scrollsUnderTabBar) glassState else null,
-                                    material = GymGlassMaterial.Bar,
-                                    shape = MaterialTheme.shapes.extraLarge
-                                ),
-                                color = if (barGlass) Color.Transparent else MaterialTheme.colorScheme.surface,
-                                shape = MaterialTheme.shapes.extraLarge,
-                                tonalElevation = 0.dp,
-                                shadowElevation = 0.dp,
-                                border = BorderStroke(
-                                    1.dp,
-                                    MaterialTheme.colorScheme.outlineVariant.copy(
-                                        alpha = 1f
-                                    )
-                                )
-                            ) {
-                                val tabsPerRow = if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.4f) 2 else 4
-                                Column {
-                                    AppDestination.bottomTabs.chunked(tabsPerRow).forEach { tabs ->
-                                        NavigationBar(
-                                            modifier = Modifier
-                                                .heightIn(min = 76.dp)
-                                                .padding(horizontal = 8.dp),
-                                            containerColor = Color.Transparent,
-                                            tonalElevation = 0.dp
-                                        ) {
-                                            tabs.forEach { tab ->
-                                                val tabWorkoutInviteCount = if (
-                                                    tab == AppDestination.Profile
-                                                ) {
-                                                    workoutInviteBadgeCount
-                                                } else {
-                                                    0
-                                                }
-                                                val tutorialTarget = when (tab) {
-                                                    AppDestination.Exercises ->
-                                                        TutorialTarget.NavigationExercises
-                                                    AppDestination.Progress ->
-                                                        TutorialTarget.NavigationProgress
-                                                    AppDestination.Profile ->
-                                                        TutorialTarget.NavigationProfile
-                                                    else -> null
-                                                }
-                                                NavigationBarItem(
-                                                    modifier = if (
-                                                        tutorialTarget != null &&
-                                                        activeTutorialAnchors != null
-                                                    ) {
-                                                        Modifier.tutorialAnchor(
-                                                            activeTutorialAnchors,
-                                                            tutorialTarget
-                                                        )
-                                                    } else {
-                                                        Modifier
-                                                    },
-                                                    selected = currentRoute == tab.route,
-                                                    onClick = {
-                                                        // Workouts is the retained start destination. Saving
-                                                        // Profile while popping to it maps that saved entry to
-                                                        // Workouts; restoring in the same navigate call then puts
-                                                        // Profile straight back on top and makes Home look inert.
-                                                        val preserveState = shouldPreserveBottomTabState(tab)
-                                                        navController.navigate(tab.route) {
-                                                            popUpTo(navController.graph.startDestinationId) {
-                                                                saveState = preserveState
-                                                            }
-                                                            launchSingleTop = true
-                                                            restoreState = preserveState
-                                                        }
-                                                    },
-                                                    colors = NavigationBarItemDefaults.colors(
-                                                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                                                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                                                        // DESIGN.md: selected tab = accent icon + label, no pill indicator fill.
-                                                        indicatorColor = Color.Transparent,
-                                                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    ),
-                                                    icon = {
-                                                        BadgedBox(
-                                                            badge = {
-                                                                if (tabWorkoutInviteCount > 0) {
-                                                                    Badge {
-                                                                        Text(tabWorkoutInviteCount.toString())
-                                                                    }
-                                                                }
-                                                            }
-                                                        ) {
-                                                            Box(
-                                                                modifier = Modifier.size(24.dp),
-                                                                contentAlignment = Alignment.Center
-                                                            ) {
-                                                                Icon(
-                                                                    imageVector = tab.icon,
-                                                                    contentDescription = if (
-                                                                        tabWorkoutInviteCount > 0
-                                                                    ) {
-                                                                        formattedStringResource(
-                                                                            R.string.workout_invites_pending_count,
-                                                                            tabWorkoutInviteCount
-                                                                        )
-                                                                    } else {
-                                                                        stringResource(tab.labelRes)
-                                                                    },
-                                                                    modifier = Modifier.size(20.dp)
-                                                                )
-                                                            }
-                                                        }
-                                                    },
-                                                    label = {
-                                                        // Four tabs share the bar width: the label follows the system
-                                                        // text size and shrinks only when it would not fit, so it never
-                                                        // breaks mid-word.
-                                                        FitSingleLineLabel(
-                                                            text = stringResource(tab.labelRes),
-                                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                                fontSize = 12.sp,
-                                                                lineHeight = 14.sp,
-                                                                letterSpacing = 0.2.sp
-                                                            )
-                                                        )
-                                                    }
-                                                )
+                        // Docked tab bar. Glass only where content really scrolls under it (Exercises); below
+                        // API 31 or with battery saver it stays the solid screen background with its hairline.
+                        AppleTabBar(
+                            modifier = Modifier.onSizeChanged { tabBarHeightPx = it.height },
+                            glassState = if (scrollsUnderTabBar) glassState else null,
+                            tabs = AppDestination.bottomTabs.map { tab ->
+                                val tabWorkoutInviteCount = if (tab == AppDestination.Profile) {
+                                    workoutInviteBadgeCount
+                                } else {
+                                    0
+                                }
+                                val tutorialTarget = when (tab) {
+                                    AppDestination.Exercises -> TutorialTarget.NavigationExercises
+                                    AppDestination.Progress -> TutorialTarget.NavigationProgress
+                                    AppDestination.Profile -> TutorialTarget.NavigationProfile
+                                    else -> null
+                                }
+                                val (outlineIcon, filledIcon) = tab.tabIcons()
+                                AppleTabItem(
+                                    selected = currentRoute == tab.route,
+                                    label = stringResource(tab.labelRes),
+                                    outlineIcon = outlineIcon,
+                                    filledIcon = filledIcon,
+                                    badgeCount = tabWorkoutInviteCount,
+                                    badgeDescription = if (tabWorkoutInviteCount > 0) {
+                                        formattedStringResource(
+                                            R.string.workout_invites_pending_count,
+                                            tabWorkoutInviteCount
+                                        )
+                                    } else {
+                                        null
+                                    },
+                                    modifier = if (tutorialTarget != null && activeTutorialAnchors != null) {
+                                        Modifier.tutorialAnchor(activeTutorialAnchors, tutorialTarget)
+                                    } else {
+                                        Modifier
+                                    },
+                                    onClick = {
+                                        // Workouts is the retained start destination. Saving
+                                        // Profile while popping to it maps that saved entry to
+                                        // Workouts; restoring in the same navigate call then puts
+                                        // Profile straight back on top and makes Home look inert.
+                                        val preserveState = shouldPreserveBottomTabState(tab)
+                                        navController.navigate(tab.route) {
+                                            popUpTo(navController.graph.startDestinationId) {
+                                                saveState = preserveState
                                             }
+                                            launchSingleTop = true
+                                            restoreState = preserveState
                                         }
                                     }
-                                }
+                                )
                             }
-                        }
+                        )
                     }
                 }
             ) { innerPadding ->
@@ -5507,64 +5408,20 @@ private fun AppTopBar(
             scrollBehavior = scrollBehavior
         )
     } else {
-        CenterAlignedTopAppBar(
-            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                containerColor = Color.Transparent,
-                scrolledContainerColor = Color.Transparent,
-                titleContentColor = MaterialTheme.colorScheme.onBackground
-            ),
-            title = {
-                Text(
-                    text = stringResource(titleRes),
-                    style = MaterialTheme.typography.titleLarge
+        // Pushed screen: a fixed plain bar (accent chevron, centred 17sp title, plain trailing actions).
+        // It does not collapse on scroll, so it does not take part in [scrollBehavior].
+        AppleNavigationBar(
+            title = stringResource(titleRes),
+            leading = {
+                AppleBackButton(
+                    onClick = onBack,
+                    contentDescription = stringResource(backContentDescriptionRes ?: R.string.cd_back),
+                    enabled = interactionsEnabled,
+                    // Announced as the action hint: the screen minimizes, the workout keeps running.
+                    clickHint = backHintRes?.let { stringResource(it) }
                 )
             },
-            navigationIcon = {
-                Surface(
-                    modifier = Modifier.padding(start = 12.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f),
-                    shape = MaterialTheme.shapes.small,
-                    border = BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f)
-                    )
-                ) {
-                    val backHint = backHintRes?.let { stringResource(it) }
-                    IconButton(
-                        onClick = onBack,
-                        enabled = interactionsEnabled,
-                        modifier = if (backHint != null) {
-                            // Announced as the action hint: the screen minimizes, the workout keeps running.
-                            Modifier.semantics { onClick(label = backHint, action = null) }
-                        } else {
-                            Modifier
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(
-                                backContentDescriptionRes ?: R.string.cd_back
-                            )
-                        )
-                    }
-                }
-            },
-            actions = {
-                if (actions != null) {
-                    Surface(
-                        modifier = Modifier.padding(end = 12.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f),
-                        shape = MaterialTheme.shapes.small,
-                        border = BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f)
-                        )
-                    ) {
-                        actions()
-                    }
-                }
-            },
-            scrollBehavior = scrollBehavior
+            trailing = actions
         )
     }
 }

@@ -23,7 +23,6 @@ import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -67,6 +66,7 @@ import com.example.gymapp.R
 import com.example.gymapp.ui.theme.GymSpacing
 import kotlinx.coroutines.android.awaitFrame
 import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.ui.theme.TintedButton
 
 internal const val FIRST_RUN_TUTORIAL_VERSION = 1
 
@@ -322,7 +322,7 @@ internal fun FirstRunTutorialOverlay(
                     ) { actionLabel(R.string.tutorial_skip) }
                 }
                 val backButton: @Composable (Modifier) -> Unit = { buttonModifier ->
-                    OutlinedButton(
+                    TintedButton(
                         onClick = onBack,
                         modifier = buttonModifier.heightIn(min = GymSpacing.MinimumTouch)
                     ) { actionLabel(R.string.tutorial_back) }

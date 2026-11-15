@@ -570,7 +570,7 @@ test("iOS exposes the same direct Start plan, Edit plan, and editor order", asyn
 test("Edit plan is mutation-free while direct Start plan and editor Start are active-workout transitions", () => {
   assert.match(
     androidWorkouts,
-    /launchToken\?\.let \{ token ->[\s\S]*OutlinedButton\([\s\S]*onClick = \{ onOpenPlan\(token\) \}/
+    /launchToken\?\.let \{ token ->[\s\S]*TintedButton\([\s\S]*onClick = \{ onOpenPlan\(token\) \}/
   );
   assert.match(androidNavigation, /onOpenPlan = \{ launchToken[\s\S]*addWorkoutRoute\(launchToken\)/);
   assert.match(androidDestinations, /launchToken\.length in 1\.\.12_000/);
@@ -1084,7 +1084,7 @@ test("Android exercise card matches the iOS compact set rows and single actions 
   assert.match(card, /WorkoutExerciseMenu\([\s\S]{0,900}removeLabel = stringResource\(R\.string\.action_delete\)[\s\S]{0,600}if \(selectedExercise != null\)[\s\S]{0,300}R\.string\.editor_replace_with_similar/);
   assert.match(shared, /Icons\.Default\.MoreVert[\s\S]{0,1800}extraItems \{ expanded = false \}[\s\S]{0,300}text = removeLabel/);
   assert.match(card, /R\.string\.editor_last_logged/);
-  assert.doesNotMatch(card, /isExpanded|ExpandLess|ExpandMore|ExerciseMuscleBreakdownCard|OutlinedButton|OutlinedTextField|MoreHoriz/);
+  assert.doesNotMatch(card, /isExpanded|ExpandLess|ExpandMore|ExerciseMuscleBreakdownCard|OutlinedButton|TintedButton|OutlinedTextField|MoreHoriz/);
   assert.doesNotMatch(card, /action_copy_last|action_apply_last_weight|R\.string\.cd_remove_exercise/);
   // Set row: shared number badge + shared weight/reps capsules + named trash (the stepper keeps reps at 1 or more).
   assert.match(card, /SetNumberBadge\(number\)[\s\S]{0,200}SetEditorCapsules\([\s\S]{0,700}allowedWeights = allowedWeights[\s\S]{0,500}R\.string\.cd_delete_set_named/);

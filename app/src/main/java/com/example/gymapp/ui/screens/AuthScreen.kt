@@ -54,7 +54,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.example.gymapp.ui.components.GymModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -116,6 +115,7 @@ import com.example.gymapp.ui.components.appLanguageOptions
 import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.asString
 import androidx.compose.material3.LocalContentColor
+import com.example.gymapp.ui.theme.TintedButton
 
 private const val MAX_AUTH_EMAIL_DRAFT_CHARS = 254
 internal const val MAX_AUTH_PASSWORD_DRAFT_UTF8_BYTES = MAX_LOGIN_PASSWORD_UTF8_BYTES
@@ -691,7 +691,7 @@ fun AuthScreen(
                         style = MaterialTheme.typography.titleMedium
                     )
                     savedLocalProfiles.forEach { savedProfile ->
-                        OutlinedButton(
+                        TintedButton(
                             onClick = { onContinueLocal(savedProfile.id, true) },
                             enabled = !uiState.isLoading,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
@@ -843,7 +843,6 @@ private fun EmailConfirmationCard(
             .fillMaxWidth()
             .clip(shape)
             .background(HeroTone.surface)
-            .border(BorderStroke(1.dp, HeroTone.outline), shape)
             .semantics { liveRegion = LiveRegionMode.Polite }
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -894,7 +893,7 @@ private fun EmailConfirmationCard(
         ) {
             Text(stringResource(R.string.auth_confirmation_open_email))
         }
-        OutlinedButton(
+        TintedButton(
             onClick = onResend,
             enabled = !isLoading,
             shape = GymCapsuleShape,
@@ -1119,13 +1118,6 @@ private fun AuthModeSelector(
         .alpha(if (enabled) 1f else 0.56f)
         .clip(shape)
         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f))
-        .border(
-            border = BorderStroke(
-                1.dp,
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f)
-            ),
-            shape = shape
-        )
         .padding(4.dp)
         .selectableGroup()
     val logInText = stringResource(R.string.auth_log_in)
@@ -1230,7 +1222,6 @@ private fun AuthStatusBanner(
             .fillMaxWidth()
             .clip(shape)
             .background(accent.copy(alpha = 0.11f))
-            .border(BorderStroke(1.dp, accent.copy(alpha = 0.26f)), shape)
             .semantics(mergeDescendants = true) {
                 liveRegion = LiveRegionMode.Polite
             }
