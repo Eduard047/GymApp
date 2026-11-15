@@ -613,6 +613,7 @@ private struct MainTabShell: View {
                 .tag(Tab.profile)
                 .accessibilityIdentifier("tab-profile")
         }
+        .environment(\.gymTopBanner, AnyView(topBanners))
         .tint(GymTheme.primary)
         .toggleStyle(GymSwitchToggleStyle())
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
@@ -777,165 +778,6 @@ private struct MainTabShell: View {
             .environmentObject(auth)
             .environmentObject(store)
             .gymToastHost()
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            VStack(spacing: 0) {
-                if (appState.socialWorkoutInbox?.pendingIncomingCount ?? 0) > 0,
-                   selectedTab != .profile {
-                    Button {
-                        selectedTab = .profile
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "envelope.badge.fill")
-                                .foregroundStyle(GymTheme.primary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(
-                                    gymText(
-                                        "Workout invitation waiting",
-                                        "Очікує запрошення на тренування",
-                                        "Ожидает приглашение на тренировку",
-                                        languageCode: languageCode
-                                    )
-                                )
-                                .font(.subheadline.bold())
-                                Text(
-                                    gymText(
-                                        "Open Friends to review it. This is an in-app notice, not a push notification.",
-                                        "Відкрий Друзів, щоб переглянути його. Це сповіщення в застосунку, а не push-повідомлення.",
-                                        "Открой Друзей, чтобы посмотреть его. Это уведомление в приложении, а не push-уведомление.",
-                                        languageCode: languageCode
-                                    )
-                                )
-                                .font(.caption)
-                                .foregroundStyle(GymTheme.textSecondary)
-                            }
-                            Spacer(minLength: 8)
-                            Image(systemName: "chevron.right")
-                                .font(.caption.bold())
-                        }
-                        .padding(.horizontal, 16)
-                        .frame(maxWidth: .infinity, minHeight: 58)
-                        .gymGlassBackground(.bar, material: .regularMaterial, edge: .bottom)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint(
-                        gymText(
-                            "Opens Friends in Profile",
-                            "Відкриває Друзів у Профілі",
-                            "Открывает Друзей в Профиле",
-                            languageCode: languageCode
-                        )
-                    )
-                }
-
-                if liveWorkoutCoordinator.pendingInvitationCount > 0,
-                   selectedTab != .profile {
-                    Button {
-                        selectedTab = .profile
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "wave.3.right.circle.fill")
-                                .foregroundStyle(GymTheme.primary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(
-                                    gymText(
-                                        "Live workout invitation",
-                                        "Запрошення на спільне тренування",
-                                        "Приглашение на совместную тренировку",
-                                        languageCode: languageCode
-                                    )
-                                )
-                                .font(.subheadline.bold())
-                                Text(
-                                    gymText(
-                                        "Open Friends to review it. Accepting starts the workout for both immediately.",
-                                        "Відкрий Друзів, щоб переглянути. Прийняття одразу запускає тренування для обох.",
-                                        "Открой Друзей, чтобы посмотреть. Принятие сразу запускает тренировку для обоих.",
-                                        languageCode: languageCode
-                                    )
-                                )
-                                .font(.caption)
-                                .foregroundStyle(GymTheme.textSecondary)
-                            }
-                            Spacer(minLength: 8)
-                            Image(systemName: "chevron.right")
-                                .font(.caption.bold())
-                        }
-                        .padding(.horizontal, 16)
-                        .frame(maxWidth: .infinity, minHeight: 58)
-                        .gymGlassBackground(.bar, material: .regularMaterial, edge: .bottom)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                if let activeDraft = activeWorkoutStore.draft, !showsActiveWorkout, selectedTab != .workouts {
-                    HStack(alignment: .center, spacing: 12) {
-                        Button {
-                            showsAddWorkout = false
-                            showsActiveWorkout = true
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: "play.circle.fill")
-                                    .font(.title2)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(gymText("Continue workout", "Продовжити тренування", "Продолжить тренировку", languageCode: languageCode))
-                                        .font(.subheadline.bold())
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    Text("\(activeDraft.completedSetCount) / \(activeDraft.plannedSetCount)")
-                                        .font(.subheadline.monospacedDigit())
-                                        .foregroundStyle(GymTheme.onHeroSecondary)
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(GymTheme.heroAccentText)
-                        if !liveWorkoutCoordinator.isAttachedToCurrentDraft {
-                            Button(role: .destructive) {
-                                showingActiveDraftDiscardConfirmation = true
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(.body.weight(.semibold))
-                                    .foregroundStyle(GymTheme.error)
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(
-                                gymText(
-                                    "Discard active workout",
-                                    "Відкинути активне тренування",
-                                    "Удалить активную тренировку",
-                                    languageCode: languageCode
-                                )
-                            )
-                        }
-                    }
-                    .padding(.leading, 16)
-                    .padding(.trailing, 6)
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity, minHeight: 58)
-                    .background(
-                        GymTheme.heroSurface,
-                        in: RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
-                            .stroke(GymTheme.heroOutline, lineWidth: GymTheme.hairlineWidth)
-                    )
-                    // Inset tonal panel: lives in the top safe-area inset so the screen
-                    // content below is laid out under it instead of scrolling beneath it.
-                    .padding(.horizontal, GymTheme.screenHorizontalInset)
-                    .padding(.top, 6)
-                    .padding(.bottom, 6)
-                    // Page-colored strip behind the banner and its 6pt gaps: the
-                    // scrolling list clips cleanly at the banner's lower edge
-                    // instead of showing sliced rows between banner and content.
-                    .background(GymTheme.background)
-                }
-            }
         }
         .alert(
             gymText(
@@ -1836,6 +1678,170 @@ private struct MainTabShell: View {
         }
     }
 
+    /// Notices and the resume banner pinned above every tab. Each tab root applies this as its own
+    /// top safe-area inset inside its NavigationStack: an inset on the TabView does not reach the
+    /// scroll views there, so the banner used to cover the first rows of Profile and Exercises.
+    @ViewBuilder
+    private var topBanners: some View {
+        VStack(spacing: 0) {
+            if (appState.socialWorkoutInbox?.pendingIncomingCount ?? 0) > 0,
+               selectedTab != .profile {
+                Button {
+                    selectedTab = .profile
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "envelope.badge.fill")
+                            .foregroundStyle(GymTheme.primary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(
+                                gymText(
+                                    "Workout invitation waiting",
+                                    "Очікує запрошення на тренування",
+                                    "Ожидает приглашение на тренировку",
+                                    languageCode: languageCode
+                                )
+                            )
+                            .font(.subheadline.bold())
+                            Text(
+                                gymText(
+                                    "Open Friends to review it. This is an in-app notice, not a push notification.",
+                                    "Відкрий Друзів, щоб переглянути його. Це сповіщення в застосунку, а не push-повідомлення.",
+                                    "Открой Друзей, чтобы посмотреть его. Это уведомление в приложении, а не push-уведомление.",
+                                    languageCode: languageCode
+                                )
+                            )
+                            .font(.caption)
+                            .foregroundStyle(GymTheme.textSecondary)
+                        }
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.bold())
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, minHeight: 58)
+                    .gymGlassBackground(.bar, material: .regularMaterial, edge: .bottom)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(
+                    gymText(
+                        "Opens Friends in Profile",
+                        "Відкриває Друзів у Профілі",
+                        "Открывает Друзей в Профиле",
+                        languageCode: languageCode
+                    )
+                )
+            }
+
+            if liveWorkoutCoordinator.pendingInvitationCount > 0,
+               selectedTab != .profile {
+                Button {
+                    selectedTab = .profile
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "wave.3.right.circle.fill")
+                            .foregroundStyle(GymTheme.primary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(
+                                gymText(
+                                    "Live workout invitation",
+                                    "Запрошення на спільне тренування",
+                                    "Приглашение на совместную тренировку",
+                                    languageCode: languageCode
+                                )
+                            )
+                            .font(.subheadline.bold())
+                            Text(
+                                gymText(
+                                    "Open Friends to review it. Accepting starts the workout for both immediately.",
+                                    "Відкрий Друзів, щоб переглянути. Прийняття одразу запускає тренування для обох.",
+                                    "Открой Друзей, чтобы посмотреть. Принятие сразу запускает тренировку для обоих.",
+                                    languageCode: languageCode
+                                )
+                            )
+                            .font(.caption)
+                            .foregroundStyle(GymTheme.textSecondary)
+                        }
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.bold())
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, minHeight: 58)
+                    .gymGlassBackground(.bar, material: .regularMaterial, edge: .bottom)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if let activeDraft = activeWorkoutStore.draft, !showsActiveWorkout, selectedTab != .workouts {
+                HStack(alignment: .center, spacing: 12) {
+                    Button {
+                        showsAddWorkout = false
+                        showsActiveWorkout = true
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "play.circle.fill")
+                                .font(.title2)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(gymText("Continue workout", "Продовжити тренування", "Продолжить тренировку", languageCode: languageCode))
+                                    .font(.subheadline.bold())
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Text("\(activeDraft.completedSetCount) / \(activeDraft.plannedSetCount)")
+                                    .font(.subheadline.monospacedDigit())
+                                    .foregroundStyle(GymTheme.onHeroSecondary)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(GymTheme.heroAccentText)
+                    if !liveWorkoutCoordinator.isAttachedToCurrentDraft {
+                        Button(role: .destructive) {
+                            showingActiveDraftDiscardConfirmation = true
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(GymTheme.error)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(
+                            gymText(
+                                "Discard active workout",
+                                "Відкинути активне тренування",
+                                "Удалить активную тренировку",
+                                languageCode: languageCode
+                            )
+                        )
+                    }
+                }
+                .padding(.leading, 16)
+                .padding(.trailing, 6)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, minHeight: 58)
+                .background(
+                    GymTheme.heroSurface,
+                    in: RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
+                        .stroke(GymTheme.heroOutline, lineWidth: GymTheme.hairlineWidth)
+                )
+                // Inset tonal panel: lives in the top safe-area inset so the screen
+                // content below is laid out under it instead of scrolling beneath it.
+                .padding(.horizontal, GymTheme.screenHorizontalInset)
+                .padding(.top, 6)
+                .padding(.bottom, 6)
+                // Page-colored strip behind the banner and its 6pt gaps: the
+                // scrolling list clips cleanly at the banner's lower edge
+                // instead of showing sliced rows between banner and content.
+                .background(GymTheme.background)
+            }
+        }
+    }
+
     private var workoutsTab: some View {
         NavigationStack(path: $workoutPath) {
             WorkoutsView(
@@ -1973,7 +1979,9 @@ private struct MainTabShell: View {
                 onOpenWorkout: { workoutPath.append(.detail($0)) },
                 onOpenRanks: { workoutPath.append(.ranks) }
             )
+            .safeAreaInset(edge: .top, spacing: 0) { topBanners }
             .navigationDestination(for: WorkoutRoute.self) { route in
+                Group {
                 switch route {
                 case .detail(let id):
                     WorkoutDetailView(
@@ -1997,6 +2005,8 @@ private struct MainTabShell: View {
                 case .ranks:
                     RanksView(store: store)
                 }
+                }
+                .gymTopBannerInset()
             }
         }
     }
@@ -2004,6 +2014,7 @@ private struct MainTabShell: View {
     private var exercisesTab: some View {
         NavigationStack {
             ExercisesView()
+                .safeAreaInset(edge: .top, spacing: 0) { topBanners }
         }
     }
 
@@ -2025,10 +2036,14 @@ private struct MainTabShell: View {
                     showsAddWorkout = true
                 }
             )
+                .safeAreaInset(edge: .top, spacing: 0) { topBanners }
                 .navigationDestination(for: MissionRoute.self) { route in
-                    switch route {
-                    case .ranks: RanksView(store: store)
+                    Group {
+                        switch route {
+                        case .ranks: RanksView(store: store)
+                        }
                     }
+                    .gymTopBannerInset()
                 }
         }
     }
@@ -2050,6 +2065,7 @@ private struct MainTabShell: View {
                     showsActiveWorkout = true
                 }
             )
+            .safeAreaInset(edge: .top, spacing: 0) { topBanners }
         }
         .id(profileNavigationID)
     }

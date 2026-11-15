@@ -960,6 +960,7 @@ struct FriendsView: View {
                             liveWorkoutCoordinator: liveWorkoutCoordinator,
                             onCreateLiveWorkout: onCreateLiveWorkout
                         )
+                        .gymTopBannerInset()
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: "lock.shield")
@@ -1016,6 +1017,7 @@ struct FriendsView: View {
                         liveWorkoutCoordinator: liveWorkoutCoordinator,
                         onCreateLiveWorkout: onCreateLiveWorkout
                     )
+                    .gymTopBannerInset()
                 } label: {
                     rankingRowContent(item, place: place)
                 }

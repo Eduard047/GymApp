@@ -99,7 +99,7 @@ struct WeeklyReviewCard: View {
                     }
                     DisclosureGroup(t("Workouts this week", "Тренування цього тижня", "Тренировки этой недели")) {
                         ForEach(review.sessions, id: \.workoutID) { entry in
-                            NavigationLink { WorkoutDetailView(store: store, workoutID: entry.workoutID) } label: {
+                            NavigationLink { WorkoutDetailView(store: store, workoutID: entry.workoutID).gymTopBannerInset() } label: {
                                 Text(gymShortDateTime(entry.sessionDate)).frame(minHeight: 44)
                             }
                         }
@@ -147,7 +147,7 @@ struct WeeklyReviewCard: View {
         .sheet(item: $evidence) { insight in
             NavigationStack {
                 List([insight.previous, insight.current], id: \.setID) { entry in
-                    NavigationLink { WorkoutDetailView(store: store, workoutID: entry.workoutID) } label: {
+                    NavigationLink { WorkoutDetailView(store: store, workoutID: entry.workoutID).gymTopBannerInset() } label: {
                         VStack(alignment: .leading) {
                             Text(gymShortDate(entry.sessionDate))
                             Text("\(entry.weight.formatted(.number.locale(gymAppLocale()))) \(t("kg", "кг", "кг")) × \(entry.reps)")

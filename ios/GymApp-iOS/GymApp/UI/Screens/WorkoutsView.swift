@@ -609,6 +609,17 @@ public struct WorkoutsView: View {
                     .padding(.bottom, GymTheme.screenBottomInset)
                 }
                 .scrollIndicators(.hidden)
+                // Keep the history search field and its first results above the keyboard:
+                // once the keyboard has finished opening, and again when the first typed
+                // characters swap the period list for results.
+                .onChange(of: historySearchFocused) { _, focused in
+                    guard focused else { return }
+                    revealHistorySearch(proxy, afterKeyboardOpens: true)
+                }
+                .onChange(of: historySearchQuery) { _, _ in
+                    guard historySearchFocused else { return }
+                    revealHistorySearch(proxy, afterKeyboardOpens: false)
+                }
                 .onAppear {
                     guard let historyReturnWorkoutID else { return }
                     Task { @MainActor in
@@ -1702,6 +1713,29 @@ public struct WorkoutsView: View {
         .id("workout-history")
     }
 
+    private static let historySearchFieldID = "workout-history-search"
+
+    /// Scrolls the search field to the top of the visible area (the scroll view is already
+    /// shortened by the keyboard) so the results below it stay visible. Snaps instead of
+    /// animating when Reduce Motion is on.
+    private func revealHistorySearch(_ proxy: ScrollViewProxy, afterKeyboardOpens: Bool) {
+        Task { @MainActor in
+            if afterKeyboardOpens {
+                try? await Task.sleep(for: .milliseconds(450))
+            } else {
+                await Task.yield()
+            }
+            guard historySearchFocused else { return }
+            if reduceMotion {
+                proxy.scrollTo(Self.historySearchFieldID, anchor: .top)
+            } else {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    proxy.scrollTo(Self.historySearchFieldID, anchor: .top)
+                }
+            }
+        }
+    }
+
     private var isSearchingHistory: Bool {
         !historySearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -1740,7 +1774,8 @@ public struct WorkoutsView: View {
                 gymText("Search by exercise", "Пошук за вправою", "Поиск по упражнению", languageCode: languageCode),
                 text: $historySearchQuery
             )
-            .textInputAutocapitalization(.words)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
             .submitLabel(.search)
             .focused($historySearchFocused)
             .onSubmit { historySearchFocused = false }
@@ -1760,6 +1795,7 @@ public struct WorkoutsView: View {
             }
         }
         .gymTextFieldChrome()
+        .id(Self.historySearchFieldID)
     }
 
     private var selectedHistoryOffset: Int {

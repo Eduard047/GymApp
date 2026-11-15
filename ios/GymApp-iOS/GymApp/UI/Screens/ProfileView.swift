@@ -705,6 +705,7 @@ struct ProfileView: View {
             TrainingSettingsView(profile: $trainingProfile) { newValue in
                 TrainingProfileStore().save(newValue, accountStorageKey: store.accountStorageKey)
             }
+            .gymTopBannerInset()
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "target")

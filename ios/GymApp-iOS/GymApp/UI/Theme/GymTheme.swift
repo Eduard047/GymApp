@@ -241,3 +241,37 @@ private extension UIColor {
         )
     }
 }
+
+
+// MARK: - Top banner inset for pushed screens
+
+private struct GymTopBannerKey: EnvironmentKey {
+    static let defaultValue: AnyView? = nil
+}
+
+extension EnvironmentValues {
+    /// The resume / invitation banner the tab shell pins above the tabs. Tab roots draw it
+    /// themselves; screens pushed onto a tab's stack read it here via `gymTopBannerInset()`.
+    var gymTopBanner: AnyView? {
+        get { self[GymTopBannerKey.self] }
+        set { self[GymTopBannerKey.self] = newValue }
+    }
+}
+
+private struct GymTopBannerInset: ViewModifier {
+    @Environment(\.gymTopBanner) private var banner
+
+    func body(content: Content) -> some View {
+        content.safeAreaInset(edge: .top, spacing: 0) {
+            if let banner { banner }
+        }
+    }
+}
+
+extension View {
+    /// Keeps the shell's banner above a pushed screen and lays the screen out below it, so the
+    /// resume bar stays visible on every screen of a tab, as on Android.
+    func gymTopBannerInset() -> some View {
+        modifier(GymTopBannerInset())
+    }
+}
