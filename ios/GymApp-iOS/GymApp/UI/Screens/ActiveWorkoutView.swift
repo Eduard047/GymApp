@@ -230,6 +230,8 @@ struct ActiveWorkoutView: View {
     /// "Finish workout?" confirmation, shown only when planned sets remain
     /// unrecorded (they are not saved to history). Re-derives the live draft.
     @State private var showingFinishConfirmation = false
+    /// Set whose rest row currently carries the one-time "notifications are off" note.
+    @State private var restNotificationsNoteSetID: UUID?
     /// The exercise block a "Finish" tap is asking to confirm, when it has
     /// unrecorded sets. Stores only the id; `pendingFinishExercisePair`
     /// re-derives the live exercise/draft so the dialog's buttons never act
@@ -1595,6 +1597,7 @@ struct ActiveWorkoutView: View {
         return GymExerciseCard(
             name: exerciseName,
             highlighted: isCurrent,
+            compact: true,
             isCollapsed: isCollapsed,
             accessibilityValueText: "\(completedCount) / \(exercise.sets.count)"
                 + (cue.map { ", \(gymExerciseCueLabel()): \($0)" } ?? ""),
@@ -1606,8 +1609,8 @@ struct ActiveWorkoutView: View {
             },
             onMoveUp: onMoveUp,
             onMoveDown: onMoveDown,
-            reorderHandle: canReorderExercises(draft)
-                ? GymReorderHandleSource(coordinator: exerciseReorder, id: exercise.id) : nil,
+            // No drag grip on the compact header: reordering is the menu's Move up / Move down.
+            reorderHandle: nil,
             media: {
                 if let storedExercise {
                     ExerciseMediaButton(
@@ -1615,7 +1618,11 @@ struct ActiveWorkoutView: View {
                         catalogKey: storedExercise.catalogKey,
                         exerciseID: storedExercise.id,
                         ownerKey: workoutStore.accountStorageKey,
-                        editable: ExerciseMediaPresentation.isEditable(on: .activeWorkout)
+                        editable: ExerciseMediaPresentation.isEditable(on: .activeWorkout),
+                        width: 48,
+                        height: 48,
+                        playOverlayDiameter: 18,
+                        cornerRadius: 10
                     )
                 }
             },
@@ -1766,26 +1773,24 @@ struct ActiveWorkoutView: View {
                         } label: {
                             Text(
                                 gymText(
-                                    "Finish",
-                                    "Завершити",
-                                    "Завершить",
+                                    "Done",
+                                    "Готово",
+                                    "Готово",
                                     languageCode: gymCurrentLanguageCode()
                                 )
                             )
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(GymTheme.primary)
                             .frame(maxWidth: .infinity, minHeight: 48)
+                            .background(GymTheme.primary.opacity(0.15), in: Capsule())
+                            .contentShape(Capsule())
                         }
                         .buttonStyle(.plain)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .strokeBorder(GymTheme.primary.opacity(0.7), lineWidth: 1)
-                        )
                         .accessibilityLabel(
                             gymText(
-                                "Save exercise",
-                                "Зберегти вправу",
-                                "Сохранить упражнение",
+                                "Done with exercise",
+                                "Готово з вправою",
+                                "Готово с упражнением",
                                 languageCode: gymCurrentLanguageCode()
                             )
                         )
@@ -2655,18 +2660,10 @@ struct ActiveWorkoutView: View {
                             ),
                             undo: rowUndo
                         )
-                        if remaining > 0, restNotificationsDenied {
-                            Text(
-                                gymText(
-                                    "Notifications are off. The rest alert works only while GymApp is open.",
-                                    "Сповіщення вимкнені. Сигнал відпочинку спрацює лише у відкритому GymApp.",
-                                    "Уведомления выключены. Сигнал отдыха сработает только в открытом GymApp.",
-                                    languageCode: gymCurrentLanguageCode()
-                                )
-                            )
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        if remaining > 0, restNotificationsDenied,
+                           restNotificationsNoteSetID == set.id
+                            || (restNotificationsNoteSetID == nil && RestNotificationsNoteStore.shouldOffer()) {
+                            restNotificationsNote(setID: set.id)
                         }
                     }
                 }
@@ -2804,6 +2801,67 @@ struct ActiveWorkoutView: View {
         .animation(reduceMotion ? nil : GymMotion.fade, value: restPhase)
     }
 
+    /// One-time inline note under the rest row: shown at most once per install, dismissible,
+    /// with an action that opens the app's notification settings.
+    private func restNotificationsNote(setID: UUID) -> some View {
+        let code = gymCurrentLanguageCode()
+        return HStack(alignment: .top, spacing: 4) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(
+                    gymText(
+                        "Notifications are off. The rest alert works only while GymApp is open.",
+                        "Сповіщення вимкнені. Сигнал відпочинку спрацює лише у відкритому GymApp.",
+                        "Уведомления выключены. Сигнал отдыха сработает только в открытом GymApp.",
+                        languageCode: code
+                    )
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
+                Button {
+                    RestNotificationsNoteStore.markShown()
+                    restNotificationsNoteSetID = nil
+                    openNotificationSettings()
+                } label: {
+                    Text(gymText("Settings", "Налаштування", "Настройки", languageCode: code))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GymTheme.primary)
+                        .frame(minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+            Button {
+                RestNotificationsNoteStore.markShown()
+                restNotificationsNoteSetID = nil
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(gymText("Dismiss", "Закрити", "Закрыть", languageCode: code))
+        }
+        .onAppear {
+            // Showing it once is enough: persist now, keep it up for this rest only.
+            RestNotificationsNoteStore.markShown()
+            restNotificationsNoteSetID = setID
+        }
+    }
+
+    private func openNotificationSettings() {
+        let raw = UIApplication.openNotificationSettingsURLString
+        if let url = URL(string: raw) {
+            UIApplication.shared.open(url)
+        } else if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        }
+    }
+
     private func loadPersonalRecordBaselines() {
         guard let draft = currentDraft else {
             personalRecordBaselines = [:]
@@ -2816,7 +2874,7 @@ struct ActiveWorkoutView: View {
     }
 
     /// Trailing rest control on the latest completed row: a monospaced,
-    /// never-compressed countdown plus "−15"/"+15"/stop-icon capsules — the
+    /// never-compressed countdown plus "−15"/"+15"/"Skip" capsules — the
     /// exact same `adjustManualRest`/`stopManualRest` actions the old full
     /// rest panel used, just laid out compactly. `.fixedSize()` on the
     /// countdown (and the capsules never compressing their own content) is
@@ -2860,7 +2918,7 @@ struct ActiveWorkoutView: View {
         .accessibilityValue(Self.clock(TimeInterval(remainingSeconds)))
     }
 
-    /// The −15 / +15 / stop capsules of `compactRestControls`.
+    /// The −15 / +15 / Skip capsules of `compactRestControls`.
     private func restAdjustmentCapsules(draft: ActiveWorkoutDraft, locked: Bool) -> some View {
         HStack(spacing: 6) {
             compactRestCapsuleButton(
@@ -2888,9 +2946,9 @@ struct ActiveWorkoutView: View {
                 adjustManualRest(15)
             }
             compactRestCapsuleButton(
-                systemImage: "stop.fill",
+                title: gymText("Skip", "Пропустити", "Пропустить", languageCode: gymCurrentLanguageCode()),
                 accessibilityLabel: gymText(
-                    "Stop rest", "Зупинити відпочинок", "Остановить отдых", languageCode: gymCurrentLanguageCode()
+                    "Skip rest", "Пропустити відпочинок", "Пропустить отдых", languageCode: gymCurrentLanguageCode()
                 ),
                 disabled: locked
             ) {

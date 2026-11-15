@@ -139,6 +139,7 @@ import com.example.gymapp.ui.components.rememberGymHaptics
 import com.example.gymapp.ui.components.tabularDigits
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.theme.GymCapsuleShape
+import com.example.gymapp.util.keepShortWordsWithNext
 import java.text.DecimalFormatSymbols
 import java.text.NumberFormat
 import kotlin.math.roundToLong
@@ -148,7 +149,7 @@ import com.example.gymapp.util.formattedPluralStringResource
 /*
  * Stateless building blocks of an exercise card, shared by the active-workout screen and the saved
  * workout screen so both read and edit with the same look: card shell and header, set rows (editable
- * and recorded), the inline set editor pieces, the dashed footer button and the remove-exercise menu
+ * and recorded), the inline set editor pieces, the tinted footer button and the remove-exercise menu
  * and dialog. They hold no screen state of their own beyond transient menu visibility.
  */
 
@@ -173,21 +174,27 @@ internal fun WorkoutExerciseCardShell(
     }
 }
 
-/** Exercise thumbnail at the size the card header uses. */
+/**
+ * Exercise thumbnail at the size the card header uses: 76x64dp, or with [compact] a 48dp square
+ * (10dp corners, small play badge) so the title keeps the width.
+ */
 @Composable
 internal fun WorkoutExerciseMedia(
     exerciseId: Long,
     exerciseName: String,
     ownerKey: String,
-    editable: Boolean = false
+    editable: Boolean = false,
+    compact: Boolean = false
 ) {
     ExerciseMediaPreview(
         exerciseId = exerciseId,
         exerciseName = exerciseName,
         ownerKey = ownerKey,
-        width = 76.dp,
-        height = 64.dp,
-        editable = editable
+        width = if (compact) 48.dp else 76.dp,
+        height = if (compact) 48.dp else 64.dp,
+        editable = editable,
+        playBadgeSize = if (compact) 18.dp else 28.dp,
+        cornerRadius = if (compact) 10.dp else 13.dp
     )
 }
 
@@ -210,6 +217,11 @@ internal fun WorkoutExerciseCardHeader(
     accessibilityActions: List<CustomAccessibilityAction> = emptyList(),
     /** Read together with [title] by a screen reader (the exercise's cue line). */
     descriptionExtra: String? = null,
+    /**
+     * Compact layout (active workout): title is 17sp semibold, up to two lines with an ellipsis, with
+     * Russian short words bound to the next word; no collapse chevron (the title block still toggles).
+     */
+    compact: Boolean = false,
     subtitle: @Composable ColumnScope.() -> Unit
 ) {
     val toggleLabel = stringResource(
@@ -217,8 +229,9 @@ internal fun WorkoutExerciseCardHeader(
     )
     // At large font scales the drag handle, thumbnail and overflow menu leave the title a sliver
     // (it broke mid-word), so the title block moves to its own full-width line under them.
-    val stackTitle = LocalDensity.current.fontScale >= 1.3f &&
+    val stackTitle = !compact && LocalDensity.current.fontScale >= 1.3f &&
         (leading != null || media != null || menu != null)
+    val displayTitle = if (compact) keepShortWordsWithNext(title) else title
     val titleBlock: @Composable (Modifier) -> Unit = { titleModifier ->
         Row(
             modifier = titleModifier
@@ -254,15 +267,19 @@ internal fun WorkoutExerciseCardHeader(
                 verticalArrangement = Arrangement.spacedBy(3.dp)
             ) {
                 Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
+                    text = displayTitle,
+                    style = if (compact) {
+                        MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    } else {
+                        MaterialTheme.typography.titleMedium
+                    },
                     color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = if (onToggleExpanded == null) 2 else Int.MAX_VALUE,
+                    maxLines = if (onToggleExpanded == null || compact) 2 else Int.MAX_VALUE,
                     overflow = TextOverflow.Ellipsis
                 )
                 subtitle()
             }
-            if (onToggleExpanded != null) {
+            if (onToggleExpanded != null && !compact) {
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                     contentDescription = null,
@@ -484,53 +501,55 @@ internal fun WorkoutDeleteRecordedSetDialog(
     )
 }
 
-/** Outlined footer action, 48dp min, 12dp corners: dashed (primary 50%) for "+ Set" / "+ Add exercise", solid (primary 70%) for "Finish". */
+/**
+ * Footer action, 48dp min, capsule: [tinted] (accent 15% fill, no border, accent label) for "+ Set" and
+ * "+ Add exercise"; otherwise an outlined capsule (primary 70% hairline) for "Done". Both press-scale.
+ */
 @Composable
 internal fun WorkoutFooterButton(
     label: String,
     accessibilityLabel: String,
-    dashed: Boolean,
+    tinted: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val primary = MaterialTheme.colorScheme.primary
     val contentColor = if (enabled) primary else primary.copy(alpha = 0.38f)
-    val borderColor = primary.copy(alpha = if (dashed) 0.5f else 0.7f).let {
-        if (enabled) it else it.copy(alpha = it.alpha * 0.5f)
-    }
     val shape = GymCapsuleShape
+    val interactionSource = remember { MutableInteractionSource() }
     val density = LocalDensity.current
+    val borderColor = primary.copy(alpha = if (enabled) 0.7f else 0.35f)
     Box(
         modifier = modifier
             .heightIn(min = 48.dp)
+            .pressScale(interactionSource)
             .clip(shape)
+            .then(
+                if (tinted) {
+                    Modifier.background(primary.copy(alpha = if (enabled) 0.15f else 0.07f))
+                } else {
+                    Modifier.drawBehind {
+                        val strokeWidth = with(density) { 1.dp.toPx() }
+                        val inset = strokeWidth / 2f
+                        drawRoundRect(
+                            color = borderColor,
+                            topLeft = Offset(inset, inset),
+                            size = Size(size.width - strokeWidth, size.height - strokeWidth),
+                            cornerRadius = CornerRadius(size.height / 2f - inset),
+                            style = Stroke(width = strokeWidth)
+                        )
+                    }
+                }
+            )
             .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
                 enabled = enabled,
                 role = Role.Button,
                 onClick = onClick
             )
             .semantics(mergeDescendants = true) { contentDescription = accessibilityLabel }
-            .drawBehind {
-                val strokeWidth = with(density) { 1.dp.toPx() }
-                val inset = strokeWidth / 2f
-                drawRoundRect(
-                    color = borderColor,
-                    topLeft = Offset(inset, inset),
-                    size = Size(size.width - strokeWidth, size.height - strokeWidth),
-                    cornerRadius = CornerRadius(size.height / 2f - inset),
-                    style = Stroke(
-                        width = strokeWidth,
-                        pathEffect = if (dashed) {
-                            PathEffect.dashPathEffect(
-                                floatArrayOf(with(density) { 4.dp.toPx() }, with(density) { 3.dp.toPx() })
-                            )
-                        } else {
-                            null
-                        }
-                    )
-                )
-            }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {

@@ -627,13 +627,14 @@
     <string name="active_workout_recorded_announcement">%1$s · відпочинок %2$s</string>
     <string name="active_workout_rest_subtract">Зменшити відпочинок на 15 секунд</string>
     <string name="active_workout_rest_add">Збільшити відпочинок на 15 секунд</string>
-    <string name="active_workout_rest_stop">Зупинити відпочинок</string>
     <string name="active_workout_rest_alerts_off_hint">Сповіщення вимкнені. Сигнал відпочинку спрацює лише у відкритому GymApp.</string>
+    <string name="active_workout_rest_skip">Пропустити</string>
+    <string name="active_workout_rest_alerts_open_settings">Налаштування</string>
     <string name="active_workout_add_set">Додати підхід</string>
     <string name="active_workout_save_exercise">Зберегти вправу</string>
     <string name="active_workout_exercise_saved">Вправу збережено.</string>
     <string name="active_workout_add_set_short">+ Підхід</string>
-    <string name="active_workout_finish_exercise">Завершити</string>
+    <string name="active_workout_finish_exercise">Готово</string>
     <plurals name="remaining_estimate_sets_left">
         <item quantity="one">Залишився %1$d&#160;підхід</item>
         <item quantity="few">Залишилось %1$d&#160;підходи</item>

@@ -188,7 +188,7 @@ class ActiveWorkoutHeroUiTest {
             composeRule.activity.getString(R.string.active_workout_rest_subtract)
         ).performScrollTo().performClick()
         composeRule.onNodeWithContentDescription(
-            composeRule.activity.getString(R.string.active_workout_rest_stop)
+            composeRule.activity.getString(R.string.active_workout_rest_skip)
         ).performScrollTo().performClick()
         composeRule.onNodeWithContentDescription(
             composeRule.activity.getString(R.string.active_workout_rest_timer_cd)
@@ -208,7 +208,7 @@ class ActiveWorkoutHeroUiTest {
         setActiveWorkoutContent(uiState = completedThenPendingState(restSecondsRemaining = 0))
 
         composeRule.onNodeWithContentDescription(
-            composeRule.activity.getString(R.string.active_workout_rest_stop)
+            composeRule.activity.getString(R.string.active_workout_rest_skip)
         ).assertDoesNotExist()
     }
 
@@ -331,7 +331,7 @@ class ActiveWorkoutHeroUiTest {
             composeRule.activity.getString(R.string.active_workout_rest_add)
         ).performScrollTo().assertIsNotEnabled()
         composeRule.onNodeWithContentDescription(
-            composeRule.activity.getString(R.string.active_workout_rest_stop)
+            composeRule.activity.getString(R.string.active_workout_rest_skip)
         ).performScrollTo().assertIsNotEnabled()
         val description = composeRule.activity.getString(
             R.string.active_workout_set_recorded_cd,

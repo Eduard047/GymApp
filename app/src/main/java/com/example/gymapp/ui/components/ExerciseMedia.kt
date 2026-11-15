@@ -78,7 +78,8 @@ fun ExerciseMediaPreview(
     width: Dp = 76.dp,
     height: Dp = 64.dp,
     editable: Boolean = true,
-    playBadgeSize: Dp = 28.dp
+    playBadgeSize: Dp = 28.dp,
+    cornerRadius: Dp = 13.dp
 ) {
     require(ownerKey.isNotBlank()) { "Exercise media must be bound to an active account." }
     var showSheet by remember(exerciseId, ownerKey) { mutableStateOf(false) }
@@ -130,7 +131,7 @@ fun ExerciseMediaPreview(
                     localizedExerciseName(exerciseName)
                 )
             ) { showSheet = true },
-        shape = RoundedCornerShape(13.dp),
+        shape = RoundedCornerShape(cornerRadius),
         color = MaterialTheme.colorScheme.surfaceVariant
     ) {
         Box(contentAlignment = Alignment.Center) {

@@ -627,13 +627,14 @@
     <string name="active_workout_recorded_announcement">%1$s · отдых %2$s</string>
     <string name="active_workout_rest_subtract">Уменьшить отдых на 15 секунд</string>
     <string name="active_workout_rest_add">Увеличить отдых на 15 секунд</string>
-    <string name="active_workout_rest_stop">Остановить отдых</string>
     <string name="active_workout_rest_alerts_off_hint">Уведомления выключены. Сигнал отдыха сработает только в открытом GymApp.</string>
+    <string name="active_workout_rest_skip">Пропустить</string>
+    <string name="active_workout_rest_alerts_open_settings">Настройки</string>
     <string name="active_workout_add_set">Добавить подход</string>
     <string name="active_workout_save_exercise">Сохранить упражнение</string>
     <string name="active_workout_exercise_saved">Упражнение сохранено.</string>
     <string name="active_workout_add_set_short">+ Подход</string>
-    <string name="active_workout_finish_exercise">Завершить</string>
+    <string name="active_workout_finish_exercise">Готово</string>
     <plurals name="remaining_estimate_sets_left">
         <item quantity="one">Остался %1$d&#160;подход</item>
         <item quantity="few">Осталось %1$d&#160;подхода</item>

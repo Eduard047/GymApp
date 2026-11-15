@@ -126,6 +126,28 @@ func workoutDetailCanSaveSet(weight: Double, reps: Int) -> Bool {
     weight.isFinite && weight >= 0 && reps >= 1
 }
 
+/// Short Russian prepositions and conjunctions that must not end a line.
+private let gymBindingShortWords: Set<String> = [
+    "в", "на", "с", "к", "и", "а", "о", "у", "по", "за", "из", "от", "до",
+]
+
+/// Display-only copy of an exercise name with a no-break space after every short
+/// preposition or conjunction (в, на, с, к, и, а, о, у, по, за, из, от, до), so
+/// "Жим штанги лежа на скамье" never leaves "на" alone at a line end. Stored
+/// names are never changed.
+func gymExerciseDisplayName(_ name: String) -> String {
+    let words = name.split(separator: " ", omittingEmptySubsequences: false)
+    guard words.count > 1 else { return name }
+    var result = ""
+    for (index, word) in words.enumerated() {
+        result += word
+        guard index < words.count - 1 else { break }
+        let binds = gymBindingShortWords.contains(word.lowercased())
+        result += binds ? "\u{00A0}" : " "
+    }
+    return result
+}
+
 // MARK: - Exercise card shell
 
 /// Exercise panel shell: header (media, name + info, expand/collapse chevron,
@@ -136,6 +158,9 @@ struct GymExerciseCard<Media: View, Info: View, Overflow: View, Content: View>: 
     /// False for a card that is always open (the plan editor): no chevron and
     /// no toggle, just the header and the body.
     var collapsible = true
+    /// Active-workout header: no chevron (the whole header toggles), a title of up to
+    /// two lines, and room beside a small preview instead of a wide one.
+    var compact = false
     var isCollapsed = false
     var accessibilityLabelText: String?
     var accessibilityValueText = ""
@@ -197,7 +222,7 @@ struct GymExerciseCard<Media: View, Info: View, Overflow: View, Content: View>: 
         return name
             .split(whereSeparator: { $0.isWhitespace || $0 == "-" || $0 == "/" })
             .contains { word in
-                (String(word) as NSString).size(withAttributes: [.font: font]).width > 96
+                (String(word) as NSString).size(withAttributes: [.font: font]).width > (compact ? 150 : 96)
             }
     }
 
@@ -208,8 +233,10 @@ struct GymExerciseCard<Media: View, Info: View, Overflow: View, Content: View>: 
                 HStack(spacing: 8) {
                     titleBlock
                     Spacer(minLength: 8)
-                    Image(systemName: isCollapsed ? "chevron.down" : "chevron.up")
-                        .foregroundStyle(GymTheme.textSecondary)
+                    if !compact {
+                        Image(systemName: isCollapsed ? "chevron.down" : "chevron.up")
+                            .foregroundStyle(GymTheme.textSecondary)
+                    }
                 }
                 .contentShape(Rectangle())
             }
@@ -229,9 +256,12 @@ struct GymExerciseCard<Media: View, Info: View, Overflow: View, Content: View>: 
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(name)
+            Text(gymExerciseDisplayName(name))
                 .font(.headline)
                 .foregroundStyle(GymTheme.textPrimary)
+                .lineLimit(compact ? 2 : nil)
+                .truncationMode(.tail)
+                .multilineTextAlignment(.leading)
             info()
         }
     }
@@ -288,7 +318,7 @@ extension GymExerciseOverflowMenu where Extra == EmptyView {
     }
 }
 
-/// Dashed-outline add action ("+ Set", "+ Add exercise").
+/// Tinted capsule add action ("+ Set", "+ Add exercise"): accent 15% fill, no border.
 struct GymDashedAddButton: View {
     let title: String
     let accessibilityLabelText: String
@@ -303,12 +333,10 @@ struct GymDashedAddButton: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(GymTheme.primary)
                 .frame(maxWidth: .infinity, minHeight: minHeight)
+                .background(GymTheme.primary.opacity(0.15), in: Capsule())
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(GymTheme.primary.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-        )
         .accessibilityLabel(accessibilityLabelText)
         .accessibilityHint(accessibilityHintText ?? "")
         .disabled(disabled)

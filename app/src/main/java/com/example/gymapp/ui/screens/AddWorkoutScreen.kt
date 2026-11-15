@@ -544,7 +544,7 @@ fun AddWorkoutScreen(
                 WorkoutFooterButton(
                     label = stringResource(R.string.workout_detail_add_exercise_short),
                     accessibilityLabel = addExerciseDescription,
-                    dashed = true,
+                    tinted = true,
                     enabled = true,
                     onClick = openAddExercisePicker,
                     modifier = Modifier
@@ -1361,7 +1361,7 @@ private fun WorkoutTemplatePickerContent(
 
 /**
  * One exercise of the plan, built from the same card pieces as the active and saved workout screens
- * ([WorkoutExerciseCardShell], header, [SetEditorCapsules], dashed [WorkoutFooterButton]) so all
+ * ([WorkoutExerciseCardShell], header, [SetEditorCapsules], tinted [WorkoutFooterButton]) so all
  * three read alike. The plan's cards are highlighted and never collapse; the header menu holds
  * "Replace with similar" and the immediate (draft-only) "Delete".
  */
@@ -1487,7 +1487,7 @@ private fun ExerciseDraftCard(
                     WorkoutFooterButton(
                         label = selectExerciseLabel,
                         accessibilityLabel = selectExerciseLabel,
-                        dashed = true,
+                        tinted = true,
                         enabled = true,
                         onClick = openPicker,
                         modifier = Modifier.fillMaxWidth()
@@ -1541,7 +1541,7 @@ private fun ExerciseDraftCard(
         WorkoutFooterButton(
             label = stringResource(R.string.editor_add_set_short),
             accessibilityLabel = addSetDescription,
-            dashed = true,
+            tinted = true,
             enabled = true,
             onClick = onAddSet,
             modifier = Modifier.fillMaxWidth()

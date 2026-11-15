@@ -180,7 +180,6 @@ import com.example.gymapp.ui.components.rememberDiscardGuardedSheetState
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMediaPreview
-import com.example.gymapp.ui.components.ExerciseDragHandle
 import com.example.gymapp.ui.components.ExerciseReorderSync
 import com.example.gymapp.ui.components.GymHapticEvent
 import com.example.gymapp.ui.components.GymMotion
@@ -197,6 +196,7 @@ import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.components.longPressRipple
 import com.example.gymapp.ui.components.pressScale
+import com.example.gymapp.util.RestAlertsHintFlag
 import com.example.gymapp.ui.components.exerciseReorderItem
 import com.example.gymapp.ui.components.exerciseReorderViewport
 import com.example.gymapp.ui.components.rememberExerciseReorderState
@@ -837,19 +837,6 @@ fun ActiveWorkoutScreen(
                             },
                             fadeOutSpec = GymMotion.fadeOutSpec()
                         ),
-                    reorderHandle = if (canReorderExercises) {
-                        {
-                            ExerciseDragHandle(
-                                state = reorder,
-                                itemKey = exercise.id,
-                                sourceKeys = exerciseKeys,
-                                enabled = !operationInProgress,
-                                onCommit = { _, toIndex -> onMoveExerciseTo(exercise.id, toIndex) }
-                            )
-                        }
-                    } else {
-                        null
-                    },
                     exercise = exercise,
                     initiallyExpanded = exercise.id == currentExerciseId,
                     screenEntryToken = screenEntryToken,
@@ -917,7 +904,7 @@ fun ActiveWorkoutScreen(
 
             if (uiState.liveConnectionMode == null) {
                 item(key = "add-exercise") {
-                    // Same picker and dashed button as the saved workout screen; hidden in live rooms.
+                    // Same picker and tinted button as the saved workout screen; hidden in live rooms.
                     ExerciseCatalogSelector(
                         selectedExerciseId = null,
                         exercises = addExerciseCatalog.exercises,
@@ -932,7 +919,7 @@ fun ActiveWorkoutScreen(
                             WorkoutFooterButton(
                                 label = stringResource(R.string.workout_detail_add_exercise_short),
                                 accessibilityLabel = stringResource(R.string.action_add_exercise),
-                                dashed = true,
+                                tinted = true,
                                 enabled = !operationInProgress && addExerciseCatalog.exercises.isNotEmpty(),
                                 onClick = openPicker,
                                 modifier = Modifier.fillMaxWidth()
@@ -1639,7 +1626,6 @@ private fun ActiveWorkoutExerciseCard(
     customRestSeconds: Int? = null,
     onSaveRestSeconds: suspend (Int?) -> com.example.gymapp.util.ExerciseRestSaveResult =
         { com.example.gymapp.util.ExerciseRestSaveResult.FAILED },
-    reorderHandle: (@Composable () -> Unit)? = null,
     onDeleteSet: (String) -> Unit,
     onRecordSet: (String) -> Unit,
     onUndoSet: (String) -> Unit,
@@ -1714,13 +1700,14 @@ private fun ActiveWorkoutExerciseCard(
             expanded = isExpanded,
             onToggleExpanded = { isExpanded = !isExpanded },
             stateText = progressValue,
-            leading = reorderHandle,
+            compact = true,
             media = exercise.exerciseId?.let { exerciseId ->
                 {
                     WorkoutExerciseMedia(
                         exerciseId = exerciseId,
                         exerciseName = exercise.exerciseName,
-                        ownerKey = exerciseMediaOwnerKey
+                        ownerKey = exerciseMediaOwnerKey,
+                        compact = true
                     )
                 }
             },
@@ -1923,7 +1910,7 @@ private fun ActiveWorkoutExerciseCard(
             }
         }
         if (isExpanded && allowExerciseActions) {
-            // Two equal columns, no divider: dashed "+ Set" leading, solid "Finish" trailing.
+            // Two equal columns, no divider: tinted "+ Set" leading, outlined "Done" trailing.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1931,7 +1918,7 @@ private fun ActiveWorkoutExerciseCard(
                 WorkoutFooterButton(
                     label = stringResource(R.string.active_workout_add_set_short),
                     accessibilityLabel = stringResource(R.string.active_workout_add_set),
-                    dashed = true,
+                    tinted = true,
                     enabled = !operationInProgress,
                     onClick = onAddSet,
                     modifier = Modifier.weight(1f)
@@ -1939,7 +1926,7 @@ private fun ActiveWorkoutExerciseCard(
                 WorkoutFooterButton(
                     label = stringResource(R.string.active_workout_finish_exercise),
                     accessibilityLabel = stringResource(R.string.active_workout_save_exercise),
-                    dashed = false,
+                    tinted = true,
                     enabled = !operationInProgress,
                     onClick = {
                         // Nothing unrecorded: finish immediately (collapse). Otherwise ask first.
@@ -2417,13 +2404,17 @@ private fun CompletedSetRow(
 }
 
 /**
- * A quiet line under the running rest when system notifications (or the rest-timer channel) are off:
- * the lock-screen alert will not come. Re-checked on every resume so it goes away once they are enabled.
+ * A one-time note under the running rest when system notifications (or the rest-timer channel) are
+ * off: the lock-screen alert will not come. Shown at most once per install ([RestAlertsHintFlag]):
+ * it is burned when it first appears, so dismissing it, opening the settings from it or enabling the
+ * notifications all keep it away for good. Re-checked on every resume.
  */
 @Composable
 private fun RestAlertsOffHint() {
     val context = LocalContext.current
+    val flag = remember(context) { RestAlertsHintFlag.forContext(context) }
     var muted by remember { mutableStateOf(restAlertsCurrentlyMuted(context)) }
+    var visible by remember { mutableStateOf(muted && flag.mayShow(alertsMuted = true)) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
@@ -2432,17 +2423,57 @@ private fun RestAlertsOffHint() {
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    if (muted) {
-        Text(
-            text = stringResource(R.string.active_workout_rest_alerts_off_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
-        )
+    LaunchedEffect(muted) {
+        if (!muted) {
+            flag.mayShow(alertsMuted = false)
+            visible = false
+        }
+    }
+    LaunchedEffect(visible) { if (visible) flag.burn() }
+    if (visible && muted) {
+        val dismissDescription = stringResource(R.string.action_dismiss)
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.active_workout_rest_alerts_off_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(
+                onClick = {
+                    flag.burn()
+                    visible = false
+                    openAppNotificationSettings(context)
+                },
+                modifier = Modifier.heightIn(min = 48.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.active_workout_rest_alerts_open_settings),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1
+                )
+            }
+            IconButton(
+                onClick = {
+                    flag.burn()
+                    visible = false
+                }
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = dismissDescription,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 
-/** Monospaced countdown + "−15" / "+15" / stop pills (~32dp visual, 48dp targets). */
+/** Monospaced countdown + "−15" / "+15" / "Skip" pills (~32dp visual, 48dp targets). */
 @Composable
 private fun CompactRestControls(
     remainingSeconds: Int,
@@ -2455,7 +2486,7 @@ private fun CompactRestControls(
     val timerDescription = stringResource(R.string.active_workout_rest_timer_cd)
     val decreaseDescription = stringResource(R.string.active_workout_rest_subtract)
     val increaseDescription = stringResource(R.string.active_workout_rest_add)
-    val stopDescription = stringResource(R.string.active_workout_rest_stop)
+    val skipLabel = stringResource(R.string.active_workout_rest_skip)
     val pillTextStyle = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
     val primary = MaterialTheme.colorScheme.primary
     // Rest-end tint behind the readout (REST_END_HIGHLIGHT_MS); instant with reduced motion.
@@ -2502,13 +2533,8 @@ private fun CompactRestControls(
         RestPillButton(enabled, increaseDescription, { onAdjustRestTimer(15) }) { tint ->
             Text("+15", style = pillTextStyle, color = tint, maxLines = 1, softWrap = false)
         }
-        RestPillButton(enabled, stopDescription, onStopRestTimer) { tint ->
-            Icon(
-                imageVector = Icons.Default.Stop,
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(16.dp)
-            )
+        RestPillButton(enabled, skipLabel, onStopRestTimer) { tint ->
+            Text(skipLabel, style = pillTextStyle, color = tint, maxLines = 1, softWrap = false)
         }
     }
 }

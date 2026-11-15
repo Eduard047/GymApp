@@ -440,3 +440,20 @@ final class RestTimerManager: ObservableObject {
             remaining <= TimeInterval(30 * 60)
     }
 }
+
+/// Persisted once-per-install flag for the "Notifications are off" note under the rest
+/// row. The note is offered only until it has been shown once; dismissing it, opening
+/// Settings from it, or enabling notifications afterwards never brings it back.
+enum RestNotificationsNoteStore {
+    static let defaultsKey = "rest-notifications-note-shown"
+
+    static func shouldOffer(defaults: UserDefaults = .standard) -> Bool {
+        !defaults.bool(forKey: defaultsKey)
+    }
+
+    static func markShown(defaults: UserDefaults = .standard) {
+        if !defaults.bool(forKey: defaultsKey) {
+            defaults.set(true, forKey: defaultsKey)
+        }
+    }
+}

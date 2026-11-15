@@ -98,6 +98,19 @@ class ActiveWorkoutFinishFlowTest {
     }
 
     @Test
+    fun inCardFinishAndRestSkipUseTheAgreedCopy() {
+        assertEquals("Done", string("values", "active_workout_finish_exercise"))
+        assertEquals("Готово", string("values-ru", "active_workout_finish_exercise"))
+        assertEquals("Готово", string("values-uk", "active_workout_finish_exercise"))
+        assertEquals("Skip", string("values", "active_workout_rest_skip"))
+        assertEquals("Пропустить", string("values-ru", "active_workout_rest_skip"))
+        assertEquals("Пропустити", string("values-uk", "active_workout_rest_skip"))
+        assertEquals("Settings", string("values", "active_workout_rest_alerts_open_settings"))
+        assertEquals("Настройки", string("values-ru", "active_workout_rest_alerts_open_settings"))
+        assertEquals("Налаштування", string("values-uk", "active_workout_rest_alerts_open_settings"))
+    }
+
+    @Test
     fun bodyHasNoStandaloneLogRemainingButtonAndFinishLivesInTheToolbar() {
         val source = Files.readString(appFile("src/main/java/com/example/gymapp/ui/screens/ActiveWorkoutScreen.kt"))
         assertTrue(!source.contains("action_save_all_pending_sets"))

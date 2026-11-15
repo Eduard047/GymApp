@@ -617,13 +617,14 @@
     <string name="active_workout_recorded_announcement">%1$s · rest %2$s</string>
     <string name="active_workout_rest_subtract">Decrease rest by 15 seconds</string>
     <string name="active_workout_rest_add">Increase rest by 15 seconds</string>
-    <string name="active_workout_rest_stop">Stop rest</string>
     <string name="active_workout_rest_alerts_off_hint">Notifications are off. The rest alert works only while GymApp is open.</string>
+    <string name="active_workout_rest_skip">Skip</string>
+    <string name="active_workout_rest_alerts_open_settings">Settings</string>
     <string name="active_workout_add_set">Add set</string>
     <string name="active_workout_save_exercise">Save exercise</string>
     <string name="active_workout_exercise_saved">Exercise saved.</string>
     <string name="active_workout_add_set_short">+ Set</string>
-    <string name="active_workout_finish_exercise">Finish</string>
+    <string name="active_workout_finish_exercise">Done</string>
     <plurals name="remaining_estimate_sets_left">
         <item quantity="one">%1$d&#160;set left</item>
         <item quantity="other">%1$d&#160;sets left</item>

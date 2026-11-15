@@ -679,6 +679,7 @@ struct ExerciseMediaButton: View {
     var width: CGFloat = ExerciseMediaPresentation.thumbnailWidth
     var height: CGFloat = ExerciseMediaPresentation.thumbnailHeight
     var playOverlayDiameter: CGFloat = ExerciseMediaPresentation.playOverlayDiameter
+    var cornerRadius: CGFloat = ExerciseMediaPresentation.thumbnailCornerRadius
     @State private var showingMedia = false
     @State private var mediaReloadToken = 0
 
@@ -693,6 +694,7 @@ struct ExerciseMediaButton: View {
             width: width,
             height: height,
             playOverlayDiameter: playOverlayDiameter,
+            cornerRadius: cornerRadius,
             action: { showingMedia = true }
         )
         .sheet(isPresented: $showingMedia) {
@@ -721,6 +723,7 @@ struct ExerciseMediaThumbnail: View {
     var width: CGFloat = ExerciseMediaPresentation.thumbnailWidth
     var height: CGFloat = ExerciseMediaPresentation.thumbnailHeight
     var playOverlayDiameter: CGFloat = ExerciseMediaPresentation.playOverlayDiameter
+    var cornerRadius: CGFloat = ExerciseMediaPresentation.thumbnailCornerRadius
     let action: () -> Void
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @State private var loadedIdentity: LoadIdentity?
@@ -789,20 +792,20 @@ struct ExerciseMediaThumbnail: View {
 
                 if showsPlayOverlay {
                     Image(systemName: "play.fill")
-                        .font(.caption2.weight(.bold))
+                        .font(width < 72 ? .system(size: 8, weight: .bold) : .caption2.weight(.bold))
                         .foregroundStyle(.white)
                         .frame(
                             width: playOverlayDiameter,
                             height: playOverlayDiameter
                         )
                         .background(GymTheme.brandFill, in: Circle())
-                        .padding(5)
+                        .padding(width < 72 ? 3 : 5)
                 }
             }
             .background(GymTheme.surfaceVariant)
             .clipShape(
                 RoundedRectangle(
-                    cornerRadius: ExerciseMediaPresentation.thumbnailCornerRadius,
+                    cornerRadius: cornerRadius,
                     style: .continuous
                 )
             )

@@ -60,7 +60,17 @@ test("Android Russian resources cover every English string with compatible place
   assert.match(addWorkout, /R\.string\.add_workout_plan_mode_hint/);
   assert.match(addWorkout, /R\.string\.add_workout_active_mode_hint/);
   assert.match(activeWorkout, /R\.string\.active_workout_add_set/);
-  assert.match(activeWorkout, /R\.string\.action_save_all_pending_sets/);
+  // Finish lives in the top bar; the remaining-sets confirmation offers Finish and "Mark all as done".
+  assert.match(activeWorkout, /R\.string\.active_workout_toolbar_finish/);
+  assert.match(activeWorkout, /R\.string\.finish_remaining_mark_all_done/);
+  assert.doesNotMatch(activeWorkout, /action_save_all_pending_sets/);
+  assert.doesNotMatch(englishSource + ukrainianSource + russianSource, /name="action_save_all_pending_sets"/);
+  assert.equal(english.get("active_workout_toolbar_finish"), "Finish");
+  assert.equal(ukrainian.get("active_workout_toolbar_finish"), "Завершити");
+  assert.equal(russian.get("active_workout_toolbar_finish"), "Завершить");
+  assert.equal(english.get("finish_remaining_mark_all_done"), "Mark all as done");
+  assert.equal(ukrainian.get("finish_remaining_mark_all_done"), "Позначити всі як виконані");
+  assert.equal(russian.get("finish_remaining_mark_all_done"), "Отметить все как выполненные");
   assert.match(activeWorkout, /R\.string\.action_log_set_and_rest/);
   assert.match(activeWorkout, /R\.string\.action_log_set\b/);
   assert.match(activeWorkout, /R\.string\.active_workout_previous_caption/);
@@ -73,7 +83,12 @@ test("Android Russian resources cover every English string with compatible place
   assert.equal(russian.get("active_workout_previous_caption"), "прошлый раз %1$s × %2$d");
   assert.equal(ukrainian.get("active_workout_previous_caption"), "минулого разу %1$s × %2$d");
   assert.match(activeWorkout, /R\.string\.active_workout_undo_action/);
-  assert.match(activeWorkout, /R\.string\.active_workout_rest_stop/);
+  // The rest pill reads "Skip" (a text label) instead of the old stop glyph.
+  assert.match(activeWorkout, /R\.string\.active_workout_rest_skip/);
+  assert.doesNotMatch(activeWorkout, /R\.string\.active_workout_rest_stop/);
+  assert.equal(english.get("active_workout_rest_skip"), "Skip");
+  assert.equal(ukrainian.get("active_workout_rest_skip"), "Пропустити");
+  assert.equal(russian.get("active_workout_rest_skip"), "Пропустить");
   assert.doesNotMatch(activeWorkout, /R\.string\.active_workout_supporting/);
   assert.doesNotMatch(activeWorkout, /R\.string\.active_workout_finish_supporting/);
   assert.equal(english.get("garmin_set_intervals_title"), "Chronological watch sets");

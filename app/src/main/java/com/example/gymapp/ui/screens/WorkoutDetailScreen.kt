@@ -570,7 +570,7 @@ internal fun WorkoutDetailScreen(
                                 WorkoutFooterButton(
                                     label = stringResource(R.string.workout_detail_add_exercise_short),
                                     accessibilityLabel = stringResource(R.string.action_add_exercise),
-                                    dashed = true,
+                                    tinted = true,
                                     enabled = uiState.availableExercisesToAdd.isNotEmpty(),
                                     onClick = openPicker,
                                     modifier = Modifier.fillMaxWidth()
@@ -2265,7 +2265,7 @@ private fun SavedWorkoutExerciseCard(
                 WorkoutFooterButton(
                     label = stringResource(R.string.active_workout_add_set_short),
                     accessibilityLabel = stringResource(R.string.active_workout_add_set),
-                    dashed = true,
+                    tinted = true,
                     enabled = !isAddingSet,
                     onClick = onAddSet,
                     modifier = Modifier.fillMaxWidth()

@@ -1093,9 +1093,27 @@ test("Android exercise card matches the iOS compact set rows and single actions 
   // Compact tonal pills under the capsules: Last, Prev., Copy; the redundant "+2.5" chip is gone.
   assert.match(card, /editor_chip_last_weight[\s\S]{0,400}enabled = lastWeight != null[\s\S]{0,400}editor_chip_previous[\s\S]{0,300}enabled = position > 0[\s\S]{0,400}editor_chip_copy/);
   assert.doesNotMatch(card, /editor_chip_plus_step|StepCapsule\(/);
-  // "+ Set" is a dashed footer button that keeps the "Add planned set" accessibility label.
-  assert.match(card, /R\.string\.action_add_planned_set[\s\S]*WorkoutFooterButton\([\s\S]{0,200}R\.string\.editor_add_set_short[\s\S]{0,200}accessibilityLabel = addSetDescription[\s\S]{0,100}dashed = true/);
-  // "+ Add exercise" is a dashed footer after the exercise list and reuses the existing add flow.
+  // "+ Set" is a tinted capsule footer button (accent 15% fill, no border, no dashes) that keeps the "Add planned set" accessibility label.
+  assert.match(card, /R\.string\.action_add_planned_set[\s\S]*WorkoutFooterButton\([\s\S]{0,200}R\.string\.editor_add_set_short[\s\S]{0,200}accessibilityLabel = addSetDescription[\s\S]{0,100}tinted = true/);
+  assert.doesNotMatch(card, /dashed = |dashPathEffect/);
+  const footerButton = shared.slice(shared.indexOf("internal fun WorkoutFooterButton("));
+  assert.match(footerButton, /GymCapsuleShape[\s\S]{0,1400}if \(tinted\) \{\s*Modifier\.background\(primary\.copy\(alpha = if \(enabled\) 0\.15f else 0\.07f\)\)/);
+  assert.doesNotMatch(footerButton.slice(0, footerButton.indexOf("\n}\n")), /dashPathEffect|dashed/);
+  // iOS: the same capsule, accent 15% fill, no dashed outline (the type keeps its historical name).
+  const iosCards = await readFile("ios/GymApp-iOS/GymApp/UI/Components/WorkoutExerciseCardComponents.swift", "utf8");
+  const iosAddButton = iosCards.slice(iosCards.indexOf("struct GymDashedAddButton"));
+  assert.match(iosAddButton, /\.background\(GymTheme\.primary\.opacity\(0\.15\), in: Capsule\(\)\)/);
+  assert.doesNotMatch(iosAddButton.slice(0, iosAddButton.indexOf("\n}\n")), /dash:|strokeBorder/);
+  // Compact header (active workout, both platforms): no collapse chevron, a title of up to two lines,
+  // and the 48dp / 48pt preview; the plan editor keeps its full-size header.
+  assert.match(shared, /compact: Boolean = false,[\s\S]{0,3000}if \(onToggleExpanded != null && !compact\) \{\s*Icon\(\s*imageVector = if \(expanded\) Icons\.Default\.ExpandLess/);
+  assert.match(shared, /maxLines = if \(onToggleExpanded == null \|\| compact\) 2 else Int\.MAX_VALUE/);
+  assert.match(shared, /width = if \(compact\) 48\.dp else 76\.dp,\s*height = if \(compact\) 48\.dp else 64\.dp/);
+  assert.match(iosCards, /var compact = false[\s\S]{0,4000}if !compact \{\s*Image\(systemName: isCollapsed \? "chevron\.down" : "chevron\.up"\)/);
+  assert.match(iosCards, /\.lineLimit\(compact \? 2 : nil\)/);
+  assert.match(await readFile("app/src/main/java/com/example/gymapp/ui/screens/ActiveWorkoutScreen.kt", "utf8"), /compact = true,/);
+  assert.match(await readFile("ios/GymApp-iOS/GymApp/UI/Screens/ActiveWorkoutView.swift", "utf8"), /compact: true,/);
+  // "+ Add exercise" is a tinted footer after the exercise list and reuses the existing add flow.
   assert.match(androidEditor, /itemsIndexed\([\s\S]*if \(uiState\.exerciseDrafts\.isNotEmpty\(\)\) \{\s*item\(key = "workout_plan_add_exercise_footer"\)[\s\S]{0,700}WorkoutFooterButton\([\s\S]{0,500}onClick = openAddExercisePicker[\s\S]*if \(uiState\.hasValidationError\)/);
   for (const [key, en, uk, ru] of [
     ["editor_chip_last_weight", "Last", "Ост. вага", "Посл. вес"],
