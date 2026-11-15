@@ -930,8 +930,8 @@
     <string name="muscle_heatmap_more">Больше</string>
     <string name="muscle_heatmap_highlight_detail">Выбрано: %1$s • нагрузка %2$s • %3$s • %4$s</string>
     <string name="muscle_heatmap_empty">Запиши подходы для подсветки карты тела.</string>
-    <string name="muscle_heatmap_top_title">Наиболее нагруженные группы</string>
-    <string name="muscle_heatmap_load_value">нагрузка %1$s</string>
+    <string name="muscle_heatmap_top_title">Нагрузка по мышцам</string>
+    <string name="muscle_heatmap_load_value">%1$s кг</string>
     <string name="muscle_heatmap_muscle_detail">%1$s • %2$s • %3$s</string>
     <string name="muscle_heatmap_selected_title">Нагрузка на %1$s по упражнениям</string>
     <string name="muscle_heatmap_selected_empty">В выбранном периоде нет сопоставимых подходов для этой группы.</string>
@@ -1146,6 +1146,14 @@
     <string name="progress_e1rm_best">Лучш. расчётный 1ПМ</string>
     <string name="progress_average_volume">Сред. объём</string>
     <string name="progress_weight_value">%1$s кг</string>
+    <string name="progress_week_title">Эта неделя</string>
+    <string name="progress_strength_title">Силовой прогресс</string>
+    <string name="progress_strength_best">Лучший: %1$s</string>
+    <string name="progress_week_goal">Цель недели</string>
+    <string name="progress_week_compare">К прошлой неделе</string>
+    <string name="progress_strength_gain">+%1$s кг за месяц</string>
+    <string name="progress_strength_loss">−%1$s кг за месяц</string>
+    <string name="progress_info_action">Пояснение</string>
     <string name="progress_reps_value">%1$d повт</string>
     <string name="progress_session_max_weight_inline">Макс %1$s кг</string>
     <string name="progress_session_volume_inline">Объём %1$s кг</string>

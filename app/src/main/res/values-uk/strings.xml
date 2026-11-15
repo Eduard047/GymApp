@@ -930,8 +930,8 @@
     <string name="muscle_heatmap_more">Більше</string>
     <string name="muscle_heatmap_highlight_detail">Підсвічено: %1$s • %2$s навант. • %3$s • %4$s</string>
     <string name="muscle_heatmap_empty">Запиши підходи, щоб підсвітити карту тіла.</string>
-    <string name="muscle_heatmap_top_title">Найбільш навантажені групи</string>
-    <string name="muscle_heatmap_load_value">%1$s навант.</string>
+    <string name="muscle_heatmap_top_title">Навантаження за м’язами</string>
+    <string name="muscle_heatmap_load_value">%1$s кг</string>
     <string name="muscle_heatmap_muscle_detail">%1$s • %2$s • %3$s</string>
     <string name="muscle_heatmap_selected_title">%1$s навантажили</string>
     <string name="muscle_heatmap_selected_empty">У вибраному періоді немає зіставлених підходів для цієї групи.</string>
@@ -1146,6 +1146,14 @@
     <string name="progress_e1rm_best">Найкр. розрах. 1ПМ</string>
     <string name="progress_average_volume">Сер. обсяг</string>
     <string name="progress_weight_value">%1$s кг</string>
+    <string name="progress_week_title">Цей тиждень</string>
+    <string name="progress_strength_title">Силовий прогрес</string>
+    <string name="progress_strength_best">Найкращий: %1$s</string>
+    <string name="progress_week_goal">Ціль тижня</string>
+    <string name="progress_week_compare">До минулого тижня</string>
+    <string name="progress_strength_gain">+%1$s кг за місяць</string>
+    <string name="progress_strength_loss">−%1$s кг за місяць</string>
+    <string name="progress_info_action">Пояснення</string>
     <string name="progress_reps_value">%1$d повт</string>
     <string name="progress_session_max_weight_inline">Макс %1$s кг</string>
     <string name="progress_session_volume_inline">Обсяг %1$s кг</string>

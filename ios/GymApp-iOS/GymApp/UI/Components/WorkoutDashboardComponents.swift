@@ -1007,43 +1007,44 @@ struct WorkoutMuscleLoadCard: View {
         data.muscles.first { $0.id == selectedMuscleID }
     }
 
-    private var muscleMapSetsTile: some View {
-        GymMetricTile(
-            label: "Sets",
-            value: data.totalSets.formatted(.number.locale(gymAppLocale())),
-            emphasized: true,
-            singleLineLabel: true
+    /// "42 sets" for the selected period; hidden until something is logged.
+    private var setsSummary: String {
+        gymPlural(
+            data.totalSets,
+            en: ("set", "sets"),
+            uk: ("підхід", "підходи", "підходів"),
+            ru: ("подход", "подхода", "подходов"),
+            languageCode: gymCurrentLanguageCode()
         )
     }
 
-    private var muscleMapLoadTile: some View {
-        GymMetricTile(
-            label: "Load",
-            value: Int(data.totalLoad.rounded()).formatted(.number.locale(gymAppLocale())),
-            emphasized: true,
-            singleLineLabel: true
-        )
-    }
-
-    private var muscleMapMappedTile: some View {
-        GymMetricTile(
-            label: "Mapped",
-            value: "\(data.mappedExerciseCount)/\(data.totalExerciseCount)",
-            emphasized: true,
-            singleLineLabel: true
+    private var infoMessage: String {
+        gymText(
+            "A stronger blue means more load on that muscle group in the selected period. Tap a muscle to see the exercises behind its load.",
+            "Що насиченіший синій, то більше навантаження на цю групу м’язів за вибраний період. Торкнись м’яза, щоб побачити вправи, які його навантажували.",
+            "Чем насыщеннее синий, тем больше нагрузка на эту группу мышц за выбранный период. Нажми на мышцу, чтобы увидеть упражнения, которые её нагружали.",
+            languageCode: gymCurrentLanguageCode()
         )
     }
 
     var body: some View {
-        GymPanel(highlighted: true) {
+        GymPanel {
             VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 0) {
                     Text("Muscle map")
                         .font(.headline)
                         .accessibilityAddTraits(.isHeader)
-                    Text("Stronger blue means more load on that muscle group in the selected period.")
-                        .font(.caption)
-                        .foregroundStyle(GymTheme.textSecondary)
+                    Spacer(minLength: 8)
+                    ProgressInfoButton(
+                        accessibilityLabel: gymText(
+                            "About the muscle map",
+                            "Про карту м’язів",
+                            "О карте мышц",
+                            languageCode: gymCurrentLanguageCode()
+                        ),
+                        message: infoMessage
+                    )
+                    .padding(.trailing, -10)
                 }
 
                 GymSegmentedControl(
@@ -1052,26 +1053,11 @@ struct WorkoutMuscleLoadCard: View {
                     options: WorkoutMusclePeriod.allCases.map { ($0, $0.title) }
                 )
 
-                // Three tiles in a row at normal sizes (labels scale down a little); one per row
-                // from xxxLarge, so "Sets", "Load" and "Mapped" are never cut off.
-                if dynamicTypeSize.isLargeText {
-                    VStack(spacing: 8) {
-                        muscleMapSetsTile
-                        muscleMapLoadTile
-                        muscleMapMappedTile
-                    }
-                } else {
-                    HStack(spacing: 8) {
-                        muscleMapSetsTile.frame(maxWidth: .infinity, maxHeight: .infinity)
-                        muscleMapLoadTile.frame(maxWidth: .infinity, maxHeight: .infinity)
-                        muscleMapMappedTile.frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
+                if data.totalSets > 0 {
+                    Text("\(data.totalSets.formatted(.number.locale(gymAppLocale()))) \(setsSummary)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GymTheme.textPrimary)
                 }
-
-                Text("Select a muscle to see the exercises behind its load.")
-                    .font(.caption)
-                    .foregroundStyle(GymTheme.textSecondary)
 
                 MuscleBodyMap(
                     intensityByMuscle: intensityByMuscle,
@@ -1100,45 +1086,50 @@ struct WorkoutMuscleLoadCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 116), spacing: 8)],
-                    spacing: 8
-                ) {
-                    ForEach(data.muscles) { muscle in
-                        muscleButton(muscle)
+                if !loadedMuscles.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(gymText("Load by muscle", "Навантаження за м’язами", "Нагрузка по мышцам", languageCode: gymCurrentLanguageCode()))
+                            .font(.footnote)
+                            .foregroundStyle(GymTheme.textSecondary)
+                            .accessibilityAddTraits(.isHeader)
+                        VStack(spacing: 0) {
+                            ForEach(Array(loadedMuscles.enumerated()), id: \.element.id) { index, muscle in
+                                if index > 0 { ProgressRowDivider() }
+                                muscleRow(muscle)
+                            }
+                        }
                     }
                 }
 
                 if let selectedMuscle {
                     selectedMuscleDetails(selectedMuscle)
-                } else if data.totalSets == 0 {
-                    Label("Log sets to light up the muscle map.", systemImage: "sparkles")
-                        .font(.subheadline)
-                        .foregroundStyle(GymTheme.textSecondary)
                 }
             }
         }
     }
 
-    private func muscleButton(_ muscle: WorkoutMuscleMetric) -> some View {
+    /// Muscles with load in the period, heaviest first; unloaded ones are already dark on the map.
+    private var loadedMuscles: [WorkoutMuscleMetric] {
+        data.muscles
+            .filter { $0.load > 0 }
+            .sorted { lhs, rhs in
+                lhs.load != rhs.load ? lhs.load > rhs.load : lhs.label < rhs.label
+            }
+    }
+
+    /// Name, thin bar, load on the right; tapping selects the muscle like the map does.
+    private func muscleRow(_ muscle: WorkoutMuscleMetric) -> some View {
         let selected = muscle.id == selectedMuscleID
         return Button {
             selectedMuscleID = selected ? nil : muscle.id
         } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 4) {
-                    Text(muscle.label)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(selected ? GymTheme.primary : GymTheme.textPrimary)
-                        .lineLimit(2)
-                    Spacer(minLength: 0)
-                    if selected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(GymTheme.primary)
-                            .accessibilityHidden(true)
-                    }
-                }
-
+            HStack(spacing: 12) {
+                Text(muscle.label)
+                    .font(.body)
+                    .foregroundStyle(selected ? GymTheme.primary : GymTheme.textPrimary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
                 GeometryReader { proxy in
                     ZStack(alignment: .leading) {
                         Capsule().fill(GymTheme.surfaceVariant)
@@ -1147,32 +1138,17 @@ struct WorkoutMuscleLoadCard: View {
                             .frame(width: max(4, proxy.size.width * muscle.intensity))
                     }
                 }
-                .frame(height: 7)
-
-                Text(
-                    gymText(
-                        "\(compactNumber(muscle.load)) load",
-                        "навантаження \(compactNumber(muscle.load))",
-                        "нагрузка \(compactNumber(muscle.load))",
-                        languageCode: gymCurrentLanguageCode()
-                    )
-                )
-                    .font(.caption2)
+                .frame(width: 72, height: 5)
+                Text(Int(muscle.load.rounded()).formatted(.number.locale(gymAppLocale())))
+                    .font(.body.monospacedDigit())
                     .foregroundStyle(GymTheme.textSecondary)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .frame(minWidth: 52, alignment: .trailing)
             }
-            .padding(11)
-            .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius)
-                    .fill(selected ? GymTheme.primary.opacity(0.12) : GymTheme.surface.opacity(0.52))
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius)
-                    .strokeBorder(
-                        selected ? GymTheme.primary.opacity(0.7) : GymTheme.outline.opacity(0.35),
-                        lineWidth: selected ? 1.5 : 1
-                    )
-            }
+            .padding(.vertical, 8)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(muscle.label)

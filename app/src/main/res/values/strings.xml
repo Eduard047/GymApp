@@ -894,8 +894,8 @@
     <string name="muscle_heatmap_more">More</string>
     <string name="muscle_heatmap_highlight_detail">Highlighted: %1$s • %2$s load • %3$s • %4$s</string>
     <string name="muscle_heatmap_empty">Log sets to light up the body map.</string>
-    <string name="muscle_heatmap_top_title">Top muscle groups</string>
-    <string name="muscle_heatmap_load_value">%1$s load</string>
+    <string name="muscle_heatmap_top_title">Muscle load</string>
+    <string name="muscle_heatmap_load_value">%1$s kg</string>
     <string name="muscle_heatmap_muscle_detail">%1$s • %2$s • %3$s</string>
     <string name="muscle_heatmap_selected_title">%1$s loaded by</string>
     <string name="muscle_heatmap_selected_empty">No mapped sets for this muscle in the selected period.</string>
@@ -1104,6 +1104,14 @@
     <string name="progress_e1rm_best">Best est. 1RM</string>
     <string name="progress_average_volume">Avg volume</string>
     <string name="progress_weight_value">%1$s kg</string>
+    <string name="progress_week_title">This week</string>
+    <string name="progress_strength_title">Strength progress</string>
+    <string name="progress_strength_best">Best: %1$s</string>
+    <string name="progress_week_goal">Goal this week</string>
+    <string name="progress_week_compare">Compared with last week</string>
+    <string name="progress_strength_gain">+%1$s kg this month</string>
+    <string name="progress_strength_loss">−%1$s kg this month</string>
+    <string name="progress_info_action">About this section</string>
     <string name="progress_reps_value">%1$d reps</string>
     <string name="progress_session_max_weight_inline">Max %1$s kg</string>
     <string name="progress_session_volume_inline">Vol %1$s kg</string>

@@ -59,6 +59,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.GymSegmentItem
+import com.example.gymapp.ui.components.GymSegmentedControl
 import com.example.gymapp.ui.components.tabularDigits
 import com.example.gymapp.ui.components.AchievementPreviewCard
 import com.example.gymapp.ui.components.EmptyStatePanel
@@ -167,57 +169,12 @@ private fun MissionPeriodSelector(
     modifier: Modifier = Modifier
 ) {
     val groupLabel = stringResource(R.string.missions_period_group)
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .semantics { contentDescription = groupLabel }
-            .clip(GymCompactShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f))
-            .padding(3.dp)
-            .selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(3.dp)
-    ) {
-        MissionPeriod.entries.forEach { period ->
-            val selected = period == selectedPeriod
-            Surface(
-                modifier = Modifier
-                    .weight(1f)
-                    .selectable(
-                        selected = selected,
-                        onClick = { onPeriodSelected(period) },
-                        role = Role.Tab
-                    ),
-                shape = GymCompactShape,
-                color = if (selected) {
-                    MaterialTheme.colorScheme.surface
-                } else {
-                    Color.Transparent
-                },
-                contentColor = if (selected) {
-                    MaterialTheme.colorScheme.onSurface
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                tonalElevation = if (selected) 2.dp else 0.dp
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .padding(horizontal = 4.dp, vertical = 10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = stringResource(period.titleRes),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-    }
+    GymSegmentedControl(
+        items = MissionPeriod.entries.map { GymSegmentItem(it, stringResource(it.titleRes)) },
+        selected = selectedPeriod,
+        onSelected = onPeriodSelected,
+        modifier = modifier.semantics { contentDescription = groupLabel }
+    )
 }
 
 @Composable

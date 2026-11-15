@@ -98,7 +98,7 @@ test("Android mission hero is the compact iOS level row that opens ranks", async
   assert.match(hero, /formatXp\(uiState\.soloProgress\.totalXp/);
   assert.match(hero, /onClickLabel = openRanks/);
   assert.match(hero, /heightIn\(min = 48\.dp\)/);
-  assert.match(hero, /maxLines = 1/);
+  assert.match(hero, /maxLines = 3/);
   assert.match(hero, /Icons\.Default\.EmojiEvents/);
   assert.match(hero, /KeyboardArrowRight/);
   assert.doesNotMatch(hero, /HeroPanel|MetricTile|solo_weekly_rhythm_value|solo_streak_weekly_value/);

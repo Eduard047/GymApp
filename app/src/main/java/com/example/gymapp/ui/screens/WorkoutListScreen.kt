@@ -139,7 +139,6 @@ import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.components.MuscleHeatmapCard
 import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.ScreenHeader
-import com.example.gymapp.ui.components.SoloProgressHero
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.components.TutorialAnchorRegistry
 import com.example.gymapp.ui.components.brandFillColor
@@ -485,61 +484,24 @@ private fun WorkoutSectionSwitcher(
     )
 }
 
+/** Coach recommendations as grouped rows: title, reason underneath and the focus on the right. */
 @Composable
 internal fun RecommendationsCard(
     recommendations: List<TrainingRecommendationUiModel>,
     modifier: Modifier = Modifier
 ) {
-    AppPanel(
-        modifier = modifier.fillMaxWidth(),
-        highlighted = recommendations.isNotEmpty()
+    if (recommendations.isEmpty()) return
+    GroupedSection(
+        modifier = modifier,
+        header = stringResource(R.string.recommendations_title)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.recommendations_title),
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                text = stringResource(R.string.recommendations_supporting),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            recommendations.forEach { recommendation ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    // Flat tonal row: no hairline around a row that already sits on a panel.
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = MaterialTheme.shapes.small
-                ) {
-                    Row(
-                        modifier = Modifier.padding(10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
-                            Text(
-                                text = recommendation.title,
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = recommendation.supporting,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        InfoPill(text = recommendation.priorityLabel)
-                    }
-                }
+        recommendations.forEach { recommendation ->
+            row {
+                GroupedRow(
+                    title = recommendation.title,
+                    subtitle = recommendation.supporting,
+                    value = recommendation.priorityLabel
+                )
             }
         }
     }

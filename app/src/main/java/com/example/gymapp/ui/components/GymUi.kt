@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import com.example.gymapp.ui.theme.NightFill
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -721,35 +722,24 @@ fun <T> GymSegmentedControl(
         var labelScale by remember(items.map { it.label }, stackVertically, useTwoColumns, fontScale) {
             mutableFloatStateOf(1f)
         }
+        val segmentPillColor = if (isSystemInDarkTheme()) NightFill else Color.White
         val content: @Composable (GymSegmentItem<T>, Modifier) -> Unit = { item, itemModifier ->
             val isSelected = item.value == selected
             Surface(
                 modifier = itemModifier
-                    .heightIn(min = GymSpacing.MinimumTouch)
+                    .heightIn(min = SEGMENT_MIN_HEIGHT)
                     .selectable(
                         selected = isSelected,
                         role = Role.Tab,
                         onClick = { onSelected(item.value) }
                     ),
-                shape = GymControlShape,
-                color = if (isSelected) {
-                    brandFillColor()
-                } else {
-                    Color.Transparent
-                },
+                shape = RoundedCornerShape(8.dp),
+                color = if (isSelected) segmentPillColor else Color.Transparent,
                 contentColor = if (isSelected) {
-                    Color.White
+                    MaterialTheme.colorScheme.onSurface
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                border = BorderStroke(
-                    1.dp,
-                    if (isSelected) {
-                        brandFillColor()
-                    } else {
-                        MaterialTheme.colorScheme.outlineVariant
-                    }
-                )
+                }
             ) {
                 Box(
                     modifier = Modifier
@@ -783,17 +773,25 @@ fun <T> GymSegmentedControl(
             }
         }
 
+        // Native segmented control: one rounded track with a raised pill under the selected segment.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(2.dp)
+        ) {
         if (stackVertically) {
             Column(
                 modifier = Modifier.selectableGroup(),
-                verticalArrangement = Arrangement.spacedBy(GymSpacing.Small)
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 items.forEach { item -> content(item, Modifier.fillMaxWidth()) }
             }
         } else if (useTwoColumns) {
-            Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(GymSpacing.Small)) {
+            Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 items.chunked(2).forEach { group ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(GymSpacing.Small)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                         group.forEach { item -> content(item, Modifier.weight(1f)) }
                         if (group.size == 1) androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                     }
@@ -802,13 +800,16 @@ fun <T> GymSegmentedControl(
         } else {
             Row(
                 modifier = Modifier.selectableGroup(),
-                horizontalArrangement = Arrangement.spacedBy(GymSpacing.Small)
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 items.forEach { item -> content(item, Modifier.weight(1f)) }
             }
         }
+        }
     }
 }
+
+private val SEGMENT_MIN_HEIGHT = 40.dp
 
 data class GymMetric(
     val label: String,

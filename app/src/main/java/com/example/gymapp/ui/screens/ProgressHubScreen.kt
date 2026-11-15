@@ -32,7 +32,17 @@ import com.example.gymapp.ui.components.GymSegmentedControl
 import com.example.gymapp.ui.components.LifetimeProgressCard
 import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.MuscleHeatmapCard
-import com.example.gymapp.ui.components.SoloProgressHero
+import com.example.gymapp.ui.components.ProgressLevelRow
+import com.example.gymapp.ui.components.GroupedRow
+import com.example.gymapp.ui.components.GroupedSection
+import com.example.gymapp.data.repository.StrengthTrend
+import com.example.gymapp.data.repository.buildStrengthTrends
+import com.example.gymapp.ui.util.localizedExerciseName
+import com.example.gymapp.util.formattedStringResource
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.Color
+import com.example.gymapp.ui.theme.RecoveryGreen
+import com.example.gymapp.ui.theme.RecoveryGreenNight
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.viewmodel.ExerciseProgressUiState
@@ -93,6 +103,7 @@ internal fun ProgressHubScreen(
     val selected = ProgressHubSection.entries.getOrNull(selectedIndex)
         ?.takeIf { it in visibleProgressHubSections }
         ?: ProgressHubSection.Overview
+    val strengthTrends = remember(weeklyHistory) { buildStrengthTrends(weeklyHistory) }
 
     Column(modifier = modifier.fillMaxSize()) {
         GymSegmentedControl(
@@ -154,7 +165,7 @@ internal fun ProgressHubScreen(
                         end = screenHorizontalPadding,
                         bottom = GymSpacing.ScreenBottom
                     ),
-                    verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
+                    verticalArrangement = Arrangement.spacedBy(GymSpacing.XXLarge)
                 ) {
                     if (overviewState.todayHeroMetrics.totalWorkouts == 0) {
                         // Nothing is saved yet: one message and one action instead of a wall of zeros.
@@ -177,13 +188,17 @@ internal fun ProgressHubScreen(
                             onTrainingProfileChange = onTrainingProfileChange
                         )
                     }
-                    item {
-                        SoloProgressHero(
-                            progress = overviewState.soloProgress,
-                            onOpenRanks = onOpenRanks
-                        )
+                    if (strengthTrends.isNotEmpty()) {
+                        item {
+                            StrengthProgressSection(
+                                trends = strengthTrends,
+                                onOpenExercise = { exerciseId ->
+                                    onSelectExercise(exerciseId)
+                                    selectedIndex = ProgressHubSection.Exercises.ordinal
+                                }
+                            )
+                        }
                     }
-                    item { LifetimeProgressCard(metrics = overviewState.todayHeroMetrics) }
                     item {
                         ActivityHeatmapCard(
                             heatmap = overviewState.activityHeatmap,
@@ -200,9 +215,19 @@ internal fun ProgressHubScreen(
                             onMuscleSelected = onMuscleSelected
                         )
                     }
+                    item { LifetimeProgressCard(metrics = overviewState.todayHeroMetrics) }
+                    if (overviewState.trainingRecommendations.isNotEmpty()) {
+                        item {
+                            RecommendationsCard(
+                                recommendations = overviewState.trainingRecommendations
+                            )
+                        }
+                    }
+                    // Level, XP and title are demoted to one row at the very bottom.
                     item {
-                        RecommendationsCard(
-                            recommendations = overviewState.trainingRecommendations
+                        ProgressLevelRow(
+                            progress = overviewState.soloProgress,
+                            onOpenRanks = onOpenRanks
                         )
                     }
                 }
@@ -227,6 +252,47 @@ internal fun ProgressHubScreen(
                 onRetryLoad = onRetryOverviewLoad,
                 modifier = Modifier.fillMaxSize()
             )
+        }
+    }
+}
+
+/** Best recent sets of the most trained exercises; each row opens that exercise's progress. */
+@Composable
+private fun StrengthProgressSection(
+    trends: List<StrengthTrend>,
+    onOpenExercise: (Long) -> Unit
+) {
+    GroupedSection(header = stringResource(R.string.progress_strength_title)) {
+        trends.forEach { trend ->
+            val delta = trend.deltaKg?.let { Math.round(it * 10.0) / 10.0 }?.takeIf { it != 0.0 }
+            row {
+                val best = formattedStringResource(
+                    R.string.progress_strength_best,
+                    formattedStringResource(
+                        R.string.progress_pr_history_set_value,
+                        formattedStringResource(R.string.progress_weight_value, formatProgressWeight(trend.bestWeight)),
+                        trend.bestReps
+                    )
+                )
+                val gain = (delta ?: 0.0) > 0.0
+                GroupedRow(
+                    title = localizedExerciseName(trend.exerciseName),
+                    subtitle = best,
+                    value = delta?.let {
+                        formattedStringResource(
+                            if (it > 0) R.string.progress_strength_gain else R.string.progress_strength_loss,
+                            formatProgressWeight(kotlin.math.abs(it))
+                        )
+                    },
+                    valueColor = if (gain) {
+                        if (isSystemInDarkTheme()) RecoveryGreenNight else RecoveryGreen
+                    } else {
+                        Color.Unspecified
+                    },
+                    chevron = true,
+                    onClick = { onOpenExercise(trend.exerciseId) }
+                )
+            }
         }
     }
 }

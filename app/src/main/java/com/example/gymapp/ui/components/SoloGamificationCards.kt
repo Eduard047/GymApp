@@ -96,271 +96,70 @@ import com.example.gymapp.ui.viewmodel.SoloProgressUiModel
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
 
+/**
+ * One quiet row at the bottom of the overview: "Level 3 · Title · 1 240 XP" opening the ranks screen.
+ * The level, XP and title stay available but no longer lead the screen.
+ */
 @Composable
-fun SoloProgressHero(
+fun ProgressLevelRow(
     progress: SoloProgressUiModel,
     modifier: Modifier = Modifier,
     onOpenRanks: () -> Unit = {}
 ) {
     val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
-    val xpToNext = formattedStringResource(
-        R.string.solo_xp_to_next_level,
-        progress.currentLevelXp,
-        progress.xpForNextLevel
+    val summary = formattedStringResource(
+        R.string.missions_level_summary,
+        progress.level,
+        progress.title,
+        formatXp(progress.totalXp, locale)
     )
-    BrandHeroPanel(modifier = modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                text = stringResource(R.string.solo_progress_eyebrow),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = HeroTone.supporting
+    GroupedSection(modifier = modifier) {
+        row {
+            GroupedRow(
+                title = summary,
+                icon = { GroupedRowIconTile(icon = Icons.Default.EmojiEvents, tint = accentMarkColor()) },
+                chevron = true,
+                onClick = onOpenRanks
             )
-
-            SoloHeroIdentity(progress = progress, locale = locale)
-
-            GymProgressBar(
-                progress = { progress.progressFraction },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .semantics { contentDescription = xpToNext },
-                color = HeroTone.accent,
-                trackColor = HeroTone.track
-            )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MetricTile(
-                    label = stringResource(R.string.solo_month_xp_label),
-                    value = formattedStringResource(R.string.solo_xp_amount, formatXp(progress.monthXp, locale)),
-                    modifier = Modifier.weight(1f),
-                    emphasized = true,
-                    onHero = true,
-                    compactValue = true
-                )
-                MetricTile(
-                    label = stringResource(R.string.solo_next_title_label),
-                    value = if (progress.isTopRank) {
-                        stringResource(R.string.solo_top_rank)
-                    } else {
-                        progress.nextTitle
-                    },
-                    modifier = Modifier.weight(1f),
-                    emphasized = true,
-                    onHero = true,
-                    compactValue = true
-                )
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .clip(GymCapsuleShape)
-                    .background(HeroTone.tile)
-                    .clickable(role = Role.Button, onClick = onOpenRanks)
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.EmojiEvents,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = HeroTone.actionLabel
-                )
-                Text(
-                    text = stringResource(R.string.action_view_ranks),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = HeroTone.actionLabel
-                )
-            }
         }
     }
 }
 
-/**
- * Level pill, rank title and total XP. The XP sits at the trailing edge of the pill/title row
- * when that row fits on one line, and moves to its own "N XP earned" line otherwise.
- */
-@Composable
-private fun SoloHeroIdentity(progress: SoloProgressUiModel, locale: Locale) {
-    val levelText = formattedStringResource(R.string.solo_level_badge, progress.level)
-    val compactXp = formattedStringResource(R.string.solo_xp_amount, formatXp(progress.totalXp, locale))
-    val earnedXp = formattedStringResource(R.string.solo_total_xp_earned_line, formatXp(progress.totalXp, locale))
-    val totalXpLabel = stringResource(R.string.solo_total_xp)
-    val measurer = rememberTextMeasurer()
-    val density = LocalDensity.current
-    val pillStyle = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
-    val titleStyle = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-    val xpStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics(mergeDescendants = true) {
-                contentDescription = "$totalXpLabel: ${formatXp(progress.totalXp, locale)}"
-            },
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val fitsOnOneLine = remember(
-                levelText, progress.title, compactXp, maxWidth, density, pillStyle, titleStyle, xpStyle
-            ) {
-                val available = with(density) { maxWidth.roundToPx() }
-                val gap = with(density) { 8.dp.roundToPx() }
-                val pillPadding = with(density) { 22.dp.roundToPx() }
-                fun width(text: String, style: TextStyle) =
-                    measurer.measure(text, style, maxLines = 1, softWrap = false).size.width
-                val pill = width(levelText, pillStyle) + pillPadding
-                val title = width(progress.title, titleStyle)
-                val xp = width(compactXp, xpStyle)
-                pill + gap + title + gap + xp <= available
-            }
-            // When even the pill and the title do not fit side by side, the title takes its own
-            // line, so a long rank such as "Мотивированный" never breaks inside a word.
-            val titleBesidePill = remember(levelText, progress.title, maxWidth, density, pillStyle, titleStyle) {
-                val available = with(density) { maxWidth.roundToPx() }
-                val gap = with(density) { 8.dp.roundToPx() }
-                val pillPadding = with(density) { 22.dp.roundToPx() }
-                fun width(text: String, style: TextStyle) =
-                    measurer.measure(text, style, maxLines = 1, softWrap = false).size.width
-                width(levelText, pillStyle) + pillPadding + gap + width(progress.title, titleStyle) <= available
-            }
-            if (fitsOnOneLine) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    SoloLevelPill(text = levelText, style = pillStyle)
-                    Text(
-                        text = progress.title,
-                        style = titleStyle,
-                        color = HeroTone.title,
-                        maxLines = 1,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        text = compactXp,
-                        style = xpStyle,
-                        color = HeroTone.accentText,
-                        maxLines = 1
-                    )
-                }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (titleBesidePill) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            SoloLevelPill(text = levelText, style = pillStyle)
-                            Text(
-                                text = progress.title,
-                                style = titleStyle,
-                                color = HeroTone.title,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    } else {
-                        SoloLevelPill(text = levelText, style = pillStyle)
-                        Text(
-                            text = progress.title,
-                            style = titleStyle,
-                            color = HeroTone.title
-                        )
-                    }
-                    Text(
-                        text = earnedXp,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = HeroTone.accentText
-                    )
-                }
-            }
-        }
-        Text(
-            text = progress.summary,
-            style = MaterialTheme.typography.bodyMedium,
-            color = HeroTone.supporting
-        )
-    }
-}
-
-@Composable
-private fun SoloLevelPill(text: String, style: TextStyle) {
-    Text(
-        text = text,
-        style = style,
-        color = HeroTone.title,
-        maxLines = 1,
-        softWrap = false,
-        modifier = Modifier
-            .clip(RoundedCornerShape(percent = 50))
-            .background(HeroTone.tile)
-            .padding(horizontal = 11.dp, vertical = 7.dp)
-    )
-}
-
+/** All-time totals as one grouped section; every number carries its unit. */
 @Composable
 fun LifetimeProgressCard(
     metrics: TodayHeroMetricsUiModel,
     modifier: Modifier = Modifier
 ) {
     val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
-    AppPanel(
-        modifier = modifier.fillMaxWidth(),
-        highlighted = true
+    GroupedSection(
+        modifier = modifier,
+        header = stringResource(R.string.progress_lifetime_title)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.progress_lifetime_title),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.semantics { heading() }
+        row {
+            GroupedRow(
+                title = stringResource(R.string.progress_lifetime_workouts),
+                value = NumberFormat.getIntegerInstance(locale)
+                    .format(metrics.totalWorkouts.coerceAtLeast(0).toLong())
             )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MetricTile(
-                    label = stringResource(R.string.progress_lifetime_workouts),
-                    value = NumberFormat.getIntegerInstance(locale)
-                        .format(metrics.totalWorkouts.coerceAtLeast(0).toLong()),
-                    modifier = Modifier.weight(1f),
-                    emphasized = true
+        }
+        row {
+            GroupedRow(
+                title = stringResource(R.string.focus_lens_week_streak),
+                value = formattedStringResource(
+                    R.string.focus_lens_week_streak_value,
+                    metrics.weeklyStreakWeeks
                 )
-                MetricTile(
-                    label = stringResource(R.string.focus_lens_week_streak),
-                    value = formattedStringResource(
-                        R.string.focus_lens_week_streak_value,
-                        metrics.weeklyStreakWeeks
-                    ),
-                    modifier = Modifier.weight(1f),
-                    emphasized = true
+            )
+        }
+        row {
+            GroupedRow(
+                title = stringResource(R.string.focus_lens_volume),
+                value = formattedStringResource(
+                    R.string.today_history_volume_kg,
+                    formatTodayHeroVolume(metrics.totalVolume, locale)
                 )
-                MetricTile(
-                    label = stringResource(R.string.focus_lens_volume),
-                    value = formattedStringResource(
-                        R.string.today_history_volume_kg,
-                        formatTodayHeroVolume(metrics.totalVolume, locale)
-                    ),
-                    modifier = Modifier.weight(1f),
-                    emphasized = true
-                )
-            }
+            )
         }
     }
 }
@@ -382,14 +181,20 @@ fun ActivityHeatmapCard(
         onPrevious = onPreviousMonth,
         onNext = onNextMonth
     )
-    AppPanel(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .then(swipe.gesture),
-        highlighted = true
+            .then(swipe.gesture)
     ) {
+        GroupedHeaderWithInfo(
+            title = stringResource(R.string.activity_heatmap_title),
+            infoText = stringResource(R.string.activity_heatmap_legend)
+        )
+        GroupedSection {
+            row {
         Column(
             modifier = Modifier
+                .fillMaxWidth()
                 .graphicsLayer { translationX = swipe.offset }
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -403,11 +208,6 @@ fun ActivityHeatmapCard(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = stringResource(R.string.activity_heatmap_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.semantics { heading() }
-                    )
                     GymMonthNavigator(
                         monthLabel = heatmap.monthLabel,
                         isCurrentMonth = isCurrentMonth,
@@ -426,12 +226,6 @@ fun ActivityHeatmapCard(
                     maxLines = 1
                 )
             }
-
-            Text(
-                text = stringResource(R.string.activity_heatmap_legend),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -498,6 +292,8 @@ fun ActivityHeatmapCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
             }
         }
     }

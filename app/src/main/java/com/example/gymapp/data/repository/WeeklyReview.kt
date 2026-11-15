@@ -15,7 +15,9 @@ data class WeeklyReview(
     val trainingDays: Int,
     val sessions: List<Pair<Long, Long>>,
     val comparableCount: Int,
-    val insights: List<WeeklyReviewInsight>
+    val insights: List<WeeklyReviewInsight>,
+    val totalSets: Int = 0,
+    val totalVolume: Double = 0.0
 ) {
     companion object {
         fun build(history: List<ExerciseHistoryEntry>, offset: Int = 0,
@@ -43,7 +45,7 @@ data class WeeklyReview(
             return WeeklyReview(start, end.minusDays(1), offset == 0,
                 current.map { Instant.ofEpochMilli(it.sessionDate).atZone(zone).toLocalDate() }.distinct().size,
                 current.map { it.sessionId to it.sessionDate }.distinct().sortedByDescending { it.second },
-                comparisons.size, insights)
+                comparisons.size, insights, current.size, current.sumOf { it.weight * it.reps })
         }
     }
 }

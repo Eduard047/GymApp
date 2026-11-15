@@ -13,6 +13,10 @@ struct WeeklyReview {
     let sessions: [ExerciseHistoryEntry]
     let comparableCount: Int
     let insights: [Insight]
+    /// Totals of the week itself (not the comparison week): workouts, logged sets and kg lifted.
+    let workoutCount: Int
+    let setCount: Int
+    let volume: Double
 
     /// Entries with `lower <= sessionDate <= throughInclusive` and `sessionDate < beforeExclusive`,
     /// found by binary search. `history` must be sorted by `sessionDate`, newest first.
@@ -77,6 +81,8 @@ struct WeeklyReview {
         }.map(\.element)
         return WeeklyReview(start: start, end: calendar.date(byAdding: .day, value: -1, to: until)!, partial: offset == 0,
             trainingDays: Set(current.map { calendar.startOfDay(for: $0.sessionDate) }).count,
-            sessions: sessions, comparableCount: comparisons.count, insights: Array(insights.prefix(3)))
+            sessions: sessions, comparableCount: comparisons.count, insights: Array(insights.prefix(3)),
+            workoutCount: sessions.count, setCount: current.count,
+            volume: current.reduce(0) { $0 + $1.weight * Double($1.reps) })
     }
 }

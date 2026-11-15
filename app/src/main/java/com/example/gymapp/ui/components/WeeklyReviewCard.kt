@@ -33,8 +33,15 @@ import com.example.gymapp.data.repository.WeeklyReviewInsight
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
-import com.example.gymapp.ui.theme.TintedButton
+import androidx.compose.ui.text.font.FontWeight
+import com.example.gymapp.ui.theme.GymSpacing
+import com.example.gymapp.util.formatVolumeTotal
 
+/**
+ * "This week" as grouped blocks: the week switcher with three headline numbers (workouts, sets,
+ * volume with its unit) and the weekly goal row, then the comparison with last week and the week's
+ * workouts, each only when there is data. Nothing is explained: an empty block is simply absent.
+ */
 @Composable
 fun WeeklyReviewCard(
     history: List<ExerciseHistoryEntry>,
@@ -55,7 +62,6 @@ fun WeeklyReviewCard(
     }
     var offset by rememberSaveable { mutableIntStateOf(0) }
     var evidence by remember { mutableStateOf<WeeklyReviewInsight?>(null) }
-    var expanded by rememberSaveable { mutableStateOf(false) }
     // Reading the current day recomposes the card (and rebuilds the review) after midnight.
     val today = CurrentDaySignal.state.collectAsStateWithLifecycle().value.date
     val review = WeeklyReview.build(history, offset)
@@ -66,78 +72,109 @@ fun WeeklyReviewCard(
         onPrevious = { offset = (offset - 1).coerceAtLeast(-520) },
         onNext = { offset = (offset + 1).coerceAtMost(0) }
     )
-    AppPanel(modifier = Modifier.then(swipe.gesture)) {
-        Column(Modifier.fillMaxWidth().graphicsLayer { translationX = swipe.offset }.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(stringResource(R.string.training_weekly_review), style = MaterialTheme.typography.titleLarge)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { offset = (offset - 1).coerceAtLeast(-520) }, enabled = offset > -520) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, stringResource(R.string.training_previous_week))
-                }
-                val spokenRange = DateTimeUtils.formatDateRangeSpoken(review.start, review.end, locale, today)
-                Text(
-                    DateTimeUtils.formatDateRange(review.start, review.end, locale, today),
-                    modifier = Modifier.weight(1f).semantics { contentDescription = spokenRange }, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center
-                )
-                IconButton(onClick = { offset = (offset + 1).coerceAtMost(0) }, enabled = offset < 0) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, stringResource(R.string.training_next_week))
-                }
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (review.partial) Text(
-                    stringResource(R.string.training_partial_week),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    formattedPluralStringResource(R.plurals.training_weekly_progress, target, review.trainingDays, target),
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
-            Text(
-                text = stringResource(R.string.training_settings_title) + " · " + stringResource(R.string.training_settings_edit),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .heightIn(min = 48.dp)
-                    .clickable(
-                        onClickLabel = stringResource(R.string.training_settings_edit_description),
-                        role = Role.Button,
-                        onClick = { showTrainingSettings = true }
+    val goalValue = formattedPluralStringResource(
+        R.plurals.training_weekly_progress, target, review.trainingDays, target
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(swipe.gesture)
+            .graphicsLayer { translationX = swipe.offset },
+        verticalArrangement = Arrangement.spacedBy(GymSpacing.XXLarge)
+    ) {
+        GroupedSection(
+            header = stringResource(if (offset == 0) R.string.progress_week_title else R.string.training_weekly_review)
+        ) {
+            row {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { offset = (offset - 1).coerceAtLeast(-520) }, enabled = offset > -520) {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, stringResource(R.string.training_previous_week))
+                    }
+                    val spokenRange = DateTimeUtils.formatDateRangeSpoken(review.start, review.end, locale, today)
+                    Text(
+                        DateTimeUtils.formatDateRange(review.start, review.end, locale, today),
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics { contentDescription = spokenRange },
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center
                     )
-                    .wrapContentHeight(Alignment.CenterVertically)
-            )
-            review.insights.forEach { insight ->
-                TintedButton(onClick = { evidence = insight }, modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Text(localizedExerciseName(insight.current.exerciseName))
-                        Text(formattedStringResource(R.string.training_rep_comparison, insight.current.weight, insight.previous.reps, insight.current.reps))
+                    IconButton(onClick = { offset = (offset + 1).coerceAtMost(0) }, enabled = offset < 0) {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, stringResource(R.string.training_next_week))
                     }
                 }
             }
-            if (review.insights.isEmpty()) Text(stringResource(if (review.comparableCount == 0) R.string.training_insufficient_history else R.string.training_unchanged_reps))
-            val expandedState = stringResource(if (expanded) R.string.state_expanded else R.string.state_collapsed)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .clickable(role = Role.Button) { expanded = !expanded }
-                    .semantics(mergeDescendants = true) { stateDescription = expandedState },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(R.string.training_week_workouts),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f)
-                )
-                Icon(
-                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+            row {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = GroupedListDefaults.TextInset, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    WeekNumber(
+                        value = review.trainingDays.toString(),
+                        label = stringResource(R.string.progress_lifetime_workouts),
+                        modifier = Modifier.weight(1f)
+                    )
+                    WeekNumber(
+                        value = review.totalSets.toString(),
+                        label = stringResource(R.string.muscle_heatmap_sets),
+                        modifier = Modifier.weight(1f)
+                    )
+                    WeekNumber(
+                        value = formattedStringResource(
+                            R.string.today_history_volume_kg,
+                            formatVolumeTotal(review.totalVolume, locale)
+                        ),
+                        label = stringResource(R.string.focus_lens_volume),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            row {
+                GroupedRow(
+                    title = stringResource(R.string.progress_week_goal),
+                    value = goalValue,
+                    chevron = true,
+                    onClick = { showTrainingSettings = true }
                 )
             }
-            if (expanded) review.sessions.forEach { (id, date) ->
-                TextButton(onClick = { onOpenWorkout(id) }) { Text(DateTimeUtils.formatDate(date)) }
+        }
+        if (review.insights.isNotEmpty()) {
+            GroupedSection(header = stringResource(R.string.progress_week_compare)) {
+                review.insights.forEach { insight ->
+                    row {
+                        GroupedRow(
+                            title = localizedExerciseName(insight.current.exerciseName),
+                            subtitle = formattedStringResource(
+                                R.string.training_rep_comparison,
+                                insight.current.weight,
+                                insight.previous.reps,
+                                insight.current.reps
+                            ),
+                            chevron = true,
+                            onClick = { evidence = insight }
+                        )
+                    }
+                }
+            }
+        }
+        if (review.sessions.isNotEmpty()) {
+            GroupedSection(header = stringResource(R.string.training_week_workouts)) {
+                review.sessions.forEach { (id, date) ->
+                    row {
+                        GroupedRow(
+                            title = DateTimeUtils.formatDate(date),
+                            chevron = true,
+                            onClick = { onOpenWorkout(id) }
+                        )
+                    }
+                }
             }
         }
     }
@@ -148,5 +185,23 @@ fun WeeklyReviewCard(
                     Text(DateTimeUtils.formatDate(entry.sessionDate) + " · ${entry.weight} kg × ${entry.reps}")
                 }
             } } }, confirmButton = { TextButton(onClick = { evidence = null }) { Text(stringResource(R.string.action_close)) } })
+    }
+}
+
+@Composable
+private fun WeekNumber(value: String, label: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
+        )
     }
 }

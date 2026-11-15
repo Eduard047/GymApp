@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "description": "Strength progress rows of the Progress overview. Window = last 30 days (daysAgo 0..29), previous window = 30..59 days ago; older sets are ignored. Top 3 exercises by number of logged sets in the window (cases avoid ranking ties); best set = heaviest weight in the window, ties go to more reps; monthDelta = best weight in the window minus the heaviest weight of the previous window, null when the exercise has no sets there. Sets with weight 0 (bodyweight) are ignored. Run by Android StrengthTrendsTest and the iOS strength trends suite.",
+  "cases": [
+    {
+      "id": "ranks-by-set-count-not-sessions",
+      "sets": [
+        { "exercise": 1, "daysAgo": 3, "weight": 100, "reps": 5 },
+        { "exercise": 2, "daysAgo": 3, "weight": 60, "reps": 8 },
+        { "exercise": 2, "daysAgo": 3, "weight": 60, "reps": 8 },
+        { "exercise": 2, "daysAgo": 3, "weight": 60, "reps": 7 }
+      ],
+      "expected": [
+        { "exercise": 2, "bestWeight": 60, "bestReps": 8, "monthDelta": null },
+        { "exercise": 1, "bestWeight": 100, "bestReps": 5, "monthDelta": null }
+      ]
+    },
+    {
+      "id": "top-three-only",
+      "sets": [
+        { "exercise": 1, "daysAgo": 1, "weight": 50, "reps": 5 },
+        { "exercise": 2, "daysAgo": 1, "weight": 50, "reps": 5 },
+        { "exercise": 2, "daysAgo": 2, "weight": 50, "reps": 5 },
+        { "exercise": 3, "daysAgo": 1, "weight": 50, "reps": 5 },
+        { "exercise": 3, "daysAgo": 2, "weight": 50, "reps": 5 },
+        { "exercise": 3, "daysAgo": 3, "weight": 50, "reps": 5 },
+        { "exercise": 4, "daysAgo": 1, "weight": 50, "reps": 5 },
+        { "exercise": 4, "daysAgo": 2, "weight": 50, "reps": 5 },
+        { "exercise": 4, "daysAgo": 3, "weight": 50, "reps": 5 },
+        { "exercise": 4, "daysAgo": 4, "weight": 50, "reps": 5 }
+      ],
+      "expected": [
+        { "exercise": 4, "bestWeight": 50, "bestReps": 5, "monthDelta": null },
+        { "exercise": 3, "bestWeight": 50, "bestReps": 5, "monthDelta": null },
+        { "exercise": 2, "bestWeight": 50, "bestReps": 5, "monthDelta": null }
+      ]
+    },
+    {
+      "id": "tie-on-weight-takes-more-reps",
+      "sets": [
+        { "exercise": 1, "daysAgo": 5, "weight": 80, "reps": 6 },
+        { "exercise": 1, "daysAgo": 4, "weight": 80, "reps": 8 },
+        { "exercise": 1, "daysAgo": 3, "weight": 70, "reps": 12 }
+      ],
+      "expected": [
+        { "exercise": 1, "bestWeight": 80, "bestReps": 8, "monthDelta": null }
+      ]
+    },
+    {
+      "id": "positive-delta-against-previous-window",
+      "sets": [
+        { "exercise": 1, "daysAgo": 2, "weight": 85, "reps": 5 },
+        { "exercise": 1, "daysAgo": 40, "weight": 80, "reps": 5 },
+        { "exercise": 1, "daysAgo": 50, "weight": 75, "reps": 8 }
+      ],
+      "expected": [
+        { "exercise": 1, "bestWeight": 85, "bestReps": 5, "monthDelta": 5 }
+      ]
+    },
+    {
+      "id": "negative-delta",
+      "sets": [
+        { "exercise": 1, "daysAgo": 2, "weight": 70, "reps": 5 },
+        { "exercise": 1, "daysAgo": 35, "weight": 77.5, "reps": 3 }
+      ],
+      "expected": [
+        { "exercise": 1, "bestWeight": 70, "bestReps": 5, "monthDelta": -7.5 }
+      ]
+    },
+    {
+      "id": "bodyweight-sets-are-ignored",
+      "sets": [
+        { "exercise": 1, "daysAgo": 2, "weight": 0, "reps": 20 },
+        { "exercise": 1, "daysAgo": 3, "weight": 0, "reps": 25 },
+        { "exercise": 2, "daysAgo": 2, "weight": 40, "reps": 10 }
+      ],
+      "expected": [
+        { "exercise": 2, "bestWeight": 40, "bestReps": 10, "monthDelta": null }
+      ]
+    },
+    {
+      "id": "sets-older-than-sixty-days-are-ignored",
+      "sets": [
+        { "exercise": 1, "daysAgo": 2, "weight": 60, "reps": 5 },
+        { "exercise": 1, "daysAgo": 61, "weight": 100, "reps": 5 },
+        { "exercise": 2, "daysAgo": 90, "weight": 100, "reps": 5 }
+      ],
+      "expected": [
+        { "exercise": 1, "bestWeight": 60, "bestReps": 5, "monthDelta": null }
+      ]
+    },
+    {
+      "id": "only-previous-window-means-no-row",
+      "sets": [
+        { "exercise": 1, "daysAgo": 45, "weight": 90, "reps": 5 }
+      ],
+      "expected": []
+    }
+  ]
+}

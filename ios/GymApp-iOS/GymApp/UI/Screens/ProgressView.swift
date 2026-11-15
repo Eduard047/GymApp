@@ -46,6 +46,7 @@ final class ProgressOverviewMemo {
     let muscleHistory = ProgressMemo<ProgressMuscleKey, [ExerciseHistoryEntry]>()
     let muscleData = ProgressMemo<ProgressMuscleKey, WorkoutMuscleDashboardData>()
     let untrainedMuscles = ProgressMemo<ProgressOverviewKey, [String]>()
+    let strength = ProgressMemo<ProgressOverviewKey, [ProgressStrengthRow]>()
 }
 
 @MainActor
@@ -79,6 +80,8 @@ struct ProgressHubView: View {
     @State private var monthOffset = 0
     @State private var musclePeriod: WorkoutMusclePeriod = .month
     @State private var selectedMuscleID: String?
+    /// Exercise opened from a strength row; consumed when the Exercises section appears.
+    @State private var exerciseToOpen: UUID?
     /// Reference-typed memo: filled while `body` runs without invalidating the view.
     @State private var memo = ProgressOverviewMemo()
 
@@ -102,11 +105,7 @@ struct ProgressHubView: View {
                     GymScreenHeader(
                         title: gymText("Progress", "Прогрес", "Прогресс", languageCode: languageCode)
                     )
-                    GymPanel(
-                        contentPadding: EdgeInsets(top: 7, leading: 7, bottom: 7, trailing: 7)
-                    ) {
-                        progressSectionControl
-                    }
+                    progressSectionControl
                 }
                 .padding(.horizontal, GymTheme.screenHorizontalInset)
                 .padding(.top, GymTheme.screenVerticalInset)
@@ -115,7 +114,12 @@ struct ProgressHubView: View {
                 case .overview:
                     overview
                 case .exercises:
-                    ExerciseProgressView(store: store, showsHeader: false, onStartWorkout: onStartWorkout)
+                    ExerciseProgressView(
+                        store: store,
+                        showsHeader: false,
+                        initialExerciseID: exerciseToOpen,
+                        onStartWorkout: onStartWorkout
+                    )
                 case .goals:
                     MissionsView(store: store, onOpenRanks: onOpenRanks, embedded: true)
                 }
@@ -130,6 +134,9 @@ struct ProgressHubView: View {
         .onReceive(GymDayChange.publisher) { _ in referenceDate = Date() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { referenceDate = Date() }
+        }
+        .onChange(of: section) { _, newSection in
+            if newSection != .exercises { exerciseToOpen = nil }
         }
     }
 
@@ -222,17 +229,12 @@ struct ProgressHubView: View {
                     let key = overviewKey(profile: profile)
                     let streakWeeks = weeklyStreakWeeks(key)
 
-                    WeeklyReviewCard(store: store)
+                    WeeklyReviewCard(store: store, weeklyStreakWeeks: streakWeeks)
 
-                    WorkoutProgressHero(
-                        snapshot: gamification(key),
-                        monthXP: monthXP(key),
-                        weeklyStreakWeeks: streakWeeks,
-                        weeklyTarget: profile.workoutsPerWeek,
-                        onOpenRanks: onOpenRanks
-                    )
-
-                    lifetimeMetricsCard(weeklyStreakWeeks: streakWeeks)
+                    ProgressStrengthSection(rows: strengthRows(key)) { exerciseID in
+                        exerciseToOpen = exerciseID
+                        section = .exercises
+                    }
 
                     WorkoutActivityHeatmap(
                         month: selectedMonth,
@@ -257,6 +259,8 @@ struct ProgressHubView: View {
 #if DEBUG
                     .id("ui-audit-muscle-map")
 #endif
+
+                    levelRow(gamification(key))
                 }
             }
             .padding(.horizontal, GymTheme.screenHorizontalInset)
@@ -299,48 +303,23 @@ struct ProgressHubView: View {
         }
     }
 
-    private func lifetimeMetricsCard(weeklyStreakWeeks: Int) -> some View {
-        let metrics = TodayHeroMetrics(
-            sessions: store.workoutSummaries,
-            weeklyStreakWeeks: weeklyStreakWeeks
-        )
-        return GymPanel(highlighted: true) {
-            VStack(alignment: .leading, spacing: 12) {
-                GymSectionTitle(
-                    title: gymText(
-                        "Lifetime progress",
-                        "Прогрес за весь час",
-                        "Прогресс за всё время",
-                        languageCode: languageCode
-                    )
+    /// Level, title and total XP demoted to one row at the bottom; opens ranks and missions.
+    private func levelRow(_ snapshot: GamificationSnapshot) -> some View {
+        let progression = snapshot.progression
+        let title = RankCatalog.title(forLevel: progression.level, languageCode: languageCode)
+        let level = gymText("Level", "Рівень", "Уровень", languageCode: languageCode)
+        return ProgressGroup {
+            Button(action: onOpenRanks) {
+                ProgressRowLabel(
+                    title: "\(level) \(progression.level)\u{00A0}· \(title)",
+                    value: "\(progression.totalXP.formatted(.number.locale(gymAppLocale()))) XP"
                 )
-                HStack(spacing: 8) {
-                    GymMetricTile(
-                        label: gymText("Workouts", "Тренування", "Тренировки", languageCode: languageCode),
-                        value: metrics.totalWorkouts.formatted(.number.locale(gymAppLocale())),
-                        emphasized: true
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    GymMetricTile(
-                        label: gymText("Week streak", "Серія тижнів", "Серия недель", languageCode: languageCode),
-                        value: gymText(
-                            "\(metrics.weeklyStreakWeeks) wk",
-                            "\(metrics.weeklyStreakWeeks) тиж",
-                            "\(metrics.weeklyStreakWeeks) нед",
-                            languageCode: languageCode
-                        ),
-                        emphasized: true
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    GymMetricTile(
-                        label: gymText("Volume", "Обсяг", "Объём", languageCode: languageCode),
-                        value: gymVolumeText(metrics.totalVolume, compact: true, languageCode: languageCode),
-                        emphasized: true
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                .fixedSize(horizontal: false, vertical: true)
             }
+            .buttonStyle(.plain)
+            .accessibilityHint(gymText(
+                "Opens ranks and missions", "Відкриває ранги та місії", "Открывает ранги и миссии",
+                languageCode: languageCode
+            ))
         }
     }
 
@@ -379,12 +358,13 @@ struct ProgressHubView: View {
         }
     }
 
-    private func monthXP(_ key: ProgressOverviewKey) -> Int {
-        memo.monthXP.value(for: ProgressMonthKey(base: key, monthOffset: monthOffset)) {
-            let interval = selectedMonthInterval
-            return store.workoutSummaries
-                .filter { interval.contains($0.date) }
-                .reduce(0) { $0 + GamificationEngine.xpForSession($1) }
+    private func strengthRows(_ key: ProgressOverviewKey) -> [ProgressStrengthRow] {
+        memo.strength.value(for: key) {
+            ProgressStrengthTrend.rows(
+                history: store.allExerciseHistory(),
+                now: referenceDate,
+                calendar: calendar
+            )
         }
     }
 
@@ -490,9 +470,17 @@ struct ExerciseProgressView: View {
 
     private let onStartWorkout: () -> Void
 
-    init(store: WorkoutStore, showsHeader: Bool = true, onStartWorkout: @escaping () -> Void = {}) {
+    init(
+        store: WorkoutStore,
+        showsHeader: Bool = true,
+        initialExerciseID: UUID? = nil,
+        onStartWorkout: @escaping () -> Void = {}
+    ) {
         self.store = store
         self.showsHeader = showsHeader
+        // An exercise opened from a Progress overview row counts as the user's own pick.
+        _selectedExerciseID = State(initialValue: initialExerciseID)
+        _userPickedExercise = State(initialValue: initialExerciseID != nil)
         self.onStartWorkout = onStartWorkout
     }
 

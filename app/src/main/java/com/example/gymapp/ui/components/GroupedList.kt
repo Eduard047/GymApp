@@ -71,9 +71,10 @@ class GroupedScope internal constructor() {
         titleColor: Color = Color.Unspecified,
         onClick: (() -> Unit)? = null,
         subtitle: String? = null,
-        trailing: (@Composable () -> Unit)? = null
+        trailing: (@Composable () -> Unit)? = null,
+        valueColor: Color = Color.Unspecified
     ) {
-        rows += { GroupedRow(title, modifier, value, icon, chevron, titleColor, onClick, subtitle, trailing) }
+        rows += { GroupedRow(title, modifier, value, icon, chevron, titleColor, onClick, subtitle, trailing, valueColor) }
     }
 }
 
@@ -156,7 +157,8 @@ fun GroupedRow(
     titleColor: Color = Color.Unspecified,
     onClick: (() -> Unit)? = null,
     subtitle: String? = null,
-    trailing: (@Composable () -> Unit)? = null
+    trailing: (@Composable () -> Unit)? = null,
+    valueColor: Color = Color.Unspecified
 ) {
     val resolvedTitleColor = if (titleColor == Color.Unspecified) MaterialTheme.colorScheme.onSurface else titleColor
     Row(
@@ -190,7 +192,7 @@ fun GroupedRow(
                     text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
@@ -199,7 +201,7 @@ fun GroupedRow(
             Text(
                 text = value,
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (valueColor == Color.Unspecified) MaterialTheme.colorScheme.onSurfaceVariant else valueColor,
                 textAlign = TextAlign.End,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,

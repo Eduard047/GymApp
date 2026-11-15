@@ -83,150 +83,111 @@ fun MuscleHeatmapCard(
     onMuscleSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    AppPanel(
+    val loadText = formattedStringResource(
+        R.string.today_history_volume_kg,
+        groupedLoadText(heatmap.totalLoad)
+    )
+    val setsTitle = stringResource(R.string.muscle_heatmap_sets)
+    val loadTitle = stringResource(R.string.muscle_heatmap_load)
+    val emptyTitle = stringResource(R.string.muscle_heatmap_empty)
+    val loadedMuscles = heatmap.muscles.filter { it.load > 0 }.sortedByDescending { it.load }
+    Column(
         modifier = modifier.fillMaxWidth(),
-        // Dense anatomical detail needs a neutral canvas; selection and load
-        // colors carry the emphasis inside the card.
-        highlighted = false
+        verticalArrangement = Arrangement.spacedBy(GroupedListDefaults.HeaderToCard)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = stringResource(R.string.muscle_heatmap_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.semantics { heading() }
-                )
-                Text(
-                    text = stringResource(R.string.muscle_heatmap_supporting),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+        // The "stronger blue = more load" explanation lives behind the (i) button, not under the title.
+        GroupedHeaderWithInfo(
+            title = stringResource(R.string.muscle_heatmap_title),
+            infoText = stringResource(R.string.muscle_heatmap_supporting)
+        )
 
-            MusclePeriodSelector(
-                heatmap = heatmap,
-                onPeriodSelected = onPeriodSelected
-            )
+        MusclePeriodSelector(
+            heatmap = heatmap,
+            onPeriodSelected = onPeriodSelected
+        )
 
-            HeatmapMetricTiles(heatmap = heatmap)
-
-            MuscleBodyMap(
-                muscles = heatmap.muscles,
-                selectedMuscleId = heatmap.selectedMuscleId,
-                onMuscleSelected = onMuscleSelected,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                Text(
-                    text = stringResource(R.string.muscle_heatmap_front),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = stringResource(R.string.muscle_heatmap_back),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            MuscleLegend()
-
-            if (heatmap.untrainedMuscleLabels.isNotEmpty()) {
-                Text(
-                    text = formattedStringResource(
-                        R.string.untrained_muscles_hint,
-                        heatmap.untrainedMuscleLabels.joinToString(", ")
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            if (heatmap.selectedMuscleLabel != null) {
-                SelectedMuscleHighlight(heatmap = heatmap)
-                SelectedMuscleExercises(heatmap = heatmap)
-            }
-
-            if (heatmap.topMuscles.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.muscle_heatmap_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = stringResource(R.string.muscle_heatmap_top_title),
-                        style = MaterialTheme.typography.titleSmall
+        GroupedSection {
+            row {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    MuscleBodyMap(
+                        muscles = heatmap.muscles,
+                        selectedMuscleId = heatmap.selectedMuscleId,
+                        onMuscleSelected = onMuscleSelected,
+                        modifier = Modifier.fillMaxWidth()
                     )
-                    heatmap.topMuscles.forEach { muscle ->
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        Text(
+                            text = stringResource(R.string.muscle_heatmap_front),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = stringResource(R.string.muscle_heatmap_back),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    MuscleLegend()
+                }
+            }
+            row { GroupedRow(title = setsTitle, value = heatmap.totalSets.toString()) }
+            row { GroupedRow(title = loadTitle, value = loadText) }
+            if (heatmap.selectedMuscleLabel != null) {
+                row {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        SelectedMuscleHighlight(heatmap = heatmap)
+                        SelectedMuscleExercises(heatmap = heatmap)
+                    }
+                }
+            }
+            if (loadedMuscles.isEmpty()) {
+                row { GroupedRow(title = emptyTitle) }
+            }
+        }
+
+        if (loadedMuscles.isNotEmpty()) {
+            GroupedSection(
+                modifier = Modifier.padding(top = 8.dp),
+                header = stringResource(R.string.muscle_heatmap_top_title)
+            ) {
+                loadedMuscles.forEach { muscle ->
+                    row {
                         TopMuscleRow(
                             muscle = muscle,
                             selected = muscle.id == heatmap.selectedMuscleId,
-                            onClick = { onMuscleSelected(muscle.id) }
+                            onClick = { onMuscleSelected(muscle.id) },
+                            modifier = Modifier.padding(horizontal = 8.dp)
                         )
                     }
                 }
             }
         }
-    }
-}
 
-/**
- * Three tiles in one row while every label word fits its tile at the current font size; otherwise
- * they stack one per row, so a label such as "Сопоставлено" is never shrunk or cut off.
- */
-@Composable
-private fun HeatmapMetricTiles(heatmap: MuscleHeatmapUiModel) {
-    val setsLabel = stringResource(R.string.muscle_heatmap_sets)
-    val loadLabel = stringResource(R.string.muscle_heatmap_load)
-    val mappedLabel = stringResource(R.string.muscle_heatmap_mapped)
-    val setsValue = heatmap.totalSets.toString()
-    val loadValue = groupedLoadText(heatmap.totalLoad)
-    val mappedValue = formattedStringResource(
-        R.string.muscle_heatmap_mapped_value,
-        heatmap.mappedExerciseCount,
-        heatmap.totalExerciseCount
-    )
-    val measurer = rememberTextMeasurer()
-    val density = LocalDensity.current
-    val labelStyle = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val sideBySide = remember(setsLabel, loadLabel, mappedLabel, maxWidth, density, labelStyle) {
-            val gapDp = 8f
-            val tileTextDp = (maxWidth.value - 2 * gapDp) / 3 -
-                2 * MetricTilesLayout.TilePaddingDp
-            listOf(setsLabel, loadLabel, mappedLabel).all { label ->
-                label.split(' ', '\u00A0').filter { it.isNotEmpty() }.all { word ->
-                    val widthDp = with(density) {
-                        measurer.measure(word, labelStyle, maxLines = 1, softWrap = false).size.width.toDp().value
-                    }
-                    widthDp <= tileTextDp
-                }
-            }
-        }
-        if (sideBySide) {
-            Row(
-                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MetricTile(label = setsLabel, value = setsValue, modifier = Modifier.weight(1f), emphasized = true)
-                MetricTile(label = loadLabel, value = loadValue, modifier = Modifier.weight(1f), emphasized = true)
-                MetricTile(label = mappedLabel, value = mappedValue, modifier = Modifier.weight(1f), emphasized = true)
-            }
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                MetricTile(label = setsLabel, value = setsValue, modifier = Modifier.fillMaxWidth(), emphasized = true)
-                MetricTile(label = loadLabel, value = loadValue, modifier = Modifier.fillMaxWidth(), emphasized = true)
-                MetricTile(label = mappedLabel, value = mappedValue, modifier = Modifier.fillMaxWidth(), emphasized = true)
-            }
+        if (heatmap.untrainedMuscleLabels.isNotEmpty()) {
+            Text(
+                text = formattedStringResource(
+                    R.string.untrained_muscles_hint,
+                    heatmap.untrainedMuscleLabels.joinToString(", ")
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = GroupedListDefaults.TextInset)
+            )
         }
     }
 }
