@@ -52,7 +52,7 @@ struct AppLanguageMenu: View {
             case .inline:
                 HStack(spacing: 4) {
                     Text(AppLanguage(rawValue: languageCode)?.fullTitle ?? AppLanguage.english.fullTitle)
-                        .font(.subheadline)
+                        .font(.body)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                     Image(systemName: "chevron.up.chevron.down")

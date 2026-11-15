@@ -441,8 +441,7 @@
     <string name="shortcut_start_workout_short">Начать тренировку</string>
     <string name="shortcut_start_workout_long">Начать тренировку</string>
     <string name="action_continue_workout">Продолжить тренировку</string>
-    <string name="continue_workout_bar_progress">%1$d / %2$d</string>
-    <string name="continue_workout_bar_discard">Удалить активную тренировку</string>
+    <string name="continue_workout_bar_progress">%1$d из %2$d подходов</string>
     <string name="add_workout_active_exercises">Упражнений: %1$d</string>
     <string name="add_workout_total_sets">Подходов: %1$d</string>
     <string name="add_workout_choose_training_day">Выбери тип тренировки</string>
@@ -1233,7 +1232,7 @@
 
     <string name="language_button">Язык</string>
     <string name="settings_haptics_title">Тактильный отклик</string>
-    <string name="keep_awake_setting_title">Не выключать экран во время тренировки</string>
+    <string name="keep_awake_setting_title">Не гасить экран на тренировке</string>
     <string name="analytics_consent_title">Помочь измерять рекламу?</string>
     <string name="analytics_consent_body">GymApp может измерять, какая реклама приводит людей, которые действительно начинают тренироваться. Для этого используются идентификатор приложения и два события: создание аккаунта и первая завершённая тренировка. Данные тренировок и email не передаются. Это можно изменить в любой момент в настройках.</string>
     <string name="analytics_consent_allow">Разрешить</string>
@@ -1482,6 +1481,15 @@
     <string name="garmin_reset_pairing_title">Сбросить защищённую привязку Garmin?</string>
     <string name="garmin_reset_pairing_description">Очередь тренировок на доверенных часах будет очищена, после чего начнётся новый защищённый период для квитанций. Не отключай часы.</string>
     <string name="garmin_reset_pairing_confirm">Сбросить привязку</string>
+    <string name="profile_group_account">Аккаунт</string>
+    <string name="profile_group_workouts">Тренировки</string>
+    <string name="profile_group_devices">Устройства</string>
+    <string name="profile_group_app">Приложение</string>
+    <string name="profile_group_data">Данные</string>
+    <string name="profile_group_help">Помощь</string>
+    <string name="garmin_row_title">Часы Garmin</string>
+    <string name="garmin_status_connected">Подключены</string>
+    <string name="garmin_status_not_connected">Не подключены</string>
     <string name="garmin_profile_eyebrow">Garmin</string>
     <string name="garmin_profile_title">Твои часы</string>
     <string name="garmin_profile_supporting">Текущее состояние подключения из Garmin Connect на этом телефоне.</string>
@@ -1601,7 +1609,7 @@
     <string name="progress_section_exercises">Упражнения</string>
     <string name="progress_section_goals">Цели</string>
     <string name="profile_help_title">Помощь</string>
-    <string name="profile_help_replay_tour">Повтори короткий обзор GymApp</string>
+    <string name="profile_help_replay_tour">Короткий обзор приложения</string>
     <string name="profile_friends_live_title">Друзья и live</string>
     <string name="profile_friends_live_requires_cloud">Нужен облачный аккаунт</string>
     <string name="profile_support_action">Поддержка</string>

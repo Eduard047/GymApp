@@ -12,13 +12,6 @@ func nativePushScrollBehavior(reduceMotion: Bool) -> NativePushScrollBehavior {
 
 @MainActor
 struct ProfileView: View {
-    private enum ProfileSection: String, CaseIterable, Identifiable {
-        case friends
-        case settings
-
-        var id: String { rawValue }
-    }
-
     private enum ActiveAlert: Identifiable {
         case importBackup
 
@@ -53,7 +46,7 @@ struct ProfileView: View {
     @State private var exportFilename = "GymApp-backup"
     @State private var fulfilledNativePushRequestID: UUID?
     @State private var requestedNativePushAccessibilityTarget: NativePushProfileFocus?
-    @State private var selectedSection: ProfileSection = .friends
+    @State private var showsFriends = false
     @State private var backupExpanded = false
     @State private var trainingProfile: TrainingProfile
     private let canAcceptWorkoutInvites: Bool
@@ -95,32 +88,7 @@ struct ProfileView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: GymTheme.contentSpacing) {
                         header
-                        if isCloudAccount {
-                            sectionPicker
-                        }
-
-                        if selectedSection == .friends && isCloudAccount {
-                            FriendsView(
-                                appState: appState,
-                                auth: auth,
-                                canAcceptWorkoutInvites: canAcceptWorkoutInvites,
-                                liveWorkoutCoordinator: liveWorkoutCoordinator,
-                                nativePushAccessibilityTarget: requestedNativePushAccessibilityTarget,
-                                onOpenAccountSettings: {
-                                    showsAccountSettings = true
-                                },
-                                onCreateLiveWorkout: onCreateLiveWorkout,
-                                onOpenLiveWorkout: onOpenLiveWorkout
-                            )
-                            .id(NativePushProfileFocus.friends)
-                            .accessibilityFocused(
-                                $focusedProfilePushTarget,
-                                equals: .friends
-                            )
-                        } else {
-                            settingsGroup
-                            garminCard
-                        }
+                        settingsGroups
                     }
                     .padding(.horizontal, GymTheme.screenHorizontalInset)
                     .padding(.top, GymTheme.screenVerticalInset)
@@ -131,24 +99,31 @@ struct ProfileView: View {
             .task(id: nativePushRequest?.id) {
                 requestedNativePushAccessibilityTarget = nil
                 focusedProfilePushTarget = nil
-                guard let nativePushRequest else { return }
-                await scrollToNativePushRequest(
-                    nativePushRequest,
-                    using: proxy,
-                    allowFallback: true
-                )
-            }
-            .onChange(of: appState.socialDashboard != nil) { _, _ in
-                retryPendingNativePushScroll(using: proxy, allowFallback: true)
-            }
-            .onChange(of: liveWorkoutCoordinator.inbox) { _, _ in
-                retryPendingNativePushScroll(using: proxy, allowFallback: false)
+                // Friends & live is a pushed screen; a push route opens it and the
+                // screen scrolls to the exact card.
+                guard nativePushRequest != nil, isCloudAccount else { return }
+                showsFriends = true
             }
 #if DEBUG
             .onReceive(UIAuditRouter.shared.$pendingPresentation.compactMap { $0 }) { _ in
                 presentUIAuditRouteIfRequested(proxy)
             }
 #endif
+        }
+        .navigationDestination(isPresented: $showsFriends) {
+            ProfileFriendsScreen(
+                appState: appState,
+                auth: auth,
+                canAcceptWorkoutInvites: canAcceptWorkoutInvites,
+                liveWorkoutCoordinator: liveWorkoutCoordinator,
+                nativePushRequest: nativePushRequest,
+                fulfilledNativePushRequestID: $fulfilledNativePushRequestID,
+                requestedNativePushAccessibilityTarget: $requestedNativePushAccessibilityTarget,
+                focusedProfilePushTarget: $focusedProfilePushTarget,
+                onOpenAccountSettings: { showsAccountSettings = true },
+                onCreateLiveWorkout: onCreateLiveWorkout,
+                onOpenLiveWorkout: onOpenLiveWorkout
+            )
         }
         .sheet(isPresented: $showsAccountSettings) {
             NavigationStack {
@@ -183,7 +158,6 @@ struct ProfileView: View {
             trainingProfile = TrainingProfileStore().load(accountStorageKey: key)
         }
     }
-
 #if DEBUG
     /// UI-audit: opens the Account sheet (`account-settings`), the same sheet with its
     /// first deletion alert (`account-delete-dialog`; `AccountSettingsView` consumes that
@@ -213,99 +187,6 @@ struct ProfileView: View {
         }
     }
 #endif
-
-    private func retryPendingNativePushScroll(
-        using proxy: ScrollViewProxy,
-        allowFallback: Bool
-    ) {
-        guard let request = nativePushRequest,
-              fulfilledNativePushRequestID != request.id else {
-            return
-        }
-        Task { @MainActor in
-            await scrollToNativePushRequest(
-                request,
-                using: proxy,
-                allowFallback: allowFallback
-            )
-        }
-    }
-
-    private func scrollToNativePushRequest(
-        _ request: NativePushProfileRequest,
-        using proxy: ScrollViewProxy,
-        allowFallback: Bool
-    ) async {
-        guard nativePushRequest?.id == request.id,
-              fulfilledNativePushRequestID != request.id else {
-            return
-        }
-        selectedSection = .friends
-        await Task.yield()
-
-        let exactAnchor: NativePushProfileFocus?
-        switch request.focus {
-        case .friends:
-            exactAnchor = .friends
-        case let .friendRequest(friendshipID):
-            exactAnchor = socialFriendshipIsVisible(friendshipID) ? .friendRequest(friendshipID) : nil
-        case let .workoutInvite(inviteID):
-            exactAnchor = socialWorkoutInviteIsVisible(inviteID) ? .workoutInvite(inviteID) : nil
-        case .liveWorkouts:
-            exactAnchor = appState.socialDashboard == nil ? nil : .liveWorkouts
-        case let .liveRoom(roomID):
-            let invitations = liveWorkoutCoordinator.inbox?.invitations ?? []
-            let rooms = liveWorkoutCoordinator.inbox?.rooms ?? []
-            let roomIsVisible = invitations.contains { $0.roomID == roomID }
-                || rooms.contains { $0.roomID == roomID }
-            exactAnchor = roomIsVisible ? .liveRoom(roomID) : nil
-        }
-
-        if let exactAnchor {
-            scroll(proxy, to: exactAnchor)
-            requestedNativePushAccessibilityTarget = exactAnchor
-            focusedProfilePushTarget = exactAnchor == .friends ? .friends : nil
-            // Let the exact card appear and accept VoiceOver focus before this
-            // route is considered fulfilled.
-            await Task.yield()
-            fulfilledNativePushRequestID = request.id
-        } else if allowFallback {
-            let fallback: NativePushProfileFocus = appState.socialDashboard == nil
-                ? .friends
-                : .liveWorkouts
-            scroll(proxy, to: fallback)
-            requestedNativePushAccessibilityTarget = fallback
-            focusedProfilePushTarget = fallback == .friends ? .friends : nil
-            // The parent creates this request only after its bounded authoritative
-            // fetch/open attempt finishes. A missing exact object therefore resolves
-            // once to the nearest safe surface instead of repeatedly pulling the user
-            // back on every later dashboard or inbox refresh.
-            await Task.yield()
-            fulfilledNativePushRequestID = request.id
-        }
-    }
-
-    private func scroll(_ proxy: ScrollViewProxy, to target: NativePushProfileFocus) {
-        switch nativePushScrollBehavior(reduceMotion: reduceMotion) {
-        case .animated:
-            withAnimation { proxy.scrollTo(target, anchor: .top) }
-        case .immediate:
-            proxy.scrollTo(target, anchor: .top)
-        }
-    }
-
-    private func socialFriendshipIsVisible(_ friendshipID: String) -> Bool {
-        guard let dashboard = appState.socialDashboard else { return false }
-        return dashboard.incoming.contains { $0.friendshipID == friendshipID }
-            || dashboard.outgoing.contains { $0.friendshipID == friendshipID }
-            || dashboard.friends.contains { $0.friendshipID == friendshipID }
-    }
-
-    private func socialWorkoutInviteIsVisible(_ inviteID: String) -> Bool {
-        guard let inbox = appState.socialWorkoutInbox else { return false }
-        return inbox.incoming.contains { $0.inviteID == inviteID }
-            || inbox.outgoing.contains { $0.inviteID == inviteID }
-    }
 
     private var header: some View {
         let friendCount = appState.socialDashboard?.friends.count ?? 0
@@ -354,7 +235,6 @@ struct ProfileView: View {
                 if pendingCount > 0 {
                     GymInfoPill(
                         "\(min(pendingCount, 99))",
-                        systemImage: "bell.fill",
                         accent: GymTheme.error
                     )
                     .accessibilityLabel(gymText(
@@ -368,130 +248,99 @@ struct ProfileView: View {
         }
     }
 
-    @ViewBuilder
-    private var sectionPicker: some View {
-        let label = gymText("Profile section", "Розділ профілю", "Раздел профиля", languageCode: languageCode)
-        if dynamicTypeSize.isAccessibilitySize {
-            Menu {
-                ForEach(ProfileSection.allCases) { section in
-                    Button {
-                        selectedSection = section
-                    } label: {
-                        if selectedSection == section {
-                            Label(profileSectionTitle(section), systemImage: "checkmark")
-                        } else {
-                            Text(profileSectionTitle(section))
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: GymTheme.Spacing.small) {
-                    Text(profileSectionTitle(selectedSection))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: GymTheme.Spacing.small)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .accessibilityHidden(true)
-                }
-            }
-            .buttonStyle(GymSecondaryButtonStyle())
-            .accessibilityLabel(label)
-            .accessibilityValue(profileSectionTitle(selectedSection))
-        } else {
-            GymSegmentedControl(
-                label,
-                selection: $selectedSection,
-                options: ProfileSection.allCases.map { ($0, profileSectionTitle($0)) },
-                menuFallback: false
-            )
-        }
-    }
-
-    private func profileSectionTitle(_ section: ProfileSection) -> String {
-        section == .friends
-            ? gymText("Friends", "Друзі", "Друзья", languageCode: languageCode)
-            : gymText("Account", "Акаунт", "Аккаунт", languageCode: languageCode)
-    }
-
-    /// Groups the "Аккаунт", "Язык", "Настройки тренировок", "Резервная копия
-    /// и диагностика", and "Помощь" rows (and, for a local profile, the
-    /// cloud-upgrade row) into one panel of compact, same-style settings
-    /// rows separated by dividers.
-    private var settingsGroup: some View {
-        GymPanel(contentPadding: EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16)) {
-            VStack(spacing: 0) {
-                if !isCloudAccount {
-                    friendsCloudUpgradeRow
-                    settingsRowDivider
-                }
-                accountRow
-                settingsRowDivider
-                languageRow
-                settingsRowDivider
-                hapticsRow
+    /// Inset-grouped Profile root: Account, Workouts, Devices, App, Data, Help.
+    /// Rows are 17pt regular titles with a status-only subtitle or a secondary
+    /// value on the right; every feature keeps its destination.
+    private var settingsGroups: some View {
+        VStack(alignment: .leading, spacing: GymTheme.contentSpacing + 4) {
+            settingsGroup
+            ProfileGroup(title: gymText("Workouts", "Тренування", "Тренировки", languageCode: languageCode)) {
+                trainingSettingsRow
                 settingsRowDivider
                 keepScreenOnRow
                 settingsRowDivider
-                trainingSettingsRow
-                settingsRowDivider
+                hapticsRow
+            }
+            ProfileGroup(title: gymText("Devices", "Пристрої", "Устройства", languageCode: languageCode)) {
+                garminRow
+            }
+            ProfileGroup(title: gymText("App", "Застосунок", "Приложение", languageCode: languageCode)) {
+                languageRow
+            }
+            ProfileGroup(title: gymText("Data", "Дані", "Данные", languageCode: languageCode)) {
                 backupRow
 #if DEBUG
                     .id("ui-audit-backup")
 #endif
-                settingsRowDivider
+            }
+            ProfileGroup(title: gymText("Help", "Допомога", "Помощь", languageCode: languageCode)) {
                 helpRow
             }
         }
     }
 
-    /// Icon column width shared by every row in `settingsGroup`, so titles
-    /// line up regardless of which SF Symbol a row uses.
-    @ScaledMetric(relativeTo: .title3) private var scaledSettingsRowIconWidth: CGFloat = 28
-    /// Capped so the icon column never takes the room titles need at large text.
-    private var settingsRowIconWidth: CGFloat { min(scaledSettingsRowIconWidth, 36) }
-    /// Divider leading inset = icon width + the row's icon/text spacing, so
-    /// the divider starts under the title, not under the icon.
-    private var settingsRowDividerInset: CGFloat { settingsRowIconWidth + 12 }
+    /// The "Account" group: Friends & live (or the cloud-upgrade prompt for a
+    /// local profile) and Account.
+    private var settingsGroup: some View {
+        ProfileGroup(title: gymText("Account", "Акаунт", "Аккаунт", languageCode: languageCode)) {
+            if isCloudAccount {
+                friendsRow
+            } else {
+                friendsCloudUpgradeRow
+            }
+            settingsRowDivider
+            accountRow
+        }
+    }
 
     private var settingsRowDivider: some View {
         Divider()
             .overlay(GymTheme.outlineSoft)
-            .padding(.leading, settingsRowDividerInset)
+    }
+
+    private var friendsTitle: String {
+        gymText("Friends & live", "Друзі та live", "Друзья и live", languageCode: languageCode)
+    }
+
+    private var friendsPendingCount: Int {
+        (appState.socialDashboard?.incoming.count ?? 0)
+            + (appState.socialWorkoutInbox?.pendingIncomingCount ?? 0)
+            + liveWorkoutCoordinator.pendingInvitationCount
+    }
+
+    private var friendsRow: some View {
+        let pending = friendsPendingCount
+        return Button {
+            showsFriends = true
+        } label: {
+            ProfileRowLabel(
+                title: friendsTitle,
+                subtitle: pending > 0
+                    ? gymText(
+                        "Needs attention: \(pending)",
+                        "Потребують уваги: \(pending)",
+                        "Требуют внимания: \(pending)",
+                        languageCode: languageCode
+                    )
+                    : nil
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private var friendsCloudUpgradeRow: some View {
         Button {
             showsAccountSettings = true
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "person.2.slash")
-                    .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
-                    .foregroundStyle(GymTheme.primary)
-                    .frame(width: settingsRowIconWidth)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(gymText("Friends & live", "Друзі та спільні тренування", "Друзья и тренировки", languageCode: languageCode))
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(GymTheme.textPrimary)
-                        .gymLineLimit(1)
-                    Text(gymText(
-                        "Requires a cloud account",
-                        "Потрібен хмарний акаунт",
-                        "Нужен облачный аккаунт",
-                        languageCode: languageCode
-                    ))
-                    .font(.subheadline)
-                    .foregroundStyle(GymTheme.textSecondary)
-                    .gymLineLimit(1)
-                }
-                Spacer(minLength: 6)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(GymTheme.textSecondary)
-                    .accessibilityHidden(true)
-            }
-            .padding(.vertical, 12)
-            .frame(minHeight: 56)
-            .contentShape(Rectangle())
+            ProfileRowLabel(
+                title: friendsTitle,
+                subtitle: gymText(
+                    "Requires a cloud account",
+                    "Потрібен хмарний акаунт",
+                    "Нужен облачный аккаунт",
+                    languageCode: languageCode
+                )
+            )
         }
         .buttonStyle(.plain)
         .accessibilityHint(gymText(
@@ -506,31 +355,10 @@ struct ProfileView: View {
         Button {
             showsAccountSettings = true
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: isCloudAccount ? "person.crop.circle.badge.checkmark" : "iphone")
-                    .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
-                    .foregroundStyle(GymTheme.primary)
-                    .frame(width: settingsRowIconWidth)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(gymText("Account", "Акаунт", "Аккаунт", languageCode: languageCode))
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(GymTheme.textPrimary)
-                    Text(accountRowSubtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(GymTheme.textSecondary)
-                        .gymLineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-                Spacer(minLength: 6)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(GymTheme.textSecondary)
-                    .accessibilityHidden(true)
-            }
-            .padding(.vertical, 12)
-            .frame(minHeight: 56)
-            .contentShape(Rectangle())
+            ProfileRowLabel(
+                title: gymText("Account", "Акаунт", "Аккаунт", languageCode: languageCode),
+                subtitle: accountRowSubtitle
+            )
         }
         .buttonStyle(.plain)
         .accessibilityHint(gymText(
@@ -548,28 +376,18 @@ struct ProfileView: View {
     }
 
     private var languageRow: some View {
-        let icon = Image(systemName: "globe")
-            .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
-            .foregroundStyle(GymTheme.primary)
-            .frame(width: settingsRowIconWidth)
-            .accessibilityHidden(true)
         let title = Text(gymText("Language", "Мова", "Язык", languageCode: languageCode))
-            .font(.body.weight(.semibold))
+            .font(.body)
             .foregroundStyle(GymTheme.textPrimary)
         return Group {
             if dynamicTypeSize.isAccessibilitySize {
                 // The title keeps the full width (never "Lan-guage"); the menu sits on its own line.
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 12) {
-                        icon
-                        title
-                    }
+                    title
                     AppLanguageMenu(style: .inline)
-                        .padding(.leading, settingsRowIconWidth + 12)
                 }
             } else {
                 HStack(spacing: 12) {
-                    icon
                     title
                     Spacer(minLength: 6)
                     AppLanguageMenu(style: .inline)
@@ -577,29 +395,21 @@ struct ProfileView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 12)
+        .padding(.vertical, 6)
         .frame(minHeight: 48)
     }
 
     /// In-app Haptics switch (DESIGN.md "Feedback and haptics"): gates every
     /// haptic the app plays; stored on this device only.
     private var hapticsRow: some View {
-        let icon = Image(systemName: "iphone.radiowaves.left.and.right")
-            .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
-            .foregroundStyle(GymTheme.primary)
-            .frame(width: settingsRowIconWidth)
-            .accessibilityHidden(true)
         let label = Text(gymText("Haptics", "Тактильний відгук", "Тактильный отклик", languageCode: languageCode))
-            .font(.body.weight(.semibold))
+            .font(.body)
             .foregroundStyle(GymTheme.textPrimary)
         return Group {
             if dynamicTypeSize.isAccessibilitySize {
                 // The label gets the full width; the switch sits on its own line.
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 12) {
-                        icon
-                        label
-                    }
+                    label
                     Toggle(isOn: $hapticsEnabled) { label }
                         .labelsHidden()
                         .tint(GymTheme.primaryAction)
@@ -607,42 +417,33 @@ struct ProfileView: View {
                 }
             } else {
                 HStack(spacing: 12) {
-                    icon
                     Toggle(isOn: $hapticsEnabled) { label }
                         .tint(GymTheme.primaryAction)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 12)
+        .padding(.vertical, 6)
         .frame(minHeight: 48)
     }
 
-    /// In-app "Keep screen on during workouts" switch: holds the screen awake
+    /// In-app "Keep screen on in workouts" switch: holds the screen awake
     /// while the active workout is visible; stored on this device only.
     private var keepScreenOnRow: some View {
-        let icon = Image(systemName: "sun.max")
-            .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
-            .foregroundStyle(GymTheme.primary)
-            .frame(width: settingsRowIconWidth)
-            .accessibilityHidden(true)
         let keepScreenOnTitle = gymText(
-            "Keep screen on during workouts",
-            "Не вимикати екран під час тренування",
-            "Не выключать экран во время тренировки",
+            "Keep screen on in workouts",
+            "Не вимикати екран на тренуванні",
+            "Не гасить экран на тренировке",
             languageCode: languageCode
         )
         let label = Text(keepScreenOnTitle)
-            .font(.body.weight(.semibold))
+            .font(.body)
             .foregroundStyle(GymTheme.textPrimary)
         return Group {
             if dynamicTypeSize.isAccessibilitySize {
                 // The label gets the full width; the switch sits on its own line.
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 12) {
-                        icon
-                        label
-                    }
+                    label
                     Toggle(isOn: $keepScreenOn) { label }
                         .labelsHidden()
                         .tint(GymTheme.primaryAction)
@@ -650,52 +451,28 @@ struct ProfileView: View {
                 }
             } else {
                 HStack(spacing: 12) {
-                    icon
                     Toggle(isOn: $keepScreenOn) { label }
                         .tint(GymTheme.primaryAction)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 12)
+        .padding(.vertical, 6)
         .frame(minHeight: 48)
     }
 
-    /// The help card's one action (replay the tutorial) as a compact,
-    /// whole-row-tappable settings row instead of its own card with a
-    /// trailing "Show" button.
+    /// The help row's one action (replay the tutorial).
     private var helpRow: some View {
         Button(action: onShowTutorial) {
-            HStack(spacing: 12) {
-                Image(systemName: "questionmark.circle.fill")
-                    .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
-                    .foregroundStyle(GymTheme.primary)
-                    .frame(width: settingsRowIconWidth)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(gymText("Help", "Допомога", "Помощь", languageCode: languageCode))
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(GymTheme.textPrimary)
-                    Text(gymText(
-                        "Replay the quick GymApp tour",
-                        "Повтори короткий огляд GymApp",
-                        "Повтори короткий обзор GymApp",
-                        languageCode: languageCode
-                    ))
-                    .font(.subheadline)
-                    .foregroundStyle(GymTheme.textSecondary)
-                    .gymLineLimit(1)
-                    .minimumScaleFactor(0.9)
-                }
-                Spacer(minLength: 6)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(GymTheme.textSecondary)
-                    .accessibilityHidden(true)
-            }
-            .padding(.vertical, 12)
-            .frame(minHeight: 56)
-            .contentShape(Rectangle())
+            ProfileRowLabel(
+                title: gymText("Help", "Допомога", "Помощь", languageCode: languageCode),
+                subtitle: gymText(
+                    "Quick tour of the app",
+                    "Короткий огляд застосунку",
+                    "Короткий обзор приложения",
+                    languageCode: languageCode
+                )
+            )
         }
         .buttonStyle(.plain)
     }
@@ -707,38 +484,40 @@ struct ProfileView: View {
             }
             .gymTopBannerInset()
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "target")
-                    .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
-                    .foregroundStyle(GymTheme.primary)
-                    .frame(width: settingsRowIconWidth)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(gymText(
-                        "Training settings", "Налаштування тренувань", "Настройки тренировок",
-                        languageCode: languageCode
-                    ))
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(GymTheme.textPrimary)
-                    Text(trainingSettingsSummaryText)
-                        .font(.subheadline)
-                        .foregroundStyle(GymTheme.textSecondary)
-                        .gymLineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 6)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(GymTheme.textSecondary)
-                    .accessibilityHidden(true)
-            }
-            .padding(.vertical, 12)
-            .frame(minHeight: 56)
-            .contentShape(Rectangle())
+            ProfileRowLabel(
+                title: gymText(
+                    "Training settings", "Налаштування тренувань", "Настройки тренировок",
+                    languageCode: languageCode
+                ),
+                subtitle: trainingSettingsSummaryText
+            )
         }
         .buttonStyle(.plain)
     }
 
+    /// One row for every Garmin watch: status value on the right, the existing
+    /// watch card lives on the pushed screen.
+    private var garminRow: some View {
+        NavigationLink {
+            GarminWatchScreen(garminCloud: garminCloud, garminPhoneSync: garminPhoneSync)
+                .gymTopBannerInset()
+        } label: {
+            ProfileRowLabel(
+                title: gymText("Garmin watch", "Годинник Garmin", "Часы Garmin", languageCode: languageCode),
+                value: garminConnected
+                    ? gymText("Connected", "Підключено", "Подключены", languageCode: languageCode)
+                    : gymText("Not connected", "Не підключено", "Не подключены", languageCode: languageCode)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var garminConnected: Bool {
+        if garminPhoneSync.devices.isEmpty {
+            return garminSelectedCloudDevice(garminCloud)?.lastSeenAt != nil
+        }
+        return garminPhoneSync.devices.contains { $0.connected }
+    }
     private var trainingSettingsSummaryText: String {
         [
             trainingProfile.goal.gymDisplayName,
@@ -756,107 +535,6 @@ struct ProfileView: View {
     }
 
     private var isCloudAccount: Bool { auth.session?.cloud != nil }
-
-    private var garminCard: some View {
-        GymPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                GymSectionTitle(
-                    title: gymText("Your watch", "Твій годинник", "Твои часы", languageCode: languageCode),
-                    supporting: gymText(
-                        "Bluetooth status for watches on this iPhone; cloud watches show their last sync.",
-                        "Bluetooth-статус годинників на цьому iPhone; хмарні показують останню синхронізацію.",
-                        "Bluetooth-статус часов на этом iPhone; облачные показывают последнюю синхронизацию.",
-                        languageCode: languageCode
-                    )
-                )
-
-                if garminPhoneSync.devices.isEmpty && selectedCloudDevice == nil {
-                    GymInlineState(
-                        gymText(
-                            "Connect your Garmin watch to send workouts and keep your results together.",
-                            "Підключи годинник Garmin, щоб надсилати тренування та зберігати результати разом.",
-                            "Подключи часы Garmin, чтобы отправлять тренировки и хранить результаты вместе.",
-                            languageCode: languageCode
-                        ),
-                        systemImage: "applewatch"
-                    )
-                    Button(gymText("Connect Garmin", "Підключити Garmin", "Подключить Garmin", languageCode: languageCode)) {
-                        garminPhoneSync.selectDevices()
-                    }
-                    .buttonStyle(GymPrimaryButtonStyle())
-                    if let message = garminPhoneSync.statusMessage {
-                        GymStatusBanner(message: message, isError: garminPhoneSync.statusIsError)
-                    }
-                } else {
-                    ForEach(garminPhoneSync.devices) { device in
-                        garminDeviceRow(
-                            name: device.name,
-                            detail: device.model,
-                            status: device.connected
-                                ? gymText("Connected now", "Зараз підключено", "Подключены сейчас", languageCode: languageCode)
-                                : gymText("Not connected now", "Зараз не підключено", "Сейчас не подключены", languageCode: languageCode),
-                            connected: device.connected,
-                            note: device.lite
-                                ? GarminPhoneSyncProtocol.liteWatchMessage(languageCode: languageCode)
-                                : nil
-                        )
-                    }
-                    if garminPhoneSync.devices.isEmpty, let device = selectedCloudDevice {
-                        garminDeviceRow(
-                            name: device.displayName,
-                            detail: gymText("Garmin cloud watch", "Хмарний годинник Garmin", "Облачные часы Garmin", languageCode: languageCode),
-                            status: device.lastSeenAt == nil
-                                ? gymText("Waiting for first watch sync", "Очікуємо першу синхронізацію годинника", "Ожидаем первую синхронизацию часов", languageCode: languageCode)
-                                : gymText("Recently synchronized with GymApp cloud", "Нещодавно синхронізовано з хмарою GymApp", "Недавно синхронизировано с облаком GymApp", languageCode: languageCode),
-                            connected: device.lastSeenAt != nil
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    private var selectedCloudDevice: GarminDeviceSummary? {
-        guard let selectedID = garminCloud.selectedDevice?.deviceID else { return nil }
-        return garminCloud.availableDevices.first { $0.id == selectedID }
-    }
-
-    private func garminDeviceRow(
-        name: String,
-        detail: String,
-        status: String,
-        connected: Bool,
-        note: String? = nil
-    ) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "applewatch")
-                .font(.title2)
-                .foregroundStyle(connected ? GymTheme.primary : GymTheme.textSecondary)
-                .gymScaledFrame(width: 30, relativeTo: .title2)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(name)
-                    .font(.headline)
-                    .foregroundStyle(GymTheme.textPrimary)
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(GymTheme.textSecondary)
-                Text(status)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(connected ? GymTheme.primary : GymTheme.textSecondary)
-                if let note {
-                    Text(note)
-                        .font(.caption)
-                        .foregroundStyle(GymTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer(minLength: 4)
-        }
-        // Flat inside the panel: no nested tonal card (card-in-card).
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
-    }
 
     private var accountSubtitle: String {
         if auth.session?.cloud != nil {
@@ -877,8 +555,8 @@ struct ProfileView: View {
 
     /// Backup & diagnostics keeps its expand/collapse behavior (it holds
     /// several actions, not one navigation target), but its collapsed label
-    /// now matches the other settings rows: icon column, semibold title,
-    /// one-line secondary subtitle. The system disclosure indicator serves
+    /// now matches the other settings rows: a regular 17pt title. The system
+    /// disclosure indicator serves
     /// as this row's "chevron."
     private var backupRow: some View {
         DisclosureGroup(isExpanded: $backupExpanded) {
@@ -963,37 +641,15 @@ struct ProfileView: View {
             .padding(.top, 12)
             .padding(.bottom, 12)
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "tray.and.arrow.down.fill")
-                    .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
-                    .foregroundStyle(GymTheme.primary)
-                    .frame(width: settingsRowIconWidth)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(gymText(
-                        "Backup & diagnostics",
-                        "Резервна копія та діагностика",
-                        "Резервная копия и диагностика",
-                        languageCode: languageCode
-                    ))
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(GymTheme.textPrimary)
-                    Text(gymText(
-                        "Export, import, diagnostics",
-                        "Експорт, імпорт, діагностика",
-                        "Экспорт, импорт, диагностика",
-                        languageCode: languageCode
-                    ))
-                    .font(.subheadline)
-                    .foregroundStyle(GymTheme.textSecondary)
-                    .gymLineLimit(1)
-                }
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.vertical, 12)
-            .frame(minHeight: 56)
-            .contentShape(Rectangle())
+            ProfileRowLabel(
+                title: gymText(
+                    "Backups & diagnostics",
+                    "Резервні копії та діагностика",
+                    "Резервные копии и диагностика",
+                    languageCode: languageCode
+                ),
+                showsChevron: false
+            )
         }
     }
 
@@ -1287,6 +943,387 @@ enum BackupFileReader {
         return result
     }
 }
+
+/// The existing "Your watch" card (Bluetooth status and cloud watch) on its own screen.
+private struct GarminWatchScreen: View {
+    @ObservedObject var garminCloud: GarminCloudService
+    @ObservedObject var garminPhoneSync: GarminPhoneSyncService
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
+
+    var body: some View {
+        GymBackground {
+            ScrollView {
+                VStack(alignment: .leading, spacing: GymTheme.contentSpacing) {
+                    garminCard
+                }
+                .padding(.horizontal, GymTheme.screenHorizontalInset)
+                .padding(.top, GymTheme.screenVerticalInset)
+                .padding(.bottom, GymTheme.screenBottomInset)
+            }
+        }
+        .navigationTitle(gymText("Garmin watch", "Годинник Garmin", "Часы Garmin", languageCode: languageCode))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var garminCard: some View {
+        GymPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                GymSectionTitle(
+                    title: gymText("Your watch", "Твій годинник", "Твои часы", languageCode: languageCode),
+                    supporting: gymText(
+                        "Bluetooth status for watches on this iPhone; cloud watches show their last sync.",
+                        "Bluetooth-статус годинників на цьому iPhone; хмарні показують останню синхронізацію.",
+                        "Bluetooth-статус часов на этом iPhone; облачные показывают последнюю синхронизацию.",
+                        languageCode: languageCode
+                    )
+                )
+
+                if garminPhoneSync.devices.isEmpty && selectedCloudDevice == nil {
+                    GymInlineState(
+                        gymText(
+                            "Connect your Garmin watch to send workouts and keep your results together.",
+                            "Підключи годинник Garmin, щоб надсилати тренування та зберігати результати разом.",
+                            "Подключи часы Garmin, чтобы отправлять тренировки и хранить результаты вместе.",
+                            languageCode: languageCode
+                        ),
+                        systemImage: "applewatch"
+                    )
+                    Button(gymText("Connect Garmin", "Підключити Garmin", "Подключить Garmin", languageCode: languageCode)) {
+                        garminPhoneSync.selectDevices()
+                    }
+                    .buttonStyle(GymPrimaryButtonStyle())
+                    if let message = garminPhoneSync.statusMessage {
+                        GymStatusBanner(message: message, isError: garminPhoneSync.statusIsError)
+                    }
+                } else {
+                    ForEach(garminPhoneSync.devices) { device in
+                        garminDeviceRow(
+                            name: device.name,
+                            detail: device.model,
+                            status: device.connected
+                                ? gymText("Connected now", "Зараз підключено", "Подключены сейчас", languageCode: languageCode)
+                                : gymText("Not connected now", "Зараз не підключено", "Сейчас не подключены", languageCode: languageCode),
+                            connected: device.connected,
+                            note: device.lite
+                                ? GarminPhoneSyncProtocol.liteWatchMessage(languageCode: languageCode)
+                                : nil
+                        )
+                    }
+                    if garminPhoneSync.devices.isEmpty, let device = selectedCloudDevice {
+                        garminDeviceRow(
+                            name: device.displayName,
+                            detail: gymText("Garmin cloud watch", "Хмарний годинник Garmin", "Облачные часы Garmin", languageCode: languageCode),
+                            status: device.lastSeenAt == nil
+                                ? gymText("Waiting for first watch sync", "Очікуємо першу синхронізацію годинника", "Ожидаем первую синхронизацию часов", languageCode: languageCode)
+                                : gymText("Recently synchronized with GymApp cloud", "Нещодавно синхронізовано з хмарою GymApp", "Недавно синхронизировано с облаком GymApp", languageCode: languageCode),
+                            connected: device.lastSeenAt != nil
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private var selectedCloudDevice: GarminDeviceSummary? { garminSelectedCloudDevice(garminCloud) }
+
+    private func garminDeviceRow(
+        name: String,
+        detail: String,
+        status: String,
+        connected: Bool,
+        note: String? = nil
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "applewatch")
+                .font(.title2)
+                .foregroundStyle(connected ? GymTheme.primary : GymTheme.textSecondary)
+                .gymScaledFrame(width: 30, relativeTo: .title2)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(.headline)
+                    .foregroundStyle(GymTheme.textPrimary)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                Text(status)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(connected ? GymTheme.primary : GymTheme.textSecondary)
+                if let note {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 4)
+        }
+        // Flat inside the panel: no nested tonal card (card-in-card).
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+@MainActor
+private func garminSelectedCloudDevice(_ garminCloud: GarminCloudService) -> GarminDeviceSummary? {
+    guard let selectedID = garminCloud.selectedDevice?.deviceID else { return nil }
+    return garminCloud.availableDevices.first { $0.id == selectedID }
+}
+
+/// Friends & live as a pushed screen of Profile. Owns the scroll-to-card
+/// handling for notification routes (friend request, workout invite, live room).
+private struct ProfileFriendsScreen: View {
+    @ObservedObject var appState: AppState
+    @ObservedObject var auth: AuthService
+    @ObservedObject var liveWorkoutCoordinator: LiveWorkoutCoordinator
+    let canAcceptWorkoutInvites: Bool
+    let nativePushRequest: NativePushProfileRequest?
+    @Binding var fulfilledNativePushRequestID: UUID?
+    @Binding var requestedNativePushAccessibilityTarget: NativePushProfileFocus?
+    var focusedProfilePushTarget: AccessibilityFocusState<NativePushProfileFocus?>.Binding
+    let onOpenAccountSettings: () -> Void
+    let onCreateLiveWorkout: (SocialFriendSummary) -> Void
+    let onOpenLiveWorkout: () -> Void
+
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(
+        appState: AppState,
+        auth: AuthService,
+        canAcceptWorkoutInvites: Bool,
+        liveWorkoutCoordinator: LiveWorkoutCoordinator,
+        nativePushRequest: NativePushProfileRequest?,
+        fulfilledNativePushRequestID: Binding<UUID?>,
+        requestedNativePushAccessibilityTarget: Binding<NativePushProfileFocus?>,
+        focusedProfilePushTarget: AccessibilityFocusState<NativePushProfileFocus?>.Binding,
+        onOpenAccountSettings: @escaping () -> Void,
+        onCreateLiveWorkout: @escaping (SocialFriendSummary) -> Void,
+        onOpenLiveWorkout: @escaping () -> Void
+    ) {
+        self.appState = appState
+        self.auth = auth
+        self.canAcceptWorkoutInvites = canAcceptWorkoutInvites
+        self.liveWorkoutCoordinator = liveWorkoutCoordinator
+        self.nativePushRequest = nativePushRequest
+        self._fulfilledNativePushRequestID = fulfilledNativePushRequestID
+        self._requestedNativePushAccessibilityTarget = requestedNativePushAccessibilityTarget
+        self.focusedProfilePushTarget = focusedProfilePushTarget
+        self.onOpenAccountSettings = onOpenAccountSettings
+        self.onCreateLiveWorkout = onCreateLiveWorkout
+        self.onOpenLiveWorkout = onOpenLiveWorkout
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            GymBackground {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: GymTheme.contentSpacing) {
+                        FriendsView(
+                            appState: appState,
+                            auth: auth,
+                            canAcceptWorkoutInvites: canAcceptWorkoutInvites,
+                            liveWorkoutCoordinator: liveWorkoutCoordinator,
+                            nativePushAccessibilityTarget: requestedNativePushAccessibilityTarget,
+                            onOpenAccountSettings: onOpenAccountSettings,
+                            onCreateLiveWorkout: onCreateLiveWorkout,
+                            onOpenLiveWorkout: onOpenLiveWorkout
+                        )
+                        .id(NativePushProfileFocus.friends)
+                        .accessibilityFocused(
+                            focusedProfilePushTarget,
+                            equals: .friends
+                        )
+                    }
+                    .padding(.horizontal, GymTheme.screenHorizontalInset)
+                    .padding(.top, GymTheme.screenVerticalInset)
+                    .padding(.bottom, GymTheme.screenBottomInset)
+                }
+                .scrollDismissesKeyboard(.interactively)
+            }
+            .task(id: nativePushRequest?.id) {
+                guard let nativePushRequest else { return }
+                await scrollToNativePushRequest(
+                    nativePushRequest,
+                    using: proxy,
+                    allowFallback: true
+                )
+            }
+            .onChange(of: appState.socialDashboard != nil) { _, _ in
+                retryPendingNativePushScroll(using: proxy, allowFallback: true)
+            }
+            .onChange(of: liveWorkoutCoordinator.inbox) { _, _ in
+                retryPendingNativePushScroll(using: proxy, allowFallback: false)
+            }
+        }
+        .navigationTitle(gymText("Friends & live", "Друзі та live", "Друзья и live", languageCode: languageCode))
+        .navigationBarTitleDisplayMode(.inline)
+        .gymTopBannerInset()
+    }
+
+    private func retryPendingNativePushScroll(
+        using proxy: ScrollViewProxy,
+        allowFallback: Bool
+    ) {
+        guard let request = nativePushRequest,
+              fulfilledNativePushRequestID != request.id else {
+            return
+        }
+        Task { @MainActor in
+            await scrollToNativePushRequest(
+                request,
+                using: proxy,
+                allowFallback: allowFallback
+            )
+        }
+    }
+
+    private func scrollToNativePushRequest(
+        _ request: NativePushProfileRequest,
+        using proxy: ScrollViewProxy,
+        allowFallback: Bool
+    ) async {
+        guard nativePushRequest?.id == request.id,
+              fulfilledNativePushRequestID != request.id else {
+            return
+        }
+        await Task.yield()
+
+        let exactAnchor: NativePushProfileFocus?
+        switch request.focus {
+        case .friends:
+            exactAnchor = .friends
+        case let .friendRequest(friendshipID):
+            exactAnchor = socialFriendshipIsVisible(friendshipID) ? .friendRequest(friendshipID) : nil
+        case let .workoutInvite(inviteID):
+            exactAnchor = socialWorkoutInviteIsVisible(inviteID) ? .workoutInvite(inviteID) : nil
+        case .liveWorkouts:
+            exactAnchor = appState.socialDashboard == nil ? nil : .liveWorkouts
+        case let .liveRoom(roomID):
+            let invitations = liveWorkoutCoordinator.inbox?.invitations ?? []
+            let rooms = liveWorkoutCoordinator.inbox?.rooms ?? []
+            let roomIsVisible = invitations.contains { $0.roomID == roomID }
+                || rooms.contains { $0.roomID == roomID }
+            exactAnchor = roomIsVisible ? .liveRoom(roomID) : nil
+        }
+
+        if let exactAnchor {
+            scroll(proxy, to: exactAnchor)
+            requestedNativePushAccessibilityTarget = exactAnchor
+            focusedProfilePushTarget.wrappedValue = exactAnchor == .friends ? .friends : nil
+            // Let the exact card appear and accept VoiceOver focus before this
+            // route is considered fulfilled.
+            await Task.yield()
+            fulfilledNativePushRequestID = request.id
+        } else if allowFallback {
+            let fallback: NativePushProfileFocus = appState.socialDashboard == nil
+                ? .friends
+                : .liveWorkouts
+            scroll(proxy, to: fallback)
+            requestedNativePushAccessibilityTarget = fallback
+            focusedProfilePushTarget.wrappedValue = fallback == .friends ? .friends : nil
+            // The parent creates this request only after its bounded authoritative
+            // fetch/open attempt finishes. A missing exact object therefore resolves
+            // once to the nearest safe surface instead of repeatedly pulling the user
+            // back on every later dashboard or inbox refresh.
+            await Task.yield()
+            fulfilledNativePushRequestID = request.id
+        }
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy, to target: NativePushProfileFocus) {
+        switch nativePushScrollBehavior(reduceMotion: reduceMotion) {
+        case .animated:
+            withAnimation { proxy.scrollTo(target, anchor: .top) }
+        case .immediate:
+            proxy.scrollTo(target, anchor: .top)
+        }
+    }
+
+    private func socialFriendshipIsVisible(_ friendshipID: String) -> Bool {
+        guard let dashboard = appState.socialDashboard else { return false }
+        return dashboard.incoming.contains { $0.friendshipID == friendshipID }
+            || dashboard.outgoing.contains { $0.friendshipID == friendshipID }
+            || dashboard.friends.contains { $0.friendshipID == friendshipID }
+    }
+
+    private func socialWorkoutInviteIsVisible(_ inviteID: String) -> Bool {
+        guard let inbox = appState.socialWorkoutInbox else { return false }
+        return inbox.incoming.contains { $0.inviteID == inviteID }
+            || inbox.outgoing.contains { $0.inviteID == inviteID }
+    }
+}
+
+/// One inset-grouped section of the Profile root: a quiet title over a rounded
+/// neutral surface holding the rows.
+private struct ProfileGroup<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.footnote)
+                .foregroundStyle(GymTheme.textSecondary)
+                .padding(.leading, 16)
+                .accessibilityAddTraits(.isHeader)
+            VStack(spacing: 0) {
+                content
+            }
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                GymTheme.surface,
+                in: RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
+            )
+        }
+    }
+}
+
+/// A Profile row: 17pt regular title, optional one-line status subtitle,
+/// optional secondary value on the right, optional chevron.
+private struct ProfileRowLabel: View {
+    let title: String
+    var subtitle: String?
+    var value: String?
+    var showsChevron = true
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.body)
+                    .foregroundStyle(GymTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .gymLineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            }
+            Spacer(minLength: 6)
+            if let value {
+                Text(value)
+                    .font(.body)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .gymLineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary.opacity(0.7))
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.vertical, 8)
+        .frame(minHeight: 48)
+        .contentShape(Rectangle())
+    }
+}
+
 
 private struct ProfileExportDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.json, .pdf] }

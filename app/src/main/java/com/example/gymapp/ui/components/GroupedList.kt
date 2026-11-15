@@ -69,9 +69,11 @@ class GroupedScope internal constructor() {
         icon: (@Composable () -> Unit)? = null,
         chevron: Boolean = false,
         titleColor: Color = Color.Unspecified,
-        onClick: (() -> Unit)? = null
+        onClick: (() -> Unit)? = null,
+        subtitle: String? = null,
+        trailing: (@Composable () -> Unit)? = null
     ) {
-        rows += { GroupedRow(title, modifier, value, icon, chevron, titleColor, onClick) }
+        rows += { GroupedRow(title, modifier, value, icon, chevron, titleColor, onClick, subtitle, trailing) }
     }
 }
 
@@ -140,6 +142,7 @@ fun GroupedSection(
 /**
  * One row of a [GroupedSection]: min 52dp, 16 x 12 padding, optional leading [icon] (usually a
  * [GroupedRowIconTile]), title on the left, secondary [value] and optional [chevron] on the right.
+ * An optional one-line [subtitle] sits under the title and [trailing] holds a control such as a switch.
  * [titleColor] defaults to the primary text colour; use the accent for a trailing "Add ..." row and
  * the error colour for a destructive one. A clickable row shows the app press tint, no ripple.
  */
@@ -151,7 +154,9 @@ fun GroupedRow(
     icon: (@Composable () -> Unit)? = null,
     chevron: Boolean = false,
     titleColor: Color = Color.Unspecified,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    subtitle: String? = null,
+    trailing: (@Composable () -> Unit)? = null
 ) {
     val resolvedTitleColor = if (titleColor == Color.Unspecified) MaterialTheme.colorScheme.onSurface else titleColor
     Row(
@@ -167,12 +172,29 @@ fun GroupedRow(
         horizontalArrangement = Arrangement.spacedBy(GroupedListDefaults.IconToText)
     ) {
         icon?.invoke()
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyLarge,
-            color = resolvedTitleColor,
-            modifier = Modifier.weight(1f)
-        )
+        if (subtitle == null) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = resolvedTitleColor,
+                modifier = Modifier.weight(1f)
+            )
+        } else {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = resolvedTitleColor
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
         if (value != null) {
             Text(
                 text = value,
@@ -184,6 +206,7 @@ fun GroupedRow(
                 modifier = Modifier.widthIn(max = 180.dp)
             )
         }
+        trailing?.invoke()
         if (chevron) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,

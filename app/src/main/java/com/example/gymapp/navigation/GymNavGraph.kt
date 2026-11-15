@@ -122,7 +122,6 @@ import com.example.gymapp.ui.components.TutorialAnchorRegistry
 import com.example.gymapp.ui.components.TutorialTarget
 import com.example.gymapp.ui.components.tutorialAnchor
 import com.example.gymapp.ui.screens.AddWorkoutScreen
-import com.example.gymapp.ui.components.ActiveWorkoutDiscardDialog
 import com.example.gymapp.ui.components.ContinueWorkoutBar
 import com.example.gymapp.ui.components.GymToastDuration
 import com.example.gymapp.ui.components.GymToastHost
@@ -2772,16 +2771,12 @@ internal fun GymAppRoot(
                     }
                 }
             }
-            var showContinueBarDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
             val resumeBarFocus = remember(activeWorkout) { activeWorkoutFocus(activeWorkout) }
             val showsContinueWorkoutBar = resumeBarFocus != null && shouldShowContinueWorkoutBar(
                 hasActiveWorkout = activeWorkout != null,
                 isActiveWorkoutRoute = isActiveWorkoutRoute,
                 isTodayRoute = currentRoute == AppDestination.Workouts.route
             )
-            LaunchedEffect(showsContinueWorkoutBar) {
-                if (!showsContinueWorkoutBar) showContinueBarDiscardConfirmation = false
-            }
 
             // The Exercises list draws under the floating tab bar and pads its last item instead.
             val scrollsUnderTabBar = currentRoute == AppDestination.Exercises.route
@@ -2926,13 +2921,11 @@ internal fun GymAppRoot(
                         ContinueWorkoutBar(
                             completedSets = resumeBarFocus.completedSets,
                             totalSets = resumeBarFocus.totalSets,
-                            showsDiscard = liveWorkoutState.activeRoomId == null,
                             onContinue = {
                                 navController.navigate(AppDestination.ActiveWorkout.route) {
                                     launchSingleTop = true
                                 }
-                            },
-                            onDiscard = { showContinueBarDiscardConfirmation = true }
+                            }
                         )
                     }
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -5212,16 +5205,6 @@ internal fun GymAppRoot(
                     }
                 }
                 }
-            }
-
-            if (showContinueBarDiscardConfirmation && showsContinueWorkoutBar) {
-                ActiveWorkoutDiscardDialog(
-                    onConfirm = {
-                        showContinueBarDiscardConfirmation = false
-                        discardActiveWorkout()
-                    },
-                    onDismiss = { showContinueBarDiscardConfirmation = false }
-                )
             }
 
             val conflict = cloudSyncConflict

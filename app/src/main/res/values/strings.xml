@@ -441,8 +441,7 @@
     <string name="shortcut_start_workout_short">Start workout</string>
     <string name="shortcut_start_workout_long">Start workout</string>
     <string name="action_continue_workout">Continue workout</string>
-    <string name="continue_workout_bar_progress">%1$d / %2$d</string>
-    <string name="continue_workout_bar_discard">Discard active workout</string>
+    <string name="continue_workout_bar_progress">%1$d of %2$d sets</string>
     <string name="add_workout_active_exercises">Exercises: %1$d</string>
     <string name="add_workout_total_sets">Sets: %1$d</string>
     <string name="add_workout_choose_training_day">Choose a training day</string>
@@ -1191,7 +1190,7 @@
 
     <string name="language_button">Language</string>
     <string name="settings_haptics_title">Haptics</string>
-    <string name="keep_awake_setting_title">Keep screen on during workouts</string>
+    <string name="keep_awake_setting_title">Keep screen on in workouts</string>
     <string name="analytics_consent_title">Help measure our ads?</string>
     <string name="analytics_consent_body">GymApp can measure which ads bring people who actually start training. This uses an app identifier and two events: account created and first workout finished. No workout data or email is sent. You can change this any time in Settings.</string>
     <string name="analytics_consent_allow">Allow</string>
@@ -1432,6 +1431,15 @@
     <string name="garmin_reset_pairing_title">Reset secure Garmin pairing?</string>
     <string name="garmin_reset_pairing_description">This clears queued workouts on the trusted watch and starts a new protected receipt window. Keep the watch connected.</string>
     <string name="garmin_reset_pairing_confirm">Reset pairing</string>
+    <string name="profile_group_account">Account</string>
+    <string name="profile_group_workouts">Workouts</string>
+    <string name="profile_group_devices">Devices</string>
+    <string name="profile_group_app">App</string>
+    <string name="profile_group_data">Data</string>
+    <string name="profile_group_help">Help</string>
+    <string name="garmin_row_title">Garmin watch</string>
+    <string name="garmin_status_connected">Connected</string>
+    <string name="garmin_status_not_connected">Not connected</string>
     <string name="garmin_profile_eyebrow">Garmin</string>
     <string name="garmin_profile_title">Your watch</string>
     <string name="garmin_profile_supporting">Live connection status from Garmin Connect on this phone.</string>
@@ -1551,7 +1559,7 @@
     <string name="progress_section_exercises">Exercises</string>
     <string name="progress_section_goals">Goals</string>
     <string name="profile_help_title">Help</string>
-    <string name="profile_help_replay_tour">Replay the quick GymApp tour</string>
+    <string name="profile_help_replay_tour">Quick tour of the app</string>
     <string name="profile_friends_live_title">Friends &amp; live</string>
     <string name="profile_friends_live_requires_cloud">Requires a cloud account</string>
     <string name="profile_support_action">Support</string>

@@ -70,19 +70,31 @@ test("iOS initializes the Connect IQ SDK without a Bluetooth state-restoration i
   );
 });
 
-test("Android profile relies on the app bar and the two-section switcher", async () => {
+test("Android profile is grouped sections with Friends & live and the Garmin watch on pushed screens", async () => {
   const androidScreen = await readFile(
     "app/src/main/java/com/example/gymapp/ui/screens/ProfileScreen.kt",
     "utf8"
   );
+  const navGraph = await readFile(
+    "app/src/main/java/com/example/gymapp/navigation/GymNavGraph.kt",
+    "utf8"
+  );
 
   assert.equal(androidScreen.includes("text = stringResource(R.string.title_profile)"), false);
-  assert.equal(androidScreen.includes("ProfileSectionSwitcher("), true);
-  assert.equal(androidScreen.includes("R.string.profile_section_training"), true);
-  assert.equal(androidScreen.includes("R.string.profile_section_settings"), true);
+  assert.equal(androidScreen.includes("ProfileSectionSwitcher"), false);
+  assert.equal(androidScreen.includes("profile_section_training"), false);
+  assert.equal(androidScreen.includes("GroupedSection("), true);
+  for (const group of ["account", "workouts", "devices", "app", "data", "help"]) {
+    assert.equal(androidScreen.includes(`R.string.profile_group_${group}`), true, group);
+  }
+  assert.equal(androidScreen.includes("ProfileDestination.Friends"), true);
+  assert.equal(androidScreen.includes("ProfileDestination.Garmin"), true);
+  assert.equal(androidScreen.includes("R.string.garmin_row_title"), true);
+  assert.equal(androidScreen.includes("GarminDeviceCard("), true);
+  assert.equal(navGraph.includes("showContinueBarDiscardConfirmation"), false);
 });
 
-test("Android profile groups Account, Language, Training settings, Backup and Help in one panel and owns the language menu", async () => {
+test("Android profile groups Account, Training settings, Language, Backup and Help and owns the language menu", async () => {
   const androidScreen = await readFile(
     "app/src/main/java/com/example/gymapp/ui/screens/ProfileScreen.kt",
     "utf8"
@@ -94,10 +106,9 @@ test("Android profile groups Account, Language, Training settings, Backup and He
 
   assert.equal(androidScreen.includes("TutorialHelpCard"), false);
   assert.equal(androidScreen.includes("profile_up_to_date"), false);
-  assert.equal(androidScreen.includes("BackupToolsSettingsRow("), true);
+  assert.equal(androidScreen.includes("ProfileDataSection("), true);
   assert.equal(androidScreen.includes("ProfileLanguageRow("), true);
   assert.equal(androidScreen.includes("R.string.profile_friends_live_requires_cloud"), true);
-  assert.equal(androidScreen.includes("if (accountState.isCloudAccount) {\n            ProfileSectionSwitcher("), true);
   assert.equal(navGraph.includes("LanguageSelector("), false);
   assert.equal(navGraph.includes("onLanguageSelected = languageManager::setLanguage"), true);
 });

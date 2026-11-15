@@ -14004,6 +14004,61 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(directSyncSource.contains("activeWorkoutStore.start("))
     }
 
+    func testProfileIsInsetGroupedAndResumeBannerHasNoDiscardCross() throws {
+        let profile = try iosSource("GymApp/UI/Screens/ProfileView.swift")
+        // Groups in order, one Garmin row, Friends & live as a pushed screen.
+        let titles = ["\"Account\"", "\"Workouts\"", "\"Devices\"", "\"App\"", "\"Data\"", "\"Help\""]
+        for title in titles {
+            XCTAssertTrue(profile.contains("ProfileGroup(title: gymText(\(title)"), title)
+        }
+        // Account group renders first, then the rest in order.
+        let groups = try XCTUnwrap(profile.range(of: "private var settingsGroups: some View"))
+        let tailSource = String(profile[groups.upperBound...])
+        XCTAssertLessThan(
+            try XCTUnwrap(tailSource.range(of: "settingsGroup\n")).lowerBound,
+            try XCTUnwrap(tailSource.range(of: "gymText(\"Workouts\"")).lowerBound
+        )
+        XCTAssertTrue(profile.contains("private struct ProfileFriendsScreen"))
+        XCTAssertTrue(profile.contains("private struct GarminWatchScreen"))
+        XCTAssertTrue(profile.contains("garminRow"))
+        XCTAssertFalse(profile.contains("sectionPicker"))
+        for copy in [
+            "Не гасить экран на тренировке", "Не вимикати екран на тренуванні", "Keep screen on in workouts",
+            "Часы Garmin", "Годинник Garmin", "Не подключены", "Не підключено",
+            "Короткий обзор приложения", "Короткий огляд застосунку", "Quick tour of the app",
+            "Резервные копии и диагностика", "Друзья и live"
+        ] {
+            XCTAssertTrue(profile.contains(copy), copy)
+        }
+        XCTAssertFalse(profile.contains("Не выключать экран во время тренировки"))
+
+        let root = try iosSource("GymApp/App/AppRootView.swift")
+        let bannerStart = try XCTUnwrap(root.range(of: "if let activeDraft = activeWorkoutStore.draft, !showsActiveWorkout, selectedTab != .workouts {"))
+        let bannerEnd = try XCTUnwrap(root.range(of: "private func resumeBannerProgressText", range: bannerStart.upperBound..<root.endIndex))
+        let banner = String(root[bannerStart.upperBound..<bannerEnd.lowerBound])
+        XCTAssertFalse(banner.contains("xmark"))
+        XCTAssertFalse(banner.contains("showingActiveDraftDiscardConfirmation"))
+        XCTAssertTrue(banner.contains("chevron.right"))
+        // Discard stays reachable with its confirmation from Today's menu.
+        XCTAssertTrue(root.contains("onDiscardWorkout: {\n                    showingActiveDraftDiscardConfirmation = true"))
+    }
+
+    func testResumeBannerProgressPluralForms() {
+        // "из N" takes the genitive: 1 → подхода/підходу, everything else → подходов/підходів.
+        XCTAssertEqual(
+            gymPlural(13, en: ("set", "sets"), uk: ("підходу", "підходів", "підходів"), ru: ("подхода", "подходов", "подходов"), languageCode: "ru"),
+            "подходов"
+        )
+        XCTAssertEqual(
+            gymPlural(21, en: ("set", "sets"), uk: ("підходу", "підходів", "підходів"), ru: ("подхода", "подходов", "подходов"), languageCode: "ru"),
+            "подхода"
+        )
+        XCTAssertEqual(
+            gymPlural(1, en: ("set", "sets"), uk: ("підходу", "підходів", "підходів"), ru: ("подхода", "подходов", "подходов"), languageCode: "uk"),
+            "підходу"
+        )
+    }
+
     func testAddWorkoutVisibleAndVoiceOverCatalogHasUkrainianAndRussianCopy() throws {
         let source = try iosSource("GymApp/UI/Screens/AddWorkoutView.swift")
         for exactCopy in [

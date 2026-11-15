@@ -1687,7 +1687,7 @@ private struct MainTabShell: View {
             if (appState.socialWorkoutInbox?.pendingIncomingCount ?? 0) > 0,
                selectedTab != .profile {
                 Button {
-                    selectedTab = .profile
+                    openProfileFocus(.friends)
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "envelope.badge.fill")
@@ -1735,7 +1735,7 @@ private struct MainTabShell: View {
             if liveWorkoutCoordinator.pendingInvitationCount > 0,
                selectedTab != .profile {
                 Button {
-                    selectedTab = .profile
+                    openProfileFocus(.friends)
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "wave.3.right.circle.fill")
@@ -1773,54 +1773,40 @@ private struct MainTabShell: View {
             }
 
             if let activeDraft = activeWorkoutStore.draft, !showsActiveWorkout, selectedTab != .workouts {
-                HStack(alignment: .center, spacing: 12) {
-                    Button {
-                        showsAddWorkout = false
-                        showsActiveWorkout = true
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "play.circle.fill")
-                                .font(.title2)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(gymText("Continue workout", "Продовжити тренування", "Продолжить тренировку", languageCode: languageCode))
-                                    .font(.subheadline.bold())
-                                    .fixedSize(horizontal: false, vertical: true)
-                                Text("\(activeDraft.completedSetCount) / \(activeDraft.plannedSetCount)")
-                                    .font(.subheadline.monospacedDigit())
-                                    .foregroundStyle(GymTheme.onHeroSecondary)
-                            }
-                            Spacer(minLength: 0)
+                // One compact row: play icon, title, "4 of 13 sets", chevron. The whole row
+                // opens the workout; discarding stays in Today's ⋯ menu and the workout menu.
+                Button {
+                    showsAddWorkout = false
+                    showsActiveWorkout = true
+                } label: {
+                    HStack(alignment: .center, spacing: 12) {
+                        Image(systemName: "play.circle.fill")
+                            .font(.title2)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(gymText("Continue workout", "Продовжити тренування", "Продолжить тренировку", languageCode: languageCode))
+                                .font(.subheadline.bold())
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(resumeBannerProgressText(
+                                completed: activeDraft.completedSetCount,
+                                planned: activeDraft.plannedSetCount
+                            ))
+                                .font(.footnote.monospacedDigit())
+                                .foregroundStyle(GymTheme.onHeroSecondary)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                        .contentShape(Rectangle())
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(GymTheme.onHeroSecondary)
+                            .accessibilityHidden(true)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(GymTheme.heroAccentText)
-                    if !liveWorkoutCoordinator.isAttachedToCurrentDraft {
-                        Button(role: .destructive) {
-                            showingActiveDraftDiscardConfirmation = true
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(GymTheme.error)
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(
-                            gymText(
-                                "Discard active workout",
-                                "Відкинути активне тренування",
-                                "Удалить активную тренировку",
-                                languageCode: languageCode
-                            )
-                        )
-                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
-                .padding(.leading, 16)
-                .padding(.trailing, 6)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity, minHeight: 58)
+                .buttonStyle(.plain)
+                .foregroundStyle(GymTheme.heroAccentText)
                 .background(
                     GymTheme.heroSurface,
                     in: RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
@@ -1829,8 +1815,6 @@ private struct MainTabShell: View {
                     RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
                         .stroke(GymTheme.heroOutline, lineWidth: GymTheme.hairlineWidth)
                 )
-                // Inset tonal panel: lives in the top safe-area inset so the screen
-                // content below is laid out under it instead of scrolling beneath it.
                 .padding(.horizontal, GymTheme.screenHorizontalInset)
                 .padding(.top, 6)
                 .padding(.bottom, 6)
@@ -1840,6 +1824,23 @@ private struct MainTabShell: View {
                 .background(GymTheme.background)
             }
         }
+    }
+
+    /// "4 of 13 sets" / "4 из 13 подходов" for the resume banner.
+    private func resumeBannerProgressText(completed: Int, planned: Int) -> String {
+        let noun = gymPlural(
+            planned,
+            en: ("set", "sets"),
+            uk: ("підходу", "підходів", "підходів"),
+            ru: ("подхода", "подходов", "подходов"),
+            languageCode: languageCode
+        )
+        return gymText(
+            "\(completed) of \(planned) \(noun)",
+            "\(completed) з \(planned) \(noun)",
+            "\(completed) из \(planned) \(noun)",
+            languageCode: languageCode
+        )
     }
 
     private var workoutsTab: some View {
