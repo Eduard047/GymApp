@@ -106,7 +106,7 @@ test("privacy policy has localized summaries, contents, responsive source tables
   assert.equal((privacy.match(/class="summary-grid"/g) || []).length, 3);
   assert.equal((privacy.match(/class="policy-toc"/g) || []).length, 3);
   assert.equal((privacy.match(/<table>/g) || []).length, 3);
-  assert.equal((privacy.match(/<h3 id="(?:en|uk|ru)-/g) || []).length, 33);
+  assert.equal((privacy.match(/<h3 id="(?:en|uk|ru)-/g) || []).length, 36);
   assert.match(privacy, /Profile → Account, privacy &amp; deletion → Delete Account/);
   assert.match(privacy, /Профіль → Обліковий запис, конфіденційність і видалення → Видалити обліковий запис/);
   assert.match(privacy, /Профиль → Аккаунт, конфиденциальность и удаление → Удалить учётную запись/);
@@ -126,6 +126,20 @@ test("privacy sources disclose bounded default-off read-only friend workout deta
   assert.match(appPrivacy, /separate explicit owner gesture for `share_workout_details`/);
   assert.match(appPrivacy, /false by default/);
   assert.match(appPrivacy, /changing the active account closes and clears any open exact detail/);
+});
+
+test("privacy sources scope optional consent-gated analytics to the Android app", () => {
+  for (const id of ["en", "uk", "ru"]) {
+    assert.match(privacy, new RegExp(`<h3 id="${id}-android-analytics">6\\.`));
+    assert.match(privacy, new RegExp(`href="#${id}-android-analytics"`));
+  }
+  assert.match(privacy, /This section applies only to the Android app\. The iPhone app and the browser version do not collect analytics\./);
+  assert.match(privacy, /Цей розділ стосується лише застосунку Android\./);
+  assert.match(privacy, /Этот раздел относится только к приложению Android\./);
+  assert.match(privacy, /we deny ad personalization/);
+  assert.match(privacy, /up to 14 months/);
+  assert.match(appPrivacy, /iPhone[^\n]*no analytics|no analytics[^\n]*iPhone/i);
+  assert.match(appPrivacy, /Android app differs/);
 });
 
 function pngSize(buffer) {

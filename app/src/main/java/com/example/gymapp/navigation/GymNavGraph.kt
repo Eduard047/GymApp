@@ -99,6 +99,7 @@ import com.example.gymapp.auth.CloudAuthManager
 import com.example.gymapp.auth.PasswordReauthenticationRequiredException
 import com.example.gymapp.auth.SocialFriend
 import com.example.gymapp.auth.activeCloudSessionFor
+import com.example.gymapp.analytics.ConversionAnalytics
 import com.example.gymapp.auth.authErrorText
 import com.example.gymapp.auth.databaseName
 import com.example.gymapp.auth.hasAnotherBoundedPage
@@ -125,6 +126,7 @@ import com.example.gymapp.push.matchesSession
 import com.example.gymapp.ui.components.FIRST_RUN_TUTORIAL_STEPS
 import com.example.gymapp.ui.components.FIRST_RUN_TUTORIAL_VERSION
 import com.example.gymapp.ui.components.FitSingleLineLabel
+import com.example.gymapp.ui.components.AnalyticsConsentDialog
 import com.example.gymapp.ui.components.FirstRunTutorialOverlay
 import com.example.gymapp.ui.components.TutorialAnchorRegistry
 import com.example.gymapp.ui.components.TutorialTarget
@@ -809,7 +811,8 @@ internal fun GymAppRoot(
     sharedWorkoutInbox: SharedWorkoutInbox,
     pushManager: AndroidPushManager,
     pushNavigationInbox: PushNavigationInbox,
-    activeWorkoutOpenInbox: com.example.gymapp.service.ActiveWorkoutOpenInbox
+    activeWorkoutOpenInbox: com.example.gymapp.service.ActiveWorkoutOpenInbox,
+    conversionAnalytics: ConversionAnalytics
 ) {
     val authState by authManager.authState.collectAsStateWithLifecycle()
     val uiIsolationKey = accountUiIsolationKey(
@@ -2614,6 +2617,8 @@ internal fun GymAppRoot(
                             authManager.setLoading(true)
                             runCatching {
                                 val session = authManager.signUp(email, password, displayName)
+                                // The account request succeeded (confirmation may still be pending).
+                                conversionAnalytics.logSignUp()
                                 if (session == null) {
                                     authManager.showEmailConfirmation(email)
                                     return@runCatching
@@ -3938,7 +3943,8 @@ internal fun GymAppRoot(
                                         restTimerAccountKey(authState.session)
                                     ),
                                     liveSync = liveWorkoutViewModel,
-                                    currentTrainingProfile = { applicationContext.gymApplication.trainingProfileManager.profile.value }
+                                    currentTrainingProfile = { applicationContext.gymApplication.trainingProfileManager.profile.value },
+                                    onWorkoutFinished = conversionAnalytics::onWorkoutFinished
                                 )
                             )
                             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -5395,6 +5401,7 @@ internal fun GymAppRoot(
                 )
             }
             }
+            AnalyticsConsentDialog(conversionAnalytics = conversionAnalytics, introVisible = showIntro)
             // Mounted once, last: above content, the tab bar and the intro/tutorial layers. Sheets host
             // their own copy (GymModalBottomSheet) because they render in a separate window.
             val density = LocalDensity.current

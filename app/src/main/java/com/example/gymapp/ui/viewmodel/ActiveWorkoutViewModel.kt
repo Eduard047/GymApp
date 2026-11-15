@@ -774,7 +774,9 @@ class ActiveWorkoutViewModel(
     private val restTimerController: RestTimerController,
     private val timerAccountKey: String,
     private val liveSync: ActiveLiveWorkoutSync? = null,
-    private val currentTrainingProfile: () -> TrainingProfile = { TrainingProfile() }
+    private val currentTrainingProfile: () -> TrainingProfile = { TrainingProfile() },
+    /** Called with the saved-workout count (including the one just saved) after a workout was finished. */
+    private val onWorkoutFinished: (savedWorkoutCount: Int) -> Unit = {}
 ) : ViewModel() {
     private val inputs = MutableStateFlow<Map<String, ActiveWorkoutInput>>(emptyMap())
     private val hasLoaded = MutableStateFlow(false)
@@ -2290,6 +2292,7 @@ class ActiveWorkoutViewModel(
                     is FinishActiveWorkoutResult.Finished -> {
                         localCommitted = true
                         finished = true
+                        runCatching { onWorkoutFinished(repository.savedWorkoutCount()) }
                         (preparation as? LiveLocalMutationPreparation.Prepared)?.let {
                             liveSync?.commitPreparedLocalMutation(it)
                         }
@@ -2452,10 +2455,11 @@ class ActiveWorkoutViewModel(
             restTimerController: RestTimerController,
             timerAccountKey: String,
             liveSync: ActiveLiveWorkoutSync? = null,
-            currentTrainingProfile: () -> TrainingProfile = { TrainingProfile() }
+            currentTrainingProfile: () -> TrainingProfile = { TrainingProfile() },
+            onWorkoutFinished: (savedWorkoutCount: Int) -> Unit = {}
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
-                ActiveWorkoutViewModel(repository, restTimerController, timerAccountKey, liveSync, currentTrainingProfile)
+                ActiveWorkoutViewModel(repository, restTimerController, timerAccountKey, liveSync, currentTrainingProfile, onWorkoutFinished)
             }
         }
     }

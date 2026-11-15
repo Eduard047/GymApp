@@ -1187,6 +1187,12 @@
     <string name="language_button">Язык</string>
     <string name="settings_haptics_title">Тактильный отклик</string>
     <string name="keep_awake_setting_title">Не выключать экран во время тренировки</string>
+    <string name="analytics_consent_title">Помочь измерять рекламу?</string>
+    <string name="analytics_consent_body">GymApp может измерять, какая реклама приводит людей, которые действительно начинают тренироваться. Для этого используются идентификатор приложения и два события: создание аккаунта и первая завершённая тренировка. Данные тренировок и email не передаются. Это можно изменить в любой момент в настройках.</string>
+    <string name="analytics_consent_allow">Разрешить</string>
+    <string name="analytics_consent_deny">Не разрешать</string>
+    <string name="analytics_setting_title">Измерение рекламы</string>
+    <string name="analytics_setting_subtitle">Помогает понять, какая реклама приводит к тренировкам. Данные тренировок и email не передаются.</string>
     <string name="language_name_english">English</string>
     <string name="language_name_ukrainian">Укра&#x0457;нська</string>
     <string name="language_name_russian">Русский</string>
@@ -1564,7 +1570,7 @@
     <string name="account_backup_title">Резервная копия</string>
     <string name="account_backup_hint">Сделай перед сменой телефона</string>
     <string name="account_open_in_browser">Открывается в браузере</string>
-    <string name="account_privacy_caption">У GymApp нет рекламы, межприменительного отслеживания или продажи персональных данных.</string>
+    <string name="account_privacy_caption">GymApp не продаёт персональные данные. Необязательное измерение рекламы работает только с вашего согласия.</string>
     <string name="account_sign_out_local_title">Выйти из профиля</string>
     <string name="account_sign_out_local_hint">Тренировки останутся на этом устройстве</string>
     <string name="account_sign_out_cloud_title">Выйти</string>

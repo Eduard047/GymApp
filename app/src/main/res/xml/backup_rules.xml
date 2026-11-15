@@ -49,4 +49,8 @@
     <exclude domain="sharedpref" path="com.google.android.gms.appid.xml.bak" />
     <exclude domain="sharedpref" path="com.google.firebase.messaging.xml" />
     <exclude domain="sharedpref" path="com.google.firebase.messaging.xml.bak" />
+    <exclude domain="sharedpref" path="com.google.android.gms.measurement.prefs.xml" />
+    <exclude domain="sharedpref" path="com.google.android.gms.measurement.prefs.xml.bak" />
+    <exclude domain="sharedpref" path="gym_analytics_consent_v1.xml" />
+    <exclude domain="sharedpref" path="gym_analytics_consent_v1.xml.bak" />
 </full-backup-content>
