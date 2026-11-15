@@ -100,6 +100,8 @@ data class PostWorkoutSummaryUiState(
     val personalRecords: List<PostWorkoutPrUiState> = emptyList(),
     /** Per-exercise comparison with the previous session; empty hides the card (see [buildExerciseVsLast]). */
     val exerciseComparisons: List<ExerciseVsLastUiState> = emptyList(),
+    /** "By exercise" rows: logged sets and best set of every exercise of this workout, in workout order. */
+    val exerciseSummaries: List<ExerciseSummaryUiState> = emptyList(),
     /** Hero chip when this is the biggest workout by volume (see [biggestWorkoutBadge]), else null. */
     val biggestWorkout: BiggestWorkoutBadge? = null,
     val feedback: WorkoutFeedback? = null,
@@ -358,26 +360,42 @@ class PostWorkoutSummaryViewModel(
                 currentSessionId = sessionId,
                 currentSessionDate = sessionDetails.session.date
             )
-            val exerciseComparisons = buildExerciseVsLast(
-                currentEntries = sessionDetails.workoutExercises.flatMap { workoutExercise ->
-                    workoutExercise.sets.map { set ->
-                        ExerciseHistoryEntry(
-                            setId = set.id,
-                            sessionId = sessionDetails.session.id,
-                            sessionDate = sessionDetails.session.date,
-                            exerciseId = workoutExercise.exercise.id,
-                            exerciseName = workoutExercise.exercise.name,
-                            weight = set.weight,
-                            reps = set.reps,
-                            setOrderIndex = set.orderIndex,
-                            blockOrderIndex = workoutExercise.workoutExercise.orderIndex
-                        )
-                    }
-                },
-                allHistory = exerciseHistory,
-                currentSessionId = sessionId,
-                currentSessionDate = sessionDetails.session.date
+            val currentHistoryEntries = sessionDetails.workoutExercises.flatMap { workoutExercise ->
+                workoutExercise.sets.map { set ->
+                    ExerciseHistoryEntry(
+                        setId = set.id,
+                        sessionId = sessionDetails.session.id,
+                        sessionDate = sessionDetails.session.date,
+                        exerciseId = workoutExercise.exercise.id,
+                        exerciseName = workoutExercise.exercise.name,
+                        weight = set.weight,
+                        reps = set.reps,
+                        setOrderIndex = set.orderIndex,
+                        blockOrderIndex = workoutExercise.workoutExercise.orderIndex
+                    )
+                }
+            }
+            // An incomplete workout is not compared with the previous one: a large drop would only
+            // reflect the sets that were skipped (see isVsLastComparable).
+            val comparable = isVsLastComparable(
+                currentSetCount = currentHistoryEntries.count { it.reps > 0 },
+                previousSetCount = previousWorkoutSetCount(
+                    currentExerciseIds = currentHistoryEntries.map { it.exerciseId }.toSet(),
+                    allHistory = exerciseHistory,
+                    currentSessionId = sessionId,
+                    currentSessionDate = sessionDetails.session.date
+                )
             )
+            val exerciseComparisons = if (comparable) {
+                buildExerciseVsLast(
+                    currentEntries = currentHistoryEntries,
+                    allHistory = exerciseHistory,
+                    currentSessionId = sessionId,
+                    currentSessionDate = sessionDetails.session.date
+                )
+            } else {
+                emptyList()
+            }
 
             val biggestWorkout = biggestWorkoutBadge(
                 earlier = previousSessions.map { summary ->
@@ -428,6 +446,7 @@ class PostWorkoutSummaryViewModel(
                 comebackBonusXp = afterSnapshot.comeback.bonusXp,
                 personalRecords = personalRecords,
                 exerciseComparisons = exerciseComparisons,
+                exerciseSummaries = buildExerciseSummaries(currentHistoryEntries),
                 biggestWorkout = biggestWorkout,
                 feedback = experience.feedbackBySession[sessionId]
                     ?.takeIf { it.sessionStartedAtMillis == sessionDetails.session.date }

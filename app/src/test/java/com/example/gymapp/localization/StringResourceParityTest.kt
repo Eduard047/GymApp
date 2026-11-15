@@ -208,7 +208,7 @@ class StringResourceParityTest {
             "action_copy_last_plus" to "Копировать предыдущий + 2,5 кг",
             "post_workout_details" to "Детали тренировки",
             "post_workout_done" to "Готово",
-            "workout_feedback_normal" to "В самый раз",
+            "workout_feedback_normal" to "Нормально",
             "achievements_gallery_subtitle" to
                 "Все основные цели, их прогресс, редкость и дата открытия.",
             "achievement_status_locked" to "Закрыто",

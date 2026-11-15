@@ -166,16 +166,91 @@ struct SummaryVsLastRow: Identifiable, Equatable, Sendable {
     let previousBest: VsLastSet?
 }
 
+/// The comparison with the previous workout is shown only when this workout is comparable with it:
+/// at least 80% of the previous workout's logged sets (shared/vs-last-comparable-v1.json, the same
+/// cases Android runs). With no previous workout, or an unfinished one, it is hidden entirely, so an
+/// incomplete session never shows a large negative change.
+func postWorkoutComparisonIsShown(currentSetCount: Int, previousSetCount: Int) -> Bool {
+    previousSetCount > 0 && currentSetCount * 100 >= previousSetCount * 80
+}
+
+/// Logged sets (reps > 0) of a workout, from the exercise history.
+func postWorkoutLoggedSetCount(history: [ExerciseHistoryEntry], workoutID: UUID) -> Int {
+    history.lazy.filter { $0.workoutID == workoutID && $0.reps > 0 }.count
+}
+
+/// Logged set count of the latest earlier workout that shares at least one exercise with the
+/// finished one (the workout the comparison is measured against); 0 when there is none.
+func postWorkoutPreviousSetCount(
+    history: [ExerciseHistoryEntry],
+    workoutID: UUID,
+    currentDate: Date
+) -> Int {
+    let currentExercises = Set(history.lazy.filter { $0.workoutID == workoutID }.map(\.exerciseID))
+    guard !currentExercises.isEmpty else { return 0 }
+    var latest: (date: Date, id: UUID)?
+    for entry in history where entry.workoutID != workoutID && currentExercises.contains(entry.exerciseID) {
+        guard isPostWorkoutEarlier(
+            candidateDate: entry.sessionDate,
+            candidateID: entry.workoutID,
+            currentDate: currentDate,
+            currentID: workoutID
+        ) else { continue }
+        if let known = latest,
+           !isPostWorkoutEarlier(
+               candidateDate: known.date, candidateID: known.id,
+               currentDate: entry.sessionDate, currentID: entry.workoutID
+           ) { continue }
+        latest = (entry.sessionDate, entry.workoutID)
+    }
+    guard let latest else { return 0 }
+    return postWorkoutLoggedSetCount(history: history, workoutID: latest.id)
+}
+
+/// One "By exercise" row: the blocks of an exercise are merged; the best set is the heaviest
+/// (more reps on a tie) among the sets with reps.
+struct PostWorkoutExerciseRow: Identifiable, Equatable {
+    var id: UUID { exerciseID }
+    let exerciseID: UUID
+    let title: String
+    let setCount: Int
+    let best: VsLastSet?
+}
+
+func postWorkoutExerciseRows(
+    blocks: [WorkoutExercise],
+    title: (UUID) -> String?
+) -> [PostWorkoutExerciseRow] {
+    var order: [UUID] = []
+    var setsByExercise: [UUID: [WorkoutSet]] = [:]
+    for block in blocks where !block.sets.isEmpty {
+        if setsByExercise[block.exerciseID] == nil { order.append(block.exerciseID) }
+        setsByExercise[block.exerciseID, default: []].append(contentsOf: block.sets)
+    }
+    return order.compactMap { exerciseID in
+        guard let sets = setsByExercise[exerciseID], let name = title(exerciseID) else { return nil }
+        let best = sets.filter { $0.reps > 0 }.max { lhs, rhs in
+            lhs.weight != rhs.weight ? lhs.weight < rhs.weight : lhs.reps < rhs.reps
+        }
+        return PostWorkoutExerciseRow(
+            exerciseID: exerciseID,
+            title: name,
+            setCount: sets.count,
+            best: best.map { VsLastSet(weight: $0.weight, reps: $0.reps) }
+        )
+    }
+}
+
 @MainActor
 struct PostWorkoutSummaryView: View {
     @ObservedObject private var store: WorkoutStore
     @Environment(\.calendar) private var calendar
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.legibilityWeight) private var legibilityWeight
 
     @State private var feedbackErrorMessage: String?
     @State private var failedFeedback: WorkoutFeedback?
-    /// Computed once per history revision off the main actor, not on every body pass.
+    /// Computed once per history revision off the main actor, not on every body pass. Empty when
+    /// the workout is not comparable with the previous one (`postWorkoutComparisonIsShown`).
     @State private var vsLastRows: [SummaryVsLastRow] = []
     /// "Biggest workout" hero chip, computed with the vs-last rows off the main actor.
     @State private var biggestBadge: BiggestWorkoutBadge?
@@ -215,32 +290,72 @@ struct PostWorkoutSummaryView: View {
         let personalRecords = personalRecords
         return GymBackground {
             if let workout = store.workout(id: workoutID) {
-                ScrollView {
-                    LazyVStack(spacing: 14) {
-                        rewardHero(workout)
-                        metricsPanel(workout)
-                        feedbackPanel
-                        if !trainedMuscles.isEmpty {
-                            musclesPanel
-                        }
-                        if !vsLastRows.isEmpty {
-                            vsLastPanel(vsLastRows)
-                        }
-                        if !personalRecords.isEmpty {
-                            personalRecordsPanel(personalRecords)
-                        }
-                        if !rewards.completedMissions.isEmpty {
-                            missionsPanel(rewards.completedMissions)
-                        }
-                        if !rewards.unlockedBadges.isEmpty {
-                            badgesPanel(rewards.unlockedBadges)
-                        }
-                        actions
+                List {
+                    Section {
+                        heroSection(workout)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     }
-                    .padding(.horizontal, GymTheme.screenHorizontalInset)
-                    .padding(.vertical, 12)
-                    .padding(.bottom, 30)
+
+                    Section {
+                        feedbackRows
+                    } header: {
+                        sectionHeader(gymText("How did it feel?", "Як було?", "Как было?", languageCode: languageCode))
+                    }
+
+                    let exerciseRows = exerciseSummaryRows(workout)
+                    if !exerciseRows.isEmpty {
+                        Section {
+                            ForEach(exerciseRows) { row in
+                                exerciseRow(row).summaryRowBackground()
+                            }
+                        } header: {
+                            sectionHeader(gymText("By exercise", "За вправами", "По упражнениям", languageCode: languageCode))
+                        }
+                    }
+
+                    if !trainedMuscles.isEmpty {
+                        Section {
+                            ForEach(Array(trainedMuscles.prefix(8))) { item in
+                                muscleRow(item).summaryRowBackground()
+                            }
+                        } header: {
+                            sectionHeader(gymLocalized("Loaded today", languageCode: languageCode))
+                        }
+                    }
+
+                    if !personalRecords.isEmpty {
+                        Section {
+                            ForEach(personalRecords) { record in
+                                personalRecordRow(record).summaryRowBackground()
+                            }
+                        } header: {
+                            sectionHeader(gymLocalized("New bests", languageCode: languageCode))
+                        }
+                    }
+
+                    if !rewards.completedMissions.isEmpty || !rewards.unlockedBadges.isEmpty {
+                        Section {
+                            ForEach(rewards.completedMissions) { mission in
+                                missionRow(mission).summaryRowBackground()
+                            }
+                            ForEach(rewards.unlockedBadges) { badge in
+                                badgeRow(badge).summaryRowBackground()
+                            }
+                        } header: {
+                            sectionHeader(gymText("Achievements", "Досягнення", "Достижения", languageCode: languageCode))
+                        }
+                    }
+
+                    Section {
+                        detailsRow.summaryRowBackground()
+                    } footer: {
+                        experienceFootnote
+                    }
                 }
+                .listStyle(.insetGrouped)
+                .scrollContentBackground(.hidden)
             } else {
                 GymContentUnavailableView(
                     "Summary unavailable",
@@ -254,11 +369,14 @@ struct PostWorkoutSummaryView: View {
             languageCode: languageCode
         ))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button(action: onDone) {
+                    Text(gymText("Done", "Готово", "Готово", languageCode: languageCode))
+                }
+            }
+        }
         .task(id: store.derivedDataRevision) { await refreshVsLast() }
-    }
-
-    private var gamification: GamificationSnapshot {
-        postWorkoutExperience?.afterSnapshot ?? store.gamificationSnapshot(calendar: calendar)
     }
 
     private var postWorkoutExperience: PostWorkoutAttribution? {
@@ -318,7 +436,15 @@ struct PostWorkoutSummaryView: View {
         )
     }
 
-    /// Compares every exercise with its previous session (shared/exercise-vs-last-v1.json).
+    private func exerciseSummaryRows(_ workout: WorkoutSession) -> [PostWorkoutExerciseRow] {
+        postWorkoutExerciseRows(
+            blocks: workout.exercises,
+            title: { exerciseID in store.exercise(id: exerciseID).map { gymExerciseName($0) } }
+        )
+    }
+
+    /// Compares every exercise with its previous session (shared/exercise-vs-last-v1.json), but only
+    /// when this workout is comparable with the previous one (`postWorkoutComparisonIsShown`).
     private func refreshVsLast() async {
         guard let date = store.workout(id: workoutID)?.date else {
             vsLastRows = []
@@ -330,7 +456,13 @@ struct PostWorkoutSummaryView: View {
         let calendar = calendar
         let id = workoutID
         let (rows, badge) = await Task.detached(priority: .userInitiated) {
-            let rows = GymExerciseVsLast.rows(history: history, workoutID: id, currentDate: date)
+            let comparable = postWorkoutComparisonIsShown(
+                currentSetCount: postWorkoutLoggedSetCount(history: history, workoutID: id),
+                previousSetCount: postWorkoutPreviousSetCount(history: history, workoutID: id, currentDate: date)
+            )
+            let rows = comparable
+                ? GymExerciseVsLast.rows(history: history, workoutID: id, currentDate: date)
+                : []
             return (rows, biggestWorkoutBadge(summaries: summaries, workoutID: id, calendar: calendar))
         }.value
         guard !Task.isCancelled else { return }
@@ -348,6 +480,272 @@ struct PostWorkoutSummaryView: View {
                 previousBest: row.previousBest
             )
         }
+    }
+
+    // MARK: Hero
+
+    private func sectionHeader(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(GymTheme.textSecondary)
+            .textCase(nil)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    /// Title, date and the three result numbers on the plain background: the one focal point.
+    private func heroSection(_ workout: WorkoutSession) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(gymText(
+                    "Workout complete",
+                    "Тренування завершено",
+                    "Тренировка завершена",
+                    languageCode: languageCode
+                ))
+                .font(.title2.bold())
+                .accessibilityAddTraits(.isHeader)
+                Text(gymShortDate(workout.date, calendar: calendar, languageCode: languageCode))
+                    .font(.subheadline)
+                    .foregroundStyle(GymTheme.textSecondary)
+            }
+            heroStatsRow(workout)
+            if let biggestBadge {
+                biggestWorkoutPill(biggestBadge)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Volume, sets and duration in one row; at large text they stack so whole words stay readable.
+    private func heroStatsRow(_ workout: WorkoutSession) -> some View {
+        let layout: AnyLayout = dynamicTypeSize >= .xxxLarge
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+        let setCount = workout.setCount
+        let duration = heroDuration(workout.durationSeconds ?? 0)
+        let volume = max(0, workout.totalVolume.isFinite ? workout.totalVolume : 0)
+        let kg = gymLocalized("kg", languageCode: languageCode)
+        return layout {
+            heroStat(
+                value: volume.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0))),
+                unit: kg,
+                label: gymText("Volume", "Обсяг", "Объём", languageCode: languageCode)
+            )
+            heroStat(
+                value: setCount.formatted(.number.locale(gymAppLocale())),
+                unit: nil,
+                label: gymText("Sets", "Підходи", "Подходы", languageCode: languageCode)
+            )
+            heroStat(
+                value: duration.value,
+                unit: duration.unit,
+                label: gymText("Duration", "Тривалість", "Длительность", languageCode: languageCode)
+            )
+        }
+    }
+
+    /// "36" + "мин", or "1:05" + "ч" from an hour on; "—" when the duration is unknown.
+    private func heroDuration(_ seconds: Int) -> (value: String, unit: String?) {
+        guard seconds > 0 else { return ("—", nil) }
+        let minutes = max(1, seconds / 60)
+        if minutes < 60 {
+            return (minutes.formatted(.number.locale(gymAppLocale())), gymText("min", "хв", "мин", languageCode: languageCode))
+        }
+        return (
+            "\(minutes / 60):" + String(format: "%02d", minutes % 60),
+            gymText("h", "год", "ч", languageCode: languageCode)
+        )
+    }
+
+    /// Big tabular numeral with a small unit beside it, the label under it.
+    private func heroStat(value: String, unit: String?, label: String) -> some View {
+        let numeral = Text(value)
+            .gymScaledFont(size: 30, weight: .semibold, design: .rounded, relativeTo: .largeTitle, monospacedDigit: true, maxScale: 1.6)
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                numeral
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                if let unit {
+                    Text(unit)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+            Text(label)
+                .font(.footnote)
+                .foregroundStyle(GymTheme.textSecondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([label, value, unit].compactMap { $0 }.joined(separator: " "))
+    }
+
+    /// Flat tonal capsule with a trophy, matching Android's `biggest_workout_*` InfoPill.
+    private func biggestWorkoutPill(_ badge: BiggestWorkoutBadge) -> some View {
+        let title = switch badge {
+        case .ever:
+            gymText(
+                "Biggest workout ever", "Найбільший обсяг за весь час", "Самый большой объём за всё время",
+                languageCode: languageCode
+            )
+        case .month:
+            gymText(
+                "Biggest this month", "Найбільший обсяг цього місяця", "Самый большой объём в этом месяце",
+                languageCode: languageCode
+            )
+        }
+        return HStack(spacing: 6) {
+            Image(systemName: "trophy.fill")
+                .imageScale(.small)
+                .accessibilityHidden(true)
+            Text(title)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(GymTheme.primary)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7)
+        .background(Capsule().fill(GymTheme.primary.opacity(0.12)))
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: Feedback
+
+    private var feedbackSelection: Binding<WorkoutFeedback?> {
+        Binding(
+            get: { store.feedback(for: workoutID) },
+            set: { if let feedback = $0 { saveFeedback(feedback) } }
+        )
+    }
+
+    @ViewBuilder
+    private var feedbackRows: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            // Segments no longer fit at accessibility sizes: one checkmark row per answer.
+            ForEach(WorkoutFeedback.allCases) { feedback in
+                let selected = store.feedback(for: workoutID) == feedback
+                Button {
+                    saveFeedback(feedback)
+                } label: {
+                    HStack(spacing: 12) {
+                        Text(feedbackTitle(feedback))
+                            .foregroundStyle(GymTheme.textPrimary)
+                        Spacer(minLength: 8)
+                        if selected {
+                            Image(systemName: "checkmark")
+                                .fontWeight(.semibold)
+                                .foregroundStyle(GymTheme.primary)
+                        }
+                    }
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+                .summaryRowBackground()
+            }
+        } else {
+            Picker(
+                gymText("How did it feel?", "Як було?", "Как было?", languageCode: languageCode),
+                selection: feedbackSelection
+            ) {
+                ForEach(WorkoutFeedback.allCases) { feedback in
+                    Text(feedbackTitle(feedback)).tag(Optional(feedback))
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .summaryRowBackground()
+        }
+
+        if let feedbackErrorMessage, let failedFeedback {
+            VStack(alignment: .leading, spacing: 10) {
+                GymStatusBanner(message: feedbackErrorMessage, isError: true)
+                Button {
+                    saveFeedback(failedFeedback)
+                } label: {
+                    Label(
+                        gymText(
+                            "Try again",
+                            "Спробувати ще раз",
+                            "Попробовать ещё раз",
+                            languageCode: languageCode
+                        ),
+                        systemImage: "arrow.clockwise"
+                    )
+                }
+                .buttonStyle(GymSecondaryButtonStyle())
+            }
+            .summaryRowBackground()
+        }
+    }
+
+    private func saveFeedback(_ feedback: WorkoutFeedback) {
+        do {
+            try store.setWorkoutFeedback(feedback, for: workoutID)
+            feedbackErrorMessage = nil
+            failedFeedback = nil
+        } catch {
+            feedbackErrorMessage = gymErrorMessage(error, languageCode: languageCode)
+            failedFeedback = feedback
+        }
+    }
+
+    private func feedbackTitle(_ feedback: WorkoutFeedback) -> String {
+        switch feedback {
+        case .easy:
+            gymText("Easy", "Легко", "Легко", languageCode: languageCode)
+        case .normal:
+            gymText("Right", "Нормально", "Нормально", languageCode: languageCode)
+        case .hard:
+            gymText("Hard", "Важко", "Тяжело", languageCode: languageCode)
+        }
+    }
+
+    // MARK: Rows
+
+    /// "+20 kg" / "−3 reps" (true minus, no-break space before the unit); nil for "new" and "same".
+    private func vsLastDeltaText(_ row: SummaryVsLastRow) -> String? {
+        guard row.status == .up || row.status == .down, let delta = row.delta else { return nil }
+        let sign = delta > 0 ? "+" : "\u{2212}"
+        let magnitude = abs(delta)
+        if row.basis == .reps {
+            let count = Int(magnitude.rounded()).formatted(.number.locale(gymAppLocale()))
+            return sign + vsLastRepsText(count)
+        }
+        return sign + gymVolumeText(magnitude, languageCode: languageCode)
+    }
+
+    private func vsLastRepsText(_ count: String) -> String {
+        gymText(
+            "\(count)\u{00A0}reps",
+            "\(count)\u{00A0}повт.",
+            "\(count)\u{00A0}повт.",
+            languageCode: languageCode
+        )
+    }
+
+    private func vsLastSetText(_ set: VsLastSet) -> String {
+        guard set.weight > 0 else {
+            return vsLastRepsText(set.reps.formatted(.number.locale(gymAppLocale())))
+        }
+        let weight = set.weight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 2)))
+        return "\(weight) × \(set.reps.formatted(.number.locale(gymAppLocale())))"
+    }
+
+    /// Green only for a real improvement; a lower value stays neutral, never red.
+    private func vsLastStatusColor(_ status: VsLastStatus) -> Color {
+        status == .up ? GymTheme.secondary : GymTheme.textSecondary
+    }
+
+    private var vsLastByExercise: [UUID: SummaryVsLastRow] {
+        Dictionary(
+            vsLastRows.compactMap { row in UUID(uuidString: row.id).map { ($0, row) } },
+            uniquingKeysWith: { first, _ in first }
+        )
     }
 
     private func recordDetail(_ record: PostWorkoutPersonalRecord) -> String {
@@ -379,604 +777,86 @@ struct PostWorkoutSummaryView: View {
         value.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 1)))
     }
 
-    /// Compact "sets · volume · duration" row at the top of the hero.
-    private func heroStatsRow(_ workout: WorkoutSession) -> some View {
-        let duration = gymCompactDuration(workout.durationSeconds ?? 0, languageCode: languageCode)
-        // At large text the three stats stack so values and labels keep whole words.
-        let layout: AnyLayout = dynamicTypeSize >= .xxxLarge
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
-            : AnyLayout(HStackLayout(alignment: .top, spacing: 8))
-        return layout {
-            heroStat(
-                value: workout.setCount.formatted(.number.locale(gymAppLocale())),
-                label: gymText("Sets", "Підходи", "Подходы", languageCode: languageCode)
-            )
-            heroStat(
-                value: heroVolumeText(workout.totalVolume),
-                label: gymText("Volume", "Обсяг", "Объём", languageCode: languageCode)
-            )
-            heroStat(
-                value: duration.isEmpty ? "—" : duration,
-                label: gymText("Duration", "Тривалість", "Длительность", languageCode: languageCode)
-            )
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    /// Full grouped integer with the unit ("10,570 kg", "10 570 кг") so the hero
-    /// matches Android and the web app. The shared `gymVolumeText` keeps its
-    /// one-decimal format for the other screens.
-    private func heroVolumeText(_ volume: Double) -> String {
-        gymHeroVolumeText(volume, languageCode: languageCode)
-    }
-
-    private func heroStat(value: String, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value)
-                .font(.headline.monospacedDigit())
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .foregroundStyle(GymTheme.onHero)
-            Text(label)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(GymTheme.onHeroSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func rewardHero(_ workout: WorkoutSession) -> some View {
-        let xp = sessionSummary.map(GamificationEngine.xpForSession) ?? 0
-        let experience = postWorkoutExperience
-        let progression = (experience?.afterSnapshot ?? store.gamificationSnapshot(calendar: calendar)).progression
-        let levelUp = experience.flatMap {
-            postWorkoutLevelUp(previousLevel: $0.previousLevel, currentLevel: progression.level)
-        }
-        return GymHeroPanel {
-            VStack(alignment: .leading, spacing: 16) {
-                GymAdaptiveStack(rowAlignment: .top, spacing: 12, columnSpacing: 8) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .gymScaledFont(size: 30, weight: .bold, relativeTo: .title2, maxScale: 1.6)
-                        .foregroundStyle(GymTheme.heroAccentText)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(gymText(
-                            "Workout complete",
-                            "Тренування завершено",
-                            "Тренировка завершена",
-                            languageCode: languageCode
-                        ))
-                        .font(.title2.bold())
-                        .accessibilityAddTraits(.isHeader)
-                        Text(summaryDateLine(workout))
-                            .font(.subheadline)
-                            .foregroundStyle(GymTheme.onHeroSecondary)
-                    }
-                }
-
-                heroStatsRow(workout)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("+\(xp) XP")
-                        .gymScaledFont(size: 34, weight: .semibold, design: .rounded, relativeTo: .largeTitle, monospacedDigit: true, maxScale: 1.6)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                        .foregroundStyle(GymTheme.heroAccentText)
-                    Text(gymText(
-                        "Session XP",
-                        "XP тренування",
-                        "XP тренировки",
-                        languageCode: languageCode
-                    ))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(GymTheme.onHeroSecondary)
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(gymText(
-                        "Level \(progression.level) · \(RankCatalog.title(forLevel: progression.level, languageCode: languageCode))",
-                        "Рівень \(progression.level) · \(RankCatalog.title(forLevel: progression.level, languageCode: languageCode))",
-                        "Уровень \(progression.level) · \(RankCatalog.title(forLevel: progression.level, languageCode: languageCode))",
-                        languageCode: languageCode
-                    ))
+    private func personalRecordRow(_ record: PostWorkoutPersonalRecord) -> some View {
+        HStack(alignment: .center, spacing: 11) {
+            if let exercise = store.exercise(id: record.exerciseID) {
+                ExerciseMediaButton(
+                    rawExerciseName: exercise.name,
+                    catalogKey: exercise.catalogKey,
+                    exerciseID: exercise.id,
+                    ownerKey: store.accountStorageKey,
+                    editable: false,
+                    width: 40,
+                    height: 40,
+                    playOverlayDiameter: 18
+                )
+            } else {
+                Image(systemName: "trophy.fill")
+                    .foregroundStyle(GymTheme.record)
+                    .frame(width: 40, height: 40)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(record.title)
                     .font(.subheadline.weight(.semibold))
-
-                    ProgressView(value: progression.levelProgress)
-                        .progressViewStyle(GymHeroProgressStyle())
-                        .accessibilityHidden(true)
-
-                    Text(gymText(
-                        "\(progression.xpToNextLevel) XP to level \(progression.level + 1)",
-                        "\(progression.xpToNextLevel) XP до рівня \(progression.level + 1)",
-                        "\(progression.xpToNextLevel) XP до уровня \(progression.level + 1)",
-                        languageCode: languageCode
-                    ))
+                    .lineLimit(1)
+                Text(recordDetail(record))
                     .font(.caption)
-                    .foregroundStyle(GymTheme.onHeroSecondary)
-                }
-
-                if let levelUp {
-                    levelUpPill(from: levelUp.from, to: levelUp.to)
-                }
-
-                if let biggestBadge {
-                    biggestWorkoutPill(biggestBadge)
-                }
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .lineLimit(1)
             }
-            .accessibilityElement(children: .combine)
         }
-    }
-
-    /// Flat tonal capsule with a trophy, matching Android's `biggest_workout_*` InfoPill.
-    private func biggestWorkoutPill(_ badge: BiggestWorkoutBadge) -> some View {
-        let title = switch badge {
-        case .ever:
-            gymText(
-                "Biggest workout ever", "Найбільший обсяг за весь час", "Самый большой объём за всё время",
-                languageCode: languageCode
-            )
-        case .month:
-            gymText(
-                "Biggest this month", "Найбільший обсяг цього місяця", "Самый большой объём в этом месяце",
-                languageCode: languageCode
-            )
-        }
-        return HStack(spacing: 6) {
-            Image(systemName: "trophy.fill")
-                .imageScale(.small)
-                .accessibilityHidden(true)
-            Text(title)
-        }
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(GymTheme.heroAccentText)
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 11)
-        .padding(.vertical, 7)
-        .background(Capsule().fill(GymTheme.heroAccentText.opacity(0.12)))
-        .overlay { Capsule().strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
         .accessibilityElement(children: .combine)
     }
 
-    /// Flat tonal capsule on the hero, matching Android's `post_workout_level_up` InfoPill.
-    private func levelUpPill(from: Int, to: Int) -> some View {
-        Text(gymText(
-            "Level up! \(from) → \(to)",
-            "Новий рівень! \(from) → \(to)",
-            "Новый уровень! \(from) → \(to)",
+    /// "Bench press / 3 sets · 60 × 8" with the change against last time on the right: green for an
+    /// improvement, neutral for a decrease, nothing when the comparison is hidden or unchanged.
+    private func exerciseRow(_ row: PostWorkoutExerciseRow) -> some View {
+        let sets = "\(row.setCount) " + gymPlural(
+            row.setCount,
+            en: ("set", "sets"),
+            uk: ("підхід", "підходи", "підходів"),
+            ru: ("подход", "подхода", "подходов"),
             languageCode: languageCode
-        ))
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(GymTheme.heroAccentText)
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 11)
-        .padding(.vertical, 7)
-        .background(Capsule().fill(GymTheme.heroAccentText.opacity(0.12)))
-        .overlay { Capsule().strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
+        )
+        let detail = row.best.map { "\(sets) · \(vsLastSetText($0))" } ?? sets
+        let comparison = vsLastByExercise[row.exerciseID]
+        return HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.title)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(2)
+                Text(detail)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let comparison, let delta = vsLastDeltaText(comparison) {
+                Text(delta)
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(vsLastStatusColor(comparison.status))
+                    .lineLimit(1)
+                    .layoutPriority(1)
+            }
+        }
+        .frame(minHeight: 32)
         .accessibilityElement(children: .combine)
     }
 
-    /// "Сб, 26 сент. · 4 ч 31 мин" — abbreviated weekday + day + abbreviated
-    /// month in the app's language locale, then the workout's duration
-    /// (omitted when unknown). The year is appended only when it differs
-    /// from the current year.
-    private func summaryDateLine(_ workout: WorkoutSession) -> String {
-        let datePart = gymShortDate(workout.date, calendar: calendar, languageCode: languageCode)
-        guard let seconds = workout.durationSeconds, seconds > 0 else { return datePart }
-        let durationText = gymCompactDuration(seconds, languageCode: languageCode)
-        guard !durationText.isEmpty else { return datePart }
-        return "\(datePart) · \(durationText)"
-    }
-
-    private func metricsPanel(_ workout: WorkoutSession) -> some View {
-        GymPanel {
-            VStack(alignment: .leading, spacing: 13) {
-                GymSectionTitle(
-                    title: "Training metrics",
-                    supporting: workout.note
-                )
-                // One tile per row at accessibility sizes: two narrow columns would hyphenate and cut the labels.
-                LazyVGrid(
-                    columns: dynamicTypeSize.isAccessibilitySize
-                        ? [GridItem(.flexible())]
-                        : [GridItem(.adaptive(minimum: 112), spacing: 10)],
-                    spacing: 10
-                ) {
-                    GymMetricTile(label: "Exercises", value: workout.exercises.count.formatted(.number.locale(gymAppLocale())))
-                    GymMetricTile(
-                        label: "Top muscle",
-                        value: trainedMuscles.first.map(muscleTitle) ?? "—"
-                    )
-                }
+    private func muscleRow(_ item: MuscleLoad) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(muscleTitle(item))
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(item.load.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0))))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(GymTheme.textSecondary)
             }
+            ProgressView(value: item.load, total: max(1, trainedMuscles.first?.load ?? 1))
+                .tint(GymTheme.primary)
         }
-    }
-
-    private var feedbackPanel: some View {
-        GymPanel(highlighted: store.feedback(for: workoutID) != nil) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(gymText(
-                    "How did it feel?",
-                    "Як було?",
-                    "Как было?",
-                    languageCode: languageCode
-                ))
-                .font(.headline)
-                .accessibilityAddTraits(.isHeader)
-
-                feedbackChoices
-
-                if let feedbackErrorMessage, let failedFeedback {
-                    GymStatusBanner(message: feedbackErrorMessage, isError: true)
-
-                    Button {
-                        saveFeedback(failedFeedback)
-                    } label: {
-                        Label(
-                            gymText(
-                                "Try again",
-                                "Спробувати ще раз",
-                                "Попробовать ещё раз",
-                                languageCode: languageCode
-                            ),
-                            systemImage: "arrow.clockwise"
-                        )
-                    }
-                    .buttonStyle(GymSecondaryButtonStyle())
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var feedbackChoices: some View {
-        if dynamicTypeSize.isAccessibilitySize {
-            VStack(spacing: 8) {
-                ForEach(WorkoutFeedback.allCases) { feedback in
-                    feedbackButton(feedback)
-                }
-            }
-        } else {
-            // Three equal chips in a row; a label may wrap by words to two lines (like the web app)
-            // but is never shrunk or cut off. They stack only when a single word would not fit.
-            ViewThatFits(in: .horizontal) {
-                EqualWidthHStack(spacing: 8, minimumChildWidth: feedbackMinimumChipWidth) {
-                    ForEach(WorkoutFeedback.allCases) { feedback in
-                        feedbackButton(feedback)
-                    }
-                }
-                VStack(spacing: 8) {
-                    ForEach(WorkoutFeedback.allCases) { feedback in
-                        feedbackButton(feedback)
-                    }
-                }
-            }
-        }
-    }
-
-    /// Narrowest chip in which every label fits in at most two lines: for each label the best
-    /// split of its words into two lines, plus the chip's horizontal padding, measured at the
-    /// view's own Dynamic Type size.
-    private var feedbackMinimumChipWidth: CGFloat {
-        let traits = UITraitCollection(traitsFrom: [
-            UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize)),
-            UITraitCollection(legibilityWeight: legibilityWeight == .bold ? .bold : .regular)
-        ])
-        // "Bold Text" in the system settings makes the semibold labels heavier (and wider).
-        let font = UIFont.systemFont(
-            ofSize: UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits).pointSize,
-            weight: legibilityWeight == .bold ? .bold : .semibold
-        )
-        func width(_ text: String) -> CGFloat {
-            (text as NSString).size(withAttributes: [.font: font]).width
-        }
-        let widest = WorkoutFeedback.allCases.map { feedback -> CGFloat in
-            let words = feedbackTitle(feedback)
-                .split(whereSeparator: { $0 == " " || $0 == "\u{00A0}" })
-                .map(String.init)
-            guard words.count > 1 else { return width(words.first ?? "") }
-            return (1 ..< words.count).map { split in
-                max(width(words[..<split].joined(separator: " ")), width(words[split...].joined(separator: " ")))
-            }.min() ?? 0
-        }.max() ?? 0
-        return ceil(widest) + 2 * Self.feedbackChipPadding + 2
-    }
-
-    private static let feedbackChipPadding: CGFloat = 12
-
-    private func feedbackButton(_ feedback: WorkoutFeedback) -> some View {
-        let selected = store.feedback(for: workoutID) == feedback
-        return Button {
-            saveFeedback(feedback)
-        } label: {
-            Text(feedbackTitle(feedback))
-                .font(.subheadline.weight(.semibold))
-                .fixedSize(horizontal: false, vertical: true)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, Self.feedbackChipPadding)
-                .frame(maxWidth: .infinity, minHeight: 44)
-        }
-        .buttonStyle(WorkoutFeedbackButtonStyle(selected: selected))
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
-    private func saveFeedback(_ feedback: WorkoutFeedback) {
-        do {
-            try store.setWorkoutFeedback(feedback, for: workoutID)
-            feedbackErrorMessage = nil
-            failedFeedback = nil
-        } catch {
-            feedbackErrorMessage = gymErrorMessage(error, languageCode: languageCode)
-            failedFeedback = feedback
-        }
-    }
-
-    private func feedbackTitle(_ feedback: WorkoutFeedback) -> String {
-        switch feedback {
-        case .easy:
-            gymText("Easy", "Легко", "Легко", languageCode: languageCode)
-        case .normal:
-            gymText("Just right", "Саме те", "В самый раз", languageCode: languageCode)
-        case .hard:
-            gymText("Hard", "Важко", "Тяжело", languageCode: languageCode)
-        }
-    }
-
-    @ViewBuilder
-    private var musclesPanel: some View {
-        GymPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                GymSectionTitle(
-                    title: "Loaded today"
-                )
-                ForEach(Array(trainedMuscles.prefix(8))) { item in
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack {
-                            Text(muscleTitle(item))
-                                .font(.subheadline.weight(.semibold))
-                            Spacer()
-                            Text(item.load.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0))))
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(GymTheme.textSecondary)
-                        }
-                        ProgressView(value: item.load, total: max(1, trainedMuscles.first?.load ?? 1))
-                            .tint(GymTheme.heroAccent)
-                    }
-                    .accessibilityElement(children: .combine)
-                }
-            }
-        }
-    }
-
-    /// "+20 kg" / "−3 reps" (true minus, no-break space before the unit); nil for "new" and "same".
-    private func vsLastDeltaText(_ row: SummaryVsLastRow) -> String? {
-        guard row.status == .up || row.status == .down, let delta = row.delta else { return nil }
-        let sign = delta > 0 ? "+" : "\u{2212}"
-        let magnitude = abs(delta)
-        if row.basis == .reps {
-            let count = Int(magnitude.rounded()).formatted(.number.locale(gymAppLocale()))
-            return sign + vsLastRepsText(count)
-        }
-        return sign + gymVolumeText(magnitude, languageCode: languageCode)
-    }
-
-    private func vsLastRepsText(_ count: String) -> String {
-        gymText(
-            "\(count)\u{00A0}reps",
-            "\(count)\u{00A0}повт.",
-            "\(count)\u{00A0}повт.",
-            languageCode: languageCode
-        )
-    }
-
-    private func vsLastSetText(_ set: VsLastSet) -> String {
-        guard set.weight > 0 else {
-            return vsLastRepsText(set.reps.formatted(.number.locale(gymAppLocale())))
-        }
-        let weight = set.weight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 2)))
-        return "\(weight) × \(set.reps.formatted(.number.locale(gymAppLocale())))"
-    }
-
-    /// "60 × 8 → 62,5 × 8", or just the current best for a new exercise or an unchanged best set.
-    private func vsLastBestText(_ row: SummaryVsLastRow) -> String {
-        let current = vsLastSetText(row.best)
-        guard let previous = row.previousBest, previous != row.best else { return current }
-        return "\(vsLastSetText(previous)) → \(current)"
-    }
-
-    private func vsLastStatusLabel(_ status: VsLastStatus) -> String {
-        switch status {
-        case .new: gymText("New", "Нове", "Новое", languageCode: languageCode)
-        case .up: gymText("Up", "Більше", "Больше", languageCode: languageCode)
-        case .down: gymText("Down", "Менше", "Меньше", languageCode: languageCode)
-        case .same: gymText("Same", "Так само", "Так же", languageCode: languageCode)
-        }
-    }
-
-    private func vsLastStatusColor(_ status: VsLastStatus) -> Color {
-        switch status {
-        case .up: GymTheme.secondary
-        case .down: GymTheme.error
-        case .new, .same: GymTheme.textSecondary
-        }
-    }
-
-    /// Per-exercise comparison with the previous session, flat tonal panel like the neighbours.
-    private func vsLastPanel(_ rows: [SummaryVsLastRow]) -> some View {
-        GymPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                GymSectionTitle(
-                    title: gymText(
-                        "Compared with last time",
-                        "Порівняно з минулим разом",
-                        "По сравнению с прошлым разом",
-                        languageCode: languageCode
-                    )
-                )
-                ForEach(rows) { row in
-                    let color = vsLastStatusColor(row.status)
-                    HStack(alignment: .center, spacing: 11) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(row.title)
-                                .font(.subheadline.weight(.semibold))
-                                .lineLimit(1)
-                            Text(vsLastBestText(row))
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(GymTheme.textSecondary)
-                                .lineLimit(2)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        VStack(alignment: .trailing, spacing: 2) {
-                            HStack(spacing: 3) {
-                                if row.status == .up || row.status == .down {
-                                    Image(systemName: row.status == .up ? "arrow.up" : "arrow.down")
-                                        .font(.caption.weight(.bold))
-                                        .accessibilityLabel(row.status == .up
-                                            ? gymText("Higher than last time", "Більше, ніж минулого разу", "Больше, чем в прошлый раз", languageCode: languageCode)
-                                            : gymText("Lower than last time", "Менше, ніж минулого разу", "Меньше, чем в прошлый раз", languageCode: languageCode))
-                                }
-                                Text(vsLastStatusLabel(row.status))
-                                    .font(.subheadline.weight(.semibold))
-                                    .lineLimit(1)
-                            }
-                            .foregroundStyle(color)
-                            if let delta = vsLastDeltaText(row) {
-                                Text(delta)
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(color)
-                                    .lineLimit(1)
-                            }
-                        }
-                        .layoutPriority(1)
-                    }
-                    .accessibilityElement(children: .combine)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func personalRecordsPanel(_ personalRecords: [PostWorkoutPersonalRecord]) -> some View {
-        GymPanel(highlighted: !personalRecords.isEmpty) {
-            VStack(alignment: .leading, spacing: 12) {
-                GymSectionTitle(
-                    title: "New bests"
-                )
-                ForEach(personalRecords) { record in
-                    HStack(alignment: .center, spacing: 11) {
-                        if let exercise = store.exercise(id: record.exerciseID) {
-                            ExerciseMediaButton(
-                                rawExerciseName: exercise.name,
-                                catalogKey: exercise.catalogKey,
-                                exerciseID: exercise.id,
-                                ownerKey: store.accountStorageKey,
-                                editable: false,
-                                width: 40,
-                                height: 40,
-                                playOverlayDiameter: 18
-                            )
-                        } else {
-                            Image(systemName: "trophy.fill")
-                                .foregroundStyle(GymTheme.record)
-                                .frame(width: 40, height: 40)
-                        }
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(record.title)
-                                .font(.subheadline.weight(.semibold))
-                                .lineLimit(1)
-                            Text(recordDetail(record))
-                                .font(.caption)
-                                .foregroundStyle(GymTheme.textSecondary)
-                                .lineLimit(1)
-                        }
-                    }
-                    .accessibilityElement(children: .combine)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func missionsPanel(_ missions: [MissionSnapshot]) -> some View {
-        GymPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                GymSectionTitle(
-                    title: gymText("Completed missions", "Виконані місії", "Выполненные миссии", languageCode: languageCode)
-                )
-
-                ForEach(missions) { mission in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Label(
-                                mission.title.resolved(languageCode: languageCode),
-                                systemImage: mission.completed ? "checkmark.circle.fill" : "circle"
-                            )
-                            .font(.subheadline.weight(.semibold))
-                            Spacer(minLength: 8)
-                            Text("\(missionValue(mission.progress)) / \(missionValue(mission.target))")
-                                .font(.caption.monospacedDigit().weight(.semibold))
-                                .foregroundStyle(GymTheme.textSecondary)
-                        }
-                        ProgressView(value: mission.fraction)
-                            .tint(mission.completed ? GymTheme.primary : GymTheme.secondary)
-                    }
-                    .accessibilityElement(children: .combine)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func badgesPanel(_ badges: [BadgeSnapshot]) -> some View {
-        GymPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                GymSectionTitle(
-                    title: gymText("New badges", "Нові значки", "Новые значки", languageCode: languageCode)
-                )
-                LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 3),
-                    alignment: .leading,
-                    spacing: 12
-                ) {
-                    ForEach(badges) { badge in
-                        GymBadgeRingTile(
-                            systemImage: AchievementIconCatalog.icon(forID: badge.id),
-                            title: gymLocalized(badge.name),
-                            accent: gymBadgeAccent(badge.rarity)
-                        )
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(
-                            "\(gymLocalized(badge.name)), \(badge.rarity.displayName)"
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    private var actions: some View {
-        VStack(spacing: 10) {
-            Button(action: onDone) {
-                Text(gymText("Done", "Готово", "Готово", languageCode: languageCode))
-            }
-            .buttonStyle(GymPrimaryButtonStyle())
-
-            Button {
-                onOpenDetail(workoutID)
-            } label: {
-                Text(gymText(
-                    "Workout details",
-                    "Деталі тренування",
-                    "Детали тренировки",
-                    languageCode: languageCode
-                ))
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(GymTheme.primary)
-        }
+        .accessibilityElement(children: .combine)
     }
 
     private func muscleTitle(_ load: MuscleLoad) -> String {
@@ -986,8 +866,96 @@ struct PostWorkoutSummaryView: View {
         return gymText(definition.titleEn, definition.titleUk, definition.titleRu, languageCode: gymCurrentLanguageCode())
     }
 
+    private func missionRow(_ mission: MissionSnapshot) -> some View {
+        HStack(spacing: 11) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(GymTheme.secondary)
+                .accessibilityHidden(true)
+            Text(mission.title.resolved(languageCode: languageCode))
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("\(missionValue(mission.progress)) / \(missionValue(mission.target))")
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(GymTheme.textSecondary)
+        }
+        .frame(minHeight: 32)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func badgeRow(_ badge: BadgeSnapshot) -> some View {
+        HStack(spacing: 11) {
+            Image(systemName: AchievementIconCatalog.icon(forID: badge.id))
+                .foregroundStyle(gymBadgeAccent(badge.rarity))
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            Text(gymLocalized(badge.name))
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(badge.rarity.displayName)
+                .font(.caption)
+                .foregroundStyle(GymTheme.textSecondary)
+        }
+        .frame(minHeight: 32)
+        .accessibilityElement(children: .combine)
+    }
+
     private func missionValue(_ value: Double) -> String {
         value.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0)))
+    }
+
+    private var detailsRow: some View {
+        Button {
+            onOpenDetail(workoutID)
+        } label: {
+            HStack {
+                Text(gymText(
+                    "Workout details",
+                    "Деталі тренування",
+                    "Детали тренировки",
+                    languageCode: languageCode
+                ))
+                .font(.body)
+                .foregroundStyle(GymTheme.textPrimary)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary.opacity(0.7))
+                    .accessibilityHidden(true)
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// "+120 XP · Level 3": the gamification result is one quiet line, not a hero card.
+    private var experienceFootnote: some View {
+        let xp = sessionSummary.map(GamificationEngine.xpForSession) ?? 0
+        let experience = postWorkoutExperience
+        let level = (experience?.afterSnapshot ?? store.gamificationSnapshot(calendar: calendar)).progression.level
+        let levelUp = experience.flatMap {
+            postWorkoutLevelUp(previousLevel: $0.previousLevel, currentLevel: level)
+        }
+        let levelText = levelUp.map { change in
+            gymText(
+                "New level \(change.to)",
+                "Новий рівень \(change.to)",
+                "Новый уровень \(change.to)",
+                languageCode: languageCode
+            )
+        } ?? gymText("Level \(level)", "Рівень \(level)", "Уровень \(level)", languageCode: languageCode)
+        return Text("+\(xp) XP · \(levelText)")
+            .font(.footnote)
+            .foregroundStyle(GymTheme.textSecondary)
+            .textCase(nil)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private extension View {
+    /// The inset-grouped row fill of the summary: the app's neutral surface.
+    func summaryRowBackground() -> some View {
+        listRowBackground(GymTheme.surface)
     }
 }
 
@@ -1047,66 +1015,8 @@ func postWorkoutPersonalRecords(
     }
 }
 
-private struct WorkoutFeedbackButtonStyle: ButtonStyle {
-    let selected: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(selected ? Color.white : GymTheme.textPrimary)
-            .background(
-                (selected ? GymTheme.primaryAction : GymTheme.surfaceVariant)
-                    .opacity(configuration.isPressed ? 0.72 : 1),
-                in: Capsule()
-            )
-            .overlay {
-                Capsule()
-                    .strokeBorder(selected ? GymTheme.primaryAction : GymTheme.outlineSoft, lineWidth: 1)
-            }
-    }
-}
-
 private extension BadgeRarity {
     var displayName: String {
         gymLocalized(rawValue.capitalized)
-    }
-}
-
-
-/// A row of equal-width children that fills the proposed width. Its ideal width is the minimum the
-/// children need (`minimumChildWidth` each), which is what `ViewThatFits` compares with the space
-/// available; children taller than the others make the whole row as tall as the tallest.
-private struct EqualWidthHStack: Layout {
-    var spacing: CGFloat = 8
-    var minimumChildWidth: CGFloat = 0
-
-    private func childWidth(for total: CGFloat, count: Int) -> CGFloat {
-        (total - spacing * CGFloat(count - 1)) / CGFloat(count)
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        guard !subviews.isEmpty else { return .zero }
-        let count = subviews.count
-        let ideal = minimumChildWidth * CGFloat(count) + spacing * CGFloat(count - 1)
-        let width = proposal.width ?? ideal
-        let each = proposal.width == nil ? minimumChildWidth : childWidth(for: width, count: count)
-        let height = subviews
-            .map { $0.sizeThatFits(ProposedViewSize(width: each, height: nil)).height }
-            .max() ?? 0
-        // Below the minimum the row reports its ideal width, so ViewThatFits falls through to the stack.
-        return CGSize(width: max(width, ideal), height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        guard !subviews.isEmpty else { return }
-        let width = childWidth(for: bounds.width, count: subviews.count)
-        var x = bounds.minX
-        for subview in subviews {
-            subview.place(
-                at: CGPoint(x: x, y: bounds.minY),
-                anchor: .topLeading,
-                proposal: ProposedViewSize(width: width, height: bounds.height)
-            )
-            x += width + spacing
-        }
     }
 }

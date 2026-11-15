@@ -7922,7 +7922,6 @@ final class CoreParityTests: XCTestCase {
             XCTAssertFalse(source.contains("progression.nextTitle"))
             XCTAssertFalse(source.contains("snapshot.progression.title.name"))
         }
-        XCTAssertTrue(summarySource.contains("RankCatalog.title(forLevel:"))
         XCTAssertTrue(missionsSource.contains("RankCatalog.title(forLevel:"))
         XCTAssertTrue(dashboardSource.contains("RankCatalog.title(forLevel:"))
         XCTAssertTrue(dashboardSource.contains("RankCatalog.next(afterLevel:"))
@@ -19398,8 +19397,8 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(summarySource.contains("Completed mission rewards"))
         XCTAssertFalse(stringsSource.contains("Completed mission rewards"))
         XCTAssertTrue(summarySource.contains("GamificationEngine.xpForSession"))
-        XCTAssertTrue(summarySource.contains("\"How did it feel?\",\n                    \"Як було?\",\n                    \"Как было?\""))
-        XCTAssertTrue(summarySource.contains("gymText(\"Just right\", \"Саме те\", \"В самый раз\""))
+        XCTAssertTrue(summarySource.contains("gymText(\"How did it feel?\", \"Як було?\", \"Как было?\""))
+        XCTAssertTrue(summarySource.contains("gymText(\"Right\", \"Нормально\", \"Нормально\""))
 
         let calendar = utcCalendar()
         let now = try utcDate(year: 2026, month: 8, day: 15, calendar: calendar)
@@ -19767,22 +19766,118 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(exercises.contains(".accessibilityAddTraits(isSelected ? .isSelected : [])"))
     }
 
-    func testIOSWorkoutFeedbackChipsAreEqualWidthWrapByWordsAndStackOnlyWhenAWordDoesNotFit() throws {
+    func testIOSWorkoutFeedbackIsANativeSegmentedControlWithAccessibleFallback() throws {
         let summary = try iosSource("GymApp/UI/Screens/PostWorkoutSummaryView.swift")
-        // One row of equal-width chips while every label fits in two lines, otherwise a stack.
-        XCTAssertTrue(summary.contains("ViewThatFits(in: .horizontal) {\n                EqualWidthHStack("))
-        XCTAssertTrue(summary.contains("private struct EqualWidthHStack: Layout"))
-        XCTAssertTrue(summary.contains("private func feedbackButton(_ feedback: WorkoutFeedback) -> some View {"))
-        XCTAssertFalse(summary.contains(".lineLimit(wraps"))
-        // Bold Text widens the labels, so the measurement reads the legibility weight too.
-        XCTAssertTrue(summary.contains("UITraitCollection(legibilityWeight:"))
-        // No shrinking and no truncation of the label.
+        // Native segmented picker bound to the stored feedback value (no data model change).
+        XCTAssertTrue(summary.contains(".pickerStyle(.segmented)"))
+        XCTAssertTrue(summary.contains("Text(feedbackTitle(feedback)).tag(Optional(feedback))"))
+        XCTAssertTrue(summary.contains("get: { store.feedback(for: workoutID) }"))
+        // At accessibility sizes the segments become one checkmark row per answer.
+        XCTAssertTrue(summary.contains("if dynamicTypeSize.isAccessibilitySize {"))
+        XCTAssertTrue(summary.contains(".accessibilityAddTraits(selected ? .isSelected : [])"))
+        // The old custom chip row is gone.
+        XCTAssertFalse(summary.contains("EqualWidthHStack"))
+        XCTAssertFalse(summary.contains("WorkoutFeedbackButtonStyle"))
         XCTAssertFalse(summary.contains("minimumScaleFactor(0.8)\n                .frame(maxWidth: .infinity, minHeight: 44)"))
-        // The measurement uses the view's own Dynamic Type size and the best two-line split.
-        XCTAssertTrue(summary.contains("UIContentSizeCategory(dynamicTypeSize)"))
-        XCTAssertTrue(summary.contains("(1 ..< words.count).map { split in"))
-        // Selected chip: accent fill (white text), not the pale dark-mode primary.
-        XCTAssertTrue(summary.contains("(selected ? GymTheme.primaryAction : GymTheme.surfaceVariant)"))
+        // Copy: ru Легко / Нормально / Тяжело, uk Легко / Нормально / Важко, en Easy / Right / Hard.
+        XCTAssertTrue(summary.contains("gymText(\"Easy\", \"Легко\", \"Легко\""))
+        XCTAssertTrue(summary.contains("gymText(\"Hard\", \"Важко\", \"Тяжело\""))
+    }
+
+    func testPostWorkoutSummaryStructureIsHeroThenGroupedSectionsWithDoneInTheToolbar() throws {
+        let summary = try iosSource("GymApp/UI/Screens/PostWorkoutSummaryView.swift")
+        // Done is a trailing toolbar action, not a button at the end of the scroll.
+        XCTAssertTrue(summary.contains("ToolbarItem(placement: .confirmationAction)"))
+        XCTAssertFalse(summary.contains("GymPrimaryButtonStyle"))
+        // Inset-grouped list; no hero card, no metric tiles, no XP/level hero.
+        XCTAssertTrue(summary.contains(".listStyle(.insetGrouped)"))
+        XCTAssertFalse(summary.contains("GymHeroPanel"))
+        XCTAssertFalse(summary.contains("GymMetricTile"))
+        XCTAssertFalse(summary.contains("Training metrics"))
+        XCTAssertFalse(summary.contains("Top muscle"))
+        XCTAssertFalse(summary.contains("GymBadgeRingTile"))
+        XCTAssertFalse(summary.contains("Session XP"))
+        // The comparison is gated by the comparable-workout rule and never red.
+        XCTAssertTrue(summary.contains("postWorkoutComparisonIsShown(\n                currentSetCount:"))
+        XCTAssertFalse(summary.contains("GymTheme.error"))
+        // Section order: hero, feedback, exercises (with the comparison delta), muscles, records, achievements, details.
+        XCTAssertFalse(summary.contains("arrow.up"))
+        XCTAssertFalse(summary.contains("arrow.down"))
+        let order = [
+            "heroSection(workout)", "feedbackRows", "exerciseRow(row)", "muscleRow(item)",
+            "personalRecordRow(record)", "missionRow(mission)", "badgeRow(badge)",
+            "detailsRow.summaryRowBackground()"
+        ]
+        var cursor = summary.startIndex
+        for marker in order {
+            let range = try XCTUnwrap(summary.range(of: marker, range: cursor..<summary.endIndex), marker)
+            cursor = range.upperBound
+        }
+    }
+
+    func testPostWorkoutComparisonGateMatchesSharedAndroidFixture() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("shared/vs-last-comparable-v1.json")
+        let contract = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+        )
+        let cases = try XCTUnwrap(contract["cases"] as? [[String: Any]])
+        XCTAssertEqual(cases.count, 10)
+        for item in cases {
+            let id = try XCTUnwrap(item["id"] as? String)
+            XCTAssertEqual(
+                postWorkoutComparisonIsShown(
+                    currentSetCount: try XCTUnwrap(item["currentSetCount"] as? Int),
+                    previousSetCount: try XCTUnwrap(item["previousSetCount"] as? Int)
+                ),
+                try XCTUnwrap(item["shown"] as? Bool),
+                id
+            )
+        }
+    }
+
+    func testPostWorkoutPreviousSetCountIsTheLatestEarlierWorkoutSharingAnExercise() {
+        let exerciseA = UUID(), exerciseB = UUID()
+        let old = UUID(), shared = UUID(), unrelated = UUID(), current = UUID()
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        func day(_ offset: Double) -> Date { base.addingTimeInterval(offset * 86_400) }
+        func entry(_ workout: UUID, _ date: Date, _ exercise: UUID, reps: Int = 5) -> ExerciseHistoryEntry {
+            ExerciseHistoryEntry(
+                setID: UUID(), workoutID: workout, sessionDate: date, exerciseID: exercise,
+                exerciseName: "X", exerciseCatalogKey: nil, weight: 50, reps: reps,
+                setOrderIndex: 0, blockOrderIndex: 0, workoutOrderIndex: 0
+            )
+        }
+        let history = [
+            entry(old, day(-10), exerciseA), entry(old, day(-10), exerciseA),
+            entry(shared, day(-3), exerciseA), entry(shared, day(-3), exerciseA, reps: 0),
+            entry(shared, day(-3), exerciseB), entry(unrelated, day(-1), exerciseB),
+            entry(current, day(0), exerciseA)
+        ]
+        // Latest earlier workout with a shared exercise; sets without reps are not counted.
+        XCTAssertEqual(postWorkoutPreviousSetCount(history: history, workoutID: current, currentDate: day(0)), 2)
+        XCTAssertEqual(postWorkoutLoggedSetCount(history: history, workoutID: current), 1)
+        XCTAssertEqual(
+            postWorkoutPreviousSetCount(history: [entry(current, day(0), exerciseA)], workoutID: current, currentDate: day(0)),
+            0
+        )
+    }
+
+    func testPostWorkoutExerciseRowsMergeBlocksAndPickTheBestSet() {
+        let bench = UUID(), squat = UUID()
+        let blocks = [
+            WorkoutExercise(exerciseID: bench, sets: [WorkoutSet(weight: 60, reps: 8), WorkoutSet(weight: 60, reps: 10)]),
+            WorkoutExercise(exerciseID: squat, sets: [WorkoutSet(weight: 0, reps: 12)]),
+            WorkoutExercise(exerciseID: bench, sets: [WorkoutSet(weight: 50, reps: 12)])
+        ]
+        let rows = postWorkoutExerciseRows(blocks: blocks) { $0 == bench ? "Bench" : "Squat" }
+        XCTAssertEqual(rows.map(\.title), ["Bench", "Squat"])
+        XCTAssertEqual(rows[0].setCount, 3)
+        XCTAssertEqual(rows[0].best, VsLastSet(weight: 60, reps: 10))
+        XCTAssertEqual(rows[1].setCount, 1)
+        XCTAssertEqual(rows[1].best, VsLastSet(weight: 0, reps: 12))
     }
 
     /// The weight field commits only on focus loss and Log does not blur it, so

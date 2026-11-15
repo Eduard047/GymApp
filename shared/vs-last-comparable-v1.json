@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "description": "Post-workout summary: when the 'compared with last time' rows are shown. Implemented by isVsLastComparable on Android; iPhone must produce identical results.",
+  "rule": "Shown only when previousSetCount > 0 and currentSetCount * 100 >= previousSetCount * 80 (the workout logged at least 80% of the previous workout's sets). Otherwise the comparison is hidden entirely, so an incomplete workout never shows a large negative change. previousSetCount is the logged set count (reps > 0) of the latest earlier workout that shares an exercise with the finished one; 0 when there is none.",
+  "minimumPercent": 80,
+  "cases": [
+    { "id": "same-size", "currentSetCount": 12, "previousSetCount": 12, "shown": true },
+    { "id": "bigger", "currentSetCount": 15, "previousSetCount": 12, "shown": true },
+    { "id": "just-above-threshold", "currentSetCount": 10, "previousSetCount": 12, "shown": true },
+    { "id": "exactly-eighty-percent", "currentSetCount": 8, "previousSetCount": 10, "shown": true },
+    { "id": "just-below-threshold", "currentSetCount": 7, "previousSetCount": 10, "shown": false },
+    { "id": "three-quarters", "currentSetCount": 9, "previousSetCount": 12, "shown": false },
+    { "id": "incomplete-workout", "currentSetCount": 4, "previousSetCount": 12, "shown": false },
+    { "id": "no-previous-workout", "currentSetCount": 12, "previousSetCount": 0, "shown": false },
+    { "id": "nothing-logged", "currentSetCount": 0, "previousSetCount": 10, "shown": false },
+    { "id": "single-set-baseline", "currentSetCount": 1, "previousSetCount": 1, "shown": true }
+  ]
+}

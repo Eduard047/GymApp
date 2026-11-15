@@ -1020,7 +1020,7 @@
     <string name="today_reason_feedback_easy">One safe set was added after your last feedback.</string>
     <string name="workout_feedback_title">How did it feel?</string>
     <string name="workout_feedback_easy">Easy</string>
-    <string name="workout_feedback_normal">Just right</string>
+    <string name="workout_feedback_normal">Right</string>
     <string name="workout_feedback_hard">Hard</string>
     <string name="smart_effort_adjustment_feedback_hard">Light selected after your latest feedback.</string>
     <string name="smart_effort_adjustment_feedback_easy">One safe set was added after your latest feedback.</string>
@@ -1329,6 +1329,7 @@
     <string name="post_workout_metrics_title">Training metrics</string>
     <string name="post_workout_metric_top_muscle">Top muscle</string>
     <string name="post_workout_muscles_title">Loaded today</string>
+    <string name="post_workout_exercises_title">By exercise</string>
     <string name="post_workout_muscle_a11y">%1$s, %2$s, %3$s%%</string>
     <string name="post_workout_metric_sets">Sets</string>
     <string name="post_workout_metric_volume">Volume</string>

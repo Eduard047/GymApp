@@ -145,3 +145,66 @@ internal fun buildExerciseVsLast(
         }
     return if (rows.all { it.status == VsLastStatus.New }) emptyList() else rows
 }
+
+/** The comparison is shown only when the finished workout logged at least this share of the previous workout's sets. */
+internal const val VS_LAST_COMPARABLE_MIN_PERCENT = 80
+
+/**
+ * Shared rule for Android and iPhone: the "compared with last time" rows appear only when this
+ * workout is comparable with the previous one, i.e. it logged at least 80% of the previous
+ * workout's sets. An unfinished workout would otherwise show a large drop that only reflects what
+ * was skipped. No previous workout (0 sets) means nothing to compare with, so the rows stay hidden.
+ */
+internal fun isVsLastComparable(currentSetCount: Int, previousSetCount: Int): Boolean =
+    previousSetCount > 0 &&
+        currentSetCount.toLong() * 100L >= previousSetCount.toLong() * VS_LAST_COMPARABLE_MIN_PERCENT
+
+/**
+ * Logged sets of the latest earlier workout that shares an exercise with the finished one
+ * ([currentExerciseIds]); 0 when there is none. This is the baseline of [isVsLastComparable].
+ */
+internal fun previousWorkoutSetCount(
+    currentExerciseIds: Set<Long>,
+    allHistory: List<ExerciseHistoryEntry>,
+    currentSessionId: Long,
+    currentSessionDate: Long
+): Int {
+    val earlier = allHistory.filter { entry ->
+        entry.reps > 0 && isWorkoutEarlier(
+            candidateDate = entry.sessionDate,
+            candidateId = entry.sessionId,
+            currentDate = currentSessionDate,
+            currentId = currentSessionId
+        )
+    }
+    val latest = earlier
+        .filter { it.exerciseId in currentExerciseIds }
+        .maxWithOrNull(compareBy({ it.sessionDate }, { it.sessionId }))
+        ?: return 0
+    return earlier.count { it.sessionId == latest.sessionId }
+}
+
+/** One "By exercise" row: logged sets of the exercise in the finished workout and its best set. */
+data class ExerciseSummaryUiState(
+    val exerciseId: Long,
+    val exerciseName: String,
+    val setCount: Int,
+    val best: VsLastSet
+)
+
+/** Exercises of the finished workout in workout order; sets with reps <= 0 are not counted. */
+internal fun buildExerciseSummaries(entries: List<ExerciseHistoryEntry>): List<ExerciseSummaryUiState> =
+    entries
+        .filter { it.reps > 0 }
+        .groupBy { it.exerciseId }
+        .map { (exerciseId, sets) ->
+            val best = sets.maxWith(compareBy<ExerciseHistoryEntry>({ it.weight }, { it.reps }))
+            Triple(sets.minOf { it.blockOrderIndex }, exerciseId, ExerciseSummaryUiState(
+                exerciseId = exerciseId,
+                exerciseName = best.exerciseName,
+                setCount = sets.size,
+                best = VsLastSet(best.weight, best.reps)
+            ))
+        }
+        .sortedWith(compareBy({ it.first }, { it.second }))
+        .map { it.third }

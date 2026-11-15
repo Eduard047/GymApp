@@ -1058,7 +1058,7 @@
     <string name="today_reason_feedback_easy">После последнего отзыва добавлен один безопасный подход.</string>
     <string name="workout_feedback_title">Как было?</string>
     <string name="workout_feedback_easy">Легко</string>
-    <string name="workout_feedback_normal">В самый раз</string>
+    <string name="workout_feedback_normal">Нормально</string>
     <string name="workout_feedback_hard">Тяжело</string>
     <string name="smart_effort_adjustment_feedback_hard">После последнего отзыва выбрана лёгкая нагрузка.</string>
     <string name="smart_effort_adjustment_feedback_easy">После последнего отзыва добавлен один безопасный подход.</string>
@@ -1375,6 +1375,7 @@
     <string name="post_workout_metrics_title">Показатели тренировки</string>
     <string name="post_workout_metric_top_muscle">Главная мышца</string>
     <string name="post_workout_muscles_title">Нагружено сегодня</string>
+    <string name="post_workout_exercises_title">По упражнениям</string>
     <string name="post_workout_muscle_a11y">%1$s, %2$s, %3$s%%</string>
     <string name="post_workout_metric_sets">Подходы</string>
     <string name="post_workout_metric_volume">Объём</string>
