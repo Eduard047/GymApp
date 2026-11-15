@@ -13568,29 +13568,32 @@ final class CoreParityTests: XCTestCase {
         let source = try iosSource("GymApp/UI/Screens/WorkoutsView.swift")
 
         // The pill exists as a first-class action in all three hero states.
-        XCTAssertTrue(source.contains("private func trainWithFriendPill(forcedVisible: Bool = false) -> some View"))
+        XCTAssertTrue(source.contains("private func trainWithFriendRowItem(forcedVisible: Bool = false) -> TodayRowItem?"))
         XCTAssertTrue(source.contains("enum TodayFriendEntryState: Equatable"))
         let focusLensSource = try XCTUnwrap(
             source.split(separator: "private var focusLens: some View {", maxSplits: 1).last?
-                .split(separator: "private func focusDetailsDisclosure(", maxSplits: 1).first
+                .split(separator: "private func planHeader(", maxSplits: 1).first
         )
-        XCTAssertTrue(focusLensSource.contains("trainWithFriendPill()"))
+        XCTAssertTrue(source.contains("if let friend = trainWithFriendRowItem() {"))
+        XCTAssertFalse(focusLensSource.isEmpty)
         let activationPanelSource = try XCTUnwrap(
             source.split(separator: "private var activationPanel: some View {", maxSplits: 1).last?
                 .split(separator: "private func createActivationManually()", maxSplits: 1).first
         )
-        XCTAssertTrue(activationPanelSource.contains("trainWithFriendPill()"))
+        XCTAssertTrue(activationPanelSource.contains("trainWithFriendRowItem()"))
         let activeFocusLensSource = try XCTUnwrap(
             source.split(separator: "private var activeFocusLens: some View {", maxSplits: 1).last?
-                .split(separator: "private func todayPlanMetrics(", maxSplits: 1).first
+                .split(separator: "private func todayPlanExplanation(", maxSplits: 1).first
         )
-        XCTAssertTrue(activeFocusLensSource.contains("trainWithFriendPill(forcedVisible: true)"))
-        XCTAssertTrue(activeFocusLensSource.contains("moreWorkoutOptionsPill"))
+        XCTAssertTrue(activeFocusLensSource.contains("trainWithFriendRowItem(forcedVisible: true)"))
+        // The destructive discard lives in the card's ⋯ menu behind the existing confirmation.
+        XCTAssertTrue(activeFocusLensSource.contains("activeWorkoutMenu"))
+        XCTAssertTrue(activeFocusLensSource.contains("Button(role: .destructive, action: onDiscardWorkout)"))
+        XCTAssertFalse(activeFocusLensSource.contains("showsActiveMoreActions"))
 
         // Hidden whenever a live workout already blocks (only checked outside
         // the forced-visible solo-workout hero).
         XCTAssertTrue(source.contains("if !forcedVisible, state.isHidden {"))
-        XCTAssertTrue(source.contains("EmptyView()"))
         XCTAssertTrue(source.contains("if hasBlockingLiveWorkout {\n            self = .hidden"))
 
         // Exact 4-arg gymText copy required by the plan; never the 2-arg form.
@@ -13719,7 +13722,9 @@ final class CoreParityTests: XCTestCase {
 
     func testFirstWorkoutActivationUsesParityChipRowsAndOneTodayHeader() throws {
         let source = try iosSource("GymApp/UI/Screens/WorkoutsView.swift")
-        XCTAssertTrue(source.contains("screenHeader {\n                            proxy.scrollTo(\"workout-history\""))
+        // One entry point to the history: the card, not a second header button.
+        XCTAssertTrue(source.contains("private var screenHeader: some View"))
+        XCTAssertFalse(source.contains("clock.arrow.circlepath"))
         XCTAssertTrue(source.contains("store.workoutSummaries.isEmpty, !activationDismissed"))
         XCTAssertFalse(source.contains("activationGoalChoiceGrid("))
         XCTAssertFalse(source.contains("options: TrainingActivationChoices.goals"))
@@ -13742,7 +13747,7 @@ final class CoreParityTests: XCTestCase {
         for exactCopy in [
             "Use suggested plan", "Використати пораду", "Использовать рекомендацию",
             "Review exercises", "Переглянути вправи", "Посмотреть упражнения",
-            "Start plan", "Почати план", "Начать план",
+            "Start", "Почати", "Начать",
             "Edit plan", "Редагувати план", "Редактировать план",
             "Build manually", "Створити вручну", "Собрать вручную",
             "Train anyway", "Усе одно тренуватися", "Всё равно тренироваться"
@@ -13754,8 +13759,11 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(source.contains("\"This week\""))
         XCTAssertTrue(source.contains("\"Цього тижня\""))
         XCTAssertTrue(source.contains("\"На этой неделе\""))
-        XCTAssertTrue(source.contains("completedToday ? \"Workout complete\""))
-        XCTAssertTrue(source.contains("\"Today's work is saved in your history.\""))
+        XCTAssertTrue(source.contains("private var completedTodayHeader: some View"))
+        XCTAssertTrue(source.contains("\"Workout complete\""))
+        XCTAssertFalse(source.contains("Today's work is saved in your history."))
+        XCTAssertFalse(source.contains("Сегодняшняя тренировка сохранена в истории."))
+        XCTAssertFalse(source.contains("Сьогоднішнє тренування збережено в історії."))
         XCTAssertTrue(source.contains("projection.weeklySummary"))
         XCTAssertTrue(source.contains("todayHeroMetricsRow(projection.heroMetrics)"))
         XCTAssertTrue(source.contains("_ = onStartPlan(launchSeed)"))

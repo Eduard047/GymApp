@@ -979,9 +979,7 @@
     <string name="smart_focus_legs">Ноги</string>
     <string name="smart_focus_full_body">Усе тіло</string>
     <string name="today_title">Сьогодні</string>
-    <string name="today_history_shortcut">Історія</string>
     <string name="today_workout_completed">Тренування завершено</string>
-    <string name="today_workout_completed_supporting">Сьогоднішнє тренування збережено в історії.</string>
     <string name="today_add_another_workout">Додати ще одне тренування</string>
     <string name="today_continue_plan">Продовжити план</string>
     <string name="today_cancel_plan">Скасувати план</string>
@@ -1036,8 +1034,35 @@
     <string name="today_focus_set_progress">Підхід %1$d · виконано %2$d / %3$d</string>
     <string name="today_start_recommended">Редагувати план</string>
     <string name="today_edit_plan">Редагувати план</string>
-    <string name="repeat_last_workout_action">Повторити останнє тренування</string>
-    <string name="today_start_plan">Почати план</string>
+    <string name="today_continue">Продовжити</string>
+    <string name="today_plan_summary">%1$s · %2$s · близько %3$d&#160;хв</string>
+    <string name="today_completed_summary">%1$s · %2$s · %3$s</string>
+    <string name="today_all_history">Уся історія</string>
+    <string name="today_history_collapse">Згорнути</string>
+    <string name="today_stat_volume_label">обсяг</string>
+    <plurals name="today_stat_workouts_label">
+        <item quantity="one">тренування</item>
+        <item quantity="few">тренування</item>
+        <item quantity="many">тренувань</item>
+        <item quantity="other">тренування</item>
+    </plurals>
+    <plurals name="today_stat_minutes_label">
+        <item quantity="one">хвилина</item>
+        <item quantity="few">хвилини</item>
+        <item quantity="many">хвилин</item>
+        <item quantity="other">хвилини</item>
+    </plurals>
+    <string-array name="weekday_short_labels">
+        <item>пн</item>
+        <item>вт</item>
+        <item>ср</item>
+        <item>чт</item>
+        <item>пт</item>
+        <item>сб</item>
+        <item>нд</item>
+    </string-array>
+    <string name="repeat_last_workout_action">Повторити останнє</string>
+    <string name="today_start_plan">Почати</string>
     <string name="workout_plan_more_options">Додаткові параметри</string>
     <string name="workout_plan_discard_title">Відкинути зміни плану?</string>
     <string name="workout_plan_discard_message">Зміни буде втрачено.</string>

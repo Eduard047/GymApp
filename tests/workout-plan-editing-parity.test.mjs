@@ -426,9 +426,9 @@ test("Coach settings use one account-profile editor and are not duplicated in Pr
 });
 
 test("Android exposes direct Start plan plus Edit plan and the canonical editor order", () => {
-  assert.match(androidEnglish, /<string name="(?:today|activation)_start_plan">Start plan<\/string>/);
-  assert.match(androidUkrainian, /<string name="(?:today|activation)_start_plan">Почати план<\/string>/);
-  assert.match(androidRussian, /<string name="(?:today|activation)_start_plan">Начать план<\/string>/);
+  assert.match(androidEnglish, /<string name="(?:today|activation)_start_plan">Start<\/string>/);
+  assert.match(androidUkrainian, /<string name="(?:today|activation)_start_plan">Почати<\/string>/);
+  assert.match(androidRussian, /<string name="(?:today|activation)_start_plan">Начать<\/string>/);
   assert.match(androidEnglish, /<string name="today_edit_plan">Edit plan<\/string>/);
   assert.match(androidUkrainian, /<string name="today_edit_plan">Редагувати план<\/string>/);
   assert.match(androidRussian, /<string name="today_edit_plan">Редактировать план<\/string>/);
@@ -437,6 +437,7 @@ test("Android exposes direct Start plan plus Edit plan and the canonical editor 
   assert.match(androidRussian, /<string name="title_workout_plan">План тренировки<\/string>/);
   assert.match(androidWorkouts, /launchToken[\s\S]*R\.string\.(?:today|activation)_start_plan/);
   assert.match(androidWorkouts, /launchToken[\s\S]*R\.string\.today_edit_plan/);
+  assert.match(androidWorkouts, /editLabel = stringResource\(R\.string\.today_edit_plan\)[\s\S]*GroupedSection\([\s\S]*title = editLabel[\s\S]*onOpenPlan\(editToken\)/);
   assert.match(androidWorkouts, /onStartPlan/);
   assert.match(androidWorkouts, /onOpenPlan/);
   assert.match(androidDestinations, /data object AddWorkout[\s\S]*labelRes = R\.string\.title_workout_plan/);
@@ -478,7 +479,7 @@ test("Android exposes direct Start plan plus Edit plan and the canonical editor 
 test("iOS exposes the same direct Start plan, Edit plan, and editor order", async () => {
   assert.match(
     iosWorkouts,
-    /gymText\(\s*"Start plan",\s*"Почати план",\s*"Начать план"/s
+    /gymText\(\s*"Start",\s*"Почати",\s*"Начать"/s
   );
   assert.match(
     iosWorkouts,
@@ -570,7 +571,7 @@ test("iOS exposes the same direct Start plan, Edit plan, and editor order", asyn
 test("Edit plan is mutation-free while direct Start plan and editor Start are active-workout transitions", () => {
   assert.match(
     androidWorkouts,
-    /launchToken\?\.let \{ token ->[\s\S]*TintedButton\([\s\S]*onClick = \{ onOpenPlan\(token\) \}/
+    /editLabel = stringResource\(R\.string\.today_edit_plan\)[\s\S]*GroupedSection\([\s\S]*title = editLabel[\s\S]*onClick = \{ onOpenPlan\(editToken\) \}/
   );
   assert.match(androidNavigation, /onOpenPlan = \{ launchToken[\s\S]*addWorkoutRoute\(launchToken\)/);
   assert.match(androidDestinations, /launchToken\.length in 1\.\.12_000/);
@@ -1044,7 +1045,9 @@ test("Garmin sync submits the edited draft without starting or writing workout h
 });
 
 test("an active workout keeps Continue instead of exposing a second plan editor", () => {
-  assert.match(androidWorkouts, /hasActiveWorkout[\s\S]*R\.string\.action_continue_workout/);
+  assert.match(androidWorkouts, /hasActiveWorkout -> \{\s*primaryLabel = stringResource\(R\.string\.today_continue\)/);
+  // The destructive action sits in the header "..." menu, never as a full-width red button.
+  assert.match(androidWorkouts, /DropdownMenuItem\([\s\S]*R\.string\.active_workout_discard_action[\s\S]*onDiscardWorkout\(\)/);
   assert.doesNotMatch(androidActive, /onAddExerciseDraft|onRemoveExerciseDraft|onGenerateSmartWorkout/);
   assert.match(iosWorkouts, /activeWorkoutDraft != nil[\s\S]*activeFocusLens/);
   assert.match(iosWorkouts, /private var activeFocusLens[\s\S]*"Continue workout"/);

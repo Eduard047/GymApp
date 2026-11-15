@@ -179,6 +179,17 @@ import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import kotlinx.coroutines.FlowPreview
 import com.example.gymapp.ui.theme.TintedButton
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringArrayResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.Dp
+import com.example.gymapp.ui.components.GroupedListDefaults
+import com.example.gymapp.ui.components.GroupedRow
+import com.example.gymapp.ui.components.GroupedSection
 
 // Give the keyboard up to this long to open, and treat its height as final after it stops changing.
 private const val HISTORY_SEARCH_IME_WAIT_MILLIS = 1_500L
@@ -222,16 +233,17 @@ fun WorkoutListScreen(
 ) {
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     var showFriendPicker by rememberSaveable { mutableStateOf(false) }
+    val onFriendTap: (Boolean) -> Unit = { forcedVisible ->
+        when (val action = friendEntryState.tapAction(forcedVisible)) {
+            TodayFriendTapAction.PickFriend -> showFriendPicker = true
+            else -> onFriendEntryAction(action)
+        }
+    }
     val friendPill: @Composable (Boolean) -> Unit = { forcedVisible ->
         TrainWithFriendPill(
             state = friendEntryState,
             forcedVisible = forcedVisible,
-            onClick = {
-                when (val action = friendEntryState.tapAction(forcedVisible)) {
-                    TodayFriendTapAction.PickFriend -> showFriendPicker = true
-                    else -> onFriendEntryAction(action)
-                }
-            }
+            onClick = { onFriendTap(forcedVisible) }
         )
     }
     if (showFriendPicker) {
@@ -276,11 +288,13 @@ fun WorkoutListScreen(
     }
     val showsFirstWorkoutActivation =
         uiState.showFirstWorkoutActivation && activeWorkoutFocus == null
-    // Items before the history panel: header, then either the activation card (+ hint) or the focus lens.
-    val historyItemIndex = if (showsFirstWorkoutActivation) {
-        if (hasRetainedWorkoutDraft) 2 else 3
-    } else {
-        2
+    val zoneId = remember { java.time.ZoneId.systemDefault() }
+    val todaysCompletedWorkout = remember(uiState.pastWorkouts, uiState.hasCompletedWorkoutToday) {
+        if (uiState.hasCompletedWorkoutToday) {
+            todaysLatestWorkout(uiState.pastWorkouts, System.currentTimeMillis(), zoneId)
+        } else {
+            null
+        }
     }
 
     if (uiState.isLoading) {
@@ -321,29 +335,7 @@ fun WorkoutListScreen(
         verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
     ) {
             item {
-                ScreenHeader(
-                    title = stringResource(R.string.today_title),
-                    trailing = if (uiState.hasAnyWorkout) {
-                        {
-                            TintedButton(
-                                onClick = {
-                                    listScope.launch { listState.animateScrollToItem(historyItemIndex) }
-                                },
-                                modifier = Modifier.heightIn(min = GymSpacing.MinimumTouch)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.List,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(stringResource(R.string.today_history_shortcut))
-                            }
-                        }
-                    } else {
-                        null
-                    }
-                )
+                ScreenHeader(title = stringResource(R.string.today_title))
             }
             if (showsFirstWorkoutActivation) {
                 item {
@@ -392,7 +384,13 @@ fun WorkoutListScreen(
                             showRetainedPlanCancelConfirmation = true
                         },
                         tutorialAnchors = tutorialAnchors,
-                        friendPill = friendPill
+                        friendEntryState = friendEntryState,
+                        onFriendClick = { forced -> onFriendTap(forced) },
+                        completedWorkout = todaysCompletedWorkout,
+                        completedWorkoutExerciseNames = todaysCompletedWorkout
+                            ?.let { uiState.sessionExerciseNames[it.session.id] }
+                            .orEmpty(),
+                        onOpenCompletedWorkout = onSessionClick
                     )
                 }
             }
@@ -416,6 +414,7 @@ fun WorkoutListScreen(
                         workouts = historyWorkouts,
                         pastWorkouts = uiState.pastWorkouts,
                         sessionExerciseNames = uiState.sessionExerciseNames,
+                        recentWorkouts = uiState.pastWorkouts,
                         onSessionClick = onSessionClick,
                         onSearchFocused = revealHistorySearch
                     )
@@ -604,6 +603,45 @@ internal fun retainedDraftSummary(drafts: List<ExerciseInputState>): RetainedDra
     )
 }
 
+/** Today's finished workout in one line: "<first exercise> · 35 min · 460 kg". */
+internal fun completedWorkoutSummaryParts(
+    session: WorkoutSessionSummary,
+    exerciseNames: List<String>
+): Triple<String?, Int, Double> {
+    val name = exerciseNames.firstOrNull { it.isNotBlank() }
+    val minutes = estimateWorkoutMinutes(
+        exerciseCount = session.exerciseCount,
+        setCount = session.setCount,
+        measuredDurationSeconds = session.session.durationSeconds,
+        note = session.session.note
+    )
+    return Triple(name, minutes, session.totalVolume)
+}
+
+/** The newest saved workout that falls on the current local day, if any. */
+internal fun todaysLatestWorkout(
+    pastWorkouts: List<WorkoutSessionSummary>,
+    nowMillis: Long,
+    zoneId: java.time.ZoneId
+): WorkoutSessionSummary? {
+    val today = java.time.Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
+    return pastWorkouts
+        .filter {
+            runCatching {
+                java.time.Instant.ofEpochMilli(it.session.date).atZone(zoneId).toLocalDate() == today
+            }.getOrDefault(false)
+        }
+        .maxByOrNull { it.session.date }
+}
+
+/** Accent leading glyph of an action row: 22dp icon centred in the 30dp icon column. */
+@Composable
+private fun ActionRowIcon(imageVector: androidx.compose.ui.graphics.vector.ImageVector, tint: Color) {
+    Box(Modifier.size(GroupedListDefaults.IconTile), contentAlignment = Alignment.Center) {
+        Icon(imageVector = imageVector, contentDescription = null, modifier = Modifier.size(22.dp), tint = tint)
+    }
+}
+
 @Composable
 private fun FocusLens(
     todayPlan: TodayPlanUiModel?,
@@ -620,11 +658,15 @@ private fun FocusLens(
     onDiscardWorkout: () -> Unit,
     onCancelRetainedPlan: () -> Unit,
     tutorialAnchors: TutorialAnchorRegistry?,
-    friendPill: @Composable (Boolean) -> Unit = {},
+    friendEntryState: TodayFriendEntryState,
+    onFriendClick: (Boolean) -> Unit,
+    completedWorkout: WorkoutSessionSummary?,
+    completedWorkoutExerciseNames: List<String>,
+    onOpenCompletedWorkout: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showPlanDetails by rememberSaveable { mutableStateOf(false) }
-    var showActiveOptions by rememberSaveable { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
     val expandedState = stringResource(R.string.state_expanded)
     val collapsedState = stringResource(R.string.state_collapsed)
     val hasActiveWorkout = activeWorkoutFocus != null
@@ -634,6 +676,19 @@ private fun FocusLens(
     )
     val hasCompletedToday = hasCompletedWorkoutToday && !hasActiveWorkout
     val lensShape = remember { RoundedCornerShape(28.dp) }
+    val isRestOrRecovery = todayPlan != null && todayPlan.rhythm.decision in setOf(
+        WeeklyTrainingDecision.Rest,
+        WeeklyTrainingDecision.Recovery
+    )
+    val showRepeat = shouldShowRepeatLastWorkoutAction(
+        hasRepeatableWorkout = hasRepeatableWorkout,
+        hasActiveWorkout = hasActiveWorkout,
+        hasRetainedWorkoutDraft = hasRetainedWorkoutDraft
+    )
+    val completedIsPrimary = hasCompletedToday && !shouldContinueRetainedPlan
+    // After a workout the primary is "Repeat last"; without anything to repeat it is "Add another".
+    val repeatIsPrimary = completedIsPrimary && showRepeat
+    val accent = MaterialTheme.colorScheme.primary
 
     val focusModifier = if (tutorialAnchors == null) {
         modifier
@@ -647,138 +702,170 @@ private fun FocusLens(
     }
 
     Column(
-        modifier = focusModifier
-            .fillMaxWidth()
-            .clip(lensShape)
-            .background(HeroTone.surface)
-            .padding(if (hasCompletedToday) 18.dp else 22.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        modifier = focusModifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                text = when {
-                    activeWorkoutFocus != null -> activeWorkoutFocus.exerciseName
-                        ?.let { localizedExerciseName(it) }
-                        ?: stringResource(R.string.today_focus_next_exercise)
-                    hasCompletedToday -> stringResource(R.string.today_workout_completed)
-                    todayPlan?.rhythm?.decision == WeeklyTrainingDecision.Rest ->
-                        stringResource(R.string.today_rest)
-                    todayPlan?.rhythm?.decision == WeeklyTrainingDecision.Recovery ->
-                        stringResource(R.string.smart_effort_recovery)
-                    todayPlan != null -> stringResource(todayPlan.focus.labelResource())
-                    shouldContinueRetainedPlan -> stringResource(R.string.title_workout_plan)
-                    else -> stringResource(R.string.action_start_workout)
-                },
-                style = if (hasCompletedToday) {
-                    MaterialTheme.typography.headlineMedium
-                } else {
-                    MaterialTheme.typography.headlineLarge
-                },
-                color = HeroTone.title,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        if (activeWorkoutFocus != null) {
-            Text(
-                text = formattedStringResource(
-                    R.string.today_focus_set_progress,
-                    activeWorkoutFocus.currentSetNumber,
-                    activeWorkoutFocus.completedSets,
-                    activeWorkoutFocus.totalSets
-                ),
-                style = MaterialTheme.typography.bodyLarge,
-                color = HeroTone.supporting
-            )
-        } else if (hasCompletedToday) {
-            Text(
-                text = stringResource(R.string.today_workout_completed_supporting),
-                style = MaterialTheme.typography.bodyLarge,
-                color = HeroTone.supporting
-            )
-        } else if (todayPlan != null && todayPlan.rhythm.decision in setOf(
-                WeeklyTrainingDecision.Rest,
-                WeeklyTrainingDecision.Recovery
-            )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(lensShape)
+                .background(HeroTone.surface)
+                .padding(if (hasCompletedToday) 18.dp else 22.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text(
-                text = if (todayPlan.rhythm.decision == WeeklyTrainingDecision.Rest) {
-                    formattedStringResource(
-                        R.string.today_recovery_reason_target,
-                        todayPlan.rhythm.completedTrainingDays,
-                        todayPlan.rhythm.targetTrainingDays
-                    )
-                } else {
-                    stringResource(todayPlan.effortAdjustment.recoveryReasonResource())
-                },
-                style = MaterialTheme.typography.bodyLarge,
-                color = HeroTone.supporting
-            )
-            todayPlan.rhythm.nextRecommendedDayMillis?.let { nextDay ->
-                val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
-                Text(
-                    text = formattedStringResource(
-                        R.string.today_next_recommended_day,
-                        DateTimeUtils.formatLongDate(nextDay, locale)
-                    ),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = HeroTone.title,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        } else if (todayPlan != null) {
-            // With a saved plan the card shows that plan's current size, not the recommendation's.
-            val summary = retainedDraftSummary.takeIf { shouldContinueRetainedPlan }
-            val shownExerciseCount = summary?.exerciseCount ?: todayPlan.exerciseCount
-            val shownSetCount = summary?.setCount ?: todayPlan.setCount
-            val shownMinutes = summary?.estimatedDurationMinutes ?: todayPlan.estimatedDurationMinutes
-            if (!shouldContinueRetainedPlan || summary != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    FocusLensMetric(
-                        label = formattedStringResource(R.string.today_plan_duration, shownMinutes),
-                        value = formattedStringResource(
-                            R.string.today_plan_size,
-                            formattedPluralStringResource(
-                                R.plurals.saved_workout_exercise_count,
-                                shownExerciseCount,
-                                shownExerciseCount
-                            ),
-                            formattedPluralStringResource(
-                                R.plurals.saved_workout_set_count,
-                                shownSetCount,
-                                shownSetCount
-                            )
+            // Header: title + one supporting line. Tapping it opens the plan details; a running
+            // workout adds a "..." menu holding the destructive action.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(
+                            if (hasCompletedToday) {
+                                Modifier
+                            } else {
+                                Modifier
+                                    .clickable(role = Role.Button) { showPlanDetails = !showPlanDetails }
+                                    .semantics {
+                                        stateDescription =
+                                            if (showPlanDetails) expandedState else collapsedState
+                                    }
+                            }
                         ),
-                        modifier = Modifier.weight(1f)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = when {
+                            activeWorkoutFocus != null -> activeWorkoutFocus.exerciseName
+                                ?.let { localizedExerciseName(it) }
+                                ?: stringResource(R.string.today_focus_next_exercise)
+                            hasCompletedToday -> stringResource(R.string.today_workout_completed)
+                            todayPlan?.rhythm?.decision == WeeklyTrainingDecision.Rest ->
+                                stringResource(R.string.today_rest)
+                            todayPlan?.rhythm?.decision == WeeklyTrainingDecision.Recovery ->
+                                stringResource(R.string.smart_effort_recovery)
+                            todayPlan != null -> stringResource(todayPlan.focus.labelResource())
+                            shouldContinueRetainedPlan -> stringResource(R.string.title_workout_plan)
+                            else -> stringResource(R.string.action_start_workout)
+                        },
+                        style = if (hasCompletedToday || hasActiveWorkout) {
+                            MaterialTheme.typography.headlineMedium
+                        } else {
+                            MaterialTheme.typography.headlineLarge
+                        },
+                        color = HeroTone.title,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (activeWorkoutFocus != null) {
+                        Text(
+                            text = formattedStringResource(
+                                R.string.today_focus_set_progress,
+                                activeWorkoutFocus.currentSetNumber,
+                                activeWorkoutFocus.completedSets,
+                                activeWorkoutFocus.totalSets
+                            ),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = HeroTone.supporting
+                        )
+                    } else if (hasCompletedToday) {
+                        // The saved workout is the summary row below; no filler sentence.
+                    } else if (isRestOrRecovery && todayPlan != null) {
+                        Text(
+                            text = if (todayPlan.rhythm.decision == WeeklyTrainingDecision.Rest) {
+                                formattedStringResource(
+                                    R.string.today_recovery_reason_target,
+                                    todayPlan.rhythm.completedTrainingDays,
+                                    todayPlan.rhythm.targetTrainingDays
+                                )
+                            } else {
+                                stringResource(todayPlan.effortAdjustment.recoveryReasonResource())
+                            },
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = HeroTone.supporting
+                        )
+                        todayPlan.rhythm.nextRecommendedDayMillis?.let { nextDay ->
+                            val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+                            Text(
+                                text = formattedStringResource(
+                                    R.string.today_next_recommended_day,
+                                    DateTimeUtils.formatLongDate(nextDay, locale)
+                                ),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = HeroTone.title,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    } else if (todayPlan != null) {
+                        // With a saved plan the card shows that plan's current size, not the recommendation's.
+                        val summary = retainedDraftSummary.takeIf { shouldContinueRetainedPlan }
+                        val shownExerciseCount = summary?.exerciseCount ?: todayPlan.exerciseCount
+                        val shownSetCount = summary?.setCount ?: todayPlan.setCount
+                        val shownMinutes = summary?.estimatedDurationMinutes ?: todayPlan.estimatedDurationMinutes
+                        if (!shouldContinueRetainedPlan || summary != null) {
+                            Text(
+                                text = formattedStringResource(
+                                    R.string.today_plan_summary,
+                                    formattedPluralStringResource(
+                                        R.plurals.saved_workout_exercise_count,
+                                        shownExerciseCount,
+                                        shownExerciseCount
+                                    ),
+                                    formattedPluralStringResource(
+                                        R.plurals.saved_workout_set_count,
+                                        shownSetCount,
+                                        shownSetCount
+                                    ),
+                                    shownMinutes
+                                ),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = HeroTone.supporting
+                            )
+                        }
+                    }
+                }
+                if (hasActiveWorkout) {
+                    Box {
+                        IconButton(onClick = { showMenu = true }, modifier = Modifier.size(44.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.MoreHoriz,
+                                contentDescription = stringResource(R.string.active_workout_more_options),
+                                tint = HeroTone.actionLabel
+                            )
+                        }
+                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        stringResource(R.string.active_workout_discard_action),
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    onDiscardWorkout()
+                                }
+                            )
+                        }
+                    }
+                }
+                if (!hasCompletedToday) {
+                    Icon(
+                        imageVector = if (showPlanDetails) Icons.Default.ExpandLess
+                        else Icons.Default.ExpandMore,
+                        contentDescription = stringResource(R.string.focus_lens_details),
+                        tint = HeroTone.supporting,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .clickable(role = Role.Button) { showPlanDetails = !showPlanDetails }
+                            .padding(6.dp)
                     )
                 }
             }
-        }
 
-        if (!hasCompletedToday) {
-            TintedButton(
-                onClick = { showPlanDetails = !showPlanDetails },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .semantics {
-                        stateDescription = if (showPlanDetails) expandedState else collapsedState
-                    },
-                colors = heroSecondaryOutlinedColors(),
-                border = heroSecondaryBorder()
-            ) {
-                Icon(
-                    imageVector = if (showPlanDetails) Icons.Default.ExpandLess
-                    else Icons.Default.ExpandMore,
-                    contentDescription = null
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.focus_lens_details))
-            }
-            if (showPlanDetails) {
+            if (!hasCompletedToday && showPlanDetails) {
                 TodayHeroMetricsRow(metrics = todayHeroMetrics)
                 if (!hasActiveWorkout) {
                     TextButton(
@@ -792,136 +879,42 @@ private fun FocusLens(
                     }
                 }
             }
-        }
 
-        if (hasActiveWorkout) {
-            Button(
-                onClick = onStartWorkout,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 54.dp)
-                    .primaryTutorialAnchor(),
-                shape = RoundedCornerShape(50),
-                colors = heroPrimaryButtonColors()
-            ) {
-                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.action_continue_workout), fontWeight = FontWeight.Bold)
-            }
-            // A solo workout keeps the pill visible, but a tap only asks to finish it first.
-            friendPill(true)
-            TintedButton(
-                onClick = { showActiveOptions = !showActiveOptions },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .semantics {
-                        stateDescription = if (showActiveOptions) expandedState else collapsedState
-                    },
-                shape = RoundedCornerShape(50),
-                colors = heroSecondaryOutlinedColors(),
-                border = heroSecondaryBorder()
-            ) {
-                Text(
-                    text = stringResource(R.string.active_workout_more_options),
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Icon(
-                    imageVector = if (showActiveOptions) Icons.Default.ExpandLess
-                    else Icons.Default.ExpandMore,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-            if (showActiveOptions) {
-                TintedButton(
-                    onClick = onDiscardWorkout,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                    shape = RoundedCornerShape(50),
-                    colors = heroSecondaryOutlinedColors(),
-                    border = heroSecondaryBorder()
-                ) {
-                    Text(stringResource(R.string.active_workout_discard_action))
-                }
-            }
-        } else if (shouldContinueRetainedPlan) {
-            Button(
-                onClick = onStartWorkout,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 54.dp)
-                    .primaryTutorialAnchor(),
-                shape = RoundedCornerShape(50),
-                colors = heroPrimaryButtonColors()
-            ) {
-                Icon(imageVector = Icons.Default.Edit, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    stringResource(R.string.today_continue_plan),
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            TintedButton(
-                onClick = onCancelRetainedPlan,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                colors = heroSecondaryOutlinedColors(),
-                border = heroSecondaryBorder()
-            ) {
-                Text(stringResource(R.string.today_cancel_plan))
-            }
-        } else if (hasCompletedToday) {
-            TintedButton(
-                onClick = onStartWorkout,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                colors = heroSecondaryOutlinedColors(),
-                border = heroSecondaryBorder()
-            ) {
-                Icon(imageVector = Icons.Default.Add, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.today_add_another_workout))
-            }
-        } else if (todayPlan != null && todayPlan.rhythm.decision in setOf(
-                WeeklyTrainingDecision.Rest,
-                WeeklyTrainingDecision.Recovery
-            )
-        ) {
-            val token = todayPlan.trainAnywayLaunchToken ?: todayPlan.recommendedLaunchToken
-            Button(
-                onClick = {
-                    if (token != null) onStartPlan(token) else onStartWorkout()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 54.dp)
-                    .primaryTutorialAnchor(),
-                shape = RoundedCornerShape(50),
-                colors = heroPrimaryButtonColors()
-            ) {
-                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.today_train_anyway))
-            }
-            token?.let { launchToken ->
-                TintedButton(
-                    onClick = { onOpenPlan(launchToken) },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                    colors = heroSecondaryOutlinedColors(),
-                    border = heroSecondaryBorder()
-                ) {
-                    Icon(imageVector = Icons.Default.Edit, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.today_edit_plan))
-                }
-            }
-        } else {
+            // The one primary action.
             val launchToken = todayPlan?.recommendedLaunchToken
+            val anywayToken = todayPlan?.trainAnywayLaunchToken ?: todayPlan?.recommendedLaunchToken
+            val primaryLabel: String
+            val primaryClick: () -> Unit
+            when {
+                hasActiveWorkout -> {
+                    primaryLabel = stringResource(R.string.today_continue)
+                    primaryClick = onStartWorkout
+                }
+                shouldContinueRetainedPlan -> {
+                    primaryLabel = stringResource(R.string.today_continue_plan)
+                    primaryClick = onStartWorkout
+                }
+                repeatIsPrimary -> {
+                    primaryLabel = stringResource(R.string.repeat_last_workout_action)
+                    primaryClick = onRepeatLastWorkout
+                }
+                hasCompletedToday -> {
+                    primaryLabel = stringResource(R.string.today_add_another_workout)
+                    primaryClick = onStartWorkout
+                }
+                isRestOrRecovery -> {
+                    primaryLabel = stringResource(R.string.today_train_anyway)
+                    primaryClick = { if (anywayToken != null) onStartPlan(anywayToken) else onStartWorkout() }
+                }
+                else -> {
+                    primaryLabel = stringResource(
+                        if (launchToken == null) R.string.action_start_workout else R.string.today_start_plan
+                    )
+                    primaryClick = { if (launchToken != null) onStartPlan(launchToken) else onStartWorkout() }
+                }
+            }
             Button(
-                onClick = {
-                    if (launchToken != null) onStartPlan(launchToken) else onStartWorkout()
-                },
+                onClick = primaryClick,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 54.dp)
@@ -929,58 +922,106 @@ private fun FocusLens(
                 shape = RoundedCornerShape(50),
                 colors = heroPrimaryButtonColors()
             ) {
-                Icon(
-                    imageVector = if (launchToken == null) Icons.Default.Add else Icons.Default.PlayArrow,
-                    contentDescription = null
-                )
-                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = stringResource(
-                        if (launchToken == null) {
-                            R.string.action_start_workout
-                        } else {
-                            R.string.today_start_plan
-                        }
-                    ),
+                    text = primaryLabel,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.Bold
                 )
             }
-            launchToken?.let { token ->
-                TintedButton(
-                    onClick = { onOpenPlan(token) },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                    colors = heroSecondaryOutlinedColors(),
-                    border = heroSecondaryBorder()
-                ) {
-                    Icon(imageVector = Icons.Default.Edit, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.today_edit_plan))
+        }
+
+        // Secondary actions: rows in one grouped section, accent text, chevron where it navigates.
+        val editToken = when {
+            hasActiveWorkout || shouldContinueRetainedPlan || hasCompletedToday -> null
+            isRestOrRecovery -> anywayTokenOf(todayPlan)
+            else -> todayPlan?.recommendedLaunchToken
+        }
+        val friendVisible = friendEntryState != TodayFriendEntryState.Hidden
+        val showSummaryRow = hasCompletedToday && completedWorkout != null
+        val showAddAnotherRow = hasCompletedToday && !shouldContinueRetainedPlan && repeatIsPrimary
+        val showRepeatRow = showRepeat && !hasCompletedToday
+        val addAnotherLabel = stringResource(R.string.today_add_another_workout)
+        val repeatLabel = stringResource(R.string.repeat_last_workout_action)
+        val editLabel = stringResource(R.string.today_edit_plan)
+        val cancelPlanLabel = stringResource(R.string.today_cancel_plan)
+        val errorColor = MaterialTheme.colorScheme.error
+        if (showSummaryRow || showAddAnotherRow || showRepeatRow || editToken != null ||
+            shouldContinueRetainedPlan || friendVisible
+        ) {
+            GroupedSection(separatorInset = 58.dp) {
+                if (showSummaryRow && completedWorkout != null) {
+                    row {
+                        val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+                        val (name, minutes, volume) =
+                            completedWorkoutSummaryParts(completedWorkout, completedWorkoutExerciseNames)
+                        val title = formattedStringResource(
+                            R.string.today_completed_summary,
+                            name?.let { localizedExerciseName(it) }
+                                ?: stringResource(R.string.today_workout_completed),
+                            workoutDurationText(minutes * 60L, locale).replace(' ', '\u00A0'),
+                            formattedStringResource(
+                                R.string.today_history_volume_kg,
+                                formatTodayHeroVolume(volume, locale)
+                            ).replace(' ', '\u00A0')
+                        )
+                        GroupedRow(
+                            title = title,
+                            icon = { ActionRowIcon(Icons.Default.FitnessCenter, MaterialTheme.colorScheme.onSurfaceVariant) },
+                            chevron = true,
+                            onClick = { onOpenCompletedWorkout(completedWorkout.session.id) }
+                        )
+                    }
+                }
+                if (showAddAnotherRow) {
+                    row(
+                        title = addAnotherLabel,
+                        icon = { ActionRowIcon(Icons.Default.Add, accent) },
+                        titleColor = accent,
+                        onClick = onStartWorkout
+                    )
+                }
+                if (showRepeatRow) {
+                    row(
+                        title = repeatLabel,
+                        icon = { ActionRowIcon(Icons.Default.Refresh, accent) },
+                        titleColor = accent,
+                        onClick = onRepeatLastWorkout
+                    )
+                }
+                if (editToken != null) {
+                    row(
+                        title = editLabel,
+                        icon = { ActionRowIcon(Icons.Default.Edit, accent) },
+                        titleColor = accent,
+                        chevron = true,
+                        onClick = { onOpenPlan(editToken) }
+                    )
+                }
+                if (shouldContinueRetainedPlan) {
+                    row(
+                        title = cancelPlanLabel,
+                        icon = { ActionRowIcon(Icons.Default.Close, errorColor) },
+                        titleColor = errorColor,
+                        onClick = onCancelRetainedPlan
+                    )
+                }
+                if (friendVisible) {
+                    row {
+                        TrainWithFriendRow(
+                            state = friendEntryState,
+                            forcedVisible = hasActiveWorkout,
+                            onClick = { onFriendClick(hasActiveWorkout) }
+                        )
+                    }
                 }
             }
         }
-        if (shouldShowRepeatLastWorkoutAction(
-                hasRepeatableWorkout = hasRepeatableWorkout,
-                hasActiveWorkout = hasActiveWorkout,
-                hasRetainedWorkoutDraft = hasRetainedWorkoutDraft
-            )
-        ) {
-            TintedButton(
-                onClick = onRepeatLastWorkout,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                colors = heroSecondaryOutlinedColors(),
-                border = heroSecondaryBorder()
-            ) {
-                Icon(imageVector = Icons.Default.Refresh, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.repeat_last_workout_action))
-            }
-        }
-        // In the active state the pill sits above the "more options" row instead.
-        if (!hasActiveWorkout) friendPill(false)
     }
 }
+
+private fun anywayTokenOf(plan: TodayPlanUiModel?): String? =
+    plan?.trainAnywayLaunchToken ?: plan?.recommendedLaunchToken
 
 internal fun shouldShowRetainedWorkoutDraftAction(
     hasRetainedWorkoutDraft: Boolean,
@@ -1005,11 +1046,23 @@ private fun TrainingHistoryPanel(
     workouts: List<WorkoutSessionSummary>,
     pastWorkouts: List<WorkoutSessionSummary>,
     sessionExerciseNames: Map<Long, List<String>>,
+    recentWorkouts: List<WorkoutSessionSummary>,
     onSessionClick: (Long) -> Unit,
     onSearchFocused: (fieldTopInRoot: () -> Float?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    // One entry point to the full history: collapsed Today shows this week, the three latest
+    // workouts and an "All history" row; expanding it reveals period switch, navigation, month view,
+    // search and the whole list. Collapsing returns to the current week.
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(expanded) {
+        if (!expanded) {
+            if (period == TrainingHistoryPeriod.Month) onPeriodSelected(TrainingHistoryPeriod.Week)
+            if (weekOffset != 0) onCurrentWeek()
+            if (monthOffset != 0) onCurrentMonth()
+        }
+    }
     var searchFieldCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var searchFieldFocused by remember { mutableStateOf(false) }
     // Survives rotation / process recreation of the screen, never persisted across app restarts.
@@ -1087,32 +1140,20 @@ private fun TrainingHistoryPanel(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            val weeklyGoalSpoken = formattedStringResource(
+                R.string.today_weekly_goal_spoken,
+                weeklySummary.completedTrainingDays,
+                weeklySummary.targetTrainingDays
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = stringResource(R.string.training_history_title),
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
+                    fontWeight = FontWeight.Bold
                 )
+                // The weekly goal is plain subtitle text, not a chip.
                 val isWeek = period == TrainingHistoryPeriod.Week
-                val weeklyGoalMet = isWeek &&
-                    weeklySummary.completedTrainingDays >= weeklySummary.targetTrainingDays
-                val weeklyGoalSpoken = formattedStringResource(
-                    R.string.today_weekly_goal_spoken,
-                    weeklySummary.completedTrainingDays,
-                    weeklySummary.targetTrainingDays
-                )
-                InfoPill(
-                    modifier = if (isWeek) {
-                        Modifier.clearAndSetSemantics { contentDescription = weeklyGoalSpoken }
-                    } else {
-                        Modifier
-                    },
-                    leadingIcon = if (weeklyGoalMet) Icons.Default.CheckCircle else GymIcons.Weightlifter,
+                Text(
                     text = if (isWeek) {
                         formattedStringResource(
                             R.string.today_weekly_goal,
@@ -1126,115 +1167,123 @@ private fun TrainingHistoryPanel(
                             monthlySummary.completedTrainingDays
                         )
                     },
-                    accent = MaterialTheme.colorScheme.primary
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = if (isWeek) {
+                        Modifier.clearAndSetSemantics { contentDescription = weeklyGoalSpoken }
+                    } else {
+                        Modifier
+                    }
                 )
             }
-            GymSegmentedControl(
-                items = listOf(
-                    GymSegmentItem(
-                        TrainingHistoryPeriod.Week,
-                        stringResource(R.string.training_history_week)
-                    ),
-                    GymSegmentItem(
-                        TrainingHistoryPeriod.Month,
-                        stringResource(R.string.training_history_month)
-                    )
-                ),
-                selected = period,
-                onSelected = onPeriodSelected
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                IconButton(
-                    onClick = if (period == TrainingHistoryPeriod.Week) {
-                        onPreviousWeek
-                    } else {
-                        onPreviousMonth
-                    },
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.NavigateBefore,
-                        contentDescription = stringResource(
-                            if (period == TrainingHistoryPeriod.Week) {
-                                R.string.cd_previous_week
-                            } else {
-                                R.string.cd_prev_month
-                            }
-                        )
-                    )
-                }
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp)
-                        .clickable(
-                            enabled = if (period == TrainingHistoryPeriod.Week) {
-                                weekOffset != 0
-                            } else {
-                                monthOffset != 0
-                            },
-                            onClick = if (period == TrainingHistoryPeriod.Week) {
-                                onCurrentWeek
-                            } else {
-                                onCurrentMonth
-                            }
-                        )
-                        .padding(horizontal = 4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = if (period == TrainingHistoryPeriod.Week) weekRange else monthLabel,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1
-                    )
-                    Text(
-                        text = stringResource(
-                            if (period == TrainingHistoryPeriod.Week && weekOffset == 0) {
-                                R.string.weekly_training_summary_title
-                            } else if (period == TrainingHistoryPeriod.Month && monthOffset == 0) {
-                                R.string.action_current_month
-                            } else if (period == TrainingHistoryPeriod.Week) {
-                                R.string.action_return_to_current_week
-                            } else {
-                                R.string.action_return_to_current_month
-                            }
+            if (expanded) {
+                GymSegmentedControl(
+                    items = listOf(
+                        GymSegmentItem(
+                            TrainingHistoryPeriod.Week,
+                            stringResource(R.string.training_history_week)
                         ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        maxLines = 2
-                    )
-                }
-                IconButton(
-                    onClick = if (period == TrainingHistoryPeriod.Week) {
-                        onNextWeek
-                    } else {
-                        onNextMonth
-                    },
-                    enabled = if (period == TrainingHistoryPeriod.Week) {
-                        weekOffset != 0
-                    } else {
-                        monthOffset != 0
-                    },
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.NavigateNext,
-                        contentDescription = stringResource(
-                            if (period == TrainingHistoryPeriod.Week) {
-                                R.string.cd_next_week
-                            } else {
-                                R.string.cd_next_month
-                            }
+                        GymSegmentItem(
+                            TrainingHistoryPeriod.Month,
+                            stringResource(R.string.training_history_month)
                         )
-                    )
+                    ),
+                    selected = period,
+                    onSelected = onPeriodSelected
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    IconButton(
+                        onClick = if (period == TrainingHistoryPeriod.Week) {
+                            onPreviousWeek
+                        } else {
+                            onPreviousMonth
+                        },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.NavigateBefore,
+                            contentDescription = stringResource(
+                                if (period == TrainingHistoryPeriod.Week) {
+                                    R.string.cd_previous_week
+                                } else {
+                                    R.string.cd_prev_month
+                                }
+                            )
+                        )
+                    }
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .clickable(
+                                enabled = if (period == TrainingHistoryPeriod.Week) {
+                                    weekOffset != 0
+                                } else {
+                                    monthOffset != 0
+                                },
+                                onClick = if (period == TrainingHistoryPeriod.Week) {
+                                    onCurrentWeek
+                                } else {
+                                    onCurrentMonth
+                                }
+                            )
+                            .padding(horizontal = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = if (period == TrainingHistoryPeriod.Week) weekRange else monthLabel,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = stringResource(
+                                if (period == TrainingHistoryPeriod.Week && weekOffset == 0) {
+                                    R.string.weekly_training_summary_title
+                                } else if (period == TrainingHistoryPeriod.Month && monthOffset == 0) {
+                                    R.string.action_current_month
+                                } else if (period == TrainingHistoryPeriod.Week) {
+                                    R.string.action_return_to_current_week
+                                } else {
+                                    R.string.action_return_to_current_month
+                                }
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2
+                        )
+                    }
+                    IconButton(
+                        onClick = if (period == TrainingHistoryPeriod.Week) {
+                            onNextWeek
+                        } else {
+                            onNextMonth
+                        },
+                        enabled = if (period == TrainingHistoryPeriod.Week) {
+                            weekOffset != 0
+                        } else {
+                            monthOffset != 0
+                        },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.NavigateNext,
+                            contentDescription = stringResource(
+                                if (period == TrainingHistoryPeriod.Week) {
+                                    R.string.cd_next_week
+                                } else {
+                                    R.string.cd_next_month
+                                }
+                            )
+                        )
+                    }
                 }
             }
             if (period == TrainingHistoryPeriod.Week) {
@@ -1249,7 +1298,10 @@ private fun TrainingHistoryPanel(
                 ) {
                     WeeklyTrainingMetric(
                         value = completedWorkoutCount,
-                        label = stringResource(R.string.weekly_training_workouts_label),
+                        label = pluralStringResource(
+                            R.plurals.today_stat_workouts_label,
+                            completedWorkoutCountValue.coerceAtLeast(0)
+                        ),
                         modifier = Modifier.weight(1f)
                     )
                     WeeklyTrainingMetric(
@@ -1257,12 +1309,15 @@ private fun TrainingHistoryPanel(
                             R.string.weekly_training_minutes_value,
                             estimatedMinutes
                         ),
-                        label = stringResource(R.string.weekly_training_minutes_label),
+                        label = pluralStringResource(
+                            R.plurals.today_stat_minutes_label,
+                            estimatedMinutes.coerceAtLeast(0)
+                        ),
                         modifier = Modifier.weight(1f)
                     )
                     WeeklyTrainingMetric(
                         value = formattedStringResource(R.string.today_history_volume_kg, volume),
-                        label = stringResource(R.string.weekly_training_volume_label),
+                        label = stringResource(R.string.today_stat_volume_label),
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -1285,45 +1340,95 @@ private fun TrainingHistoryPanel(
                 }
             }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(MaterialTheme.colorScheme.outlineVariant)
-            )
-            GymSearchField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it.take(EXERCISE_SEARCH_QUERY_MAX_CHARS) },
-                placeholder = stringResource(R.string.history_search_placeholder),
-                clearDescription = stringResource(R.string.exercise_search_clear),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onGloballyPositioned { searchFieldCoordinates = it }
-                    .onFocusChanged { state -> searchFieldFocused = state.hasFocus },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
-            )
-            if (visibleWorkouts.isEmpty()) {
-                Text(
-                    text = stringResource(
-                        if (isSearching) {
-                            R.string.history_search_empty
-                        } else if (period == TrainingHistoryPeriod.Week) {
-                            R.string.training_history_empty_week
-                        } else {
-                            R.string.training_history_empty_month
-                        }
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            val toggleRow: @Composable (String, Boolean) -> Unit = { label, isOpen ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .clickable(role = Role.Button) {
+                            if (isOpen) searchQuery = ""
+                            expanded = !isOpen
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (!isOpen) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.NavigateNext,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            if (expanded) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant)
                 )
+                GymSearchField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it.take(EXERCISE_SEARCH_QUERY_MAX_CHARS) },
+                    placeholder = stringResource(R.string.history_search_placeholder),
+                    clearDescription = stringResource(R.string.exercise_search_clear),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { searchFieldCoordinates = it }
+                        .onFocusChanged { state -> searchFieldFocused = state.hasFocus },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
+                )
+                if (visibleWorkouts.isEmpty()) {
+                    Text(
+                        text = stringResource(
+                            if (isSearching) {
+                                R.string.history_search_empty
+                            } else if (period == TrainingHistoryPeriod.Week) {
+                                R.string.training_history_empty_week
+                            } else {
+                                R.string.training_history_empty_month
+                            }
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    visibleWorkouts.forEachIndexed { index, session ->
+                        if (index > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(1.dp)
+                                    .background(MaterialTheme.colorScheme.outlineVariant)
+                            )
+                        }
+                        TrainingHistoryRow(
+                            session = session,
+                            onClick = { onSessionClick(session.session.id) }
+                        )
+                    }
+                }
+                toggleRow(stringResource(R.string.today_history_collapse), true)
             } else {
-                visibleWorkouts.forEachIndexed { index, session ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(Dp.Hairline)
+                        .background(MaterialTheme.colorScheme.outlineVariant)
+                )
+                recentWorkouts.take(3).forEachIndexed { index, session ->
                     if (index > 0) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(1.dp)
+                                .height(Dp.Hairline)
                                 .background(MaterialTheme.colorScheme.outlineVariant)
                         )
                     }
@@ -1332,6 +1437,7 @@ private fun TrainingHistoryPanel(
                         onClick = { onSessionClick(session.session.id) }
                     )
                 }
+                toggleRow(stringResource(R.string.today_all_history), false)
             }
         }
     }
@@ -1343,6 +1449,7 @@ private fun TrainingHistoryWeekStrip(
     locale: Locale,
     modifier: Modifier = Modifier
 ) {
+    val weekdayLabels = stringArrayResource(R.array.weekday_short_labels)
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
@@ -1374,11 +1481,14 @@ private fun TrainingHistoryWeekStrip(
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
-                    text = day.date.dayOfWeek
-                        .getDisplayName(TextStyle.NARROW, locale)
-                        .uppercase(locale),
+                    text = weekdayLabels.getOrElse(day.date.dayOfWeek.value - 1) { "" },
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontWeight = if (day.isToday) FontWeight.Bold else FontWeight.Normal,
+                    color = if (day.isToday) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                 )
                 Box(
                     modifier = Modifier.size(22.dp),
@@ -1427,6 +1537,7 @@ private fun TrainingHistoryMonthGrid(
     locale: Locale,
     modifier: Modifier = Modifier
 ) {
+    val weekdayLabels = stringArrayResource(R.array.weekday_short_labels)
     val leadingEmpty = summary.days.firstOrNull()?.date?.dayOfWeek?.value?.minus(1) ?: 0
     val unpaddedCells = List(leadingEmpty) { null } + summary.days.map { it }
     val trailingEmpty = (7 - unpaddedCells.size % 7) % 7
@@ -1438,9 +1549,7 @@ private fun TrainingHistoryMonthGrid(
         Row(modifier = Modifier.fillMaxWidth()) {
             (1..7).forEach { dayNumber ->
                 Text(
-                    text = java.time.DayOfWeek.of(dayNumber)
-                        .getDisplayName(TextStyle.NARROW, locale)
-                        .uppercase(locale),
+                    text = weekdayLabels.getOrElse(dayNumber - 1) { "" },
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -1990,6 +2099,39 @@ private fun TrainWithFriendPill(
             }
         }
     }
+}
+
+/** The "С другом" action as a row of the Today grouped section (accent text, chevron, invite count). */
+@Composable
+private fun TrainWithFriendRow(
+    state: TodayFriendEntryState,
+    forcedVisible: Boolean,
+    onClick: () -> Unit
+) {
+    if (state == TodayFriendEntryState.Hidden) return
+    val inviteCount = (state as? TodayFriendEntryState.PendingInvite)?.count
+    val title = stringResource(
+        if (inviteCount != null) R.string.today_friend_pill_invite else R.string.today_friend_pill
+    )
+    val hint = stringResource(
+        when {
+            forcedVisible && inviteCount == null -> R.string.today_friend_hint_blocked
+            state == TodayFriendEntryState.NeedsCloudAccount -> R.string.today_friend_hint_account
+            state == TodayFriendEntryState.NeedsFriends -> R.string.today_friend_hint_friends
+            inviteCount != null -> R.string.today_friend_hint_invite
+            else -> R.string.today_friend_hint_pick
+        }
+    )
+    val accent = MaterialTheme.colorScheme.primary
+    GroupedRow(
+        title = title,
+        modifier = Modifier.semantics { contentDescription = "$title. $hint" },
+        value = inviteCount?.toString(),
+        icon = { ActionRowIcon(Icons.Default.Group, accent) },
+        chevron = true,
+        titleColor = accent,
+        onClick = onClick
+    )
 }
 
 /** Friend list for "С другом"; picking one opens the live workout editor with that friend. */

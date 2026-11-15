@@ -284,7 +284,7 @@ data class WeeklyTrainingSummaryUiModel(
     val targetTrainingDays: Int = 0,
     val estimatedMinutes: Int = 0,
     val totalVolume: Double = 0.0,
-    /** Volume change against the same days of the previous week (current week) or the full previous week; null when not comparable. */
+    /** Volume change against the same days of the previous week (current week) or the full previous week; null unless both weeks hold a workout. */
     val volumeDeltaPercent: Int? = null
 )
 
@@ -2260,7 +2260,7 @@ internal fun buildWeeklyTrainingSummary(
         targetTrainingDays = targetTrainingDays.coerceIn(2, 6),
         estimatedMinutes = estimatedMinutes,
         totalVolume = totalVolume,
-        volumeDeltaPercent = weekVolumeDeltaPercent(
+        volumeDeltaPercent = weekVolumeComparison(
             samples = sessions.asSequence()
                 .take(WorkoutDataLimits.MAX_SESSIONS)
                 .map { WeekVolumeSample(it.session.date, it.totalVolume) }
@@ -2268,7 +2268,7 @@ internal fun buildWeeklyTrainingSummary(
             nowMillis = nowMillis,
             zoneId = zoneId,
             weekOffset = weekOffset
-        )
+        ).visiblePercent
     )
 }
 
@@ -2287,7 +2287,36 @@ internal fun weekVolumeDeltaPercent(
     nowMillis: Long,
     zoneId: ZoneId,
     weekOffset: Int = 0
-): Int? {
+): Int? = weekVolumeComparison(samples, nowMillis, zoneId, weekOffset).percent
+
+/** The volume change plus how many workouts each compared window holds. */
+internal data class WeekVolumeComparison(
+    val percent: Int?,
+    val currentWorkouts: Int,
+    val previousWorkouts: Int
+) {
+    /** [percent] when both windows hold at least one workout; null otherwise (nothing to compare). */
+    val visiblePercent: Int?
+        get() = percent.takeIf { shouldShowWeekComparison(currentWorkouts, previousWorkouts, it) }
+}
+
+/**
+ * The comparison line is shown only when this week and the compared week each hold at least one
+ * workout and a percentage exists; a week against an empty week is "-100%" noise. Contract:
+ * shared/today-presentation-v1.json (weekComparison).
+ */
+internal fun shouldShowWeekComparison(
+    currentWorkouts: Int,
+    previousWorkouts: Int,
+    percent: Int?
+): Boolean = percent != null && currentWorkouts >= 1 && previousWorkouts >= 1
+
+internal fun weekVolumeComparison(
+    samples: List<WeekVolumeSample>,
+    nowMillis: Long,
+    zoneId: ZoneId,
+    weekOffset: Int = 0
+): WeekVolumeComparison {
     val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
     val offset = weekOffset.coerceIn(-5_200, 0)
     val weekStart = today.plusWeeks(offset.toLong())
@@ -2302,6 +2331,8 @@ internal fun weekVolumeDeltaPercent(
     val previousEnd = previousStart.plusDays(elapsedDays)
     var current = 0.0
     var previous = 0.0
+    var currentWorkouts = 0
+    var previousWorkouts = 0
     for (sample in samples) {
         if (!WorkoutDataLimits.isValidTimestamp(sample.dateMillis) || sample.dateMillis > nowMillis) continue
         val date = runCatching {
@@ -2309,16 +2340,21 @@ internal fun weekVolumeDeltaPercent(
         }.getOrNull() ?: continue
         val volume = sample.volume.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
         when {
-            date >= weekStart && date < currentEnd ->
+            date >= weekStart && date < currentEnd -> {
+                currentWorkouts++
                 current = (current + volume).coerceAtMost(MAX_TODAY_HERO_VOLUME)
-            date >= previousStart && date < previousEnd ->
+            }
+            date >= previousStart && date < previousEnd -> {
+                previousWorkouts++
                 previous = (previous + volume).coerceAtMost(MAX_TODAY_HERO_VOLUME)
+            }
         }
     }
-    if (previous <= 0.0) return null
+    if (previous <= 0.0) return WeekVolumeComparison(null, currentWorkouts, previousWorkouts)
     val raw = (current - previous) * 100.0 / previous
     val rounded = Math.signum(raw) * Math.floor(abs(raw) + 0.5)
-    return rounded.coerceAtMost(WEEK_VOLUME_DELTA_CAP_PERCENT.toDouble()).toInt()
+    val percent = rounded.coerceAtMost(WEEK_VOLUME_DELTA_CAP_PERCENT.toDouble()).toInt()
+    return WeekVolumeComparison(percent, currentWorkouts, previousWorkouts)
 }
 
 internal fun buildMonthlyTrainingSummary(

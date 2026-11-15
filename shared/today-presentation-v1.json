@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "rule": "Today tab presentation. weekdays: two-letter labels Monday first, ru/uk lowercase, en capitalized. weekComparison: the week-over-week volume comparison is visible only when the shown week has at least one workout AND the comparison week has at least one workout. statLabels: lowercase unit label agreeing with the number (ru/uk plural forms, en one/many); uk 'тренування' is invariable for 1 and 2..4.",
+  "weekdays": {
+    "ru": ["пн", "вт", "ср", "чт", "пт", "сб", "вс"],
+    "uk": ["пн", "вт", "ср", "чт", "пт", "сб", "нд"],
+    "en": ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+  },
+  "weekComparison": [
+    { "id": "both-weeks-have-workouts", "currentWorkouts": 2, "comparisonWorkouts": 3, "visible": true },
+    { "id": "single-workouts", "currentWorkouts": 1, "comparisonWorkouts": 1, "visible": true },
+    { "id": "empty-current-week", "currentWorkouts": 0, "comparisonWorkouts": 3, "visible": false },
+    { "id": "empty-comparison-week", "currentWorkouts": 2, "comparisonWorkouts": 0, "visible": false },
+    { "id": "both-empty", "currentWorkouts": 0, "comparisonWorkouts": 0, "visible": false }
+  ],
+  "statLabels": {
+    "workouts": [
+      { "count": 0, "ru": "тренировок", "uk": "тренувань", "en": "workouts" },
+      { "count": 1, "ru": "тренировка", "uk": "тренування", "en": "workout" },
+      { "count": 2, "ru": "тренировки", "uk": "тренування", "en": "workouts" },
+      { "count": 5, "ru": "тренировок", "uk": "тренувань", "en": "workouts" },
+      { "count": 11, "ru": "тренировок", "uk": "тренувань", "en": "workouts" },
+      { "count": 21, "ru": "тренировка", "uk": "тренування", "en": "workouts" },
+      { "count": 22, "ru": "тренировки", "uk": "тренування", "en": "workouts" }
+    ],
+    "minutes": [
+      { "count": 0, "ru": "минут", "uk": "хвилин", "en": "minutes" },
+      { "count": 1, "ru": "минута", "uk": "хвилина", "en": "minute" },
+      { "count": 2, "ru": "минуты", "uk": "хвилини", "en": "minutes" },
+      { "count": 5, "ru": "минут", "uk": "хвилин", "en": "minutes" },
+      { "count": 12, "ru": "минут", "uk": "хвилин", "en": "minutes" },
+      { "count": 21, "ru": "минута", "uk": "хвилина", "en": "minutes" },
+      { "count": 35, "ru": "минут", "uk": "хвилин", "en": "minutes" }
+    ]
+  }
+}

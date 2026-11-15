@@ -320,7 +320,7 @@ test("runtime language switches invalidate cached labels on every client", async
   assert.match(iosAuth, /gymLocalized\(title, languageCode: languageCode\)/);
   assert.match(iosWorkouts, /@AppStorage\("app-language"\) private var languageCode/);
   assert.match(iosWorkouts, /"Сегодня"/);
-  assert.match(iosWorkouts, /"Начать план"/);
+  assert.match(iosWorkouts, /"Начать"/);
   assert.match(iosWorkouts, /"Редактировать план"/);
   assert.doesNotMatch(iosWorkouts, /"Начать рекомендованное"/);
   assert.match(iosWorkouts, /"Сегодня отдых"/);

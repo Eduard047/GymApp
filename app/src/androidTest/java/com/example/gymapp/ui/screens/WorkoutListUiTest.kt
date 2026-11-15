@@ -96,18 +96,22 @@ class WorkoutListUiTest {
         ).assertIsDisplayed()
 
         val locale = composeRule.activity.resources.configuration.locales[0]
+        val resources = composeRule.activity.resources
         listOf(
-            R.string.weekly_training_workouts_label to
-                formatTodayHeroCount(weeklySummary.completedWorkoutCount, locale),
-            R.string.weekly_training_minutes_label to
-                composeRule.activity.getString(
-                    R.string.weekly_training_minutes_value,
-                    weeklySummary.estimatedMinutes
-                ),
-            R.string.weekly_training_volume_label to
+            resources.getQuantityString(
+                R.plurals.today_stat_workouts_label,
+                weeklySummary.completedWorkoutCount
+            ) to formatTodayHeroCount(weeklySummary.completedWorkoutCount, locale),
+            resources.getQuantityString(
+                R.plurals.today_stat_minutes_label,
+                weeklySummary.estimatedMinutes
+            ) to composeRule.activity.getString(
+                R.string.weekly_training_minutes_value,
+                weeklySummary.estimatedMinutes
+            ),
+            composeRule.activity.getString(R.string.today_stat_volume_label) to
                 formatTodayHeroVolume(weeklySummary.totalVolume, locale)
-        ).forEach { (labelResource, value) ->
-            val label = composeRule.activity.getString(labelResource)
+        ).forEach { (label, value) ->
             composeRule.onNodeWithContentDescription("$label, $value")
                 .performScrollTo()
                 .assertIsDisplayed()
@@ -150,9 +154,6 @@ class WorkoutListUiTest {
 
         composeRule.onNodeWithText(
             composeRule.activity.getString(R.string.today_workout_completed)
-        ).assertIsDisplayed()
-        composeRule.onNodeWithText(
-            composeRule.activity.getString(R.string.today_workout_completed_supporting)
         ).assertIsDisplayed()
 
         val continuePlan = composeRule.activity.getString(R.string.today_continue_plan)

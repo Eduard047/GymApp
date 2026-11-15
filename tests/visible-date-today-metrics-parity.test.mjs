@@ -229,19 +229,28 @@ test("Today completion and unified training history have one local-calendar cont
     contract.todayState.completedTodayCopy.body,
     ...Object.values(contract.trainingHistory.labels)
   ]) {
-    assert.ok(
-      androidEnglish.includes(copy.en) || androidEnglish.includes(copy.en.replaceAll("'", "\\'")),
-      `Android EN is missing ${copy.en}`
-    );
-    assert.ok(androidUkrainian.includes(copy.uk), `Android UK is missing ${copy.uk}`);
-    assert.ok(androidRussian.includes(copy.ru), `Android RU is missing ${copy.ru}`);
-    assert.ok(iosToday.includes(copy.en), `iOS EN is missing ${copy.en}`);
-    assert.ok(iosToday.includes(copy.uk), `iOS UK is missing ${copy.uk}`);
-    assert.ok(iosToday.includes(copy.ru), `iOS RU is missing ${copy.ru}`);
+    // Android dropped the filler sentence and shows lowercase plural unit labels under the numbers
+    // (shared/today-presentation-v1.json); the completed title is still shared verbatim.
+    if (copy === contract.todayState.completedTodayCopy.title) {
+      assert.ok(androidEnglish.includes(copy.en), `Android EN is missing ${copy.en}`);
+      assert.ok(androidUkrainian.includes(copy.uk), `Android UK is missing ${copy.uk}`);
+      assert.ok(androidRussian.includes(copy.ru), `Android RU is missing ${copy.ru}`);
+      assert.ok(iosToday.includes(copy.en), `iOS EN is missing ${copy.en}`);
+      assert.ok(iosToday.includes(copy.uk), `iOS UK is missing ${copy.uk}`);
+      assert.ok(iosToday.includes(copy.ru), `iOS RU is missing ${copy.ru}`);
+    }
     assert.ok(pwaApp.includes(copy.en), `PWA EN is missing ${copy.en}`);
     assert.ok(pwaApp.includes(copy.uk), `PWA UK is missing ${copy.uk}`);
     assert.ok(pwaApp.includes(copy.ru), `PWA RU is missing ${copy.ru}`);
   }
+  for (const source of [androidEnglish, androidUkrainian, androidRussian]) {
+    assert.doesNotMatch(source, /name="today_workout_completed_supporting"/);
+    assert.match(source, /<plurals name="today_stat_workouts_label">/);
+    assert.match(source, /<plurals name="today_stat_minutes_label">/);
+    assert.match(source, /<string-array name="weekday_short_labels">/);
+  }
+  assert.match(androidToday, /R\.plurals\.today_stat_workouts_label/);
+  assert.match(androidToday, /R\.array\.weekday_short_labels/);
   assert.equal(
     contract.trainingHistory.trainingMinutes.fallbackEstimatePerSession,
     "min(90,max(10,exerciseCount*3+setCount*2))"
