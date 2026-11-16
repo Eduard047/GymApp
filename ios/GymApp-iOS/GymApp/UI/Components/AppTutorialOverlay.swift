@@ -564,12 +564,12 @@ struct AppTutorialOverlay: View {
                 spotlightShade(targetRect: targetRect)
 
                 if let targetRect {
+                    // Flat neutral ring, no accent glow (same as Android).
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .stroke(Color.white, lineWidth: 3)
                         .padding(-8)
                         .frame(width: targetRect.width, height: targetRect.height)
                         .position(x: targetRect.midX, y: targetRect.midY)
-                        .shadow(color: GymTheme.primary.opacity(0.9), radius: reduceMotion ? 8 : 18)
                         .accessibilityHidden(true)
                 }
 

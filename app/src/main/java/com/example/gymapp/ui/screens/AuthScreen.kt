@@ -4,10 +4,9 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -43,6 +42,7 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.BackHand
 import com.example.gymapp.ui.theme.Button
 import com.example.gymapp.ui.theme.GymCapsuleShape
+import com.example.gymapp.ui.theme.NightFill
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -75,6 +75,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -104,6 +106,7 @@ import com.example.gymapp.auth.validatedNewLocalDisplayNameOrNull
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.WordShrinkText
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextOverflow
 import com.example.gymapp.ui.components.AppBrandMark
 import com.example.gymapp.ui.components.BrandHeroPanel
 import com.example.gymapp.ui.components.brandButtonColors
@@ -362,46 +365,58 @@ fun AuthScreen(
                     )
 
                     Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
-                        OutlinedTextField(
-                            value = if (isSignUp) signUpEmail else email,
-                            onValueChange = {
-                                localMessage = null
-                                if (isSignUp) {
-                                    signUpEmail = boundedAuthEmailDraft(it)
-                                } else {
-                                    email = boundedAuthEmailDraft(it)
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text(stringResource(R.string.auth_email)) },
-                            singleLine = true,
-                            shape = RoundedCornerShape(16.dp),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
-                        )
-                        if (isSignUp) {
+                        AuthLabeledField(label = stringResource(R.string.auth_email)) { fieldModifier ->
                             OutlinedTextField(
-                                value = signUpEmailConfirm,
+                                value = if (isSignUp) signUpEmail else email,
                                 onValueChange = {
                                     localMessage = null
-                                    signUpEmailConfirm = boundedAuthEmailDraft(it)
+                                    if (isSignUp) {
+                                        signUpEmail = boundedAuthEmailDraft(it)
+                                    } else {
+                                        email = boundedAuthEmailDraft(it)
+                                    }
                                 },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text(stringResource(R.string.auth_repeat_email)) },
+                                modifier = fieldModifier,
+                                placeholder = { AuthFieldPlaceholder(AUTH_EMAIL_PLACEHOLDER) },
                                 singleLine = true,
-                                shape = RoundedCornerShape(16.dp),
+                                shape = AuthFieldShape,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
                             )
-                            OutlinedTextField(
-                                value = displayName,
-                                onValueChange = { value ->
-                                    localMessage = null
-                                    displayName = sanitizeSignUpDisplayNameDraft(value)
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text(stringResource(R.string.auth_display_name)) },
-                                singleLine = true,
-                                shape = RoundedCornerShape(16.dp)
-                            )
+                        }
+                        if (isSignUp) {
+                            AuthLabeledField(
+                                label = stringResource(R.string.auth_repeat_email)
+                            ) { fieldModifier ->
+                                OutlinedTextField(
+                                    value = signUpEmailConfirm,
+                                    onValueChange = {
+                                        localMessage = null
+                                        signUpEmailConfirm = boundedAuthEmailDraft(it)
+                                    },
+                                    modifier = fieldModifier,
+                                    placeholder = { AuthFieldPlaceholder(AUTH_EMAIL_PLACEHOLDER) },
+                                    singleLine = true,
+                                    shape = AuthFieldShape,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+                                )
+                            }
+                            AuthLabeledField(
+                                label = stringResource(R.string.auth_display_name)
+                            ) { fieldModifier ->
+                                OutlinedTextField(
+                                    value = displayName,
+                                    onValueChange = { value ->
+                                        localMessage = null
+                                        displayName = sanitizeSignUpDisplayNameDraft(value)
+                                    },
+                                    modifier = fieldModifier,
+                                    placeholder = {
+                                        AuthFieldPlaceholder(AUTH_DISPLAY_NAME_PLACEHOLDER)
+                                    },
+                                    singleLine = true,
+                                    shape = AuthFieldShape
+                                )
+                            }
                         }
 
                         PasswordTextField(
@@ -637,18 +652,23 @@ fun AuthScreen(
                 uiState.message?.takeIf { uiState.messageIsError }?.let { message ->
                     AuthStatusBanner(message = message.asString(), isError = true)
                 }
-                OutlinedTextField(
-                    value = localDisplayName,
-                    onValueChange = {
-                        localProfileMessage = null
-                        localDisplayName = boundedNewLocalDisplayNameDraft(it)
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.auth_local_profile_name)) },
-                    placeholder = { Text(stringResource(R.string.auth_local_default_name)) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(16.dp)
-                )
+                AuthLabeledField(
+                    label = stringResource(R.string.auth_local_profile_name)
+                ) { fieldModifier ->
+                    OutlinedTextField(
+                        value = localDisplayName,
+                        onValueChange = {
+                            localProfileMessage = null
+                            localDisplayName = boundedNewLocalDisplayNameDraft(it)
+                        },
+                        modifier = fieldModifier,
+                        placeholder = {
+                            AuthFieldPlaceholder(stringResource(R.string.auth_local_default_name))
+                        },
+                        singleLine = true,
+                        shape = AuthFieldShape
+                    )
+                }
                 localProfileMessage?.let { message ->
                     AuthStatusBanner(message = message, isError = true)
                 }
@@ -677,7 +697,7 @@ fun AuthScreen(
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     shape = GymCapsuleShape,
                     colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        contentColor = MaterialTheme.colorScheme.primary
                     )
                 ) {
                     Text(
@@ -686,8 +706,10 @@ fun AuthScreen(
                     )
                 }
                 if (savedLocalProfiles.isNotEmpty()) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Text(
                         text = stringResource(R.string.auth_saved_profiles),
+                        modifier = Modifier.semantics { heading() },
                         style = MaterialTheme.typography.titleMedium
                     )
                     savedLocalProfiles.forEach { savedProfile ->
@@ -1111,20 +1133,22 @@ private fun AuthModeSelector(
     onModeSelected: (isSignUp: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(16.dp)
+    // Same look as the shared `GymSegmentedControl` (iOS segmented control): one grey track with a
+    // neutral raised pill under the selected option. Kept local because the mode switch is disabled
+    // while a request is running and `GymSegmentedControl` has no `enabled` state.
+    val shape = RoundedCornerShape(10.dp)
     val stacked = LocalDensity.current.fontScale >= 1.8f
     val containerModifier = modifier
         .fillMaxWidth()
         .alpha(if (enabled) 1f else 0.56f)
         .clip(shape)
-        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f))
-        .padding(4.dp)
+        .background(MaterialTheme.colorScheme.surfaceVariant)
         .selectableGroup()
     val logInText = stringResource(R.string.auth_log_in)
     val signUpText = stringResource(R.string.auth_sign_up)
     if (stacked) {
         // Accessibility text sizes: one option per line so no label has to break mid-word.
-        Column(modifier = containerModifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(modifier = containerModifier) {
             AuthModeOption(
                 text = logInText,
                 selected = !isSignUp,
@@ -1141,7 +1165,7 @@ private fun AuthModeSelector(
             )
         }
     } else {
-        Row(modifier = containerModifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(modifier = containerModifier) {
             AuthModeOption(
                 text = logInText,
                 selected = !isSignUp,
@@ -1168,19 +1192,18 @@ private fun AuthModeOption(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(13.dp)
-    // Selected = accent fill with white text, the same as GymSegmentedControl on every other screen.
-    val backgroundColor = if (selected) {
-        brandFillColor()
-    } else {
-        Color.Transparent
+    val shape = RoundedCornerShape(8.dp)
+    // Selected = neutral pill (white, or the dark fill tone) with label-colour text; accent blue is
+    // never a segment fill.
+    val backgroundColor = when {
+        !selected -> Color.Transparent
+        isSystemInDarkTheme() -> NightFill
+        else -> Color.White
     }
-    val borderColor = Color.Transparent
+    // The touch target is the full 48dp cell; the visible pill is inset 2dp inside the track.
     Box(
         modifier = modifier
-            .clip(shape)
-            .background(backgroundColor)
-            .border(BorderStroke(1.dp, borderColor), shape)
+            .clip(RoundedCornerShape(10.dp))
             .selectable(
                 selected = selected,
                 enabled = enabled,
@@ -1188,18 +1211,21 @@ private fun AuthModeOption(
                 onClick = onClick
             )
             .heightIn(min = 48.dp)
-            .padding(horizontal = 10.dp, vertical = 10.dp),
+            .padding(2.dp)
+            .clip(shape)
+            .background(backgroundColor)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         WordShrinkText(
             text = text,
             color = if (selected) {
-                Color.White
+                MaterialTheme.colorScheme.onSurface
             } else {
                 MaterialTheme.colorScheme.onSurfaceVariant
             },
             style = MaterialTheme.typography.labelLarge,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             textAlign = TextAlign.Center
         )
     }
@@ -1254,30 +1280,71 @@ private fun PasswordTextField(
     onFocusChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = { onValueChange(boundedAuthPasswordDraft(it)) },
-        modifier = modifier.onFocusChanged { state -> onFocusChanged(state.isFocused) },
-        label = { Text(label) },
-        singleLine = true,
-        shape = RoundedCornerShape(16.dp),
-        visualTransformation = if (passwordVisible) {
-            VisualTransformation.None
-        } else {
-            PasswordVisualTransformation()
-        },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-        trailingIcon = {
-            IconButton(onClick = { onPasswordVisibilityChange(!passwordVisible) }) {
-                Icon(
-                    imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                    contentDescription = stringResource(
-                        if (passwordVisible) R.string.auth_hide_password else R.string.auth_show_password
+    // Like iOS, the placeholder repeats the field name under the label.
+    AuthLabeledField(label = label, modifier = modifier) { fieldModifier ->
+        OutlinedTextField(
+            value = value,
+            onValueChange = { onValueChange(boundedAuthPasswordDraft(it)) },
+            modifier = fieldModifier.onFocusChanged { state -> onFocusChanged(state.isFocused) },
+            placeholder = { AuthFieldPlaceholder(label) },
+            singleLine = true,
+            shape = AuthFieldShape,
+            visualTransformation = if (passwordVisible) {
+                VisualTransformation.None
+            } else {
+                PasswordVisualTransformation()
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            trailingIcon = {
+                IconButton(onClick = { onPasswordVisibilityChange(!passwordVisible) }) {
+                    Icon(
+                        imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        contentDescription = stringResource(
+                            if (passwordVisible) R.string.auth_hide_password else R.string.auth_show_password
+                        )
                     )
-                )
+                }
             }
-        }
-    )
+        )
+    }
+}
+
+private val AuthFieldShape = RoundedCornerShape(16.dp)
+
+// Not translated: the same sample values iOS shows in these fields.
+private const val AUTH_EMAIL_PLACEHOLDER = "you@example.com"
+private const val AUTH_DISPLAY_NAME_PLACEHOLDER = "Athlete"
+
+/**
+ * iOS-style form field: the name sits above the input as a label and the input itself only shows a
+ * placeholder. The visible label is hidden from accessibility because [field] receives a modifier that
+ * names the input with the same text, so TalkBack reads the name once, on the input.
+ */
+@Composable
+private fun AuthLabeledField(
+    label: String,
+    modifier: Modifier = Modifier,
+    field: @Composable (Modifier) -> Unit
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = label,
+            modifier = Modifier.clearAndSetSemantics { },
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        field(
+            Modifier
+                .fillMaxWidth()
+                .semantics { contentDescription = label }
+        )
+    }
+}
+
+@Composable
+private fun AuthFieldPlaceholder(text: String) {
+    Text(text = text, maxLines = 1, overflow = TextOverflow.Ellipsis)
 }
 
 private fun localizedAuthValidationMessage(context: Context, message: String): String {

@@ -1,6 +1,7 @@
 package com.example.gymapp.ui.components
 
 import androidx.annotation.StringRes
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -10,7 +11,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -61,14 +64,22 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.ui.theme.GymCapsuleShape
 import com.example.gymapp.ui.theme.GymSpacing
 import kotlinx.coroutines.android.awaitFrame
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.ui.theme.TintedButton
 
 internal const val FIRST_RUN_TUTORIAL_VERSION = 1
+
+private val TutorialActionHorizontalPadding = 18.dp
+private val TutorialActionPadding = PaddingValues(
+    horizontal = TutorialActionHorizontalPadding,
+    vertical = 8.dp
+)
 
 internal enum class TutorialTarget {
     TodayFocus,
@@ -175,7 +186,8 @@ internal fun FirstRunTutorialOverlay(
     )
     val focusRequester = remember { FocusRequester() }
     val blockingInteraction = remember { MutableInteractionSource() }
-    val haloColor = MaterialTheme.colorScheme.primary
+    // Neutral ring like iOS: white on the dimmed scrim in both themes, no accent stroke and no glow.
+    val haloColor = Color.White
     val density = LocalDensity.current
 
     LaunchedEffect(step.id) {
@@ -191,7 +203,7 @@ internal fun FirstRunTutorialOverlay(
             .fillMaxSize()
             .testTag("first_run_tutorial_overlay")
     ) {
-        val haloPaddingPx = with(density) { 9.dp.toPx() }
+        val haloPaddingPx = with(density) { 8.dp.toPx() }
         val haloRadiusPx = with(density) { 24.dp.toPx() }
         Canvas(
             modifier = Modifier
@@ -260,11 +272,14 @@ internal fun FirstRunTutorialOverlay(
                     contentDescription = "$stepCount. $title. $body"
                 }
                 .testTag("first_run_tutorial_card"),
-            shape = RoundedCornerShape(28.dp),
+            // Flat opaque coach card like iOS: the transparent `surfaceTint` turned tonal elevation into
+            // a grey wash, so the card stays on the plain surface with only a hairline edge on the scrim.
+            shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.onSurface,
-            tonalElevation = 6.dp,
-            shadowElevation = 10.dp
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp
         ) {
             Column(
                 modifier = Modifier
@@ -276,13 +291,14 @@ internal fun FirstRunTutorialOverlay(
             ) {
                 Text(
                     text = stepCount,
-                    style = MaterialTheme.typography.labelLarge,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Text(
                     text = title,
                     modifier = Modifier.semantics { heading() },
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
@@ -300,59 +316,91 @@ internal fun FirstRunTutorialOverlay(
                         color = MaterialTheme.colorScheme.error
                     )
                 }
-                // At large font scales the actions stack full width (primary first) so no label has to
-                // break mid-word; otherwise they share one row and single-word labels shrink to fit.
-                val stackActions = LocalDensity.current.fontScale >= 1.5f
+                // Compact capsules share one row like iOS (Skip on the leading edge, Back and Next on the
+                // trailing edge). When the labels do not fit on one line each, or at large font scales, the
+                // actions stack full width, primary first (iOS `ViewThatFits`), so no label breaks mid-word.
                 val isLastStep = safeIndex == FIRST_RUN_TUTORIAL_STEPS.lastIndex
-                val actionLabel: @Composable (Int) -> Unit = { labelRes ->
+                val actionLabelStyle = MaterialTheme.typography.labelLarge
+                val skipLabel = stringResource(R.string.tutorial_skip)
+                val backLabel = stringResource(R.string.tutorial_back)
+                val nextLabel = stringResource(
+                    if (isLastStep) R.string.tutorial_done else R.string.tutorial_next
+                )
+                val actionLabel: @Composable (String) -> Unit = { label ->
                     WordShrinkText(
-                        text = stringResource(labelRes),
-                        style = MaterialTheme.typography.labelLarge,
+                        text = label,
+                        style = actionLabelStyle,
                         textAlign = TextAlign.Center
                     )
                 }
                 val skipButton: @Composable (Modifier) -> Unit = { buttonModifier ->
                     FilledTonalButton(
                         onClick = onSkip,
+                        shape = GymCapsuleShape,
                         colors = ButtonDefaults.filledTonalButtonColors(
                             containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.onSurface
+                            contentColor = MaterialTheme.colorScheme.primary
                         ),
+                        contentPadding = TutorialActionPadding,
                         modifier = buttonModifier.heightIn(min = GymSpacing.MinimumTouch)
-                    ) { actionLabel(R.string.tutorial_skip) }
+                    ) { actionLabel(skipLabel) }
                 }
                 val backButton: @Composable (Modifier) -> Unit = { buttonModifier ->
                     TintedButton(
                         onClick = onBack,
+                        contentPadding = TutorialActionPadding,
                         modifier = buttonModifier.heightIn(min = GymSpacing.MinimumTouch)
-                    ) { actionLabel(R.string.tutorial_back) }
+                    ) { actionLabel(backLabel) }
                 }
                 val nextButton: @Composable (Modifier) -> Unit = { buttonModifier ->
                     Button(
                         onClick = if (isLastStep) onDone else onNext,
+                        contentPadding = TutorialActionPadding,
                         modifier = buttonModifier.heightIn(min = GymSpacing.MinimumTouch)
-                    ) {
-                        actionLabel(if (isLastStep) R.string.tutorial_done else R.string.tutorial_next)
-                    }
+                    ) { actionLabel(nextLabel) }
                 }
-                if (stackActions) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(GymSpacing.Small)
-                    ) {
-                        nextButton(Modifier.fillMaxWidth())
-                        if (safeIndex > 0) backButton(Modifier.fillMaxWidth())
-                        skipButton(Modifier.fillMaxWidth())
+                val textMeasurer = rememberTextMeasurer()
+                val fontScale = LocalDensity.current.fontScale
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val rowLabels = listOfNotNull(skipLabel, backLabel.takeIf { safeIndex > 0 }, nextLabel)
+                    val rowWidthPx = remember(rowLabels, actionLabelStyle, density) {
+                        with(density) {
+                            val capsules = rowLabels.sumOf { label ->
+                                val labelWidth = textMeasurer.measure(
+                                    text = label,
+                                    style = actionLabelStyle,
+                                    maxLines = 1,
+                                    softWrap = false
+                                ).size.width
+                                maxOf(
+                                    labelWidth + (TutorialActionHorizontalPadding * 2).roundToPx(),
+                                    ButtonDefaults.MinWidth.roundToPx()
+                                )
+                            }
+                            capsules + GymSpacing.Small.roundToPx() * (rowLabels.size - 1)
+                        }
                     }
-                } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(GymSpacing.Small),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        skipButton(Modifier.weight(1f))
-                        if (safeIndex > 0) backButton(Modifier.weight(1f))
-                        nextButton(Modifier.weight(1f))
+                    val stackActions = fontScale >= 1.5f || rowWidthPx > constraints.maxWidth
+                    if (stackActions) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(GymSpacing.Small)
+                        ) {
+                            nextButton(Modifier.fillMaxWidth())
+                            if (safeIndex > 0) backButton(Modifier.fillMaxWidth())
+                            skipButton(Modifier.fillMaxWidth())
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(GymSpacing.Small),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            skipButton(Modifier)
+                            Spacer(Modifier.weight(1f))
+                            if (safeIndex > 0) backButton(Modifier)
+                            nextButton(Modifier)
+                        }
                     }
                 }
             }
