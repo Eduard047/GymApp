@@ -11547,8 +11547,9 @@ function loginScreen() {
       </header>
       ${pendingSharedWorkout ? `<section class="panel highlighted shared-workout-pending"><h2>${tx("Shared workout ready", "Спільне тренування готове")}</h2><p>${tx("Sign in or enter offline mode to review the plan. It will not replace or save anything automatically.", "Увійди або відкрий офлайн-режим, щоб переглянути план. Він нічого не замінить і не збереже автоматично.")}</p>${sharedWorkoutPreviewMarkup(pendingSharedWorkout)}</section>` : ""}
       ${storeDownloadPanel()}
+      ${donatePanel()}
       ${remotePanel ? authAccessMarkup(remotePanel) : offlineLinkMarkup(false)}
-      <section class="panel auth-legal-card"><p>${tx("Workout data is handled under the Privacy Policy.", "Дані тренувань обробляються відповідно до Політики конфіденційності.")}</p><nav class="auth-links" aria-label="${txAttr("GymApp links", "Посилання GymApp")}"><a class="auth-link" href="${PRIVACY_URL}" target="_blank" rel="noopener noreferrer">${svg("privacy", "small-icon")}<span>${tx3("Privacy Policy", "Політика конфіденційності", "Политика конфиденциальности")}</span></a><a class="auth-link" href="${SUPPORT_URL}" target="_blank" rel="noopener noreferrer">${svg("help", "small-icon")}<span>${tx3("Support", "Підтримка", "Поддержка")}</span></a><a class="auth-link" href="${DONATE_URL}" target="_blank" rel="noopener noreferrer">${svg("heart", "small-icon")}<span>${tx3("Support the developer", "Підтримати розробника", "Поддержать разработчика")}</span></a></nav></section>
+      <section class="panel auth-legal-card"><p>${tx("Workout data is handled under the Privacy Policy.", "Дані тренувань обробляються відповідно до Політики конфіденційності.")}</p><nav class="auth-links" aria-label="${txAttr("GymApp links", "Посилання GymApp")}"><a class="auth-link" href="${PRIVACY_URL}" target="_blank" rel="noopener noreferrer">${svg("privacy", "small-icon")}<span>${tx3("Privacy Policy", "Політика конфіденційності", "Политика конфиденциальности")}</span></a><a class="auth-link" href="${SUPPORT_URL}" target="_blank" rel="noopener noreferrer">${svg("help", "small-icon")}<span>${tx3("Support", "Підтримка", "Поддержка")}</span></a></nav></section>
       ${modal ? modalMarkup() : ""}
     </main>
   </div>`;
@@ -11591,6 +11592,18 @@ function togglePasswordVisibility(button) {
   button.setAttribute("aria-pressed", String(reveal));
   button.setAttribute("aria-label", (reveal ? button.dataset.hideLabel : button.dataset.showLabel) || "");
   return true;
+}
+
+// Large donate banner under the store badges; always shown with them (the donation page is external, no account needed).
+function donatePanel() {
+  return `<section class="panel donate-panel" aria-labelledby="donate-title">
+    <span class="donate-icon" aria-hidden="true">${svg("heart")}</span>
+    <div class="donate-copy">
+      <h2 id="donate-title">${tx3("Support the developer", "Підтримати розробника", "Поддержать разработчика")}</h2>
+      <p class="muted">${tx3("Any card, Apple Pay or Google Pay", "Будь-якою карткою, Apple Pay або Google Pay", "Любой картой, Apple Pay или Google Pay")}</p>
+    </div>
+    <a class="button donate-button" href="${DONATE_URL}" target="_blank" rel="noopener noreferrer">${tx3("Donate", "Підтримати", "Поддержать")}</a>
+  </section>`;
 }
 
 function storeDownloadPanel() {

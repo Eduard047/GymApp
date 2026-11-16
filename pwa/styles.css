@@ -2586,6 +2586,59 @@ svg.filled-icon.small-icon {
   white-space: nowrap;
 }
 
+/* Donate banner under the store badges on the sign-in screen: icon tile, copy, capsule button; wraps on narrow widths. */
+.donate-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 14px;
+  padding: 16px;
+}
+
+.donate-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: var(--primary);
+  background: var(--primary-container);
+}
+
+.donate-icon svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.donate-copy {
+  flex: 1 1 11rem;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.donate-copy h2,
+.donate-copy p {
+  margin: 0;
+}
+
+.donate-button {
+  flex: 0 0 auto;
+  text-decoration: none;
+}
+
+@media (max-width: 480px) {
+  .donate-button {
+    flex: 1 1 100%;
+  }
+}
+
 .auth-confirmation-preview {
   margin: 12px 0 0;
   text-align: center;
