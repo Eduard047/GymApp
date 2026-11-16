@@ -46,7 +46,9 @@ fun GymMonthNavigator(
     )
     Row(
         modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
+        // The arrows sit next to the label (iOS month stepper) instead of at the row's far edges.
+        horizontalArrangement = Arrangement.Center
     ) {
         IconButton(onClick = onPrevious, modifier = Modifier.size(48.dp)) {
             Icon(
@@ -57,7 +59,7 @@ fun GymMonthNavigator(
         }
         Row(
             modifier = Modifier
-                .weight(1f)
+                .weight(1f, fill = false)
                 .heightIn(min = 48.dp)
                 .clickable(enabled = !isCurrentMonth, role = Role.Button, onClick = onCurrent)
                 .semantics { contentDescription = centerDescription },

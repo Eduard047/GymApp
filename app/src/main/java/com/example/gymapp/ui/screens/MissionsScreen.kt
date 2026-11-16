@@ -177,6 +177,20 @@ private fun MissionPeriodSelector(
     )
 }
 
+/**
+ * Joins the last part of the level summary ("4 314 XP") with no-break spaces, so a summary that
+ * wraps breaks at the " · " separator and never leaves a lone "XP" on the second line.
+ */
+internal fun missionLevelSummaryText(summary: String): String {
+    val separator = summary.lastIndexOf(" · ")
+    if (separator >= 0) {
+        val tailStart = separator + 3
+        return summary.substring(0, tailStart) + summary.substring(tailStart).replace(' ', '\u00A0')
+    }
+    val lastSpace = summary.lastIndexOf(' ')
+    return if (lastSpace > 0) summary.replaceRange(lastSpace, lastSpace + 1, "\u00A0") else summary
+}
+
 @Composable
 private fun MissionLevelRow(
     summary: String,
@@ -206,7 +220,7 @@ private fun MissionLevelRow(
                 tint = MaterialTheme.colorScheme.primary
             )
             Text(
-                text = summary,
+                text = missionLevelSummaryText(summary),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,

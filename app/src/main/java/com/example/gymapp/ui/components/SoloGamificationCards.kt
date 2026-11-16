@@ -1,5 +1,6 @@
 package com.example.gymapp.ui.components
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -397,12 +398,18 @@ internal fun achievementShowsCategory(name: String, category: String): Boolean =
     category.isNotBlank() && !category.equals(name, ignoreCase = true)
 
 @Composable
-private fun achievementAccent(rarity: BadgeRarity): Color = when (rarity) {
-    BadgeRarity.COMMON -> MaterialTheme.colorScheme.secondary
-    BadgeRarity.UNCOMMON -> MaterialTheme.colorScheme.primary
-    BadgeRarity.RARE -> MaterialTheme.colorScheme.tertiary
-    BadgeRarity.EPIC -> Color(0xFF8057C7)
-    BadgeRarity.LEGENDARY -> Color(0xFFD28A16)
+private fun achievementAccent(rarity: BadgeRarity): Color {
+    // Epic/legendary follow the theme like the scheme colours do: Apple system purple/orange on dark
+    // (the old fixed purple was 3.3:1 on the dark sheet), darker steps on light so the rarity label
+    // and "+XP" text keep at least 4.5:1 on white (the old amber was 2.9:1).
+    val dark = isSystemInDarkTheme()
+    return when (rarity) {
+        BadgeRarity.COMMON -> MaterialTheme.colorScheme.secondary
+        BadgeRarity.UNCOMMON -> MaterialTheme.colorScheme.primary
+        BadgeRarity.RARE -> MaterialTheme.colorScheme.tertiary
+        BadgeRarity.EPIC -> if (dark) Color(0xFFBF5AF2) else Color(0xFF8057C7)
+        BadgeRarity.LEGENDARY -> if (dark) Color(0xFFFF9F0A) else Color(0xFFA86300)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
@@ -45,7 +44,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -339,7 +337,6 @@ private fun ProgressMuscleBreakdownCard(
             .toList()
             .sortedByDescending { it.second }
     }
-    val largeText = LocalDensity.current.fontScale >= 1.4f
     val title: @Composable (Modifier) -> Unit = { titleModifier ->
         Text(
             text = stringResource(R.string.progress_muscle_breakdown_title),
@@ -368,20 +365,11 @@ private fun ProgressMuscleBreakdownCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            if (largeText) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    title(Modifier)
-                    groupsPill()
-                }
-            } else {
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    title(Modifier.padding(end = 10.dp))
-                    groupsPill()
-                }
+            // The group count sits under the title at every font size (iOS layout); beside the title
+            // it only fitted on wide phones and wrapped on narrow ones.
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                title(Modifier)
+                groupsPill()
             }
 
             sortedMuscles.forEach { (muscleId, intensity) ->
