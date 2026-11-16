@@ -95,6 +95,7 @@ struct ProfileView: View {
                     .padding(.bottom, GymTheme.screenBottomInset)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                .gymStatusBarScrollEdge()
             }
             .task(id: nativePushRequest?.id) {
                 requestedNativePushAccessibilityTarget = nil
@@ -568,9 +569,9 @@ struct ProfileView: View {
 
     /// Backup & diagnostics keeps its expand/collapse behavior (it holds
     /// several actions, not one navigation target), but its collapsed label
-    /// now matches the other settings rows: a regular 17pt title. The system
-    /// disclosure indicator serves
-    /// as this row's "chevron."
+    /// now matches the other settings rows: a regular 17pt title. Its chevron is
+    /// drawn by `ProfileDisclosureRowStyle`, so it is the same glyph, weight and
+    /// colour as the navigation rows and turns down while the group is open.
     private var backupRow: some View {
         DisclosureGroup(isExpanded: $backupExpanded) {
             VStack(alignment: .leading, spacing: 12) {
@@ -664,6 +665,10 @@ struct ProfileView: View {
                 showsChevron: false
             )
         }
+        .disclosureGroupStyle(ProfileDisclosureRowStyle(
+            expandedValue: gymText("Expanded", "Розгорнуто", "Развёрнуто", languageCode: languageCode),
+            collapsedValue: gymText("Collapsed", "Згорнуто", "Свёрнуто", languageCode: languageCode)
+        ))
     }
 
     private var exportBackupButton: some View {
@@ -1356,5 +1361,56 @@ private struct ProfileExportDocument: FileDocument {
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         FileWrapper(regularFileWithContents: data)
+    }
+}
+
+/// Disclosure row of the settings list. The system indicator was drawn larger and in the
+/// label colour, so this style draws the chevron the navigation rows use and turns it down
+/// while the group is open. The whole label row is the button; VoiceOver reads the state
+/// as its value.
+private struct ProfileDisclosureRowStyle: DisclosureGroupStyle {
+    let expandedValue: String
+    let collapsedValue: String
+
+    func makeBody(configuration: Configuration) -> some View {
+        ProfileDisclosureRow(
+            configuration: configuration,
+            expandedValue: expandedValue,
+            collapsedValue: collapsedValue
+        )
+    }
+}
+
+private struct ProfileDisclosureRow: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let configuration: DisclosureGroupStyleConfiguration
+    let expandedValue: String
+    let collapsedValue: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
+                    configuration.isExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    configuration.label
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(GymTheme.textSecondary.opacity(0.7))
+                        .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
+                        .accessibilityHidden(true)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(configuration.isExpanded ? expandedValue : collapsedValue)
+
+            if configuration.isExpanded {
+                configuration.content
+            }
+        }
     }
 }

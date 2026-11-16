@@ -105,6 +105,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import com.example.gymapp.ui.components.GymToastResult
 import com.example.gymapp.ui.components.LocalGymToastController
+import com.example.gymapp.ui.components.GymIcons
+import com.example.gymapp.ui.components.Trash
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
@@ -1462,7 +1464,7 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.SemiBold
                         ).tabularDigits(),
-                        color = ringFill,
+                        color = titleColor,
                         maxLines = 1
                     )
                     Text(
@@ -2799,7 +2801,7 @@ private fun CurrentSetCard(
                     modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Delete,
+                        imageVector = GymIcons.Trash,
                         contentDescription = deleteDescription,
                         tint = MaterialTheme.colorScheme.error.copy(
                             alpha = if (editorsEnabled) 1f else 0.38f

@@ -42,7 +42,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -137,6 +136,8 @@ import com.example.gymapp.ui.components.pressScale
 import com.example.gymapp.ui.components.GymHapticEvent
 import com.example.gymapp.ui.components.rememberGymHaptics
 import com.example.gymapp.ui.components.tabularDigits
+import com.example.gymapp.ui.components.GymIcons
+import com.example.gymapp.ui.components.Trash
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.theme.GymCapsuleShape
 import com.example.gymapp.util.keepShortWordsWithNext
@@ -384,7 +385,7 @@ internal fun WorkoutExerciseMenu(
                 },
                 leadingIcon = {
                     Icon(
-                        imageVector = Icons.Default.Delete,
+                        imageVector = GymIcons.Trash,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.error
                     )
@@ -976,7 +977,7 @@ private fun SetEditorDeleteButton(
         modifier = Modifier.size(SetEditorTrashSize)
     ) {
         Icon(
-            imageVector = Icons.Default.Delete,
+            imageVector = GymIcons.Trash,
             contentDescription = description,
             tint = if (enabled) error else error.copy(alpha = 0.38f)
         )

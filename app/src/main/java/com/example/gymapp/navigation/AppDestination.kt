@@ -9,10 +9,12 @@ import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material.icons.outlined.CalendarToday as OutlinedCalendarToday
-import androidx.compose.material.icons.outlined.FitnessCenter as OutlinedFitnessCenter
 import androidx.compose.material.icons.outlined.Person as OutlinedPerson
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.gymapp.R
+import com.example.gymapp.ui.components.Dumbbell
+import com.example.gymapp.ui.components.DumbbellFilled
+import com.example.gymapp.ui.components.GymIcons
 
 sealed class AppDestination(
     val route: String,
@@ -34,7 +36,7 @@ sealed class AppDestination(
     data object Exercises : AppDestination(
         route = "exercises",
         labelRes = R.string.tab_exercises,
-        icon = Icons.Default.FitnessCenter
+        icon = GymIcons.DumbbellFilled
     )
 
     data object Progress : AppDestination(
@@ -120,7 +122,7 @@ sealed class AppDestination(
  */
 fun AppDestination.tabIcons(): Pair<ImageVector, ImageVector> = when (this) {
     AppDestination.Workouts -> Icons.Outlined.OutlinedCalendarToday to icon
-    AppDestination.Exercises -> Icons.Outlined.OutlinedFitnessCenter to icon
+    AppDestination.Exercises -> GymIcons.Dumbbell to icon
     AppDestination.Progress -> Icons.AutoMirrored.Outlined.OutlinedShowChart to icon
     AppDestination.Profile -> Icons.Outlined.OutlinedPerson to icon
     else -> icon to icon

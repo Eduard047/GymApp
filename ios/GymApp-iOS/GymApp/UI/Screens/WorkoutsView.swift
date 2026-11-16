@@ -694,6 +694,7 @@ public struct WorkoutsView: View {
                     .padding(.bottom, GymTheme.screenBottomInset)
                 }
                 .scrollIndicators(.hidden)
+                .gymStatusBarScrollEdge()
                 // Keep the history search field and its first results above the keyboard:
                 // once the keyboard has finished opening, and again when the first typed
                 // characters swap the period list for results.
@@ -3351,5 +3352,42 @@ private struct ActivationChipButtonStyle: ButtonStyle {
                 reduceMotion ? nil : .easeOut(duration: 0.14),
                 value: configuration.isPressed
             )
+    }
+}
+
+/// Status-bar scroll edge for tab roots whose large title is part of the scrolling content.
+/// At rest nothing is drawn, so the title sits on the plain background. Once content moves
+/// under the top safe area a bar material fades in over that area, so the title and rows blur
+/// out behind the clock instead of being drawn over it. It is a system material (it turns
+/// opaque under Reduce Transparency) and only its opacity animates. Blur only, no gradient.
+private struct GymStatusBarScrollEdge: ViewModifier {
+    @State private var contentIsUnderTopEdge = false
+
+    func body(content: Content) -> some View {
+        content
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top > 1
+            } action: { _, isUnderTopEdge in
+                contentIsUnderTopEdge = isUnderTopEdge
+            }
+            .overlay(alignment: .top) {
+                // A zero-height strip on the safe-area edge: its background grows up to the
+                // screen edge, so it covers exactly the top safe area and nothing below it.
+                Color.clear
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 0)
+                    .background(.bar, ignoresSafeAreaEdges: .top)
+                    .opacity(contentIsUnderTopEdge ? 1 : 0)
+                    .animation(.easeOut(duration: 0.2), value: contentIsUnderTopEdge)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+    }
+}
+
+extension View {
+    /// Blurs scrolled content behind the status bar on a tab root whose title scrolls away.
+    func gymStatusBarScrollEdge() -> some View {
+        modifier(GymStatusBarScrollEdge())
     }
 }

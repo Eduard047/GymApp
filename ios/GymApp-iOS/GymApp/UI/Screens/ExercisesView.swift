@@ -226,6 +226,7 @@ struct ExercisesView: View {
     var body: some View {
         GymBackground {
             exerciseList
+                .gymStatusBarScrollEdge()
         }
         .navigationDestination(for: UUID.self) { exerciseID in
             ExerciseDetailView(exerciseID: exerciseID, perform: performDetailAction)
