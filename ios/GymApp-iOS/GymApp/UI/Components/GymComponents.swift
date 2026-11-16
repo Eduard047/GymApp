@@ -304,8 +304,12 @@ public struct GymMetricTile: View {
     }
 }
 
+/// Borderless tinted capsule: the accent at 10% (light) / 15% (dark) under an accent label, the
+/// same as the Android `InfoPill`. Increase Contrast adds an accent outline.
 public struct GymInfoPill: View {
     @Environment(\.locale) private var locale
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 
     private let text: String
     private let systemImage: String?
@@ -330,8 +334,12 @@ public struct GymInfoPill: View {
         .foregroundStyle(accent)
         .padding(.horizontal, 11)
         .padding(.vertical, 7)
-        .background(Capsule().fill(accent.opacity(0.08)))
-        .overlay { Capsule().strokeBorder(accent.opacity(0.28), lineWidth: 1) }
+        .background(Capsule().fill(accent.opacity(colorScheme == .dark ? 0.15 : 0.10)))
+        .overlay {
+            if colorSchemeContrast == .increased {
+                Capsule().strokeBorder(accent.opacity(0.6), lineWidth: 1)
+            }
+        }
         .accessibilityElement(children: .combine)
     }
 }

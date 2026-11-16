@@ -56,12 +56,13 @@ fun SettingsPanel(
     }
 }
 
-/** Hairline between two rows of the same [SettingsPanel]. */
+/** Hairline between two rows of the same [SettingsPanel]: the grouped-list separator (one pixel, #C6C6C8 light / #38383A dark). */
 @Composable
 fun SettingsRowDivider(modifier: Modifier = Modifier) {
     HorizontalDivider(
         modifier = modifier.padding(start = SettingsRowIconColumn + SettingsRowIconGap),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
+        thickness = hairlineThickness(),
+        color = groupedSeparatorColor()
     )
 }
 

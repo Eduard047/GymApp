@@ -5,6 +5,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalRippleConfiguration
+import androidx.compose.material3.LocalTonalElevationEnabled
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -35,8 +36,10 @@ private val DarkColorScheme = darkColorScheme(
     background = Night,
     surface = NightSurface,
     surfaceVariant = NightRaised,
-    // Neutral surfaces never take a primary tint (no tonal-elevation blue).
-    surfaceTint = Color.Transparent,
+    // Neutral surfaces never take a tint. `Color.Transparent` is black at alpha 0, so Material's
+    // `surfaceColorAtElevation` (tint at an alpha over surface) turned tonal elevation into a grey wash;
+    // the surface colour itself makes that blend a no-op. GymAppTheme also switches tonal elevation off.
+    surfaceTint = NightSurface,
     // Dialogs, menus and date pickers read these roles; keep them on the raised-tile colour
     // instead of the stock Material violet-grey container.
     // Sheets use GymModalBottomSheet (solid surface container); these roles stay on the screen background.
@@ -46,7 +49,9 @@ private val DarkColorScheme = darkColorScheme(
     surfaceContainerLow = Night,
     surfaceContainer = HeroTileNight,
     surfaceContainerHigh = HeroTileNight,
-    surfaceContainerHighest = NightFill,
+    // Stock filled text fields read this role: the inner tile / field colour, on which secondary text
+    // is 4.86:1 (3.96:1 on NightFill). Switch tracks keep NightFill through gymSwitchColors().
+    surfaceContainerHighest = NightRaised,
     inverseSurface = Mist,
     inverseOnSurface = Ink,
     inversePrimary = SystemBlue,
@@ -78,7 +83,8 @@ private val LightColorScheme = lightColorScheme(
     background = Canvas,
     surface = Paper,
     surfaceVariant = Mist,
-    surfaceTint = Color.Transparent,
+    // Same as dark: the surface colour as tint keeps tonal elevation from greying white surfaces.
+    surfaceTint = Paper,
     // Dialogs, menus and date pickers read these roles; keep them on white instead of the stock
     // Material violet-grey container.
     // Sheets use GymModalBottomSheet (solid surface container); these roles stay on the screen background.
@@ -123,9 +129,11 @@ fun GymAppTheme(
         shapes = Shapes
     ) {
         // No ripple anywhere: a flat press tint (focus keeps a steady tint) is the pressed state.
+        // No tonal elevation either: surfaces keep their token colour at any elevation, in both themes.
         CompositionLocalProvider(
             LocalIndication provides PressHighlight(MaterialTheme.colorScheme.onSurface),
             LocalRippleConfiguration provides null,
+            LocalTonalElevationEnabled provides false,
             content = content
         )
     }

@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import com.example.gymapp.ui.theme.NightFill
+import com.example.gymapp.ui.theme.NightSegmentPill
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -565,11 +566,12 @@ fun InfoPill(
     onHero: Boolean = false,
     maxLines: Int = 2
 ) {
-    // On a hero card the pill is a solid tile-coloured chip with the title colour; otherwise it is
-    // a 12% tint of the accent.
+    // On a hero card the pill is a solid tile-coloured chip with the title colour; otherwise it is a
+    // borderless tint of the accent, 10% on light and 15% on dark (same as iOS `GymInfoPill`): accent
+    // text stays >= 4.5:1 on the card and on the light screen ground.
     Surface(
         modifier = modifier,
-        color = if (onHero) HeroTone.tile else accent.copy(alpha = 0.12f),
+        color = if (onHero) HeroTone.tile else accent.copy(alpha = if (isSystemInDarkTheme()) 0.15f else 0.10f),
         contentColor = if (onHero) HeroTone.title else accent,
         shape = RoundedCornerShape(999.dp)
     ) {
@@ -733,7 +735,9 @@ fun <T> GymSegmentedControl(
         var labelScale by remember(items.map { it.label }, stackVertically, useTwoColumns, fontScale) {
             mutableFloatStateOf(1f)
         }
-        val segmentPillColor = if (isSystemInDarkTheme()) NightFill else Color.White
+        // Same pill as iOS `GymTheme.segmentPill`: white on light, system gray on dark (NightFill was
+        // only 1.2:1 against the track, so the selected segment barely read).
+        val segmentPillColor = if (isSystemInDarkTheme()) NightSegmentPill else Color.White
         val content: @Composable (GymSegmentItem<T>, Modifier) -> Unit = { item, itemModifier ->
             val isSelected = item.value == selected
             Surface(
@@ -1074,7 +1078,10 @@ fun TextStyle.tabularDigits(): TextStyle = copy(fontFeatureSettings = "tnum")
 fun gymSwitchColors(): SwitchColors = SwitchDefaults.colors(
     checkedTrackColor = brandFillColor(),
     checkedThumbColor = Color.White,
-    checkedBorderColor = brandFillColor()
+    checkedBorderColor = brandFillColor(),
+    // The "off" track keeps the system fill grey on dark (#3A3A3C); the Material default role is the
+    // inner tile colour, which is too close to a grouped card.
+    uncheckedTrackColor = if (isSystemInDarkTheme()) NightFill else MaterialTheme.colorScheme.surfaceContainerHighest
 )
 
 /** What a [GymAlertDialogButton] does, which picks its label colour. */

@@ -32,6 +32,9 @@ public enum GymTheme {
     /// and 4.62:1 on #E5E5EA; dark #409CFF is 6.0:1 on #1C1C1E and 4.92:1 on #2C2C2E.
     public static let primary = adaptive(light: 0x0062CC, dark: 0x409CFF)
     public static let primaryAction = adaptive(light: 0x007AFF, dark: 0x0A84FF)
+    /// Opaque tinted accent fill (Android `primaryContainer`): light #E5F0FF, dark #18314B
+    /// (system blue at 20% over #1C1C1E). `primary` text is 5.0:1 / 4.69:1 on it.
+    public static let primarySoft = adaptive(light: 0xE5F0FF, dark: 0x18314B)
     /// Apple system blue as a *fill* that carries `onPrimary` (white) text/icons
     /// directly on top of it, e.g. a solid button or hero card background. Filled
     /// button labels need 3:1: white is 4.02:1 on light #007AFF and 3.65:1 on dark
@@ -41,9 +44,9 @@ public enum GymTheme {
     /// Recovery / success. Text-safe in both appearances: light #1C7430 (system green
     /// #34C759 darkened) is 5.24:1 on #F2F2F7; dark #30D158 is 6.89:1 on #2C2C2E.
     public static let secondary = adaptive(light: 0x1C7430, dark: 0x30D158)
-    /// Momentum violet. Light system indigo #5856D6 (5.06:1 on #F2F2F7); dark #7D7AFF
-    /// is the text-safe indigo (4.94:1 on #1C1C1E).
-    public static let tertiary = adaptive(light: 0x5856D6, dark: 0x7D7AFF)
+    /// Momentum violet. Light system indigo #5856D6 (5.06:1 on #F2F2F7); dark #8E8CFF
+    /// is the text-safe indigo (5.95:1 on #1C1C1E, 4.87:1 on #2C2C2E; #7D7AFF was 4.06:1 there).
+    public static let tertiary = adaptive(light: 0x5856D6, dark: 0x8E8CFF)
     /// Effort coral (`record` in DESIGN.md): PR / record marks only.
     public static let record = adaptive(light: 0xFF6961, dark: 0xFF6961)
     /// Label on a solid `record` fill: black (7.45:1 on #FF6961).

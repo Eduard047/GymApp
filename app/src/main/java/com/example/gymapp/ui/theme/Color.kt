@@ -32,6 +32,8 @@ val Night = Color(0xFF000000)
 val NightSurface = Color(0xFF1C1C1E)
 val NightRaised = Color(0xFF2C2C2E)
 val NightFill = Color(0xFF3A3A3C)
+/** Raised pill of the segmented control on dark (iOS `GymTheme.segmentPill`): white label is 6.0:1. */
+val NightSegmentPill = Color(0xFF636366)
 val NightSeparator = Color(0xFF38383A)
 val NightOutline = Color(0xFF545458)
 val Frost = Color(0xFFFFFFFF)
@@ -41,10 +43,15 @@ val FrostMuted = Color(0xFF98989F)
 val SystemBlueNight = Color(0xFF0A84FF)
 /** Accent text and `colorScheme.primary`: 4.92:1 on NightRaised (SystemBlueNight is 3.82:1 there). */
 val SystemBlueTextNight = Color(0xFF409CFF)
-val BlueSoftNight = Color(0xFF183554)
+/**
+ * Opaque tinted accent fill (`primaryContainer`, iOS `GymTheme.primarySoft`): SystemBlueNight at 20%
+ * over NightSurface. Accent text (SystemBlueTextNight) is 4.69:1 on it; the former #183554 was 4.43:1.
+ */
+val BlueSoftNight = Color(0xFF18314B)
 val RecoveryGreenNight = Color(0xFF30D158)
 val MomentumVioletFill = Color(0xFF5E5CE6)
-val MomentumVioletNight = Color(0xFF7D7AFF)
+/** Violet as text and icon on dark: 5.95:1 on NightSurface, 4.87:1 on NightRaised (#7D7AFF was 4.06:1 there). */
+val MomentumVioletNight = Color(0xFF8E8CFF)
 val AmberNight = Color(0xFFFF9F0A)
 /** Error as text and icon on dark surfaces (the system red #FF453A is 4.09:1 on NightRaised). */
 val DestructiveNight = Color(0xFFFF6961)

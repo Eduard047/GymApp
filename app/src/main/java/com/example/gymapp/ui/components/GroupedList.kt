@@ -24,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import com.example.gymapp.ui.theme.NightSeparator
+import com.example.gymapp.ui.theme.SeparatorLight
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -61,7 +63,7 @@ internal fun hairlineThickness(): Dp = with(LocalDensity.current) { 1.toDp() }
 /** Hairline colour of the grouped list: #38383A on dark surfaces, #C6C6C8 on light ones (iOS separators). */
 @Composable
 internal fun groupedSeparatorColor(): Color =
-    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF38383A) else Color(0xFFC6C6C8)
+    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) NightSeparator else SeparatorLight
 
 /** Collects the rows of a [GroupedSection]; each one is separated from the next by a hairline. */
 class GroupedScope internal constructor() {
