@@ -214,6 +214,7 @@ select set_eq(
       ('public.notification_register_installation(uuid,text,text,text,text,text,text,text,text)', 'authenticated'),
       ('public.notification_revoke_installation(uuid)', 'authenticated'),
       ('public.prepare_account_deletion()', 'authenticated'),
+      ('public.record_ad_attribution(boolean,bigint,bigint,bigint,bigint,text,text,text,text,timestamp with time zone)', 'authenticated'),
       ('public.require_live_session_for_account_deletion()', 'authenticated'),
       ('public.social_block_profile(text)', 'authenticated'),
       ('public.social_cancel_friend_request(text,bigint)', 'authenticated'),
@@ -412,9 +413,9 @@ select set_eq(
   $q$
     values
       ('public', '7'),
-      ('gymapp_private', '28')
+      ('gymapp_private', '29')
   $q$,
-  'table inventory is 7 in public and 28 in gymapp_private'
+  'table inventory is 7 in public and 29 in gymapp_private'
 );
 
 -- relforcerowsecurity is the actual state, not a requirement for every table:
@@ -433,6 +434,7 @@ select set_eq(
       ('gymapp_private', 'account_deletion_operations'),
       ('gymapp_private', 'activity_only_workout_sync_states'),
       ('gymapp_private', 'activity_only_workouts'),
+      ('gymapp_private', 'ad_attributions'),
       ('gymapp_private', 'garmin_gateway_preauth_buckets'),
       ('gymapp_private', 'social_friend_codes'),
       ('gymapp_private', 'user_state_progression'),

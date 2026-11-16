@@ -1,18 +1,18 @@
 # GymApp — App Privacy answers
 
-Use this as the source of truth for App Store Connect **App Privacy**. It reflects source changes through 2026-08-15 and must be re-audited against the final signed archive, deployed backend, and configured notification providers before submission.
+Use this as the source of truth for App Store Connect **App Privacy**. It reflects source changes through 2026-11-16 and must be re-audited against the final signed archive, deployed backend, and configured notification providers before submission.
 
 Apple references: [App privacy details](https://developer.apple.com/app-store/app-privacy-details/), [Manage app privacy](https://developer.apple.com/help/app-store-connect/manage-app-information/manage-app-privacy/), [privacy manifests](https://developer.apple.com/documentation/bundleresources/privacy-manifest-files), and [User Privacy and Data Use](https://developer.apple.com/app-store/user-privacy-and-data-use/).
 
-> **Platform scope (2026-11-15):** every answer below is for the iPhone app and stays “no analytics”. The Android app differs: it adds optional, consent-gated Google Analytics for Firebase for Google Ads conversion measurement (see `app/PLAY_DATA_SAFETY.md` and section 6 of the published privacy policy). Analytics on iPhone is deferred; if it is ever added, update `PrivacyInfo.xcprivacy`, these answers, the privacy policy, and App Store Connect before uploading that build.
+> **Platform scope (2026-11-16):** every answer below is for the iPhone app. iPhone has no third-party analytics SDK and no generic usage analytics; its only measurement is Apple Ads install attribution through Apple's AdServices framework (declared as Usage Data → **Advertising Data**, linked to the user, not used for tracking, purpose **Analytics**). The Android app differs on purpose: it adds optional, consent-gated Google Analytics for Firebase for Google Ads conversion measurement (see `app/PLAY_DATA_SAFETY.md` and section 6 of the published privacy policy). If iPhone gains any other analytics, update `PrivacyInfo.xcprivacy`, these answers, the privacy policy, and App Store Connect before uploading that build.
 
 ## Top-level answers
 
 - **Does this app or its third-party partners collect data from this app?** Yes.
 - **Is any data used to track users?** No.
-- **Does the app use IDFA or AppTrackingTransparency?** No.
-- **Advertising / marketing purposes?** No.
-- **Analytics purposes?** No.
+- **Does the app use IDFA or AppTrackingTransparency?** No. Apple Ads attribution uses AdServices (`AAAttribution`), which needs no tracking permission and exposes no IDFA; the app does not link `AppTrackingTransparency` or `AdSupport` and `NSPrivacyTracking` stays `false`.
+- **Advertising / marketing purposes?** No (the app shows no ads and does not use data for third-party advertising or marketing).
+- **Analytics purposes?** Yes, for one data type only: Advertising Data (Apple Ads install attribution), used to measure which campaigns lead to sign-ups and first workouts.
 - **Third-party advertising?** No.
 
 In Apple's terminology, data is “collected” when it is transmitted off the device and retained beyond what is necessary to service the immediate request. Local-only Training Profile preferences and notification scheduling are therefore not listed as collected data.
@@ -27,6 +27,7 @@ In Apple's terminology, data is “collected” when it is transmitted off the d
 | Health & Fitness → **Fitness** | Workout dates, exercise names, sets, weights, repetitions, workout plans, duration, calories, progress, derived XP/level/workout count, bounded friend-visible summaries/records, separately consented read-only exact detail for the same latest five workouts, direct workout invitations, and accepted two-person live-workout plans/progress | Yes | No | App Functionality; Product Personalization |
 | User Content → **Other User Content** | Free-form workout notes; friend requests, privacy/block choices, workout-invite/live-room lifecycle; and any legacy fixed-category leaderboard report retained for moderation | Yes | No | App Functionality |
 | Identifiers → **User ID** | Supabase account UUID and random UUID-free friend/profile code | Yes | No | App Functionality |
+| Usage Data → **Advertising Data** | Result of Apple's AdServices attribution check, taken once per install: whether the download came from an Apple Ads campaign and, if so, campaign, ad group, keyword, ad, country/region, download type, claim type, and App Store placement, plus the time the install was first seen. Stored with the account only when a cloud account signs in or signs up; local-only profiles upload nothing. No IDFA, no click/impression timestamps, no third party | Yes | No | Analytics |
 | Identifiers → **Device ID** | Opaque Garmin device token when Garmin sync is connected; and, when optional system alerts are enabled, a random installation ID plus the APNs/FCM token or Web Push endpoint and subscription keys needed for delivery | Yes | No | App Functionality |
 
 “Product Personalization” applies because stored workout/health history is used to tailor Smart Coach recommendations, progress, muscle-load views, missions, and related in-app guidance for that user. It is not advertising personalization.
@@ -39,7 +40,7 @@ In Apple's terminology, data is “collected” when it is transmitted off the d
 - sensitive demographic data;
 - Contacts, emails/text messages, photos/videos, or audio;
 - browsing history or search history;
-- advertising data;
+- advertising data other than the Apple Ads install attribution listed above;
 - generic tap/click analytics or other cross-app usage analytics;
 - crash, performance, or diagnostic telemetry;
 - camera, microphone, HealthKit, Motion & Fitness, or advertising identifier data.
@@ -54,6 +55,7 @@ Training Profile — split, 2–6 training days per week, goal, and energy balan
 - A separate two-person live workout is available only to one mutually confirmed, unblocked friend who accepts the invitation. The room shares the frozen plan and, while it is open, each participant's committed set completion, entered weight, and repetitions with the other participant through Supabase Realtime. The live room never includes workout notes, email addresses, Supabase Auth UUIDs, Garmin/health data, or credentials. Removing or blocking the friend closes the room and revokes access.
 - Optional system notifications cover bounded lifecycle events such as a friend request, workout invitation, friend joining, live start, participant finish, or room close. Per-set live progress is Realtime-only and is never sent as push. APNs, FCM, or the browser's Web Push service receives the installation delivery token/endpoint and a static localized message with only a minimal opaque event kind, room/object ID, and revision—never a profile/workout name, exercise, weight, repetitions, notes, email, or Auth UUID. Availability depends on platform support, deployed provider configuration, and notification permission.
 - Legacy leaderboard moderation reports remain private; the clients no longer submit new cross-account leaderboard reports.
+- Apple's AdServices service answers the one-time install attribution request (the attribution token is exchanged directly with Apple's `api-adservices.apple.com`; the token is kept on the device only until Apple answers, for at most 24 hours, and is never uploaded). The parsed result is retained in Supabase with the account and removed when the account is deleted.
 - Supabase is the hosting/authentication processor for account, cloud-state, profile, and Garmin cloud records. Data remains linked by the Supabase UUID.
 - Depending on platform and only when system alerts are enabled, Apple Push Notification service, Firebase Cloud Messaging, or the browser's push service processes the account-bound delivery address and minimal notification payload described above.
 - Optional "Support the developer" tips are consumable in-app purchases processed by Apple (StoreKit 2) and, on Android, Google Play. The app receives no card/payment details, stores no purchase records, and has no server-side validation; nothing is unlocked. No new collected data type is declared (the purchase flow itself is handled by Apple/Google). In App Store Connect, the six consumable products and their localizations must exist and be Ready to Submit with the build.
@@ -65,15 +67,15 @@ Training Profile — split, 2–6 training days per week, goal, and energy balan
 - Active account/cloud data is retained while the account is active so sync, protected progress, recommendations, friends, workout invitations, live workouts, notifications, and Garmin sync work. Standard unanswered workout invitations expire after seven days. Their exercise/plan payload becomes eligible for tombstoning 24 hours after decline/cancellation/expiry or 30 days after acceptance; bounded cleanup runs when either participant next refreshes Friends or the workout-invitation inbox, so a fully dormant row may retain its payload until that cleanup or account deletion. The standard-invitation ID/status/revision/idempotency tombstone and other friend/request/block/privacy lifecycle rows remain account data until removed by product lifecycle rules or account deletion.
 - A waiting/ready live room expires seven days after creation, and an active room expires 24 hours after the owner starts it. Scheduled bounded cleanup runs every five minutes: the frozen plan, summary, and per-participant progress become eligible for purge 24 hours after a room is cancelled or expires, or 30 days after completion; the terminal room and its dependent rows become eligible for deletion 31 days after it ends. A backlog can delay a bounded cleanup pass beyond the eligibility threshold.
 - A notification address remains active while alerts are enabled and the signed-in client refreshes it. An authenticated revoke scrubs the raw token/endpoint and Web Push keys immediately. An active installation not refreshed for 180 days is scrubbed by bounded dispatcher cleanup; a scrubbed installation tombstone is eligible for deletion after 30 days once no delivery row refers to it. Completed/dead/expired notification intents and their delivery rows are eligible for deletion 30 days after completion. Pending live lifecycle alerts expire after one day, except a live invitation which may remain pending only until its seven-day room invitation deadline; no pending delivery window exceeds seven days.
-- In-app deletion hard-deletes the authenticated Supabase Auth user. Production schema rows in `user_states`, `profiles`, the private social graph/projections/invitations/live rooms/notification installations and outbox, `garmin_devices`, and `garmin_plans` reference the account with cascading lifecycle cleanup; related moderation reports also cascade through the reporter/target relationships.
+- In-app deletion hard-deletes the authenticated Supabase Auth user. Production schema rows in `user_states`, `profiles`, the private social graph/projections/invitations/live rooms/notification installations and outbox, `garmin_devices`, `garmin_plans`, and the Apple Ads `ad_attributions` row reference the account with cascading lifecycle cleanup; related moderation reports also cascade through the reporter/target relationships.
 - Production deletion was tested end-to-end with two disposable users on 2026-07-11. SQL verification found no remaining Auth identity, profile, state, Garmin, or report rows, and production Storage contained zero objects. Repeat this audit if uploads or another processor are added; Supabase warns that an Auth user owning Storage objects cannot be deleted.
 - After success, the app must erase the local session/Keychain, account database, and account-specific preferences.
 - Operational backups/security records may persist only for the processor's limited backup cycle or where law requires retention; they must not remain available as an active user account.
 
 ## Cross-checks before submission
 
-- [x] Built-app `PrivacyInfo.xcprivacy` declares the same seven collected categories and `NSPrivacyTracking = false`.
-- [x] Final source/dependency audit found no analytics, tracking, crash reporting, advertising, or another collected data type.
+- [ ] Built-app `PrivacyInfo.xcprivacy` declares the same eight collected categories (including Advertising Data / Analytics) and `NSPrivacyTracking = false`; verify against the final archive, and enter Advertising Data in App Store Connect before submitting the build that contains Apple Ads attribution.
+- [x] Final source/dependency audit found no third-party analytics SDK, tracking, crash reporting, or advertising SDK; the only added data type is the first-party Apple Ads install attribution (AdServices, no IDFA, no ATT).
 - [x] Production cascade behavior and zero orphan account data were verified with two disposable accounts on 2026-07-11.
 - [x] Published the updated combined privacy policy describing mutual friends, separately consented latest-five read-only workout details, live-room data, notification providers/permission, and exact retention; live/local SHA-256 verified on 2026-08-15.
 - [x] Change-control rule recorded: if any field or SDK changes, update the privacy manifest, this file, App Store Connect answers, and privacy policy before uploading the build.

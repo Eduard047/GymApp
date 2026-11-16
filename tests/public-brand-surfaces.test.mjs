@@ -133,13 +133,35 @@ test("privacy sources scope optional consent-gated analytics to the Android app"
     assert.match(privacy, new RegExp(`<h3 id="${id}-android-analytics">6\\.`));
     assert.match(privacy, new RegExp(`href="#${id}-android-analytics"`));
   }
-  assert.match(privacy, /This section applies only to the Android app\. The iPhone app and the browser version do not collect analytics\./);
-  assert.match(privacy, /Цей розділ стосується лише застосунку Android\./);
-  assert.match(privacy, /Этот раздел относится только к приложению Android\./);
+  assert.match(privacy, /This section applies only to the Android app\. The browser version does not collect analytics, and the iPhone app collects only the Apple Ads attribution described in section 5\./);
+  assert.match(privacy, /Цей розділ стосується лише застосунку Android\. Браузерна версія аналітику не збирає, а застосунок iPhone збирає лише атрибуцію Apple Ads/);
+  assert.match(privacy, /Этот раздел относится только к приложению Android\. Браузерная версия аналитику не собирает, а приложение для iPhone собирает только атрибуцию Apple Ads/);
   assert.match(privacy, /we deny ad personalization/);
   assert.match(privacy, /up to 14 months/);
-  assert.match(appPrivacy, /iPhone[^\n]*no analytics|no analytics[^\n]*iPhone/i);
+  assert.match(appPrivacy, /iPhone has no third-party analytics SDK and no generic usage analytics/);
   assert.match(appPrivacy, /Android app differs/);
+});
+
+test("Apple Ads install attribution is disclosed consistently on iPhone surfaces and stays non-tracking", async () => {
+  assert.match(appPrivacy, /Usage Data → \*\*Advertising Data\*\*[^\n]*\| Yes \| No \| Analytics \|/);
+  assert.match(appPrivacy, /AppTrackingTransparency/);
+  for (const text of [
+    /On iPhone, GymApp asks Apple’s AdServices framework once after installation whether the download came from an Apple Ads campaign\. If you create or sign in to an account, we store the campaign, ad group, keyword, ad, country and download type with your account/,
+    /На iPhone GymApp один раз після встановлення запитує в Apple \(AdServices\), чи завантаження прийшло з кампанії Apple Ads\./,
+    /На iPhone GymApp один раз после установки спрашивает у Apple \(AdServices\), пришла ли загрузка из кампании Apple Ads\./
+  ]) {
+    assert.match(privacy, text);
+  }
+  assert.match(privacy, /Effective November 16, 2026 · Чинна з 16 листопада 2026 року · Действует с 16 ноября 2026 года/);
+  const manifest = await readFile("ios/GymApp-iOS/GymApp/Resources/PrivacyInfo.xcprivacy", "utf8");
+  assert.match(manifest, /<key>NSPrivacyTracking<\/key>\s*<false\/>/);
+  assert.match(
+    manifest,
+    /NSPrivacyCollectedDataTypeAdvertisingData<\/string>\s*<key>NSPrivacyCollectedDataTypeLinked<\/key>\s*<true\/>\s*<key>NSPrivacyCollectedDataTypeTracking<\/key>\s*<false\/>\s*<key>NSPrivacyCollectedDataTypePurposes<\/key>\s*<array>\s*<string>NSPrivacyCollectedDataTypePurposeAnalytics<\/string>/
+  );
+  const project = await readFile("ios/GymApp-iOS/GymApp.xcodeproj/project.pbxproj", "utf8");
+  assert.match(project, /AdServices\.framework/);
+  assert.doesNotMatch(project, /AppTrackingTransparency|AdSupport/);
 });
 
 function pngSize(buffer) {

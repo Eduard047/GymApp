@@ -100,6 +100,10 @@ final class AppState: ObservableObject {
     let cloudSync: CloudSyncService
     let garminCloud: GarminCloudService
     let garminPhoneSync: GarminPhoneSyncService
+    /// Apple Ads install attribution (AdServices). Started once at launch; uploads
+    /// only for a signed-in cloud account, never for local-only profiles.
+    let appleAdsAttribution: AppleAdsAttributionService
+    private var appleAdsAttributionStarted = false
 
     @Published private(set) var workoutStore: WorkoutStore
     /// The single, process-wide owner of the active workout draft, created as
@@ -228,7 +232,8 @@ final class AppState: ObservableObject {
         cloudURLSession: URLSession = .shared,
         remoteStateLoader: (@MainActor (String) async throws -> Data?)? = nil,
         garminBindingStore: GarminDeviceBindingStore = GarminDeviceBindingStore(),
-        restTimers: RestTimerManager? = nil
+        restTimers: RestTimerManager? = nil,
+        appleAdsAttribution: AppleAdsAttributionService? = nil
     ) throws {
         self.auth = auth
         self.defaults = defaults
@@ -262,6 +267,17 @@ final class AppState: ObservableObject {
             auth: auth,
             defaults: defaults
         )
+        if let appleAdsAttribution {
+            self.appleAdsAttribution = appleAdsAttribution
+        } else {
+            let cloudSync = self.cloudSync
+            self.appleAdsAttribution = AppleAdsAttributionService(
+                currentCloudUserID: { [weak auth] in auth?.session?.cloud?.userID },
+                upload: { record, userID in
+                    try await cloudSync.recordAdAttribution(record, expectedUserID: userID)
+                }
+            )
+        }
         let openedStore = try WorkoutStore.openRecoveringCorruptStore(
             accountStorageKey: "signed-out",
             directoryURL: workoutDirectoryURL
@@ -300,7 +316,24 @@ final class AppState: ObservableObject {
             .removeDuplicates(by: { $0?.storageKey == $1?.storageKey })
             .sink { [weak self] session in
                 self?.scheduleActivation(session)
+                if session?.cloud != nil { self?.requestAppleAdsAttributionUpload() }
             }
+    }
+
+    /// Begins the once-per-install Apple Ads resolution (non-blocking). Called at launch.
+    func startAppleAdsAttribution() {
+        guard !appleAdsAttributionStarted else { return }
+        appleAdsAttributionStarted = true
+        let service = appleAdsAttribution
+        Task { await service.refresh() }
+    }
+
+    /// Runs after a cloud sign-in/sign-up or account switch and on foreground. The
+    /// service itself ignores local-only profiles and uploads at most once per install.
+    private func requestAppleAdsAttributionUpload() {
+        guard appleAdsAttributionStarted else { return }
+        let service = appleAdsAttribution
+        Task { await service.uploadIfReady() }
     }
 
     deinit {
@@ -2806,6 +2839,10 @@ final class AppState: ObservableObject {
     func handleAppDidBecomeActive() {
         liveActivityController.adoptRunningActivities(draft: activeWorkoutStore.draft)
         resumeCloudSyncIfNeeded()
+        if appleAdsAttributionStarted {
+            let service = appleAdsAttribution
+            Task { await service.refresh() }
+        }
     }
 
     /// Picks up unsent workout changes when the app returns to the foreground: a

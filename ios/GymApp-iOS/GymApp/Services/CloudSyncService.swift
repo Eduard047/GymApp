@@ -1337,6 +1337,53 @@ final class CloudSyncService: ObservableObject {
         }
     }
 
+    /// Records the install's Apple Ads attribution for `expectedUserID` through
+    /// `record_ad_attribution` (owner is derived from the JWT on the server).
+    /// Returns `true` when newly recorded and `false` when this account already
+    /// has a row; both mean the upload is complete. A deterministic constraint
+    /// refusal is reported as `AppleAdsAttributionUploadError.rejected`.
+    func recordAdAttribution(
+        _ record: AppleAdsAttributionRecord,
+        expectedUserID: String
+    ) async throws -> Bool {
+        let attribution = record.attribution
+        func value(_ number: Int64?) -> Any { number.map { NSNumber(value: $0) } ?? NSNull() }
+        func value(_ text: String?) -> Any { text ?? NSNull() }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let body: [String: Any] = [
+            "p_attributed": attribution.attributed,
+            "p_campaign_id": value(attribution.campaignID),
+            "p_ad_group_id": value(attribution.adGroupID),
+            "p_keyword_id": value(attribution.keywordID),
+            "p_ad_id": value(attribution.adID),
+            "p_conversion_type": value(attribution.conversionType),
+            "p_claim_type": value(attribution.claimType),
+            "p_country_or_region": value(attribution.countryOrRegion),
+            "p_supply_placement": value(attribution.supplyPlacement),
+            "p_install_seen_at": formatter.string(from: record.installSeenAt)
+        ]
+        let data: Data
+        do {
+            (data, _) = try await socialRequest(
+                path: "/rest/v1/rpc/record_ad_attribution",
+                expectedUserID: expectedUserID,
+                body: body,
+                maximumResponseBytes: 1_024
+            )
+        } catch CloudSyncError.postgRESTFailure(let statusCode, _, _)
+                    where statusCode == 400 || statusCode == 422 {
+            throw AppleAdsAttributionUploadError.rejected
+        }
+        guard let recorded = try? JSONSerialization.jsonObject(
+            with: data,
+            options: [.fragmentsAllowed]
+        ) as? Bool else {
+            throw CloudSyncError.invalidResponse
+        }
+        return recorded
+    }
+
     private func socialBlockRPC(
         path: String,
         profileID: String,

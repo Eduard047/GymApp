@@ -1,6 +1,6 @@
 # GymApp for iOS
 
-Native SwiftUI port of the Android GymApp. The project targets iOS 18 and is built with Xcode 27 / the iOS 27 SDK. It intentionally has no advertising, analytics, tracking, or third-party runtime SDKs.
+Native SwiftUI port of the Android GymApp. The project targets iOS 18 and is built with Xcode 27 / the iOS 27 SDK. It intentionally has no advertising, tracking, or third-party runtime SDKs, and no usage analytics. Its only measurement is Apple Ads install attribution through Apple's AdServices framework (no ATT prompt, no IDFA; uploaded once per install, only for a signed-in cloud account). This is a documented store-specific native difference from Android, which measures Google Ads conversions through optional, consent-gated Firebase Analytics.
 
 ## Included
 

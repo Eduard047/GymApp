@@ -23,6 +23,7 @@ final class AppBootstrap: ObservableObject {
         do {
             let state = try AppState(auth: auth)
             state.attachNativePushManager(nativePush)
+            state.startAppleAdsAttribution()
             appState = state
             startupErrorMessage = nil
         } catch {

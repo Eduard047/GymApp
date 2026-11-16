@@ -1,6 +1,6 @@
 begin;
 
-select plan(53);
+select plan(55);
 
 -- Users: A and B hold live sessions, C holds an expired session, E is used for
 -- the rate-limit path. Nothing below writes outside this rolled-back transaction.
@@ -708,6 +708,11 @@ select is(
 -- Hard delete (what the Edge Function does after the commit): the account's own
 -- rows cascade away and B's rows are untouched.
 -- ---------------------------------------------------------------------------
+insert into gymapp_private.ad_attributions (user_id, attributed, install_seen_at)
+values
+  ('c9000000-0000-4000-8000-000000000001', false, pg_catalog.clock_timestamp()),
+  ('c9000000-0000-4000-8000-000000000002', false, pg_catalog.clock_timestamp());
+
 delete from auth.users
 where id = 'c9000000-0000-4000-8000-000000000001';
 
@@ -737,6 +742,21 @@ select is(
    where deletion_grant.user_id = 'c9000000-0000-4000-8000-000000000002'),
   1::bigint,
   'deleting A leaves B''s pending grant in place'
+);
+
+select is(
+  (select pg_catalog.count(*)
+   from gymapp_private.ad_attributions as attribution
+   where attribution.user_id = 'c9000000-0000-4000-8000-000000000001'),
+  0::bigint,
+  'deleting the auth user cascades the Apple Ads attribution row'
+);
+select is(
+  (select pg_catalog.count(*)
+   from gymapp_private.ad_attributions as attribution
+   where attribution.user_id = 'c9000000-0000-4000-8000-000000000002'),
+  1::bigint,
+  'deleting A leaves B''s Apple Ads attribution row in place'
 );
 
 select * from finish();

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AD5EA00000000000000000A1 /* AdServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AD5EA00000000000000000A2 /* AdServices.framework */; };
 		B00000000000000000000001 /* ConnectIQ in Frameworks */ = {isa = PBXBuildFile; productRef = B00000000000000000000003 /* ConnectIQ */; };
 		BA204D6DB9A832A3D28E2283 /* GymAppLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5F2666432DDF0B2994837C2C /* GymAppLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C00000000000000000000001 /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = C00000000000000000000003 /* Realtime */; };
@@ -44,6 +45,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		AD5EA00000000000000000A2 /* AdServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AdServices.framework; path = System/Library/Frameworks/AdServices.framework; sourceTree = SDKROOT; };
 		5F2666432DDF0B2994837C2C /* GymAppLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GymAppLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A00000000000000000000001 /* GymApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GymApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A00000000000000000000002 /* GymAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GymAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -141,6 +143,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AD5EA00000000000000000A1 /* AdServices.framework in Frameworks */,
 				B00000000000000000000001 /* ConnectIQ in Frameworks */,
 				C00000000000000000000001 /* Realtime in Frameworks */,
 			);
@@ -174,7 +177,16 @@
 				A0000000000000000000000B /* Products */,
 				E3221E9E0F5509E424221D1C /* GymAppLiveActivity */,
 				D366C3269955DD2E87BE1247 /* GymAppShared */,
+				AD5EA00000000000000000A3 /* Frameworks */,
 			);
+			sourceTree = "<group>";
+		};
+		AD5EA00000000000000000A3 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				AD5EA00000000000000000A2 /* AdServices.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
