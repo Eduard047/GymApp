@@ -82,6 +82,31 @@ val GymIcons.Trash: ImageVector by lazy {
     }
 }
 
+/** Outline "share": an open-topped tray with an arrow rising out of it. */
+val GymIcons.ShareUp: ImageVector by lazy {
+    lineIcon("ShareUp") {
+        line {
+            // Arrow shaft and head.
+            moveTo(12f, 14.5f)
+            verticalLineTo(3.5f)
+            moveTo(8.25f, 7.25f)
+            lineTo(12f, 3.5f)
+            lineTo(15.75f, 7.25f)
+            // Tray, open where the arrow passes.
+            moveTo(8.5f, 10.5f)
+            horizontalLineTo(7.5f)
+            arcToRelative(2f, 2f, 0f, false, false, -2f, 2f)
+            verticalLineTo(18.5f)
+            arcToRelative(2f, 2f, 0f, false, false, 2f, 2f)
+            horizontalLineTo(16.5f)
+            arcToRelative(2f, 2f, 0f, false, false, 2f, -2f)
+            verticalLineTo(12.5f)
+            arcToRelative(2f, 2f, 0f, false, false, -2f, -2f)
+            horizontalLineTo(15.5f)
+        }
+    }
+}
+
 /** Level dumbbell: a short outer plate and a tall inner plate on each side of the grip. */
 private fun PathBuilder.dumbbellShape() {
     // Outer plates.

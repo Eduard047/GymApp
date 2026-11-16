@@ -620,6 +620,12 @@ private struct GarminWorkoutTimelineChart: View {
     let durationSeconds: Int64
     let languageCode: String
 
+    /// Set label on a confidence-coloured slice: white on the light-theme fills, black on the
+    /// brighter dark-theme fills (at least 5.4:1 on every fill in both themes).
+    private static let sliceLabelColor = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? .black : .white
+    })
+
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(GarminWorkoutDetailCopy.workoutTimeline(languageCode: languageCode))
@@ -651,7 +657,7 @@ private struct GarminWorkoutTimelineChart: View {
                                 if width >= 28 {
                                     Text("S\(slice.setIndex)")
                                         .font(.caption2.monospacedDigit().weight(.black))
-                                        .foregroundStyle(Color.white)
+                                        .foregroundStyle(Self.sliceLabelColor)
                                 }
                             }
                             .offset(x: min(x, max(0, geometry.size.width - width)))

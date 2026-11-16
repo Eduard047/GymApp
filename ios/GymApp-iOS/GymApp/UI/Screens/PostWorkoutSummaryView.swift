@@ -540,26 +540,38 @@ struct PostWorkoutSummaryView: View {
             heroStat(
                 value: duration.value,
                 unit: duration.unit,
+                trailing: duration.trailing,
                 label: gymText("Duration", "Тривалість", "Длительность", languageCode: languageCode)
             )
         }
     }
 
-    /// "36" + "мин", or "1:05" + "ч" from an hour on; "—" when the duration is unknown.
-    private func heroDuration(_ seconds: Int) -> (value: String, unit: String?) {
-        guard seconds > 0 else { return ("—", nil) }
+    /// "36" + "мин", "1" + "ч", or "1" + "ч" then "5" + "мин" past the hour, the same reading as
+    /// `gymCompactDuration` and Android; "—" when the duration is unknown.
+    private func heroDuration(
+        _ seconds: Int
+    ) -> (value: String, unit: String?, trailing: (value: String, unit: String)?) {
+        guard seconds > 0 else { return ("—", nil, nil) }
         let minutes = max(1, seconds / 60)
+        let locale = gymAppLocale()
+        let minuteUnit = gymText("min", "хв", "мин", languageCode: languageCode)
         if minutes < 60 {
-            return (minutes.formatted(.number.locale(gymAppLocale())), gymText("min", "хв", "мин", languageCode: languageCode))
+            return (minutes.formatted(.number.locale(locale)), minuteUnit, nil)
         }
-        return (
-            "\(minutes / 60):" + String(format: "%02d", minutes % 60),
-            gymText("h", "год", "ч", languageCode: languageCode)
-        )
+        let hours = (minutes / 60).formatted(.number.locale(locale))
+        let hourUnit = gymText("h", "год", "ч", languageCode: languageCode)
+        let remaining = minutes % 60
+        guard remaining > 0 else { return (hours, hourUnit, nil) }
+        return (hours, hourUnit, (remaining.formatted(.number.locale(locale)), minuteUnit))
     }
 
     /// Big tabular numeral with a small unit beside it, the label under it.
-    private func heroStat(value: String, unit: String?, label: String) -> some View {
+    private func heroStat(
+        value: String,
+        unit: String?,
+        trailing: (value: String, unit: String)? = nil,
+        label: String
+    ) -> some View {
         let numeral = Text(value)
             .gymScaledFont(size: 30, weight: .semibold, design: .rounded, relativeTo: .largeTitle, monospacedDigit: true, maxScale: 1.6)
         return VStack(alignment: .leading, spacing: 2) {
@@ -572,6 +584,20 @@ struct PostWorkoutSummaryView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(GymTheme.textSecondary)
                         .lineLimit(1)
+                        // With a second pair the numerals give way first, so units stay whole.
+                        .layoutPriority(trailing == nil ? 0 : 1)
+                }
+                if let trailing {
+                    Text(trailing.value)
+                        .gymScaledFont(size: 30, weight: .semibold, design: .rounded, relativeTo: .largeTitle, monospacedDigit: true, maxScale: 1.6)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .padding(.leading, 2)
+                    Text(trailing.unit)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .lineLimit(1)
+                        .layoutPriority(1)
                 }
             }
             Text(label)
@@ -581,7 +607,9 @@ struct PostWorkoutSummaryView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel([label, value, unit].compactMap { $0 }.joined(separator: " "))
+        .accessibilityLabel(
+            [label, value, unit, trailing?.value, trailing?.unit].compactMap { $0 }.joined(separator: " ")
+        )
     }
 
     /// Flat tonal capsule with a trophy, matching Android's `biggest_workout_*` InfoPill.

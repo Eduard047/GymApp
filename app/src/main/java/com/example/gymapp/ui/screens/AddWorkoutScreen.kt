@@ -52,7 +52,8 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Share
+import com.example.gymapp.ui.components.GymIcons
+import com.example.gymapp.ui.components.ShareUp
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.TrackChanges
@@ -859,7 +860,7 @@ fun AddWorkoutScreen(
                         enabled = selectedExerciseCount > 0 && !uiState.isSaving
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Share,
+                            imageVector = GymIcons.ShareUp,
                             contentDescription = null
                         )
                         Spacer(modifier = Modifier.size(8.dp))

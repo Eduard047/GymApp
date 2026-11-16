@@ -43,6 +43,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -50,7 +51,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Share
+import com.example.gymapp.ui.components.GymIcons
+import com.example.gymapp.ui.components.ShareUp
 import com.example.gymapp.ui.theme.Button
 import com.example.gymapp.ui.theme.accentMarkColor
 import androidx.compose.material3.ButtonDefaults
@@ -140,8 +142,9 @@ import com.example.gymapp.util.keepNumberWithUnit
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
 
-// Apple system grey / blue / green / yellow / orange / red (dark set; non-text marks, >= 3:1 on the dark surface).
-private val GARMIN_ZONE_COLORS = listOf(
+// Apple system grey / blue / green / yellow / orange / red for non-text marks (zone bars and legend dots).
+// Dark set: >= 3:1 on the dark surface.
+private val GARMIN_ZONE_COLORS_DARK = listOf(
     Color(0xFF8E8E93),
     Color(0xFF0A84FF),
     Color(0xFF30D158),
@@ -149,6 +152,21 @@ private val GARMIN_ZONE_COLORS = listOf(
     Color(0xFFFF9F0A),
     Color(0xFFFF453A)
 )
+
+// Light set: the values the iPhone zone chart resolves to in light mode
+// (system blue / yellow / orange, the theme's darker green and red).
+private val GARMIN_ZONE_COLORS_LIGHT = listOf(
+    Color(0xFF8E8E93),
+    Color(0xFF007AFF),
+    Color(0xFF1C7430),
+    Color(0xFFFFCC00),
+    Color(0xFFFF9500),
+    Color(0xFFD70015)
+)
+
+@Composable
+private fun garminZoneColors(): List<Color> =
+    if (isSystemInDarkTheme()) GARMIN_ZONE_COLORS_DARK else GARMIN_ZONE_COLORS_LIGHT
 
 internal data class WorkoutDetailControlVisibility(
     val showAddExercise: Boolean,
@@ -717,7 +735,7 @@ private fun WorkoutHeaderCard(
                 if (!isActivityOnly) {
                     IconButton(onClick = onShare) {
                         Icon(
-                            imageVector = Icons.Default.Share,
+                            imageVector = GymIcons.ShareUp,
                             contentDescription = stringResource(R.string.action_share_workout)
                         )
                     }
@@ -854,7 +872,7 @@ private fun GarminWorkoutHeaderCard(
                 if (!isActivityOnly) {
                     IconButton(onClick = onShare) {
                         Icon(
-                            imageVector = Icons.Default.Share,
+                            imageVector = GymIcons.ShareUp,
                             contentDescription = stringResource(R.string.action_share_workout)
                         )
                     }
@@ -1518,6 +1536,7 @@ private fun GarminWorkoutRhythmVisual(
 
 @Composable
 private fun GarminZoneDistribution(zoneSeconds: List<Long>) {
+    val zoneColors = garminZoneColors()
     val totalSeconds = zoneSeconds.sum().takeIf { it > 0L } ?: return
     val zoneSummary = zoneSeconds.mapIndexedNotNull { zone, seconds ->
         seconds.takeIf { it > 0L }?.let {
@@ -1546,7 +1565,7 @@ private fun GarminZoneDistribution(zoneSeconds: List<Long>) {
                 if (seconds <= 0L) return@forEachIndexed
                 val width = size.width * (seconds.toFloat() / totalSeconds.toFloat())
                 drawRect(
-                    color = GARMIN_ZONE_COLORS[zone],
+                    color = zoneColors[zone],
                     topLeft = Offset(x, 0f),
                     size = Size(width, size.height)
                 )
@@ -1565,7 +1584,7 @@ private fun GarminZoneDistribution(zoneSeconds: List<Long>) {
                     modifier = Modifier
                         .size(9.dp)
                         .clip(CircleShape)
-                        .background(GARMIN_ZONE_COLORS[zone])
+                        .background(zoneColors[zone])
                 )
                 Text(
                     text = if (zone == 0) {
@@ -1871,6 +1890,7 @@ private fun GarminSetHeartRateMarkers(
 
 @Composable
 private fun GarminSetZoneBar(interval: GarminSetIntervalMetrics) {
+    val zoneColors = garminZoneColors()
     val totalSeconds = interval.heartRateZoneSeconds.sum().takeIf { it > 0 } ?: return
     val summary = interval.heartRateZoneSeconds
         .mapIndexedNotNull { zone, seconds ->
@@ -1897,7 +1917,7 @@ private fun GarminSetZoneBar(interval: GarminSetIntervalMetrics) {
                 if (seconds <= 0) return@forEachIndexed
                 val width = size.width * (seconds.toFloat() / totalSeconds.toFloat())
                 drawRect(
-                    color = GARMIN_ZONE_COLORS[zone],
+                    color = zoneColors[zone],
                     topLeft = Offset(x, 0f),
                     size = Size(width, size.height)
                 )

@@ -76,7 +76,7 @@ fun WorkoutComparisonCard(
             formatter = wholeNumber
         ),
         comparisonMetric(
-            label = androidx.compose.ui.res.stringResource(R.string.label_reps),
+            label = androidx.compose.ui.res.stringResource(R.string.active_workout_step_reps_label),
             comparison = comparison.totalReps,
             formatter = wholeNumber
         ),
