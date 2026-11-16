@@ -57,7 +57,6 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.AlertDialog
 import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -65,6 +64,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -76,7 +76,10 @@ import androidx.compose.material3.minimumInteractiveComponentSize
 import com.example.gymapp.ui.components.GymModalBottomSheet
 import com.example.gymapp.ui.components.GymSheetTitleRow
 import com.example.gymapp.ui.components.sheetListScrollGuard
-import androidx.compose.material3.OutlinedTextField
+import com.example.gymapp.ui.components.GymAlertDialogButtonRole
+import com.example.gymapp.ui.components.GymAlertDialogButton
+import com.example.gymapp.ui.components.GymAlertDialog
+import androidx.compose.material3.TextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -141,6 +144,7 @@ import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.theme.GymPanelShape
+import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.AddWorkoutUiState
 import com.example.gymapp.ui.viewmodel.WorkoutTemplatePreset
@@ -684,14 +688,19 @@ fun AddWorkoutScreen(
                         Spacer(modifier = Modifier.size(8.dp))
                         Text(DateTimeUtils.formatDate(uiState.workoutDate))
                     }
-                    OutlinedTextField(
+                    // The section title above already names the field, so it carries a placeholder only.
+                    val noteLabel = stringResource(R.string.label_note)
+                    TextField(
                         value = uiState.note,
                         onValueChange = onNoteChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.label_note)) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics { contentDescription = noteLabel },
                         placeholder = { Text(stringResource(R.string.hint_note)) },
                         minLines = 2,
-                        maxLines = 4
+                        maxLines = 4,
+                        shape = GymControlShape,
+                        colors = planEditorFieldColors()
                     )
                 }
             }
@@ -921,20 +930,23 @@ fun AddWorkoutScreen(
         }
     }
     if (showDiscardConfirmation && !editorInteractionsLocked) {
-        AlertDialog(
+        GymAlertDialog(
             onDismissRequest = { showDiscardConfirmation = false },
-            title = { Text(stringResource(R.string.workout_plan_discard_title)) },
+            title = stringResource(R.string.workout_plan_discard_title),
             text = { Text(stringResource(R.string.workout_plan_discard_message)) },
             confirmButton = {
-                TextButton(onClick = onDiscardPlan) {
-                    Text(
-                        text = stringResource(R.string.workout_plan_discard_changes),
-                        color = MaterialTheme.colorScheme.error
-                    )
+                GymAlertDialogButton(
+                    onClick = onDiscardPlan,
+                    role = GymAlertDialogButtonRole.Destructive
+                ) {
+                    Text(stringResource(R.string.workout_plan_discard_changes))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDiscardConfirmation = false }) {
+                GymAlertDialogButton(
+                    onClick = { showDiscardConfirmation = false },
+                    role = GymAlertDialogButtonRole.Cancel
+                ) {
                     Text(stringResource(R.string.workout_plan_keep_editing))
                 }
             }
@@ -952,25 +964,26 @@ fun AddWorkoutScreen(
         )
     }
     if (showClearConfirmation && !editorInteractionsLocked) {
-        AlertDialog(
+        GymAlertDialog(
             onDismissRequest = { showClearConfirmation = false },
-            title = { Text(stringResource(R.string.workout_plan_clear_title)) },
+            title = stringResource(R.string.workout_plan_clear_title),
             text = { Text(stringResource(R.string.workout_plan_clear_message)) },
             confirmButton = {
-                TextButton(
+                GymAlertDialogButton(
                     onClick = {
                         showClearConfirmation = false
                         onClearPlan()
-                    }
+                    },
+                    role = GymAlertDialogButtonRole.Destructive
                 ) {
-                    Text(
-                        text = stringResource(R.string.workout_plan_clear_action),
-                        color = MaterialTheme.colorScheme.error
-                    )
+                    Text(stringResource(R.string.workout_plan_clear_action))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showClearConfirmation = false }) {
+                GymAlertDialogButton(
+                    onClick = { showClearConfirmation = false },
+                    role = GymAlertDialogButtonRole.Cancel
+                ) {
                     Text(stringResource(R.string.workout_plan_clear_keep))
                 }
             }
@@ -1153,7 +1166,9 @@ private fun SmartCoachPanel(
                                     selected = selectedEffort == effort,
                                     onClick = { onEffortSelected(effort) },
                                     label = { Text(effort.smartCoachLabel()) },
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.weight(1f),
+                                    colors = planEditorChipColors(),
+                                    border = null
                                 )
                             }
                         }
@@ -1949,7 +1964,9 @@ private fun ExerciseSelector(
                     FilterChip(
                         selected = !frequentOnly,
                         onClick = { frequentOnly = false },
-                        label = { Text(stringResource(R.string.exercise_picker_all)) }
+                        label = { Text(stringResource(R.string.exercise_picker_all)) },
+                        colors = planEditorChipColors(),
+                        border = null
                     )
                     FilterChip(
                         selected = frequentOnly,
@@ -1958,6 +1975,8 @@ private fun ExerciseSelector(
                             sortMode = ExerciseSortMode.MostFrequent
                         },
                         label = { Text(stringResource(R.string.exercise_picker_frequent)) },
+                        colors = planEditorChipColors(),
+                        border = null,
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Star,
@@ -2090,3 +2109,17 @@ private fun WorkoutTemplatePreset.icon() = when (this) {
     WorkoutTemplatePreset.Lower -> Icons.AutoMirrored.Filled.DirectionsWalk
     WorkoutTemplatePreset.Deload -> Icons.Default.SouthEast
 }
+
+/**
+ * Choice chips in the plan editor, matching the iOS tinted capsules: the neutral inner-tile fill while
+ * idle, a subtle accent tint with an accent label when selected. Never a solid accent fill.
+ */
+@Composable
+private fun planEditorChipColors() = FilterChipDefaults.filterChipColors(
+    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+    labelColor = MaterialTheme.colorScheme.onSurface,
+    iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+    selectedLabelColor = MaterialTheme.colorScheme.primary,
+    selectedLeadingIconColor = MaterialTheme.colorScheme.primary
+)

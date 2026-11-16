@@ -64,7 +64,7 @@ struct WorkoutAdaptationSheet: View {
                             if !pending.isEmpty && (pending.count != remaining.count || replaced || !changes.isEmpty) {
                                 GymPanel {
                                     VStack(alignment: .leading, spacing: 8) {
-                                        if replaced { Text(gymExerciseName(old.exerciseName ?? "") + " →").font(.subheadline) }
+                                        if replaced { Text(gymExerciseName(old.exerciseName ?? "") + " →").font(.subheadline).foregroundStyle(GymTheme.textSecondary) }
                                         Text(gymExerciseName(block?.exerciseName ?? old.exerciseName ?? "")).font(.headline)
                                         if pending.count != remaining.count {
                                             Text(t("Remaining sets", "Залишилось підходів", "Осталось подходов") + ": \(pending.count) → \(remaining.count)")
@@ -80,7 +80,7 @@ struct WorkoutAdaptationSheet: View {
                         Button(t("Apply changes", "Застосувати зміни", "Применить изменения")) { apply(candidate) }
                             .buttonStyle(GymPrimaryButtonStyle())
                     } else if request.reason == "timeCut" {
-                        Text(t("Minutes remaining", "Залишилось хвилин", "Осталось минут"))
+                        Text(t("Minutes remaining", "Залишилось хвилин", "Осталось минут")).font(.headline)
                         HStack { ForEach([10, 20, 30], id: \.self) { minutes in
                             Button("\(minutes)") { candidate = WorkoutAdaptation.build(request.source, reason: request.reason, minutes: minutes, catalog: request.catalog) }
                                 .buttonStyle(GymSecondaryButtonStyle())
@@ -91,7 +91,10 @@ struct WorkoutAdaptationSheet: View {
                                 candidate = WorkoutAdaptation.build(request.source, reason: request.reason, catalog: request.catalog, replacement: alternative)
                             }.buttonStyle(GymSecondaryButtonStyle())
                         }
-                        if alternatives.isEmpty { Text(t("No similar exercise available.", "Схожої вправи немає.", "Нет доступного похожего упражнения.")) }
+                        if alternatives.isEmpty {
+                            Text(t("No similar exercise available.", "Схожої вправи немає.", "Нет доступного похожего упражнения."))
+                                .font(.subheadline).foregroundStyle(GymTheme.textSecondary)
+                        }
                     }
                     if let error { Text(error).foregroundStyle(GymTheme.error) }
                 }.padding()

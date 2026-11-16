@@ -36,7 +36,6 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.StopCircle
-import androidx.compose.material3.AlertDialog
 import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -47,7 +46,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.example.gymapp.ui.components.GymModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -88,6 +87,10 @@ import java.util.UUID
 import kotlinx.coroutines.delay
 import com.example.gymapp.util.safeGetString
 import com.example.gymapp.ui.theme.TintedButton
+import com.example.gymapp.ui.theme.GymControlShape
+import com.example.gymapp.ui.components.GymAlertDialogButtonRole
+import com.example.gymapp.ui.components.GymAlertDialogButton
+import com.example.gymapp.ui.components.GymAlertDialog
 
 enum class VoiceTranscriptionError {
     Unavailable,
@@ -494,12 +497,14 @@ internal fun VoiceWorkoutDraftSheet(
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.voice_workout_dictation), style = MaterialTheme.typography.labelLarge)
-                    OutlinedTextField(
+                    TextField(
                         value = transcript,
                         onValueChange = ::updateTranscript,
                         placeholder = { Text(stringResource(R.string.voice_workout_placeholder)) },
                         minLines = 3,
                         maxLines = 8,
+                        shape = GymControlShape,
+                        colors = planEditorFieldColors(),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("voice_workout_transcript")
@@ -673,21 +678,25 @@ internal fun VoiceWorkoutDraftSheet(
     }
 
     if (showReplaceConfirmation) {
-        AlertDialog(
+        GymAlertDialog(
             onDismissRequest = { showReplaceConfirmation = false },
-            title = { Text(stringResource(R.string.voice_workout_replace_title)) },
+            title = stringResource(R.string.voice_workout_replace_title),
             text = { Text(stringResource(R.string.voice_workout_replace_message)) },
             confirmButton = {
-                TextButton(
+                GymAlertDialogButton(
                     onClick = {
                         showReplaceConfirmation = false
                         apply(replace = true)
                     },
-                    modifier = Modifier.testTag("voice_workout_replace_confirm")
-                ) { Text(stringResource(R.string.voice_workout_replace_confirm), color = MaterialTheme.colorScheme.error) }
+                    modifier = Modifier.testTag("voice_workout_replace_confirm"),
+                    role = GymAlertDialogButtonRole.Destructive
+                ) { Text(stringResource(R.string.voice_workout_replace_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { showReplaceConfirmation = false }) {
+                GymAlertDialogButton(
+                    onClick = { showReplaceConfirmation = false },
+                    role = GymAlertDialogButtonRole.Cancel
+                ) {
                     Text(stringResource(R.string.voice_workout_cancel))
                 }
             }
@@ -758,24 +767,34 @@ private fun VoiceWorkoutBlockEditor(
             }
         }
         val removeSetLabel = stringResource(R.string.voice_workout_remove_set)
+        val weightLabel = stringResource(R.string.voice_workout_weight)
+        val repsLabel = stringResource(R.string.voice_workout_reps)
         block.sets.forEach { set ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
+                TextField(
                     value = weightText(set),
                     onValueChange = { onWeightChange(set, it) },
-                    label = { Text(stringResource(R.string.voice_workout_weight)) },
+                    placeholder = { Text(weightLabel) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.weight(1f)
+                    shape = GymControlShape,
+                    colors = planEditorFieldColors(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics { contentDescription = weightLabel }
                 )
                 Text(stringResource(R.string.voice_workout_kg_times), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(
+                TextField(
                     value = repsText(set),
                     onValueChange = { onRepsChange(set, it) },
-                    label = { Text(stringResource(R.string.voice_workout_reps)) },
+                    placeholder = { Text(repsLabel) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f)
+                    shape = GymControlShape,
+                    colors = planEditorFieldColors(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics { contentDescription = repsLabel }
                 )
                 IconButton(onClick = { onRemoveSet(set) }, modifier = Modifier.semantics { contentDescription = removeSetLabel }) {
                     Icon(Icons.Default.RemoveCircleOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)

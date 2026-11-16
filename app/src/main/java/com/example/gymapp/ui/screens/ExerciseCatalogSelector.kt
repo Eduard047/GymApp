@@ -10,7 +10,11 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.example.gymapp.ui.theme.GymPanelShape
+import com.example.gymapp.ui.theme.GymControlShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -43,7 +47,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldColors
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.rememberCoroutineScope
 import com.example.gymapp.data.repository.DuplicateExerciseNameException
 import com.example.gymapp.data.repository.ExerciseLimitReachedException
@@ -452,6 +458,25 @@ internal fun newExerciseErrorFor(error: Throwable): NewExerciseError =
     }
 
 /**
+ * Filled tonal text-field colours for the plan editor and its sheets (iOS `gymTextFieldChrome`, the same
+ * chrome as `GymSearchField`): inner-tile fill, no outline and no underline in any state.
+ */
+@Composable
+internal fun planEditorFieldColors(): TextFieldColors {
+    val fill = androidx.compose.material3.MaterialTheme.colorScheme.surfaceVariant
+    return TextFieldDefaults.colors(
+        focusedContainerColor = fill,
+        unfocusedContainerColor = fill,
+        disabledContainerColor = fill,
+        errorContainerColor = fill,
+        focusedIndicatorColor = Color.Transparent,
+        unfocusedIndicatorColor = Color.Transparent,
+        disabledIndicatorColor = Color.Transparent,
+        errorIndicatorColor = Color.Transparent
+    )
+}
+
+/**
  * Name field + "Create and add" at the top of the picker list, always present in Add mode (iOS puts
  * the same section first). Until the user edits the field it mirrors the search query, so a search
  * with no match is one tap from creating that exercise.
@@ -485,17 +510,22 @@ private fun CreateExercisePanel(
                 style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
-            OutlinedTextField(
+            val nameLabel = stringResource(R.string.exercise_picker_create_name)
+            TextField(
                 value = name,
                 onValueChange = {
                     edited = true
                     typedName = it.take(WorkoutDataLimits.MAX_EXERCISE_NAME_LENGTH)
                     error = null
                 },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.exercise_picker_create_name)) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics { contentDescription = nameLabel },
+                placeholder = { Text(nameLabel) },
                 isError = error != null,
-                singleLine = true
+                singleLine = true,
+                shape = GymControlShape,
+                colors = planEditorFieldColors()
             )
             error?.let { current ->
                 Text(

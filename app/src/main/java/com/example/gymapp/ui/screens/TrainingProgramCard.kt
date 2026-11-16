@@ -4,6 +4,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
 import com.example.gymapp.ui.theme.Button
+import com.example.gymapp.ui.components.GymAlertDialogButtonRole
+import com.example.gymapp.ui.components.GymAlertDialogButton
+import com.example.gymapp.ui.components.GymAlertDialog
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -35,17 +38,17 @@ internal fun TrainingProgramCard(owner: String, sessions: List<WorkoutSessionSum
 
     confirmation?.let { intent ->
         val replace = intent.first == "replace"
-        AlertDialog(
+        GymAlertDialog(
             onDismissRequest = { confirmation = null },
-            title = { Text(stringResource(if (replace) R.string.training_program_new_title else R.string.training_program_finish_title)) },
+            title = stringResource(if (replace) R.string.training_program_new_title else R.string.training_program_finish_title),
             text = { Text(stringResource(if (replace) R.string.training_program_new_message else R.string.training_program_finish_message)) },
-            confirmButton = { TextButton(onClick = {
+            confirmButton = { GymAlertDialogButton(onClick = {
                 confirmation = null
                 refresh(if (store.load()?.id != intent.second) false else if (replace)
                     store.create(profile.workoutsPerWeek, profile.goal.name, replacingId = intent.second)
                 else store.updateStatus("completed"))
             }) { Text(stringResource(if (replace) R.string.training_program_create else R.string.training_program_finish)) } },
-            dismissButton = { TextButton(onClick = { confirmation = null }) { Text(stringResource(R.string.action_cancel)) } }
+            dismissButton = { GymAlertDialogButton(onClick = { confirmation = null }, role = GymAlertDialogButtonRole.Cancel) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
 

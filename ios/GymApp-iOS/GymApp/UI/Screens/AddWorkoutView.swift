@@ -799,13 +799,14 @@ struct AddWorkoutView: View {
                                 .minimumScaleFactor(0.82)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                                 .padding(.horizontal, 8)
+                                // Tinted selection, never a solid accent fill: neutral tile while idle.
                                 .foregroundStyle(
-                                    selectedEffort == effort ? Color.white : GymTheme.primary
+                                    selectedEffort == effort ? GymTheme.primary : GymTheme.textPrimary
                                 )
                                 .background(
                                     selectedEffort == effort
-                                        ? GymTheme.brandFill
-                                        : GymTheme.primary.opacity(0.1),
+                                        ? GymTheme.primary.opacity(0.16)
+                                        : GymTheme.surfaceVariant,
                                     in: Capsule()
                                 )
                         }
