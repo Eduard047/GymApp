@@ -51,6 +51,7 @@ const PUBLIC_SITE_URL = "https://gymapptracker.com/";
 const SHARED_WORKOUT_URL = `${PUBLIC_SITE_URL}workout/`;
 const SHARED_WORKOUT_PENDING_KEY = "gym-pwa-pending-shared-workout-v1";
 const SUPPORT_URL = "https://gymapptracker.com/support.html";
+const DONATE_URL = "https://send.monobank.ua/jar/999deKUDsk";
 const PRIVACY_URL = "https://gymapptracker.com/privacy-policy.html";
 const AUTH_REDIRECT_URL = "https://gymapptracker.com/confirmed.html?platform=web";
 const ANDROID_APP_PACKAGE = "com.setforge.gymapp";
@@ -11547,7 +11548,7 @@ function loginScreen() {
       ${pendingSharedWorkout ? `<section class="panel highlighted shared-workout-pending"><h2>${tx("Shared workout ready", "Спільне тренування готове")}</h2><p>${tx("Sign in or enter offline mode to review the plan. It will not replace or save anything automatically.", "Увійди або відкрий офлайн-режим, щоб переглянути план. Він нічого не замінить і не збереже автоматично.")}</p>${sharedWorkoutPreviewMarkup(pendingSharedWorkout)}</section>` : ""}
       ${storeDownloadPanel()}
       ${remotePanel ? authAccessMarkup(remotePanel) : offlineLinkMarkup(false)}
-      <section class="panel auth-legal-card"><p>${tx("Workout data is handled under the Privacy Policy.", "Дані тренувань обробляються відповідно до Політики конфіденційності.")}</p><nav class="auth-links" aria-label="${txAttr("GymApp links", "Посилання GymApp")}"><a class="auth-link" href="${PRIVACY_URL}" target="_blank" rel="noopener noreferrer">${svg("privacy", "small-icon")}<span>${tx3("Privacy Policy", "Політика конфіденційності", "Политика конфиденциальности")}</span></a><a class="auth-link" href="${SUPPORT_URL}" target="_blank" rel="noopener noreferrer">${svg("help", "small-icon")}<span>${tx3("Support", "Підтримка", "Поддержка")}</span></a></nav></section>
+      <section class="panel auth-legal-card"><p>${tx("Workout data is handled under the Privacy Policy.", "Дані тренувань обробляються відповідно до Політики конфіденційності.")}</p><nav class="auth-links" aria-label="${txAttr("GymApp links", "Посилання GymApp")}"><a class="auth-link" href="${PRIVACY_URL}" target="_blank" rel="noopener noreferrer">${svg("privacy", "small-icon")}<span>${tx3("Privacy Policy", "Політика конфіденційності", "Политика конфиденциальности")}</span></a><a class="auth-link" href="${SUPPORT_URL}" target="_blank" rel="noopener noreferrer">${svg("help", "small-icon")}<span>${tx3("Support", "Підтримка", "Поддержка")}</span></a><a class="auth-link" href="${DONATE_URL}" target="_blank" rel="noopener noreferrer">${svg("heart", "small-icon")}<span>${tx3("Support the developer", "Підтримати розробника", "Поддержать разработчика")}</span></a></nav></section>
       ${modal ? modalMarkup() : ""}
     </main>
   </div>`;
@@ -20136,6 +20137,7 @@ function accountSettingsSheetMarkup() {
   const links = settingsPanelMarkup([
     settingsRowMarkup({ icon: "hand", title: tx3("Privacy policy", "Політика конфіденційності", "Политика конфиденциальности"), href: PRIVACY_URL, trailing: external }),
     settingsRowMarkup({ icon: "help", title: tx3("Support", "Підтримка", "Поддержка"), href: SUPPORT_URL, trailing: external }),
+    settingsRowMarkup({ icon: "heart", title: tx3("Support the developer", "Підтримати розробника", "Поддержать разработчика"), href: DONATE_URL, trailing: external }),
     settingsRowMarkup({ icon: "smartphone", title: tx3("App Store", "App Store", "App Store"), href: APP_STORE_APP_URL, trailing: external }),
     settingsRowMarkup({ icon: "smartphone", title: tx3("Google Play", "Google Play", "Google Play"), href: GOOGLE_PLAY_APP_URL, trailing: external }),
     settingsRowMarkup({ icon: "watch", title: tx3("Garmin Connect IQ", "Garmin Connect IQ", "Garmin Connect IQ"), href: garminStoreAppLink(), trailing: external })

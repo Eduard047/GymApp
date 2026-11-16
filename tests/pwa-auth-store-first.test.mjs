@@ -27,6 +27,7 @@ function authContext(overrides = {}) {
     modal: null,
     PRIVACY_URL: "https://example.test/privacy",
     SUPPORT_URL: "https://example.test/support",
+    DONATE_URL: "https://example.test/donate",
     authDrafts: {
       login: { email: "", password: "" },
       signup: { email: "", emailConfirm: "", password: "", passwordConfirm: "", name: "" },
