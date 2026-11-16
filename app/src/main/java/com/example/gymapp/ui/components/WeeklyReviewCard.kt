@@ -36,6 +36,7 @@ import com.example.gymapp.util.formattedPluralStringResource
 import androidx.compose.ui.text.font.FontWeight
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.util.formatVolumeTotal
+import com.example.gymapp.util.formatWeightDisplay
 
 /**
  * "This week" as grouped blocks: the week switcher with three headline numbers (workouts, sets,
@@ -182,7 +183,14 @@ fun WeeklyReviewCard(
         GymAlertDialog(onDismissRequest = { evidence = null }, title = stringResource(R.string.training_comparison),
             text = { Column { listOf(insight.previous, insight.current).forEach { entry ->
                 TextButton(onClick = { evidence = null; onOpenWorkout(entry.sessionId) }) {
-                    Text(DateTimeUtils.formatDate(entry.sessionDate) + " · ${entry.weight} kg × ${entry.reps}")
+                    // Weight in the app locale with the localised unit ("92,5 кг"), as on iOS.
+                    Text(
+                        DateTimeUtils.formatDate(entry.sessionDate) + " · " +
+                            formattedStringResource(
+                                R.string.today_history_volume_kg,
+                                formatWeightDisplay(entry.weight, locale)
+                            ) + " × ${entry.reps}"
+                    )
                 }
             } } }, confirmButton = { GymAlertDialogButton(onClick = { evidence = null }) { Text(stringResource(R.string.action_close)) } })
     }

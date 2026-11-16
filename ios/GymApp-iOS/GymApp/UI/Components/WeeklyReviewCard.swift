@@ -99,9 +99,12 @@ struct WeeklyReviewCard: View {
             NavigationStack {
                 List([insight.previous, insight.current], id: \.setID) { entry in
                     NavigationLink { WorkoutDetailView(store: store, workoutID: entry.workoutID).gymTopBannerInset() } label: {
-                        VStack(alignment: .leading) {
+                        VStack(alignment: .leading, spacing: 2) {
                             Text(gymShortDate(entry.sessionDate))
+                                .foregroundStyle(GymTheme.textPrimary)
                             Text("\(entry.weight.formatted(.number.locale(gymAppLocale()))) \(t("kg", "кг", "кг")) × \(entry.reps)")
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(GymTheme.textSecondary)
                         }
                     }
                 }.navigationTitle(t("Comparison", "Порівняння", "Сравнение"))
@@ -131,7 +134,9 @@ struct WeeklyReviewCard: View {
             }
             .accessibilityLabel(t("Previous week", "Попередній тиждень", "Предыдущая неделя"))
             Button { offset = min(0, offset + 1) } label: {
-                Image(systemName: "chevron.right").frame(minWidth: 44, minHeight: 44)
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(offset == 0 ? GymTheme.outline : GymTheme.textPrimary)
+                    .frame(minWidth: 44, minHeight: 44)
             }
             .disabled(offset == 0)
             .accessibilityLabel(t("Next week", "Наступний тиждень", "Следующая неделя"))

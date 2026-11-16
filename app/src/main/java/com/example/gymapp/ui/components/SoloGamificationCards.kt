@@ -433,7 +433,8 @@ fun AchievementPreviewCard(
                 text = stringResource(R.string.achievements_title),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary
+                // A plain label, not a control: the accent stays reserved for tappable things.
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 text = stringResource(R.string.achievements_gallery_title),

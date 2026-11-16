@@ -357,7 +357,7 @@ struct GymMonthNavigator: View {
                 // At accessibility sizes the "Current month" caption drops under
                 // the month so neither has to truncate.
                 GymAdaptiveStack(rowAlignment: .center, columnAlignment: .center, spacing: 5, columnSpacing: 2) {
-                    Text(month.formatted(.dateTime.month(.wide).year().locale(locale)))
+                    Text(gymStandaloneMonthTitle(month, locale: locale))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(GymTheme.textPrimary)
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
@@ -366,7 +366,7 @@ struct GymMonthNavigator: View {
                     if isCurrentMonth {
                         Text(gymLocalized("Current month"))
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(GymTheme.primary)
+                            .foregroundStyle(GymTheme.textSecondary)
                             .multilineTextAlignment(.center)
                     }
                 }
@@ -379,6 +379,7 @@ struct GymMonthNavigator: View {
             Button(action: onNext) {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
+                    .foregroundStyle(isCurrentMonth ? GymTheme.outline : GymTheme.textPrimary)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
@@ -395,6 +396,16 @@ struct GymMonthNavigator: View {
             ? gymText("Current month, \(formatted)", "Поточний місяць, \(formatted)", "Текущий месяц, \(formatted)", languageCode: gymCurrentLanguageCode())
             : gymText("\(formatted). Return to current month", "\(formatted). Повернутися до поточного місяця", "\(formatted). Вернуться к текущему месяцу", languageCode: gymCurrentLanguageCode())
     }
+}
+
+/// Stand-alone month and year for a calendar heading: "Ноябрь 2026", not the running-text
+/// "ноябрь 2026 г." that `.dateTime.month(.wide).year()` gives in Russian. Matches Android.
+private func gymStandaloneMonthTitle(_ month: Date, locale: Locale) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = locale
+    formatter.dateFormat = "LLLL yyyy"
+    let text = formatter.string(from: month)
+    return String(text.prefix(1)).uppercased(with: locale) + String(text.dropFirst())
 }
 
 struct WorkoutMonthSwitcher: View {
@@ -795,15 +806,16 @@ struct WorkoutActivityHeatmap: View {
     private var weekdaySymbols: [String] {
         var localizedCalendar = calendar
         localizedCalendar.locale = AppLanguage(rawValue: gymCurrentLanguageCode())?.locale
-        let symbols = localizedCalendar.veryShortStandaloneWeekdaySymbols
+        // Short, not very short: one-letter symbols repeat in Russian (П В С Ч П С В). Matches Android.
+        let symbols = localizedCalendar.shortStandaloneWeekdaySymbols
         guard symbols.count == 7 else {
             switch gymCurrentLanguageCode() {
             case AppLanguage.ukrainian.rawValue:
-                return ["П", "В", "С", "Ч", "П", "С", "Н"]
+                return ["пн", "вт", "ср", "чт", "пт", "сб", "нд"]
             case AppLanguage.russian.rawValue:
-                return ["П", "В", "С", "Ч", "П", "С", "В"]
+                return ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
             default:
-                return ["M", "T", "W", "T", "F", "S", "S"]
+                return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
             }
         }
         return Array(symbols[1...6]) + [symbols[0]]
@@ -841,6 +853,8 @@ struct WorkoutActivityHeatmap: View {
                         Text(symbol)
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(GymTheme.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                             .frame(maxWidth: .infinity)
                             .accessibilityHidden(true)
                     }
@@ -1401,9 +1415,24 @@ func gymBadgeAccent(_ rarity: BadgeRarity) -> Color {
     case .common: GymTheme.secondary
     case .uncommon: GymTheme.primary
     case .rare: GymTheme.tertiary
-    case .epic: .purple
-    case .legendary: .orange
+    case .epic: gymRarityTint(light: 0x8057C7, dark: 0xBF5AF2)
+    case .legendary: gymRarityTint(light: 0xA86300, dark: 0xFF9F0A)
     }
+}
+
+/// Epic / legendary tints follow the theme: Apple system purple / orange on dark, darker steps on
+/// light so the rarity label and "+XP" keep at least 4.5:1 on white (system orange was about 2.2:1).
+/// Same values as Android `achievementAccent`.
+private func gymRarityTint(light: UInt32, dark: UInt32) -> Color {
+    Color(uiColor: UIColor { traits in
+        let hex = traits.userInterfaceStyle == .dark ? dark : light
+        return UIColor(
+            red: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: 1
+        )
+    })
 }
 
 struct AchievementGallery: View {
@@ -1425,7 +1454,8 @@ struct AchievementGallery: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(gymLocalized("Achievements", languageCode: languageCode))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(GymTheme.primary)
+                    // A plain label, not a control: the accent stays reserved for tappable things.
+                    .foregroundStyle(GymTheme.textSecondary)
                     .tracking(0.2)
                 Text(
                     gymText(
@@ -1679,13 +1709,7 @@ struct AchievementGallery: View {
     }
 
     private func rarityColor(_ rarity: BadgeRarity) -> Color {
-        switch rarity {
-        case .common: GymTheme.secondary
-        case .uncommon: GymTheme.primary
-        case .rare: GymTheme.tertiary
-        case .epic: .purple
-        case .legendary: .orange
-        }
+        gymBadgeAccent(rarity)
     }
 }
 
