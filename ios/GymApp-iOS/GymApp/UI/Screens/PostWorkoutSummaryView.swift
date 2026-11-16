@@ -520,7 +520,8 @@ struct PostWorkoutSummaryView: View {
     private func heroStatsRow(_ workout: WorkoutSession) -> some View {
         let layout: AnyLayout = dynamicTypeSize >= .xxxLarge
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
-            : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+            // Label baselines line up even when a long numeral is scaled down to fit its column.
+            : AnyLayout(HStackLayout(alignment: .lastTextBaseline, spacing: 12))
         let setCount = workout.setCount
         let duration = heroDuration(workout.durationSeconds ?? 0)
         let volume = max(0, workout.totalVolume.isFinite ? workout.totalVolume : 0)
@@ -818,7 +819,7 @@ struct PostWorkoutSummaryView: View {
             ru: ("подход", "подхода", "подходов"),
             languageCode: languageCode
         )
-        let detail = row.best.map { "\(sets) · \(vsLastSetText($0))" } ?? sets
+        let detail = row.best.map { "\(sets)\u{00A0}· \(vsLastSetText($0))" } ?? sets
         let comparison = vsLastByExercise[row.exerciseID]
         return HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {

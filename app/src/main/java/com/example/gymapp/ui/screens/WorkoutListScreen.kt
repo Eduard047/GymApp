@@ -1393,8 +1393,8 @@ private fun TrainingHistoryPanel(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(1.dp)
-                        .background(MaterialTheme.colorScheme.outlineVariant)
+                        .height(hairlineThickness())
+                        .background(groupedSeparatorColor())
                 )
                 GymSearchField(
                     value = searchQuery,
@@ -1420,7 +1420,11 @@ private fun TrainingHistoryPanel(
                             }
                         ),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp)
                     )
                 } else {
                     visibleWorkouts.forEachIndexed { index, session ->
@@ -1428,8 +1432,8 @@ private fun TrainingHistoryPanel(
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(1.dp)
-                                    .background(MaterialTheme.colorScheme.outlineVariant)
+                                    .height(hairlineThickness())
+                                    .background(groupedSeparatorColor())
                             )
                         }
                         TrainingHistoryRow(
@@ -1694,7 +1698,7 @@ private fun TrainingHistoryRow(
                             session.setCount,
                             session.setCount
                         )
-                    ).joinToString(" · ")
+                    ).joinToString("\u00A0· ")
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1720,7 +1724,7 @@ private fun TrainingHistoryRow(
         }
         Text(
             text = trailingText,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,

@@ -3,6 +3,7 @@ package com.example.gymapp.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,8 +17,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -25,9 +28,15 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.gymapp.R
@@ -329,21 +338,65 @@ private fun WorkoutResultHero(uiState: PostWorkoutSummaryUiState) {
     }
 }
 
+/** Fitting steps for a hero numeral wider than its column (iOS: `minimumScaleFactor(0.6)`). */
+private val HeroStatScales = listOf(1f, 0.9f, 0.8f, 0.7f, 0.6f)
+
+/**
+ * "10 570 кг", "1 ч 5 мин": digits at the hero size, unit letters at half size in the secondary
+ * colour (the iOS hero), so a unit never wraps under its number.
+ */
+private fun heroStatText(value: String, numeralSize: TextUnit, unitColor: Color): AnnotatedString {
+    val unitStyle = SpanStyle(
+        fontSize = (numeralSize.value * 0.5f).coerceAtLeast(13f).sp,
+        color = unitColor
+    )
+    return buildAnnotatedString {
+        value.forEachIndexed { index, char ->
+            val next = value.drop(index + 1).firstOrNull { !it.isWhitespace() }
+            val isUnit = char.isLetter() || (char.isWhitespace() && next?.isLetter() == true)
+            if (isUnit) withStyle(unitStyle) { append(char) } else append(char)
+        }
+    }
+}
+
 @Composable
 private fun HeroStat(value: String, label: String, modifier: Modifier = Modifier) {
+    val numeralStyle = MaterialTheme.typography.headlineMedium.tabularDigits().copy(
+        fontSize = 30.sp,
+        fontWeight = FontWeight.SemiBold
+    )
+    val unitColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
     Column(
         modifier = modifier.semantics(mergeDescendants = true) { },
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.headlineMedium.tabularDigits(),
-            fontSize = 30.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val maxWidthPx = constraints.maxWidth
+            // Always one line: the numeral shrinks step by step instead of wrapping its unit.
+            val scale = remember(value, numeralStyle, unitColor, maxWidthPx, density) {
+                HeroStatScales.firstOrNull { step ->
+                    val sized = numeralStyle.copy(fontSize = numeralStyle.fontSize * step)
+                    measurer.measure(
+                        text = heroStatText(value, sized.fontSize, unitColor),
+                        style = sized,
+                        softWrap = false,
+                        maxLines = 1
+                    ).size.width <= maxWidthPx
+                } ?: HeroStatScales.last()
+            }
+            // The line height stays at the full-size value so the labels of all three stats line up.
+            val sizedStyle = numeralStyle.copy(fontSize = numeralStyle.fontSize * scale)
+            Text(
+                text = heroStatText(value, sizedStyle.fontSize, unitColor),
+                style = sizedStyle,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
@@ -442,7 +495,7 @@ private fun ExerciseSummarySection(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "$setsText · $bestText",
+                                text = "$setsText\u00A0· $bestText",
                                 style = MaterialTheme.typography.bodySmall.tabularDigits(),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 2,
@@ -452,7 +505,8 @@ private fun ExerciseSummarySection(
                         if (deltaText != null) {
                             Text(
                                 text = deltaText,
-                                style = MaterialTheme.typography.bodyLarge.tabularDigits(),
+                                style = MaterialTheme.typography.bodyMedium.tabularDigits(),
+                                fontWeight = FontWeight.SemiBold,
                                 color = deltaColor,
                                 maxLines = 1
                             )

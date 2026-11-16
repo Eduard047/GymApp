@@ -2170,6 +2170,9 @@ public struct WorkoutsView: View {
                             ))
                             .font(.subheadline)
                             .foregroundStyle(GymTheme.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
                         } else {
                             ForEach(Array(results.enumerated()), id: \.element.id) { index, workout in
                                 if index > 0 { Divider().overlay(GymTheme.outlineSoft) }
@@ -2192,6 +2195,9 @@ public struct WorkoutsView: View {
                             ))
                         .font(.subheadline)
                         .foregroundStyle(GymTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
                     } else {
                         ForEach(Array(workouts.enumerated()), id: \.element.id) { index, workout in
                             if index > 0 { Divider().overlay(GymTheme.outlineSoft) }
@@ -2290,6 +2296,10 @@ public struct WorkoutsView: View {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(GymTheme.textSecondary)
                 }
+                // 44pt hit area without growing the field.
+                .padding(12)
+                .contentShape(Rectangle())
+                .padding(-12)
                 .accessibilityLabel(gymText("Clear search", "Очистити пошук", "Очистить поиск", languageCode: languageCode))
             }
         }
@@ -2506,7 +2516,7 @@ public struct WorkoutsView: View {
                 "Свободная тренировка Garmin",
                 languageCode: languageCode
             )
-            : "\(exerciseLabel) · \(setLabel)"
+            : "\(exerciseLabel)\u{00A0}· \(setLabel)"
         return Button {
             historyReturnWorkoutID = workout.workoutID
             onOpenWorkout(workout.workoutID)
@@ -2529,7 +2539,7 @@ public struct WorkoutsView: View {
                         ? compactHistoryDuration(workout.durationSeconds ?? 0)
                         : "\(formattedTodayHeroVolume(workout.totalVolume)) \(gymLocalized("kg", languageCode: languageCode))"
                 )
-                .font(.caption.weight(.semibold))
+                .font(.caption.weight(.semibold).monospacedDigit())
                 .foregroundStyle(GymTheme.textSecondary)
                 .accessibilityLabel(
                     activityOnly
