@@ -35,13 +35,21 @@ struct RanksView: View {
     private var heroPanel: some View {
         GymHeroPanel {
             VStack(alignment: .leading, spacing: 12) {
-                Label(current.title(languageCode), systemImage: "trophy.fill")
-                    .font(.title.bold())
-                    .accessibilityAddTraits(.isHeader)
+                // Same accent trophy as the ladder marks and the Android hero; the title stays
+                // one step below the large navigation title.
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Image(systemName: "trophy.fill")
+                        .foregroundStyle(GymTheme.heroAccentText)
+                        .accessibilityHidden(true)
+                    Text(current.title(languageCode))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                .font(.title2.bold())
                 Text(gymText(
-                    "Level \(level) · \(totalXP.formatted(.number.locale(gymAppLocale()))) XP",
-                    "Рівень \(level) · \(totalXP.formatted(.number.locale(gymAppLocale()))) XP",
-                    "Уровень \(level) · \(totalXP.formatted(.number.locale(gymAppLocale()))) XP",
+                    "Level\u{00A0}\(level) · \(totalXP.formatted(.number.locale(gymAppLocale())))\u{00A0}XP",
+                    "Рівень\u{00A0}\(level) · \(totalXP.formatted(.number.locale(gymAppLocale())))\u{00A0}XP",
+                    "Уровень\u{00A0}\(level) · \(totalXP.formatted(.number.locale(gymAppLocale())))\u{00A0}XP",
                     languageCode: languageCode
                 ))
                 .foregroundStyle(GymTheme.onHeroSecondary)
@@ -54,9 +62,9 @@ struct RanksView: View {
                         .accessibilityHidden(true)
 
                     Text(gymText(
-                        "\(remaining.formatted(.number.locale(gymAppLocale()))) XP to \(next.title(languageCode))",
-                        "\(remaining.formatted(.number.locale(gymAppLocale()))) XP до «\(next.title(languageCode))»",
-                        "\(remaining.formatted(.number.locale(gymAppLocale()))) XP до «\(next.title(languageCode))»",
+                        "\(remaining.formatted(.number.locale(gymAppLocale())))\u{00A0}XP to \(next.title(languageCode))",
+                        "\(remaining.formatted(.number.locale(gymAppLocale())))\u{00A0}XP до\u{00A0}«\(next.title(languageCode))»",
+                        "\(remaining.formatted(.number.locale(gymAppLocale())))\u{00A0}XP до\u{00A0}«\(next.title(languageCode))»",
                         languageCode: languageCode
                     ))
                     .font(.subheadline)
@@ -86,13 +94,23 @@ struct RanksView: View {
         let isNext = next?.id == rank.id
         let remaining = max(0, rank.requiredXP - totalXP)
 
-        return HStack(alignment: .top, spacing: 14) {
+        // The current rank carries the one solid mark; earned ranks stay tonal, locked ones
+        // neutral. Two-line rows centre the mark; the row with the progress bar keeps it level
+        // with the title.
+        let markFill = isCurrent
+            ? GymTheme.primaryAction
+            : unlocked ? GymTheme.primary.opacity(0.14) : GymTheme.surfaceVariant
+        let markGlyph = isCurrent
+            ? GymTheme.onPrimary
+            : unlocked ? GymTheme.primary : GymTheme.textSecondary
+
+        return HStack(alignment: isNext ? .top : .center, spacing: 14) {
             ZStack {
                 Circle()
-                    .fill(unlocked ? GymTheme.primary.opacity(0.14) : GymTheme.surfaceVariant)
+                    .fill(markFill)
                 Image(systemName: unlocked ? "trophy.fill" : "lock.fill")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(unlocked ? GymTheme.primary : GymTheme.textSecondary)
+                    .foregroundStyle(markGlyph)
             }
             .gymScaledFrame(width: 36, height: 36, relativeTo: .subheadline, maxScale: 1.6)
             .accessibilityHidden(true)
@@ -101,9 +119,9 @@ struct RanksView: View {
                 Text(rank.title(languageCode))
                     .font(.headline)
                 Text(gymText(
-                    "Level \(rank.level) · from \(rank.requiredXP.formatted(.number.locale(gymAppLocale()))) XP",
-                    "Рівень \(rank.level) · від \(rank.requiredXP.formatted(.number.locale(gymAppLocale()))) XP",
-                    "Уровень \(rank.level) · от \(rank.requiredXP.formatted(.number.locale(gymAppLocale()))) XP",
+                    "Level\u{00A0}\(rank.level) · from\u{00A0}\(rank.requiredXP.formatted(.number.locale(gymAppLocale())))\u{00A0}XP",
+                    "Рівень\u{00A0}\(rank.level) · від\u{00A0}\(rank.requiredXP.formatted(.number.locale(gymAppLocale())))\u{00A0}XP",
+                    "Уровень\u{00A0}\(rank.level) · от\u{00A0}\(rank.requiredXP.formatted(.number.locale(gymAppLocale())))\u{00A0}XP",
                     languageCode: languageCode
                 ))
                 .font(.caption)
@@ -113,12 +131,12 @@ struct RanksView: View {
                     RankProgressTrack(progress: nextRankProgress, trackColor: GymTheme.outlineSoft, fillColor: GymTheme.primary)
                         .frame(height: 6)
                     Text(gymText(
-                        "\(remaining.formatted(.number.locale(gymAppLocale()))) XP to go",
-                        "ще \(remaining.formatted(.number.locale(gymAppLocale()))) XP",
-                        "ещё \(remaining.formatted(.number.locale(gymAppLocale()))) XP",
+                        "\(remaining.formatted(.number.locale(gymAppLocale())))\u{00A0}XP to go",
+                        "ще\u{00A0}\(remaining.formatted(.number.locale(gymAppLocale())))\u{00A0}XP",
+                        "ещё\u{00A0}\(remaining.formatted(.number.locale(gymAppLocale())))\u{00A0}XP",
                         languageCode: languageCode
                     ))
-                    .font(.caption2.weight(.semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(GymTheme.primary)
                 }
             }
@@ -128,12 +146,6 @@ struct RanksView: View {
         .padding(.vertical, 10)
         .frame(minHeight: 56)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            if isCurrent {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(GymTheme.primary.opacity(0.08))
-            }
-        }
         .accessibilityElement(children: .combine)
         .accessibilityValue(
             isCurrent

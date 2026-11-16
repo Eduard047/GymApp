@@ -8,7 +8,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -25,7 +24,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.GroupOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.ui.text.style.TextAlign
+import com.example.gymapp.ui.components.tabularDigits
 import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -268,7 +277,8 @@ internal fun FriendsScreen(
                     supporting = stringResource(R.string.friends_cloud_required_supporting),
                     actionLabel = stringResource(R.string.profile_section_settings),
                     onAction = onOpenAccountSettings,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    icon = Icons.Default.GroupOff
                 )
             }
             return@LazyColumn
@@ -808,7 +818,7 @@ private fun RefreshSocialCard(isLoading: Boolean, pendingInvites: Int, onRefresh
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Button(onClick = onRefresh, enabled = !isLoading) {
+            TintedButton(onClick = onRefresh, enabled = !isLoading) {
                 if (isLoading) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 } else {
@@ -873,11 +883,30 @@ private fun TrainingCircleCard(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             if (dashboard.friends.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.friends_empty_supporting),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // Empty circle: one glyph and one centred line; the add action is the next card.
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = GymSpacing.Small),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(GymSpacing.Small)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Group,
+                        contentDescription = null,
+                        modifier = Modifier.size(32.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = stringResource(R.string.friends_empty_supporting),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                if (rankedProfiles.isNotEmpty()) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
             }
             rankedProfiles.forEachIndexed { index, profile ->
                 if (index > 0) {
@@ -893,36 +922,35 @@ private fun TrainingCircleCard(
                 if (index > 0 || rankedProfiles.isNotEmpty()) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
-                TextButton(
-                    onClick = { onOpenFriend(friend) },
-                    modifier = Modifier.fillMaxWidth()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = FriendRowMinHeight)
+                        .clickable(
+                            onClickLabel = stringResource(R.string.friend_open_short),
+                            role = Role.Button,
+                            onClick = { onOpenFriend(friend) }
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = friend.displayName,
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = stringResource(R.string.friend_stats_private),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = stringResource(R.string.friend_open_short),
-                            style = MaterialTheme.typography.labelMedium
+                            text = friend.displayName,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = stringResource(R.string.friend_stats_private),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
+                    FriendRowChevron()
                 }
             }
         }
@@ -935,79 +963,108 @@ private fun RankedProfileRow(
     profile: RankedSocialProfile,
     onOpenFriend: (SocialFriend) -> Unit
 ) {
-    val content: @Composable () -> Unit = {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text(
-                text = "#$place",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = profile.displayName,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    if (profile.isCurrentUser) {
-                        Text(
-                            text = stringResource(R.string.live_workout_lane_you),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .background(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-                                    CircleShape
-                                )
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-                Text(
-                    text = formattedStringResource(
-                        R.string.friend_stats_summary,
-                        profile.xp,
-                        profile.level,
-                        profile.workouts
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            if (profile.friend != null) {
-                Text(
-                    text = stringResource(R.string.friend_open_short),
-                    style = MaterialTheme.typography.labelMedium
-                )
-            }
-        }
-    }
     val friend = profile.friend
-    if (friend != null) {
-        TextButton(onClick = { onOpenFriend(friend) }, modifier = Modifier.fillMaxWidth()) { content() }
-    } else {
+    val openLabel = stringResource(R.string.friend_open_short)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = FriendRowMinHeight)
+            .then(
+                if (friend != null) {
+                    Modifier.clickable(
+                        onClickLabel = openLabel,
+                        role = Role.Button,
+                        onClick = { onOpenFriend(friend) }
+                    )
+                } else {
+                    Modifier
+                }
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // Place badge as on iOS: a neutral capsule, tinted for the top three. The current user
+        // is marked by the "You" pill only, not by a tinted box inside the card.
         Box(
             modifier = Modifier
-                .fillMaxWidth()
+                .defaultMinSize(minWidth = 28.dp, minHeight = 28.dp)
                 .background(
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-                    RoundedCornerShape(12.dp)
+                    if (place <= 3) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    },
+                    CircleShape
                 )
-                .padding(horizontal = 12.dp, vertical = 10.dp)
-        ) { content() }
+                .padding(horizontal = if (place >= 10) 6.dp else 0.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = place.toString(),
+                style = MaterialTheme.typography.titleSmall.tabularDigits(),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = profile.displayName,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (profile.isCurrentUser) {
+                    Text(
+                        text = stringResource(R.string.live_workout_lane_you),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .background(
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                                CircleShape
+                            )
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+            Text(
+                text = formattedStringResource(
+                    R.string.friend_stats_summary,
+                    profile.xp,
+                    profile.level,
+                    profile.workouts
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (friend != null) {
+            FriendRowChevron()
+        }
     }
+}
+
+/** Row height shared by the training-circle rows; keeps every row above the 48dp touch target. */
+private val FriendRowMinHeight = 52.dp
+
+/** Disclosure chevron for rows that open a friend; the row itself carries the click label. */
+@Composable
+private fun FriendRowChevron() {
+    Icon(
+        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+        contentDescription = null,
+        modifier = Modifier.size(20.dp),
+        tint = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 @Composable
@@ -1121,7 +1178,8 @@ private fun IncomingFriendRequestCard(
             Text(request.displayName, style = MaterialTheme.typography.titleMedium)
             Text(
                 localizedSocialRequestDate(request.requestedAt, locale),
-                style = MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onAccept, enabled = !isLoading) {
@@ -1131,7 +1189,13 @@ private fun IncomingFriendRequestCard(
                     Text(stringResource(R.string.action_decline))
                 }
             }
-            TextButton(onClick = onBlock, enabled = !isLoading) {
+            TextButton(
+                onClick = onBlock,
+                enabled = !isLoading,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                )
+            ) {
                 Text(stringResource(R.string.friend_block_action))
             }
         }
@@ -1159,7 +1223,11 @@ private fun OutgoingFriendRequestCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(request.displayName, style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.friend_request_pending), style = MaterialTheme.typography.bodySmall)
+                Text(
+                    stringResource(R.string.friend_request_pending),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             TintedButton(onClick = onCancel, enabled = !isLoading) {
                 Text(stringResource(R.string.action_cancel))

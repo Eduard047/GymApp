@@ -52,8 +52,10 @@ import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.components.SocialActionCard
 import com.example.gymapp.ui.theme.GymSpacing
+import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.util.DateTimeUtils
+import com.example.gymapp.util.formatXp
 import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.asString
 import java.text.NumberFormat
@@ -148,7 +150,11 @@ internal fun FriendDetailScreen(
                             ),
                             GymMetric(
                                 stringResource(R.string.solo_total_xp),
-                                (friend.xp ?: 0).toString(),
+                                // Grouped like the Ranks screen ("4 314"), not a raw "4314".
+                                formatXp(
+                                    friend.xp ?: 0,
+                                    Locale.forLanguageTag(currentAppLanguageTag())
+                                ),
                                 emphasized = true
                             ),
                             GymMetric(

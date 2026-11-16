@@ -326,6 +326,10 @@ struct FriendsView: View {
         auth.session?.cloud != nil
     }
 
+    /// Minimum glyph box for icon-only bordered buttons; with the bordered style's own padding
+    /// the control reaches the 44pt touch target.
+    private static let iconButtonGlyphSide: CGFloat = 30
+
     private var hasLiveActivity: Bool {
         let invitations = liveWorkoutCoordinator.inbox?.invitations ?? []
         let rooms = liveWorkoutCoordinator.inbox?.rooms ?? []
@@ -420,12 +424,19 @@ struct FriendsView: View {
 
     private var localAccountState: some View {
         GymPanel(highlighted: true) {
-            VStack(alignment: .leading, spacing: 10) {
-                Label(
-                    t("Friends need a cloud account", "Для друзів потрібен хмарний акаунт", "Для друзей нужен облачный аккаунт"),
-                    systemImage: "person.2.slash"
+            // Empty-state layout shared with Android: glyph, title, one line, one action.
+            VStack(alignment: .center, spacing: 10) {
+                Image(systemName: "person.2.slash")
+                    .font(.title.weight(.semibold))
+                    .foregroundStyle(GymTheme.primary)
+                    .accessibilityHidden(true)
+                Text(
+                    t("Friends need a cloud account", "Для друзів потрібен хмарний акаунт", "Для друзей нужен облачный аккаунт")
                 )
                 .font(.headline)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
                 Text(
                     t(
                         "Open account settings to switch to a cloud account. Offline workouts stay on this iPhone.",
@@ -435,6 +446,8 @@ struct FriendsView: View {
                 )
                 .font(.subheadline)
                 .foregroundStyle(GymTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 Button(action: onOpenAccountSettings) {
                     Label(
                         t(
@@ -471,6 +484,7 @@ struct FriendsView: View {
                         showStatus(t("Friend code copied.", "Код друга скопійовано.", "Код друга скопирован."))
                     } label: {
                         Image(systemName: "doc.on.doc")
+                            .frame(minWidth: Self.iconButtonGlyphSide, minHeight: Self.iconButtonGlyphSide)
                     }
                     .buttonStyle(.bordered)
                     .accessibilityLabel(t("Copy friend code", "Копіювати код друга", "Копировать код друга"))
@@ -484,6 +498,7 @@ struct FriendsView: View {
                         ))
                     ) {
                         Image(systemName: "square.and.arrow.up")
+                            .frame(minWidth: Self.iconButtonGlyphSide, minHeight: Self.iconButtonGlyphSide)
                     }
                     .buttonStyle(.bordered)
                     .accessibilityLabel(t("Share friend code", "Поділитися кодом друга", "Поделиться кодом друга"))
@@ -921,12 +936,15 @@ struct FriendsView: View {
                     Button {
                         Task { await refreshAll(force: true) }
                     } label: {
-                        if isLoading {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
+                        Group {
+                            if isLoading {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                            }
                         }
+                        .frame(minWidth: Self.iconButtonGlyphSide, minHeight: Self.iconButtonGlyphSide)
                     }
                     .buttonStyle(.bordered)
                     .disabled(isLoading)
@@ -935,7 +953,10 @@ struct FriendsView: View {
 
                 if dashboard.currentUser.statsAvailable {
                     HStack(spacing: 8) {
-                        compactSocialMetric("XP", dashboard.currentUser.xp.map { String($0) } ?? "—")
+                        compactSocialMetric(
+                            "XP",
+                            dashboard.currentUser.xp.map { $0.formatted(.number.locale(gymAppLocale())) } ?? "—"
+                        )
                         compactSocialMetric(
                             t("Level", "Рівень", "Уровень"),
                             dashboard.currentUser.level.map { String($0) } ?? "—"
@@ -947,7 +968,20 @@ struct FriendsView: View {
                     }
                 }
                 if dashboard.friends.isEmpty {
-                    empty(t("Add a friend to start comparing progress.", "Додайте друга, щоб порівнювати прогрес.", "Добавьте друга, чтобы сравнивать прогресс."))
+                    // Empty circle: one glyph and one centred line; the add action is the next card.
+                    VStack(spacing: 8) {
+                        Image(systemName: "person.2.fill")
+                            .font(.title2)
+                            .foregroundStyle(GymTheme.textSecondary)
+                            .accessibilityHidden(true)
+                        Text(t("Add a friend to start comparing progress.", "Додайте друга, щоб порівнювати прогрес.", "Добавьте друга, чтобы сравнивать прогресс."))
+                            .font(.subheadline)
+                            .foregroundStyle(GymTheme.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
                 }
                 ForEach(Array(ranked.enumerated()), id: \.element.id) { index, item in
                     rankedRow(item, place: index + 1)
@@ -964,6 +998,8 @@ struct FriendsView: View {
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: "lock.shield")
+                            .foregroundStyle(GymTheme.textSecondary)
+                            .frame(minWidth: rankBadgeSize, minHeight: rankBadgeSize)
                             .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(friend.displayName).font(.headline)
@@ -975,8 +1011,11 @@ struct FriendsView: View {
                             }
                             Spacer()
                             Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(GymTheme.textSecondary)
                             .accessibilityHidden(true)
                         }
+                        .frame(minHeight: 44)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -996,9 +1035,10 @@ struct FriendsView: View {
                 .font(.subheadline.weight(.bold).monospacedDigit())
                 .foregroundStyle(GymTheme.textPrimary)
             Text(title)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(GymTheme.textSecondary)
                 .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
@@ -1048,7 +1088,8 @@ struct FriendsView: View {
                     Text(item.displayName).font(.headline)
                     if item.isCurrentUser {
                         Text(t("You", "Ви", "Вы"))
-                            .font(.caption2.bold())
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(GymTheme.primary)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(GymTheme.primary.opacity(0.14), in: Capsule())
@@ -1058,10 +1099,20 @@ struct FriendsView: View {
                     .font(.caption)
                     .foregroundStyle(GymTheme.textSecondary)
             }
-            Spacer()
-            Text("\(item.xp) XP").font(.subheadline.bold().monospacedDigit())
-            if item.friend != nil { Image(systemName: "chevron.right").font(.caption).accessibilityHidden(true) }
+            Spacer(minLength: 4)
+            // Grouped digits and a no-break space before the unit: "4 314 XP" never splits.
+            Text("\(item.xp.formatted(.number.locale(gymAppLocale())))\u{00A0}XP")
+                .font(.subheadline.bold().monospacedDigit())
+                .lineLimit(1)
+                .layoutPriority(1)
+            if item.friend != nil {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .accessibilityHidden(true)
+            }
         }
+        .frame(minHeight: 44)
         .contentShape(Rectangle())
     }
 
@@ -1895,7 +1946,7 @@ private struct FriendDetailView: View {
                    let level = details.friend.level,
                    let workouts = details.friend.workouts {
                     HStack(spacing: 10) {
-                        heroMetric("XP", "\(xp)")
+                        heroMetric("XP", xp.formatted(.number.locale(gymAppLocale())))
                         heroMetric(t("Level", "Рівень", "Уровень"), "\(level)")
                         heroMetric(t("Workouts", "Тренування", "Тренировки"), "\(workouts)")
                     }

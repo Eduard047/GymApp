@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Lock
@@ -43,6 +42,7 @@ import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.HeroTone
 import com.example.gymapp.ui.components.LoadingStatePanel
+import com.example.gymapp.ui.components.brandFillColor
 import com.example.gymapp.ui.viewmodel.RankProgressUiModel
 import com.example.gymapp.ui.viewmodel.WorkoutListUiState
 import com.example.gymapp.util.asString
@@ -114,13 +114,13 @@ fun RanksScreen(
                         Icon(
                             imageVector = Icons.Default.EmojiEvents,
                             contentDescription = null,
-                            modifier = Modifier.size(30.dp),
+                            modifier = Modifier.size(26.dp),
                             tint = HeroTone.accentText
                         )
                         Text(
                             text = currentTitle,
                             modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.headlineSmall,
+                            style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = HeroTone.title,
                             maxLines = 2,
@@ -130,7 +130,8 @@ fun RanksScreen(
 
                     Text(
                         text = "${formattedStringResource(R.string.post_workout_level, uiState.soloProgress.level)} · " +
-                            formattedStringResource(R.string.ranks_xp_value, formatXp(totalXp, locale)),
+                            formattedStringResource(R.string.ranks_xp_value, formatXp(totalXp, locale))
+                                .withBoundXpUnit(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = HeroTone.supporting
                     )
@@ -151,7 +152,7 @@ fun RanksScreen(
                                 R.string.ranks_xp_to_next,
                                 formatXp(nextRank.xpRemaining, locale),
                                 nextRank.title
-                            ),
+                            ).withBoundXpUnit(),
                             style = MaterialTheme.typography.bodyMedium,
                             color = HeroTone.supporting,
                             maxLines = 2,
@@ -203,10 +204,16 @@ private fun RankLadderRow(
     modifier: Modifier = Modifier
 ) {
     val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
-    val iconColor = if (tier.isUnlocked) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
+    // The current rank carries the one solid mark; earned ranks stay tonal, locked ones neutral.
+    val markColor = when {
+        tier.isCurrent -> brandFillColor()
+        tier.isUnlocked -> MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val iconColor = when {
+        tier.isCurrent -> Color.White
+        tier.isUnlocked -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val statusText = when {
         tier.isCurrent -> stringResource(R.string.rank_status_current)
@@ -218,35 +225,21 @@ private fun RankLadderRow(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
-            .then(
-                if (tier.isCurrent) {
-                    Modifier.background(
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-                        RoundedCornerShape(12.dp)
-                    )
-                } else {
-                    Modifier
-                }
-            )
             .padding(vertical = 10.dp)
             .semantics(mergeDescendants = true) {
                 selected = tier.isCurrent
                 stateDescription = statusText
             },
-        verticalAlignment = Alignment.Top,
+        // Two-line rows centre the mark on the text block; the row with the progress bar keeps
+        // it level with the title.
+        verticalAlignment = if (isNext) Alignment.Top else Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Box(
             modifier = Modifier
                 .size(36.dp)
                 .clip(CircleShape)
-                .background(
-                    if (tier.isUnlocked) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                    } else {
-                        MaterialTheme.colorScheme.surfaceVariant
-                    }
-                ),
+                .background(markColor),
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -275,7 +268,7 @@ private fun RankLadderRow(
                     R.string.rank_level_from_xp,
                     tier.levelRequirement,
                     formatXp(tier.requiredXp, locale)
-                ),
+                ).withBoundXpUnit(),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -289,7 +282,8 @@ private fun RankLadderRow(
                         .height(6.dp)
                 )
                 Text(
-                    text = formattedStringResource(R.string.rank_xp_to_go, formatXp(tier.xpRemaining, locale)),
+                    text = formattedStringResource(R.string.rank_xp_to_go, formatXp(tier.xpRemaining, locale))
+                        .withBoundXpUnit(),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary
@@ -298,6 +292,9 @@ private fun RankLadderRow(
         }
     }
 }
+
+/** Binds a value to its "XP" unit so "4 314 XP" never wraps between the number and the unit. */
+private fun String.withBoundXpUnit(): String = replace(" XP", "\u00A0XP")
 
 /** Capsule progress bar with a deliberately visible track, matching the iOS ranks screen. */
 @Composable
