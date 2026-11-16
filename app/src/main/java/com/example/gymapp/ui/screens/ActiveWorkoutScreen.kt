@@ -22,8 +22,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.ui.platform.LocalDensity
@@ -92,7 +90,6 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material3.AlertDialog
 import com.example.gymapp.ui.components.GymAlertDialog
 import com.example.gymapp.ui.components.GymAlertDialogButton
 import com.example.gymapp.ui.components.GymAlertDialogButtonRole
@@ -961,14 +958,15 @@ fun ActiveWorkoutScreen(
     }
 
     uiState.adaptation?.let { adaptation ->
-        AlertDialog(onDismissRequest = onDismissAdaptation,
-            title = { Text(stringResource(when (adaptation.reason) { "equipmentUnavailable" -> R.string.training_equipment_busy; "timeCut" -> R.string.training_short_time; else -> R.string.training_too_hard })) },
-            text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (adaptation.reason == "timeCut" && !adaptation.hasPreview) Row { listOf(10,20,30).forEach { minutes ->
-                    TextButton(onClick = { onPreviewAdaptation(adaptation.reason, minutes, null) }) { Text("$minutes") }
+        // GymAlertDialog scrolls its text itself, so the choices stay reachable however many there are.
+        GymAlertDialog(onDismissRequest = onDismissAdaptation,
+            title = stringResource(when (adaptation.reason) { "equipmentUnavailable" -> R.string.training_equipment_busy; "timeCut" -> R.string.training_short_time; else -> R.string.training_too_hard }),
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (adaptation.reason == "timeCut" && !adaptation.hasPreview) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf(10,20,30).forEach { minutes ->
+                    GymAlertDialogButton(onClick = { onPreviewAdaptation(adaptation.reason, minutes, null) }, modifier = Modifier.weight(1f)) { Text("$minutes") }
                 } }
                 if (adaptation.reason == "equipmentUnavailable" && !adaptation.hasPreview) adaptation.choices.forEach { choice ->
-                    TextButton(onClick = { onPreviewAdaptation(adaptation.reason, 20, choice.exerciseId) }) { Text(localizedExerciseName(choice.name)) }
+                    GymAlertDialogButton(onClick = { onPreviewAdaptation(adaptation.reason, 20, choice.exerciseId) }, modifier = Modifier.fillMaxWidth()) { Text(localizedExerciseName(choice.name)) }
                 }
                 if (!adaptation.hasPreview && adaptation.choices.isEmpty() && adaptation.reason == "equipmentUnavailable") Text(stringResource(R.string.training_no_alternative))
                 if (adaptation.hasPreview) {
@@ -978,7 +976,7 @@ fun ActiveWorkoutScreen(
                         val name = localizedExerciseName(line.name)
                         val before = if (line.previousName.isNotEmpty() && line.previousName != line.name) localizedExerciseName(line.previousName) + " → " else ""
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("$before$name", style = MaterialTheme.typography.titleSmall)
+                            Text("$before$name", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                             if (line.before != line.after) Text(formattedStringResource(R.string.training_remaining_sets, line.before, line.after))
                             val number = java.text.NumberFormat.getNumberInstance()
                             line.values.forEach { value ->
@@ -991,8 +989,10 @@ fun ActiveWorkoutScreen(
                     }
                 }
             } },
-            confirmButton = { if (adaptation.hasPreview) TextButton(onClick = onApplyAdaptation, enabled = !adaptation.isApplying) { Text(stringResource(R.string.training_apply_changes)) } },
-            dismissButton = { TextButton(onClick = onDismissAdaptation, enabled = !adaptation.isApplying) { Text(stringResource(R.string.action_cancel)) } })
+            // Stacked: "Apply" appears only once there is a preview, and Cancel must not jump sideways then.
+            stackButtons = true,
+            confirmButton = { if (adaptation.hasPreview) GymAlertDialogButton(onClick = onApplyAdaptation, enabled = !adaptation.isApplying) { Text(stringResource(R.string.training_apply_changes)) } },
+            dismissButton = { GymAlertDialogButton(onClick = onDismissAdaptation, enabled = !adaptation.isApplying, role = GymAlertDialogButtonRole.Cancel) { Text(stringResource(R.string.action_cancel)) } })
     }
 
     // Screen level, not a LazyColumn item: an off-screen item would never compose, so the sheet would
@@ -1027,9 +1027,9 @@ fun ActiveWorkoutScreen(
         activeWorkoutFinishNeedsConfirmation(uiState.completedSetCount, uiState.totalSetCount)
     ) {
         val unloggedSetCount = activeWorkoutUnloggedSetCount(uiState.completedSetCount, uiState.totalSetCount)
-        AlertDialog(
+        GymAlertDialog(
             onDismissRequest = { showFinishWorkoutConfirmation = false },
-            title = { Text(text = stringResource(R.string.active_workout_finish_confirm_title)) },
+            title = stringResource(R.string.active_workout_finish_confirm_title),
             text = {
                 Text(
                     text = formattedPluralStringResource(
@@ -1039,39 +1039,35 @@ fun ActiveWorkoutScreen(
                     )
                 )
             },
+            // Finish saves only what was logged; marking the rest as done is the explicit second choice.
             confirmButton = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    horizontalAlignment = Alignment.End
+                GymAlertDialogButton(
+                    onClick = {
+                        showFinishWorkoutConfirmation = false
+                        onFinishWorkout()
+                    },
+                    enabled = !operationInProgress
                 ) {
-                    // Finish saves only what was logged; marking the rest as done is the explicit second choice.
-                    Button(
-                        onClick = {
-                            showFinishWorkoutConfirmation = false
-                            onFinishWorkout()
-                        },
-                        enabled = !operationInProgress,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    ) {
-                        Text(text = stringResource(R.string.active_workout_toolbar_finish))
-                    }
-                    TextButton(
-                        onClick = {
-                            showFinishWorkoutConfirmation = false
-                            onRecordRemainingAndFinish()
-                        },
-                        enabled = !operationInProgress,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    ) {
-                        Text(text = stringResource(R.string.finish_remaining_mark_all_done))
-                    }
-                    TextButton(
-                        onClick = { showFinishWorkoutConfirmation = false },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    ) {
-                        Text(text = stringResource(R.string.action_cancel))
-                    }
+                    Text(text = stringResource(R.string.active_workout_toolbar_finish))
+                }
+            },
+            extraButtons = {
+                GymAlertDialogButton(
+                    onClick = {
+                        showFinishWorkoutConfirmation = false
+                        onRecordRemainingAndFinish()
+                    },
+                    enabled = !operationInProgress
+                ) {
+                    Text(text = stringResource(R.string.finish_remaining_mark_all_done))
+                }
+            },
+            dismissButton = {
+                GymAlertDialogButton(
+                    onClick = { showFinishWorkoutConfirmation = false },
+                    role = GymAlertDialogButtonRole.Cancel
+                ) {
+                    Text(text = stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -2037,9 +2033,9 @@ private fun ActiveWorkoutFinishExerciseDialog(
     onSkip: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    GymAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.active_workout_finish_exercise_title)) },
+        title = stringResource(R.string.active_workout_finish_exercise_title),
         text = {
             Text(
                 formattedPluralStringResource(
@@ -2049,40 +2045,31 @@ private fun ActiveWorkoutFinishExerciseDialog(
                 )
             )
         },
-        // The actions live in the confirm slot so the dialog has no empty button row below them.
+        // Always one column, with or without the skip action, so the dialog keeps its shape.
+        stackButtons = true,
         confirmButton = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                horizontalAlignment = Alignment.End
-            ) {
-                if (canSkip) {
-                    Button(
-                        onClick = onSkip,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    ) {
-                        Text(stringResource(activeWorkoutFinishWithoutLabelRes(unrecordedCount)))
-                    }
-                    TextButton(
-                        onClick = onLogAsPlanned,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    ) {
-                        Text(stringResource(R.string.active_workout_finish_exercise_mark_done))
-                    }
-                } else {
-                    Button(
-                        onClick = onLogAsPlanned,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    ) {
-                        Text(stringResource(R.string.active_workout_finish_exercise_mark_done))
-                    }
+            GymAlertDialogButton(onClick = if (canSkip) onSkip else onLogAsPlanned) {
+                Text(
+                    stringResource(
+                        if (canSkip) {
+                            activeWorkoutFinishWithoutLabelRes(unrecordedCount)
+                        } else {
+                            R.string.active_workout_finish_exercise_mark_done
+                        }
+                    )
+                )
+            }
+        },
+        extraButtons = {
+            if (canSkip) {
+                GymAlertDialogButton(onClick = onLogAsPlanned) {
+                    Text(stringResource(R.string.active_workout_finish_exercise_mark_done))
                 }
-                TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                ) {
-                    Text(stringResource(R.string.action_cancel))
-                }
+            }
+        },
+        dismissButton = {
+            GymAlertDialogButton(onClick = onDismiss, role = GymAlertDialogButtonRole.Cancel) {
+                Text(stringResource(R.string.action_cancel))
             }
         }
     )

@@ -1100,6 +1100,11 @@ enum class GymAlertDialogButtonRole {
  * the two labels do not fit side by side (long translations, large fonts) the capsules stack full
  * width, confirm on top. The text scrolls when it is taller than the window, so the buttons stay on screen.
  *
+ * Three or more actions: pass the middle ones as [extraButtons]. Every action is then a full-width
+ * capsule in one column, [confirmButton] first, [extraButtons] in the order they are emitted and
+ * [dismissButton] (Cancel) last. [stackButtons] forces that column for two actions too, so a dialog
+ * whose middle action is conditional keeps one layout; an action that emits nothing takes no space.
+ *
  * The container is `surface` and the capsules are the inner-tile tone (white + light grey, or
  * `#1C1C1E` + `#2C2C2E`), so every label keeps >= 4.5:1. Enter and exit are the platform dialog window
  * transition, which follows the system animation scale. Buttons are [GymAlertDialogButton]s.
@@ -1112,6 +1117,8 @@ fun GymAlertDialog(
     confirmButton: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     dismissButton: (@Composable () -> Unit)? = null,
+    extraButtons: (@Composable () -> Unit)? = null,
+    stackButtons: Boolean = extraButtons != null,
     properties: DialogProperties = DialogProperties(),
     text: (@Composable () -> Unit)? = null
 ) {
@@ -1149,7 +1156,15 @@ fun GymAlertDialog(
                     }
                 }
                 Spacer(Modifier.height(GymSpacing.XLarge))
-                GymAlertDialogButtons(confirmButton = confirmButton, dismissButton = dismissButton)
+                if (stackButtons) {
+                    GymAlertDialogStackedButtons(
+                        confirmButton = confirmButton,
+                        extraButtons = extraButtons,
+                        dismissButton = dismissButton
+                    )
+                } else {
+                    GymAlertDialogButtons(confirmButton = confirmButton, dismissButton = dismissButton)
+                }
             }
         }
     }
@@ -1202,6 +1217,43 @@ private fun GymAlertDialogButtons(
                     confirmPlaceable.placeRelative(0, 0)
                     dismissPlaceable.placeRelative(0, confirmPlaceable.height + gap)
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Every action full width in one column: confirm, then the extra actions, dismiss last. A slot that
+ * emits nothing (a conditional action that is hidden) has no height and takes no gap.
+ */
+@Composable
+private fun GymAlertDialogStackedButtons(
+    confirmButton: @Composable () -> Unit,
+    extraButtons: (@Composable () -> Unit)?,
+    dismissButton: (@Composable () -> Unit)?
+) {
+    Layout(
+        modifier = Modifier.fillMaxWidth(),
+        content = {
+            Box(propagateMinConstraints = true) { confirmButton() }
+            extraButtons?.invoke()
+            if (dismissButton != null) Box(propagateMinConstraints = true) { dismissButton() }
+        }
+    ) { measurables, constraints ->
+        val gap = GymSpacing.Small.roundToPx()
+        val width = if (constraints.hasBoundedWidth) {
+            constraints.maxWidth
+        } else {
+            measurables.maxOfOrNull { it.maxIntrinsicWidth(Constraints.Infinity) } ?: 0
+        }
+        val slot = Constraints.fixedWidth(width)
+        val placeables = measurables.map { it.measure(slot) }.filter { it.height > 0 }
+        val height = placeables.sumOf { it.height } + gap * (placeables.size - 1).coerceAtLeast(0)
+        layout(width, height) {
+            var y = 0
+            placeables.forEach { placeable ->
+                placeable.placeRelative(0, y)
+                y += placeable.height + gap
             }
         }
     }
