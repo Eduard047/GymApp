@@ -1045,7 +1045,7 @@ test("Garmin sync submits the edited draft without starting or writing workout h
 });
 
 test("an active workout keeps Continue instead of exposing a second plan editor", () => {
-  assert.match(androidWorkouts, /hasActiveWorkout -> \{\s*primaryLabel = stringResource\(R\.string\.today_continue\)/);
+  assert.match(androidWorkouts, /hasActiveWorkout -> \{\s*primaryLabel = stringResource\(R\.string\.action_continue_workout\)/);
   // The destructive action sits in the header "..." menu, never as a full-width red button.
   assert.match(androidWorkouts, /DropdownMenuItem\([\s\S]*R\.string\.active_workout_discard_action[\s\S]*onDiscardWorkout\(\)/);
   assert.doesNotMatch(androidActive, /onAddExerciseDraft|onRemoveExerciseDraft|onGenerateSmartWorkout/);

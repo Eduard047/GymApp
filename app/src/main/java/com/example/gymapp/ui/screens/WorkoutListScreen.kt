@@ -8,6 +8,13 @@ FIRST VIEWPORT: A large asymmetric lens leads; core facts live inside it and the
 FORM: User-selected Focus Lens from Fluid Focus; seed af1a1dee. Android structure remains Material 3 with native back, insets, semantics, and motion.
 */
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.ui.draw.rotate
+import com.example.gymapp.ui.components.GymAlertDialog
+import com.example.gymapp.ui.components.GymAlertDialogButton
+import com.example.gymapp.ui.components.GymAlertDialogButtonRole
 import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.ui.components.FitMetricValue
 import com.example.gymapp.ui.components.TrainingSettingsSummaryRow
@@ -49,9 +56,7 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.NavigateBefore
 import androidx.compose.material.icons.automirrored.filled.NavigateNext
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -433,25 +438,26 @@ fun WorkoutListScreen(
         )
     }
     if (showRetainedPlanCancelConfirmation) {
-        AlertDialog(
+        GymAlertDialog(
             onDismissRequest = { showRetainedPlanCancelConfirmation = false },
-            title = { Text(stringResource(R.string.today_cancel_plan_title)) },
+            title = stringResource(R.string.today_cancel_plan_title),
             text = { Text(stringResource(R.string.today_cancel_plan_message)) },
             confirmButton = {
-                TextButton(
+                GymAlertDialogButton(
                     onClick = {
                         showRetainedPlanCancelConfirmation = false
                         onCancelRetainedPlan()
                     },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
+                    role = GymAlertDialogButtonRole.Destructive
                 ) {
                     Text(stringResource(R.string.today_cancel_plan_confirm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showRetainedPlanCancelConfirmation = false }) {
+                GymAlertDialogButton(
+                    onClick = { showRetainedPlanCancelConfirmation = false },
+                    role = GymAlertDialogButtonRole.Cancel
+                ) {
                     Text(stringResource(R.string.today_cancel_plan_keep))
                 }
             }
@@ -687,7 +693,7 @@ private fun FocusLens(
                     modifier = Modifier
                         .weight(1f)
                         .then(
-                            if (hasCompletedToday) {
+                            if (hasCompletedToday || hasActiveWorkout) {
                                 Modifier
                             } else {
                                 Modifier
@@ -814,7 +820,7 @@ private fun FocusLens(
                         }
                     }
                 }
-                if (!hasCompletedToday) {
+                if (!hasCompletedToday && !hasActiveWorkout) {
                     Icon(
                         imageVector = if (showPlanDetails) Icons.Default.ExpandLess
                         else Icons.Default.ExpandMore,
@@ -825,6 +831,41 @@ private fun FocusLens(
                             .clip(CircleShape)
                             .clickable(role = Role.Button) { showPlanDetails = !showPlanDetails }
                             .padding(6.dp)
+                    )
+                }
+            }
+
+            if (hasActiveWorkout) {
+                // Running workout, as on iPhone: "Plan details" is its own disclosure row inside the
+                // card, with a small grey chevron that turns down while the details are open.
+                val chevronTurn by animateFloatAsState(
+                    targetValue = if (showPlanDetails) 90f else 0f,
+                    animationSpec = spring(dampingRatio = 1f, stiffness = 440f),
+                    label = "planDetailsChevron"
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .clickable(role = Role.Button) { showPlanDetails = !showPlanDetails }
+                        .semantics {
+                            stateDescription = if (showPlanDetails) expandedState else collapsedState
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.focus_lens_details),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = HeroTone.title,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = HeroTone.supporting,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .rotate(chevronTurn)
                     )
                 }
             }
@@ -851,7 +892,7 @@ private fun FocusLens(
             val primaryClick: () -> Unit
             when {
                 hasActiveWorkout -> {
-                    primaryLabel = stringResource(R.string.today_continue)
+                    primaryLabel = stringResource(R.string.action_continue_workout)
                     primaryClick = onStartWorkout
                 }
                 shouldContinueRetainedPlan -> {
@@ -886,11 +927,29 @@ private fun FocusLens(
                 shape = RoundedCornerShape(50),
                 colors = heroPrimaryButtonColors()
             ) {
+                if (hasActiveWorkout) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
                 Text(
                     text = primaryLabel,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.Bold
+                )
+            }
+
+            // Running workout, as on iPhone: "With a friend" sits inside the card under the action.
+            if (hasActiveWorkout) {
+                TrainWithFriendRow(
+                    state = friendEntryState,
+                    forcedVisible = true,
+                    inHero = true,
+                    onClick = { onFriendClick(true) }
                 )
             }
         }
@@ -901,7 +960,7 @@ private fun FocusLens(
             isRestOrRecovery -> anywayTokenOf(todayPlan)
             else -> todayPlan?.recommendedLaunchToken
         }
-        val friendVisible = friendEntryState != TodayFriendEntryState.Hidden
+        val friendVisible = friendEntryState != TodayFriendEntryState.Hidden && !hasActiveWorkout
         val showSummaryRow = hasCompletedToday && completedWorkout != null
         val showAddAnotherRow = hasCompletedToday && !shouldContinueRetainedPlan && repeatIsPrimary
         val showRepeatRow = showRepeat && !hasCompletedToday
@@ -2070,6 +2129,7 @@ private fun TrainWithFriendPill(
 private fun TrainWithFriendRow(
     state: TodayFriendEntryState,
     forcedVisible: Boolean,
+    inHero: Boolean = false,
     onClick: () -> Unit
 ) {
     if (state == TodayFriendEntryState.Hidden) return
@@ -2086,6 +2146,52 @@ private fun TrainWithFriendRow(
             else -> R.string.today_friend_hint_pick
         }
     )
+    if (inHero) {
+        // Inside the hero card the row aligns with the card's own content edge, so it is drawn here
+        // instead of as an inset grouped row.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .clickable(role = Role.Button, onClick = onClick)
+                .semantics { contentDescription = "$title. $hint" },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Group,
+                contentDescription = null,
+                tint = HeroTone.actionLabel,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = HeroTone.actionLabel,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            if (inviteCount != null) {
+                Surface(shape = RoundedCornerShape(50), color = brandFillColor(), contentColor = Color.White) {
+                    Text(
+                        text = inviteCount.toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = HeroTone.supporting,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        return
+    }
     val accent = MaterialTheme.colorScheme.primary
     GroupedRow(
         title = title,

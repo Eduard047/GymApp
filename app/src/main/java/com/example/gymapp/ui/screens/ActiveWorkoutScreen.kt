@@ -93,6 +93,9 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
+import com.example.gymapp.ui.components.GymAlertDialog
+import com.example.gymapp.ui.components.GymAlertDialogButton
+import com.example.gymapp.ui.components.GymAlertDialogButtonRole
 import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -1100,29 +1103,28 @@ fun ActiveWorkoutScreen(
         )
     }
     if (showDiscardConfirmation) {
-        AlertDialog(
+        GymAlertDialog(
             onDismissRequest = { if (!uiState.isDiscarding) showDiscardConfirmation = false },
-            title = { Text(text = stringResource(R.string.active_workout_discard_title)) },
+            title = stringResource(R.string.active_workout_discard_title),
             text = { Text(text = stringResource(R.string.active_workout_discard_message)) },
             confirmButton = {
-                TextButton(
+                GymAlertDialogButton(
                     onClick = {
                         gymHaptics.perform(GymHapticEvent.DestructiveConfirm)
                         showDiscardConfirmation = false
                         onDiscardWorkout()
                     },
                     enabled = !uiState.isDiscarding,
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
+                    role = GymAlertDialogButtonRole.Destructive
                 ) {
                     Text(text = stringResource(R.string.active_workout_discard_confirm))
                 }
             },
             dismissButton = {
-                TextButton(
+                GymAlertDialogButton(
                     onClick = { showDiscardConfirmation = false },
-                    enabled = !uiState.isDiscarding
+                    enabled = !uiState.isDiscarding,
+                    role = GymAlertDialogButtonRole.Cancel
                 ) {
                     Text(text = stringResource(R.string.active_workout_discard_keep))
                 }
@@ -2755,9 +2757,11 @@ private fun CurrentSetCard(
                 val captionHint = stringResource(R.string.active_workout_previous_hint)
                 Text(
                     text = captionText,
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                    // One step below the "Set N" label, as on iPhone, so it fits beside the trash.
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
                         .heightIn(min = GymSpacing.MinimumTouch)
                         .clickable(
@@ -2789,8 +2793,11 @@ private fun CurrentSetCard(
                     weight = com.example.gymapp.util.parseWeightInputOrNull(set.weightInput)
                 )
             }
-            Spacer(modifier = Modifier.weight(1f))
-            if (!stackPrevious) previousChip()
+            // The chip takes what is left after the label, plates and trash, so a long "previous"
+            // value shortens instead of squeezing the trash button below its 24dp glyph.
+            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                if (!stackPrevious) previousChip()
+            }
             if (canDelete) {
                 // Extra gap so a mistap on the "previous" chip cannot hit the destructive trash.
                 if (!stackPrevious && hasPrevious) Spacer(modifier = Modifier.width(8.dp))

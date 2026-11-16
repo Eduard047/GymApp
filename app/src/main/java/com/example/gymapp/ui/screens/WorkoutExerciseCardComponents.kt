@@ -48,8 +48,6 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -57,7 +55,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -65,6 +62,9 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
+import com.example.gymapp.ui.components.GymAlertDialog
+import com.example.gymapp.ui.components.GymAlertDialogButton
+import com.example.gymapp.ui.components.GymAlertDialogButtonRole
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -411,9 +411,9 @@ internal fun WorkoutRemoveExerciseDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    GymAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(text = stringResource(R.string.active_workout_remove_exercise_title)) },
+        title = stringResource(R.string.active_workout_remove_exercise_title),
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(text = exerciseName, style = MaterialTheme.typography.titleSmall)
@@ -433,17 +433,12 @@ internal fun WorkoutRemoveExerciseDialog(
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error
-                )
-            ) {
+            GymAlertDialogButton(onClick = onConfirm, role = GymAlertDialogButtonRole.Destructive) {
                 Text(text = stringResource(R.string.active_workout_remove_exercise_confirm))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            GymAlertDialogButton(onClick = onDismiss, role = GymAlertDialogButtonRole.Cancel) {
                 Text(text = stringResource(R.string.dialog_cancel))
             }
         }
@@ -463,9 +458,9 @@ internal fun WorkoutDeleteRecordedSetDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    GymAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(text = stringResource(R.string.dialog_delete_set_title)) },
+        title = stringResource(R.string.dialog_delete_set_title),
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(text = exerciseName, style = MaterialTheme.typography.titleSmall)
@@ -485,17 +480,12 @@ internal fun WorkoutDeleteRecordedSetDialog(
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error
-                )
-            ) {
+            GymAlertDialogButton(onClick = onConfirm, role = GymAlertDialogButtonRole.Destructive) {
                 Text(text = stringResource(R.string.action_delete))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            GymAlertDialogButton(onClick = onDismiss, role = GymAlertDialogButtonRole.Cancel) {
                 Text(text = stringResource(R.string.dialog_cancel))
             }
         }

@@ -179,12 +179,12 @@ fun WeeklyReviewCard(
         }
     }
     evidence?.let { insight ->
-        AlertDialog(onDismissRequest = { evidence = null }, title = { Text(stringResource(R.string.training_comparison)) },
+        GymAlertDialog(onDismissRequest = { evidence = null }, title = stringResource(R.string.training_comparison),
             text = { Column { listOf(insight.previous, insight.current).forEach { entry ->
                 TextButton(onClick = { evidence = null; onOpenWorkout(entry.sessionId) }) {
                     Text(DateTimeUtils.formatDate(entry.sessionDate) + " · ${entry.weight} kg × ${entry.reps}")
                 }
-            } } }, confirmButton = { TextButton(onClick = { evidence = null }) { Text(stringResource(R.string.action_close)) } })
+            } } }, confirmButton = { GymAlertDialogButton(onClick = { evidence = null }) { Text(stringResource(R.string.action_close)) } })
     }
 }
 

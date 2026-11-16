@@ -554,6 +554,51 @@ struct TodayRowItem: Identifiable {
     }
 }
 
+/// Disclosure row of the Today hero card: the label at the leading edge and the small grey
+/// chevron the card's navigation rows use. The system style draws a heavy label-coloured
+/// chevron, which reads as a second title next to the grey chevrons below it.
+private struct TodayHeroDisclosureStyle: DisclosureGroupStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        TodayHeroDisclosureBody(configuration: configuration)
+    }
+}
+
+private struct TodayHeroDisclosureBody: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let configuration: DisclosureGroupStyleConfiguration
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
+                    configuration.isExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    configuration.label
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(GymTheme.onHeroSecondary.opacity(0.7))
+                        .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
+                        .accessibilityHidden(true)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(configuration.isExpanded
+                ? gymText("Expanded", "Розгорнуто", "Развёрнуто", languageCode: gymCurrentLanguageCode())
+                : gymText("Collapsed", "Згорнуто", "Свёрнуто", languageCode: gymCurrentLanguageCode())
+            )
+            if configuration.isExpanded {
+                configuration.content
+                    .transition(.opacity)
+            }
+        }
+    }
+}
+
 @MainActor
 public struct WorkoutsView: View {
     @Environment(\.calendar) private var calendar
@@ -1716,6 +1761,7 @@ public struct WorkoutsView: View {
                 }
                 .padding(.top, 8)
             }
+            .disclosureGroupStyle(TodayHeroDisclosureStyle())
             .tint(GymTheme.heroActionLabel)
             .foregroundStyle(GymTheme.onHero)
 
