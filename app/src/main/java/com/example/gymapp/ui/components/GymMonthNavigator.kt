@@ -81,7 +81,7 @@ fun GymMonthNavigator(
                     modifier = Modifier.clearAndSetSemantics { },
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
                 )
             }

@@ -800,7 +800,7 @@
     <string name="solo_xp_amount">%1$s XP</string>
     <string name="solo_top_rank">Top rank</string>
     <string name="solo_month_xp_label">Month XP</string>
-    <string name="ranks_xp_value">%1$s XP</string>
+    <string name="ranks_xp_value">%1$s\u00A0XP</string>
     <string name="solo_next_title_label">Next title</string>
     <string name="solo_streak_label">Week streak</string>
     <string name="solo_streak_weekly_value">%1$d wk</string>
@@ -815,9 +815,9 @@
     <string name="rank_status_current">Current</string>
     <string name="rank_status_unlocked">Unlocked</string>
     <string name="rank_status_locked">Locked</string>
-    <string name="rank_level_from_xp">Level %1$d · from %2$s XP</string>
-    <string name="rank_xp_to_go">%1$s XP to go</string>
-    <string name="ranks_xp_to_next">%1$s XP to %2$s</string>
+    <string name="rank_level_from_xp">Level %1$d · from %2$s\u00A0XP</string>
+    <string name="rank_xp_to_go">%1$s\u00A0XP to go</string>
+    <string name="ranks_xp_to_next">%1$s\u00A0XP to %2$s</string>
     <string name="ranks_empty_title">No ranks yet</string>
     <string name="ranks_empty_supporting">Rank tiers will appear here once the progress ladder is available.</string>
     <string name="activity_heatmap_title">Activity heatmap</string>

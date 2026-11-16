@@ -130,8 +130,7 @@ fun RanksScreen(
 
                     Text(
                         text = "${formattedStringResource(R.string.post_workout_level, uiState.soloProgress.level)} · " +
-                            formattedStringResource(R.string.ranks_xp_value, formatXp(totalXp, locale))
-                                .withBoundXpUnit(),
+                            formattedStringResource(R.string.ranks_xp_value, formatXp(totalXp, locale)),
                         style = MaterialTheme.typography.bodyMedium,
                         color = HeroTone.supporting
                     )
@@ -152,7 +151,7 @@ fun RanksScreen(
                                 R.string.ranks_xp_to_next,
                                 formatXp(nextRank.xpRemaining, locale),
                                 nextRank.title
-                            ).withBoundXpUnit(),
+                            ),
                             style = MaterialTheme.typography.bodyMedium,
                             color = HeroTone.supporting,
                             maxLines = 2,
@@ -268,7 +267,7 @@ private fun RankLadderRow(
                     R.string.rank_level_from_xp,
                     tier.levelRequirement,
                     formatXp(tier.requiredXp, locale)
-                ).withBoundXpUnit(),
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -282,8 +281,7 @@ private fun RankLadderRow(
                         .height(6.dp)
                 )
                 Text(
-                    text = formattedStringResource(R.string.rank_xp_to_go, formatXp(tier.xpRemaining, locale))
-                        .withBoundXpUnit(),
+                    text = formattedStringResource(R.string.rank_xp_to_go, formatXp(tier.xpRemaining, locale)),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary
@@ -292,9 +290,6 @@ private fun RankLadderRow(
         }
     }
 }
-
-/** Binds a value to its "XP" unit so "4 314 XP" never wraps between the number and the unit. */
-private fun String.withBoundXpUnit(): String = replace(" XP", "\u00A0XP")
 
 /** Capsule progress bar with a deliberately visible track, matching the iOS ranks screen. */
 @Composable

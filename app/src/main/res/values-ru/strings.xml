@@ -824,7 +824,7 @@
     <string name="solo_xp_amount">%1$s XP</string>
     <string name="solo_top_rank">Самый высокий ранг</string>
     <string name="solo_month_xp_label">XP за месяц</string>
-    <string name="ranks_xp_value">%1$s XP</string>
+    <string name="ranks_xp_value">%1$s\u00A0XP</string>
     <string name="solo_next_title_label">Следующий титул</string>
     <string name="solo_streak_label">Серия недель</string>
     <string name="solo_streak_weekly_value">%1$d нед</string>
@@ -839,9 +839,9 @@
     <string name="rank_status_current">Текущий</string>
     <string name="rank_status_unlocked">Открыт</string>
     <string name="rank_status_locked">Заблокирован</string>
-    <string name="rank_level_from_xp">Уровень %1$d · от %2$s XP</string>
-    <string name="rank_xp_to_go">ещё %1$s XP</string>
-    <string name="ranks_xp_to_next">%1$s XP до «%2$s»</string>
+    <string name="rank_level_from_xp">Уровень %1$d · от %2$s\u00A0XP</string>
+    <string name="rank_xp_to_go">ещё %1$s\u00A0XP</string>
+    <string name="ranks_xp_to_next">%1$s\u00A0XP до «%2$s»</string>
     <string name="ranks_empty_title">Пока нет рангов</string>
     <string name="ranks_empty_supporting">Здесь появятся ранги, когда будет доступна шкала прогресса.</string>
     <string name="activity_heatmap_title">Тепловая карта активности</string>
@@ -1015,7 +1015,7 @@
     <string name="today_weekly_rhythm">Ритм недели</string>
     <string name="today_weekly_goal">Цель: %1$d из %2$d</string>
     <string name="today_weekly_goal_spoken">Цель недели: %1$d из %2$d</string>
-    <string name="today_history_volume_kg">%1$s кг</string>
+    <string name="today_history_volume_kg">%1$s\u00A0кг</string>
     <string name="activation_adjust_open">Открыто</string>
     <string name="activation_adjust_closed">Закрыто</string>
     <string name="today_empty_state_hint">Здесь появятся тренировки и прогресс за неделю.</string>
