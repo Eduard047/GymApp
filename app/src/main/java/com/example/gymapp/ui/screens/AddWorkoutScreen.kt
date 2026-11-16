@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.imePadding
@@ -74,6 +75,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.minimumInteractiveComponentSize
 import com.example.gymapp.ui.components.GymModalBottomSheet
 import com.example.gymapp.ui.components.GymSheetTitleRow
+import com.example.gymapp.ui.components.sheetListScrollGuard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -1265,7 +1267,7 @@ private fun WorkoutTemplatePickerContent(
     onDismiss: () -> Unit
 ) {
     LazyColumn(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().sheetListScrollGuard(),
         contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -1739,7 +1741,7 @@ private fun SmartWorkoutAlternativePickerContent(
     onDismiss: () -> Unit
 ) {
     LazyColumn(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().sheetListScrollGuard(),
         contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -1926,11 +1928,16 @@ private fun ExerciseSelector(
 
     if (expanded) {
         GymModalBottomSheet(
+            // Fixed-height picker: one resting position, so the list never fights the sheet.
+            skipPartiallyExpanded = true,
             onDismissRequest = { expanded = false },
         ) {
             Column(
+                // Fixed height: the sheet never resizes while the list is filtered or flung.
                 modifier = Modifier
                     .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .imePadding()
                     .padding(start = 16.dp, end = 16.dp, bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -1976,8 +1983,8 @@ private fun ExerciseSelector(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f, fill = false)
-                        .heightIn(max = 480.dp),
+                        .weight(1f)
+                        .sheetListScrollGuard(),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     if (visibleExercises.isEmpty()) {

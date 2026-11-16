@@ -58,6 +58,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.example.gymapp.ui.components.GymModalBottomSheet
+import com.example.gymapp.ui.components.sheetListScrollGuard
 import com.example.gymapp.ui.components.rememberDiscardGuardedSheetState
 import com.example.gymapp.ui.components.GymMotion
 import com.example.gymapp.ui.components.rememberReduceMotion
@@ -1875,7 +1876,7 @@ private fun ExerciseMappingBottomSheetContent(
         catalogContributionsForExercise(exerciseName) != null
     }
     LazyColumn(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().sheetListScrollGuard(),
         contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -2764,7 +2765,7 @@ private fun ExerciseHistoryBottomSheetContent(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().sheetListScrollGuard(),
         contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {

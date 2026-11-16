@@ -16,6 +16,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import com.example.gymapp.ui.components.GymModalBottomSheet
+import com.example.gymapp.ui.components.sheetListScrollGuard
 import com.example.gymapp.ui.components.GymSheetCloseRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -66,7 +67,8 @@ internal fun FriendWorkoutPickerSheet(
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding(),
+                .navigationBarsPadding()
+                .sheetListScrollGuard(),
             contentPadding = PaddingValues(
                 start = GymSpacing.ScreenHorizontal,
                 top = GymSpacing.XSmall,

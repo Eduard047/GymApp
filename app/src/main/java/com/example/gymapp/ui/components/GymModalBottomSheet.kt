@@ -29,6 +29,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -38,6 +42,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.stringResource
 import com.example.gymapp.R
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 
 /**
@@ -108,6 +113,34 @@ fun rememberDiscardGuardedSheetState(
             allowed
         }
     )
+}
+
+/**
+ * Put this on every scrollable list (`LazyColumn`, `verticalScroll` column) inside a
+ * [GymModalBottomSheet]. It keeps the list's leftover scroll and fling out of the sheet.
+ *
+ * Without it Material's sheet takes whatever the list did not consume at an edge: a drag past the
+ * top moves the sheet, and a fling that reaches the top hands its remaining velocity to the sheet's
+ * settle, which sends an expanded sheet to its half-height anchor (or hides it). The next upward
+ * drag is then spent re-expanding the sheet instead of scrolling the list, so scrolling works
+ * "every other time".
+ *
+ * With the guard the sheet still settles (with zero velocity, so it stays where it is), a
+ * half-height sheet still expands when its list is dragged up, and it still dismisses by its drag
+ * handle, the scrim, Back and its visible Close control. Dragging the list itself down no longer
+ * moves the sheet.
+ */
+fun Modifier.sheetListScrollGuard(): Modifier = nestedScroll(SheetListScrollGuardConnection)
+
+private object SheetListScrollGuardConnection : NestedScrollConnection {
+    override fun onPostScroll(
+        consumed: Offset,
+        available: Offset,
+        source: NestedScrollSource
+    ): Offset = Offset(0f, available.y)
+
+    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
+        Velocity(0f, available.y)
 }
 
 /** `radii.sheet-top`: 32 dp on both top corners, square at the bottom edge. */

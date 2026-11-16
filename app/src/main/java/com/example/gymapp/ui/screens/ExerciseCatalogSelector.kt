@@ -29,6 +29,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import com.example.gymapp.ui.components.GymModalBottomSheet
 import com.example.gymapp.ui.components.GymSheetTitleRow
+import com.example.gymapp.ui.components.sheetListScrollGuard
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,13 +38,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import androidx.compose.material.icons.filled.Add
@@ -236,7 +232,7 @@ internal fun ExerciseCatalogSelector(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .nestedScroll(remember { ConsumeListOverscrollConnection }),
+                        .sheetListScrollGuard(),
                     verticalArrangement = Arrangement.spacedBy(0.dp)
                 ) {
                     if (showRecent) {
@@ -543,20 +539,4 @@ private fun CreateExercisePanel(
             }
         }
     }
-}
-
-/**
- * Keeps the exercise list's leftover scroll/fling out of the parent bottom sheet. Without it the
- * sheet's nested-scroll connection swallows the fling remainder at a list edge and starts a
- * settle animation that eats the next drag. The sheet still dismisses via its drag handle.
- */
-private object ConsumeListOverscrollConnection : NestedScrollConnection {
-    override fun onPostScroll(
-        consumed: Offset,
-        available: Offset,
-        source: NestedScrollSource
-    ): Offset = Offset(0f, available.y)
-
-    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
-        Velocity(0f, available.y)
 }
