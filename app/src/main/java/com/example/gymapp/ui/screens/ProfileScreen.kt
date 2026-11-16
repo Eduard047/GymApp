@@ -15,6 +15,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.example.gymapp.ui.components.AppleBackButton
 import com.example.gymapp.ui.components.GroupedRow
 import com.example.gymapp.ui.components.GroupedSection
+import com.example.gymapp.ui.components.GymAlertDialog
+import com.example.gymapp.ui.components.GymAlertDialogButton
+import com.example.gymapp.ui.components.GymAlertDialogButtonRole
+import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.components.GymMotion
 import com.example.gymapp.ui.components.rememberReduceMotion
 import com.example.gymapp.util.asString
@@ -42,10 +46,9 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -423,25 +426,26 @@ internal fun ProfileScreen(
     )
 
     if (showGarminResetConfirmation) {
-        AlertDialog(
+        GymAlertDialog(
             onDismissRequest = { showGarminResetConfirmation = false },
-            title = { Text(stringResource(R.string.garmin_reset_pairing_title)) },
+            title = stringResource(R.string.garmin_reset_pairing_title),
             text = { Text(stringResource(R.string.garmin_reset_pairing_description)) },
             confirmButton = {
-                TextButton(
+                GymAlertDialogButton(
                     onClick = {
                         showGarminResetConfirmation = false
                         onResetGarminPairing()
                     },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
+                    role = GymAlertDialogButtonRole.Destructive
                 ) {
                     Text(stringResource(R.string.garmin_reset_pairing_confirm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showGarminResetConfirmation = false }) {
+                GymAlertDialogButton(
+                    onClick = { showGarminResetConfirmation = false },
+                    role = GymAlertDialogButtonRole.Cancel
+                ) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }
@@ -471,34 +475,31 @@ internal fun ProfileScreen(
         )
     }
     if (showLocalProfileDeletion && localProfileName != null) {
-        AlertDialog(
+        GymAlertDialog(
             onDismissRequest = {
                 if (!isAccountActionLoading) showLocalProfileDeletion = false
             },
-            title = {
-                Text(stringResource(R.string.local_profile_delete_confirm_title))
-            },
+            title = stringResource(R.string.local_profile_delete_confirm_title),
             text = {
                 Text(formattedStringResource(R.string.local_profile_delete_warning, localProfileName))
             },
             confirmButton = {
-                TextButton(
+                GymAlertDialogButton(
                     onClick = {
                         showLocalProfileDeletion = false
                         showLocalProfileDeletionConfirmation = true
                     },
                     enabled = !isAccountActionLoading,
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
+                    role = GymAlertDialogButtonRole.Destructive
                 ) {
                     Text(stringResource(R.string.local_profile_delete_confirm))
                 }
             },
             dismissButton = {
-                TextButton(
+                GymAlertDialogButton(
                     onClick = { showLocalProfileDeletion = false },
-                    enabled = !isAccountActionLoading
+                    enabled = !isAccountActionLoading,
+                    role = GymAlertDialogButtonRole.Cancel
                 ) {
                     Text(stringResource(R.string.action_cancel))
                 }
@@ -537,19 +538,20 @@ private fun DeleteLocalProfileConfirmationDialog(
     var confirmation by rememberSaveable { mutableStateOf("") }
     val confirmationLabel = stringResource(R.string.local_profile_delete_typed_label)
     val matches = localProfileDeletionConfirmationMatches(confirmation)
-    AlertDialog(
+    GymAlertDialog(
         onDismissRequest = {
             if (actionsEnabled) onDismiss()
         },
-        title = { Text(stringResource(R.string.local_profile_delete_action)) },
+        title = stringResource(R.string.local_profile_delete_action),
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     text = profileName,
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(stringResource(R.string.local_profile_delete_typed_explanation))
-                OutlinedTextField(
+                TextField(
                     value = confirmation,
                     onValueChange = { confirmation = it.take(16) },
                     modifier = Modifier
@@ -561,6 +563,9 @@ private fun DeleteLocalProfileConfirmationDialog(
                         Text(stringResource(R.string.local_profile_delete_typed_hint))
                     },
                     singleLine = true,
+                    shape = GymControlShape,
+                    colors = planEditorFieldColors(),
+                    textStyle = MaterialTheme.typography.bodyLarge,
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Characters,
                         autoCorrectEnabled = false,
@@ -570,18 +575,20 @@ private fun DeleteLocalProfileConfirmationDialog(
             }
         },
         confirmButton = {
-            TextButton(
+            GymAlertDialogButton(
                 onClick = onConfirm,
                 enabled = matches && actionsEnabled,
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error
-                )
+                role = GymAlertDialogButtonRole.Destructive
             ) {
                 Text(stringResource(R.string.local_profile_delete_typed_confirm))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = actionsEnabled) {
+            GymAlertDialogButton(
+                onClick = onDismiss,
+                enabled = actionsEnabled,
+                role = GymAlertDialogButtonRole.Cancel
+            ) {
                 Text(stringResource(R.string.action_cancel))
             }
         }
@@ -1100,9 +1107,9 @@ private fun ChangePasswordDialog(
     var nonce by remember { mutableStateOf("") }
     var validationMessage by remember { mutableStateOf<String?>(null) }
 
-    AlertDialog(
+    GymAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.account_change_password)) },
+        title = stringResource(R.string.account_change_password),
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
@@ -1123,7 +1130,7 @@ private fun ChangePasswordDialog(
                     label = stringResource(R.string.account_current_password)
                 )
                 if (reauthenticationRequired) {
-                    OutlinedTextField(
+                    TextField(
                         value = nonce,
                         onValueChange = {
                             nonce = it.filter { character -> character in '0'..'9' }.take(8)
@@ -1134,6 +1141,9 @@ private fun ChangePasswordDialog(
                             Text(stringResource(R.string.account_password_verification_code))
                         },
                         singleLine = true,
+                        shape = GymControlShape,
+                        colors = planEditorFieldColors(),
+                        textStyle = MaterialTheme.typography.bodyLarge,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.NumberPassword
                         )
@@ -1170,7 +1180,7 @@ private fun ChangePasswordDialog(
             }
         },
         confirmButton = {
-            TextButton(
+            GymAlertDialogButton(
                 enabled = !isLoading,
                 onClick = {
                     val validation = validateSignedInPasswordChange(
@@ -1195,7 +1205,11 @@ private fun ChangePasswordDialog(
             }
         },
         dismissButton = {
-            TextButton(enabled = !isLoading, onClick = onDismiss) {
+            GymAlertDialogButton(
+                enabled = !isLoading,
+                onClick = onDismiss,
+                role = GymAlertDialogButtonRole.Cancel
+            ) {
                 Text(stringResource(R.string.action_cancel))
             }
         }
@@ -1208,12 +1222,15 @@ private fun ProfilePasswordField(
     onValueChange: (String) -> Unit,
     label: String
 ) {
-    OutlinedTextField(
+    TextField(
         value = value,
         onValueChange = { onValueChange(boundedAuthPasswordDraft(it)) },
         modifier = Modifier.fillMaxWidth(),
         label = { Text(label) },
         singleLine = true,
+        shape = GymControlShape,
+        colors = planEditorFieldColors(),
+        textStyle = MaterialTheme.typography.bodyLarge,
         visualTransformation = PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
     )
@@ -1227,9 +1244,9 @@ private fun DeleteCloudAccountDialog(
     var confirmation by rememberSaveable { mutableStateOf("") }
     // Credentials must never enter SavedState/Bundle persistence.
     var currentPassword by remember { mutableStateOf("") }
-    AlertDialog(
+    GymAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.account_delete_title)) },
+        title = stringResource(R.string.account_delete_title),
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.account_delete_warning))
@@ -1238,7 +1255,7 @@ private fun DeleteCloudAccountDialog(
                     onValueChange = { currentPassword = it },
                     label = stringResource(R.string.account_current_password)
                 )
-                OutlinedTextField(
+                TextField(
                     value = confirmation,
                     onValueChange = { confirmation = it.take(16) },
                     modifier = Modifier.fillMaxWidth(),
@@ -1246,24 +1263,25 @@ private fun DeleteCloudAccountDialog(
                     supportingText = {
                         Text(stringResource(R.string.account_delete_confirmation_hint))
                     },
-                    singleLine = true
+                    singleLine = true,
+                    shape = GymControlShape,
+                    colors = planEditorFieldColors(),
+                    textStyle = MaterialTheme.typography.bodyLarge
                 )
             }
         },
         confirmButton = {
-            TextButton(
+            GymAlertDialogButton(
                 enabled = localProfileDeletionConfirmationMatches(confirmation) &&
                     currentPassword.isNotEmpty(),
-                onClick = { onConfirm(currentPassword) }
+                onClick = { onConfirm(currentPassword) },
+                role = GymAlertDialogButtonRole.Destructive
             ) {
-                Text(
-                    text = stringResource(R.string.account_delete_confirm),
-                    color = MaterialTheme.colorScheme.error
-                )
+                Text(stringResource(R.string.account_delete_confirm))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            GymAlertDialogButton(onClick = onDismiss, role = GymAlertDialogButtonRole.Cancel) {
                 Text(stringResource(R.string.action_cancel))
             }
         }

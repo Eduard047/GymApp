@@ -1,8 +1,6 @@
 package com.example.gymapp.ui.components
 
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
@@ -30,17 +28,18 @@ fun AnalyticsConsentDialog(
 ) {
     val consent by conversionAnalytics.consent.collectAsState()
     if (introVisible || tutorialPending || consent != null || !conversionAnalytics.available) return
-    AlertDialog(
+    GymAlertDialog(
         onDismissRequest = {},
-        title = { Text(text = stringResource(R.string.analytics_consent_title)) },
+        title = stringResource(R.string.analytics_consent_title),
         text = { Text(text = stringResource(R.string.analytics_consent_body)) },
         confirmButton = {
-            TextButton(onClick = { conversionAnalytics.setConsent(true) }) {
+            GymAlertDialogButton(onClick = { conversionAnalytics.setConsent(true) }) {
                 Text(text = stringResource(R.string.analytics_consent_allow))
             }
         },
         dismissButton = {
-            TextButton(onClick = { conversionAnalytics.setConsent(false) }) {
+            // Same role as "allow": the two choices keep equal visual weight.
+            GymAlertDialogButton(onClick = { conversionAnalytics.setConsent(false) }) {
                 Text(text = stringResource(R.string.analytics_consent_deny))
             }
         }

@@ -74,10 +74,14 @@ struct TrainingSettingsView: View {
                                 } label: {
                                     Text(option.formatted(.number.locale(gymAppLocale())))
                                         .font(.headline.weight(isSelected ? .semibold : .regular))
-                                        .foregroundStyle(isSelected ? Color.white : GymTheme.textPrimary)
+                                        // Selected = accent tint with an accent numeral; solid blue
+                                        // is never a segment fill.
+                                        .foregroundStyle(isSelected ? GymTheme.primary : GymTheme.textPrimary)
                                         .frame(maxWidth: .infinity, minHeight: 44)
                                         .background(
-                                            Capsule().fill(isSelected ? GymTheme.brandFill : GymTheme.surfaceVariant)
+                                            Capsule().fill(
+                                                isSelected ? GymTheme.brandFill.opacity(0.16) : GymTheme.surfaceVariant
+                                            )
                                         )
                                 }
                                 .buttonStyle(.plain)

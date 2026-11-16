@@ -30,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
@@ -148,9 +149,13 @@ fun TrainingSettingsSheet(
                             modifier = Modifier
                                 .weight(1f)
                                 .heightIn(min = 48.dp)
+                                // Clipped so the press tint follows the capsule. Selected = accent
+                                // tint with an accent numeral (the plan editor chip tones); solid
+                                // blue is never a segment fill.
+                                .clip(RoundedCornerShape(999.dp))
                                 .background(
                                     color = if (selected) {
-                                        brandFillColor()
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
                                     } else {
                                         MaterialTheme.colorScheme.surfaceVariant
                                     },
@@ -168,7 +173,7 @@ fun TrainingSettingsSheet(
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                                 color = if (selected) {
-                                    Color.White
+                                    MaterialTheme.colorScheme.primary
                                 } else {
                                     MaterialTheme.colorScheme.onSurface
                                 }
@@ -191,7 +196,12 @@ private fun <T> TrainingSettingsOptions(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         TrainingSettingsSectionTitle(title)
-        AppPanel(modifier = Modifier.fillMaxWidth()) {
+        // The sheet is `surface`, the default panel tone, so the group takes the inner-tile tone to
+        // read as a card (white sheet + light grey, or #1C1C1E + #2C2C2E), like the pills below.
+        AppPanel(
+            modifier = Modifier.fillMaxWidth(),
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        ) {
             Column(modifier = Modifier.padding(horizontal = GymSpacing.Large, vertical = 2.dp)) {
                 options.forEachIndexed { index, option ->
                     if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
