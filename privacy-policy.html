@@ -29,7 +29,7 @@
     <p class="eyebrow">Privacy, in plain language</p>
     <h1>Know what GymApp stores — and why.</h1>
     <p class="hero-copy">A readable overview comes first. The complete policy remains available section by section below.</p>
-    <p class="meta">Effective August 15, 2026 · Чинна з 15 серпня 2026 року · Действует с 15 августа 2026 года</p>
+    <p class="meta">Effective November 15, 2026 · Чинна з 15 листопада 2026 року · Действует с 15 ноября 2026 года</p>
   </header>
 
   <div class="language-bar">
@@ -48,7 +48,7 @@
     <ul class="summary-grid" aria-label="Privacy summary">
       <li><div class="summary-card"><strong>Account &amp; sync</strong><span>Email, display name, account ID, and cloud workout state support sign-in and sync.</span></div></li>
       <li><div class="summary-card"><strong>On your device</strong><span>Training Profile, preferences, local cache, and timer scheduling stay local as described below.</span></div></li>
-      <li><div class="summary-card"><strong>No ad tracking</strong><span>No ads, third-party analytics SDK, IDFA access, cross-app tracking, or sale of personal data.</span></div></li>
+      <li><div class="summary-card"><strong>No ads, no sale</strong><span>No ads, no sale of personal data, and no analytics on iPhone or in the browser. Android analytics is optional and off until you allow it.</span></div></li>
       <li><div class="summary-card"><strong>Your control</strong><span>Choose what confirmed friends can see, remove or block them, export a backup, sign out, or permanently delete your account.</span></div></li>
     </ul>
     <nav class="policy-toc" aria-label="English policy contents">
@@ -58,7 +58,8 @@
         <li><a href="#en-data">Data we process</a></li>
         <li><a href="#en-device">Data on your device</a></li>
         <li><a href="#en-use">How data is used</a></li>
-        <li><a href="#en-no-tracking">No tracking or sale</a></li>
+        <li><a href="#en-no-tracking">Ads, tracking &amp; sale</a></li>
+        <li><a href="#en-android-analytics">Android analytics</a></li>
         <li><a href="#en-providers">Service providers</a></li>
         <li><a href="#en-retention">Retention &amp; deletion</a></li>
         <li><a href="#en-rights">Your choices &amp; rights</a></li>
@@ -86,6 +87,7 @@
           <tr><td>Notification delivery data</td><td>Only when you enable optional system alerts: a random installation ID, platform/provider, APNs or FCM token or Web Push endpoint and subscription keys, locale/app version, and a minimal opaque event kind, room/object ID, and revision.</td><td>Deliver optional friend, workout-invitation, and live-room lifecycle alerts. Per-set progress is not sent by push.</td></tr>
           <tr><td>Legacy leaderboard safety reports</td><td>Reporter account UUID, reported profile ID, time, and the fixed <code>inappropriate_name</code> category. New cross-account reporting is unavailable while competitive standings are disabled.</td><td>Retain and finish reviewing reports submitted before the leaderboard was restricted.</td></tr>
           <tr><td>Optional Garmin data</td><td>Opaque paired-device token, workout plans, sync status, and imported duration, calories, or heart-rate details when present.</td><td>Pair a Garmin device, deliver plans, and import completed workout details.</td></tr>
+          <tr><td>Optional Android analytics data</td><td>Only in the Android app and only if you allow it (see section 6): an app-instance identifier, the Android advertising ID, device and app information, an approximate location that Google derives from your IP address, and two events, <code>sign_up</code> and <code>first_workout</code>. No email address, name, workout content, or health data.</td><td>Measure which Google Ads campaigns bring people who create an account and use GymApp, and optimize those campaigns.</td></tr>
         </tbody>
       </table>
       <p>The ordinary friend-profile API never returns email, Supabase Auth UUID, raw cloud state, historical set lists, workout notes, Garmin token, or heart-rate/calorie details. Separately, when the owner explicitly enables the default-off detailed-workout setting and keeps recent summaries enabled, a mutually confirmed, unblocked friend may open read-only exercise names, weights, repetitions, and sets for at most those same five recent workouts. This view has no edit, delete, copy, or share actions and never includes notes, raw cloud state, email, Auth UUID, Garmin token, or heart-rate/calorie data. Revoking either sharing setting, ending the friendship, blocking either account, or changing the active account closes the view and requires fresh authorization. A standard direct invitation contains only exercise names/identities and planned weight/repetition sets; after acceptance it opens as an independent editable local draft and later changes are not synchronized. A separate live invitation is limited to one accepted, confirmed friend. Its room shares the frozen plan and each participant's committed set completion, entered weight, and repetitions with the other participant, but no notes, email, Auth UUID, Garmin/health data, or credentials. Per-set updates travel only to the accepted room participants through Supabase Realtime, not through push.</p>
@@ -94,7 +96,7 @@
     <section>
       <h3 id="en-device">3. Data that stays on your device</h3>
       <p>Depending on platform, your Training Profile — training split, 2–6 training days per week, goal, and energy balance — and any legacy locally blocked leaderboard-profile list are stored in first-party app preferences and are not uploaded. Local database/cache data, language/theme preferences, and local rest-timer notification scheduling also remain on the relevant device unless a workout field is included in the cloud state described above.</p>
-      <p>The phone apps do not ask for body weight, height, sex, location, contacts, camera, microphone, Photos, Motion &amp; Fitness, or HealthKit access. Rest-timer alerts are optional local notifications. If optional system friend/live alerts are available on your platform, GymApp requests notification permission only when you choose to enable them and then registers the account-bound delivery token/endpoint described above. Garmin sensor/workout information is processed only when you use the optional Garmin feature and is also subject to Garmin's permissions and policy.</p>
+      <p>The phone apps do not ask for body weight, height, sex, location, contacts, camera, microphone, Photos, Motion &amp; Fitness, or HealthKit access; the optional Android analytics in section 6 does not request location permission. Rest-timer alerts are optional local notifications. If optional system friend/live alerts are available on your platform, GymApp requests notification permission only when you choose to enable them and then registers the account-bound delivery token/endpoint described above. Garmin sensor/workout information is processed only when you use the optional Garmin feature and is also subject to Garmin's permissions and policy.</p>
     </section>
 
     <section>
@@ -105,51 +107,63 @@
         <li>manage mutual friend requests, privacy choices, removals and blocks; show enabled self-reported progress and separately authorized read-only workout details only to confirmed friends; deliver bounded workout-plan invitations; and synchronize an accepted two-person live room;</li>
         <li>when you enable them, deliver optional system alerts for bounded friend/invitation/live lifecycle events; direct set progress remains Realtime-only;</li>
         <li>provide Garmin pairing and workout transfer when you choose to use it;</li>
+        <li>if you allow it in the Android app, measure which Google Ads campaigns lead to sign-ups and first workouts, and optimize those campaigns;</li>
         <li>respond to support, privacy, and account-deletion requests; and</li>
         <li>meet legal obligations and protect users and the service from abuse.</li>
       </ul>
-      <p>Where applicable, processing is necessary to provide the service you request, based on your choice to use optional Garmin/notification features, or necessary for security and legal compliance.</p>
+      <p>Where applicable, processing is necessary to provide the service you request, based on your choice to use optional Garmin/notification features, based on your consent for optional Android analytics, or necessary for security and legal compliance.</p>
     </section>
 
     <section>
-      <h3 id="en-no-tracking">5. No tracking, advertising, or sale</h3>
-      <p>GymApp has no advertising or third-party analytics SDK, does not access IDFA, and does not link GymApp data with data from other companies’ apps or websites for advertising or measurement. We do not sell personal data or share it with data brokers.</p>
+      <h3 id="en-no-tracking">5. Advertising, tracking, and sale</h3>
+      <p>GymApp shows no advertising and does not sell personal data or share it with data brokers. The iPhone app and the browser version contain no advertising or analytics SDK, do not access IDFA, and do not link GymApp data with data from other companies’ apps or websites for advertising or measurement. The only exception is the optional Android analytics described in section 6, which runs only if you allow it.</p>
     </section>
 
     <section>
-      <h3 id="en-providers">6. Service providers and optional integrations</h3>
+      <h3 id="en-android-analytics">6. Optional Android analytics and ad measurement</h3>
+      <p>This section applies only to the Android app. The iPhone app and the browser version do not collect analytics.</p>
+      <p>The first time you open the Android app, it asks whether you allow Google Analytics for Firebase to measure how people find and use GymApp. The choice is off until you allow it, you can change it at any time in the app’s Settings, and GymApp works the same if you decline. If you decline, or later turn it off, no analytics data is collected.</p>
+      <p>If you allow it, Google Analytics for Firebase, a service provided by Google, collects an app-instance identifier, the Android advertising ID, device and app information (such as device model, operating system version, app version, and language), and an approximate location that Google derives from your IP address. GymApp sends two events: <code>sign_up</code> when you create an account (method: email) and <code>first_workout</code> when you complete your first workout. We do not send your email address, name, workout content, or health data to Google Analytics.</p>
+      <p>We use this data to measure which Google Ads campaigns bring people who create an account and use GymApp, and to optimize those campaigns. In Google’s consent settings we grant analytics storage, ad storage, and ad user data, and we deny ad personalization, so this data is not used to personalize ads shown to you. Google acts as our service provider under the Google Analytics and Firebase terms; see <a href="https://policies.google.com/privacy">Google’s privacy policy</a> and <a href="https://firebase.google.com/support/privacy">Firebase privacy information</a>. Our basis for this processing is your consent.</p>
+      <p>If you turn analytics off in Settings, collection stops and the app resets its analytics identifier and data on your device. You can also reset or delete the Android advertising ID in your device’s Android settings. Retention of data already collected is described in section 8.</p>
+    </section>
+
+    <section>
+      <h3 id="en-providers">7. Service providers and optional integrations</h3>
       <p>We use <a href="https://supabase.com/privacy">Supabase</a> to provide authentication, database, Realtime, and Edge Function infrastructure. Supabase processes data for us under its contractual and security terms. If you connect Garmin, information needed to pair and exchange workout data is also processed through the Garmin ecosystem under <a href="https://www.garmin.com/privacy/">Garmin's privacy policy</a>.</p>
       <p>If you enable system alerts and the feature is available on your platform, delivery uses the platform/browser push provider, such as <a href="https://www.apple.com/legal/privacy/">Apple Push Notification service</a>, <a href="https://policies.google.com/privacy">Firebase Cloud Messaging</a>, or the push service selected by your browser. The provider receives the installation token/endpoint and a static localized alert with only a bounded event kind and opaque room/object ID and revision. The provider payload never includes a profile or workout name, exercise, weight, repetitions, notes, email, Auth UUID, session token, or arbitrary URL. Per-set live progress is not sent to a push provider.</p>
-      <p>We may disclose information when required by law, to protect rights or safety, or as part of a lawful business transfer with appropriate notice and safeguards. We do not permit providers to use GymApp data for their own targeted advertising.</p>
+      <p>The app offers optional tips (a one-time in-app purchase) through the App Store on iPhone and Google Play on Android. Apple or Google processes the payment under its own terms; GymApp receives no card or other payment details and keeps no purchase record. Tips do not unlock or change anything in the app.</p>
+      <p>We may disclose information when required by law, to protect rights or safety, or as part of a lawful business transfer with appropriate notice and safeguards. We do not permit providers to use GymApp data for their own targeted advertising; for the optional Android analytics in section 6, ad personalization is turned off. Google processes that data as described in section 6.</p>
     </section>
 
     <section>
-      <h3 id="en-retention">7. Retention and account deletion</h3>
+      <h3 id="en-retention">8. Retention and account deletion</h3>
       <p>We retain active account and cloud data while your account exists so GymApp can sync and provide its features. A standard unanswered workout invitation expires after seven days. Its exercise/plan payload becomes eligible for tombstoning 24 hours after decline, cancellation, or expiry, or 30 days after acceptance; bounded cleanup runs when either participant next refreshes Friends or the invitation inbox, so a dormant row may retain its payload until that cleanup or account deletion. Its ID/status/revision/idempotency tombstone and other friend/request/block/privacy lifecycle records remain account data until removed by product lifecycle rules or account deletion.</p>
       <p>A waiting or ready live room expires seven days after creation; an active room expires 24 hours after the owner starts it. Scheduled bounded cleanup runs every five minutes. The frozen plan, summary, and per-participant progress become eligible for purge 24 hours after cancellation/expiry or 30 days after completion. The terminal room and all dependent rows become eligible for deletion 31 days after it ends. Because each pass is bounded, a backlog can delay cleanup beyond an eligibility threshold.</p>
       <p>A notification delivery address stays active while alerts are enabled and the signed-in client refreshes it. Authenticated revocation scrubs the raw token/endpoint and Web Push keys immediately. An active installation not refreshed for 180 days is scrubbed during bounded dispatcher cleanup; its scrubbed tombstone is eligible for deletion after 30 days once no delivery row refers to it. Completed, dead, or expired notification intents and their delivery rows are eligible for deletion 30 days after completion. Live join/start/finish/close alerts expire after one day; a live invitation may remain pending only until its seven-day invitation deadline, and no pending delivery window exceeds seven days.</p>
       <p>Pending safety reports remain until review; resolved reports are normally removed within 90 days, and reports are also deleted when the reporter or reported profile is deleted. On iOS, permanently delete your account through <strong>Profile → Account, privacy &amp; deletion → Delete Account</strong> and confirm the irreversible request. In another GymApp version without that control, contact support for deletion. A successful request deletes the Supabase Auth user and associated active cloud records, including user state, profile, private social graph/projections/invitations/live rooms, notification installations/outbox, reports, and Garmin cloud records. The app then clears the local account session and account data on that device.</p>
+      <p>Android analytics data you allowed (section 6) is kept in Google Analytics for up to 14 months and then deleted. Turning analytics off stops new collection and resets the app’s analytics identifier on your device; data already collected stays in Google Analytics until that retention period ends. It is not part of your GymApp cloud account.</p>
       <p>Deleting the app from a device does not by itself delete the cloud account. Operational backups and security records may remain isolated until the service provider’s limited backup cycle expires, and information that law requires us to retain may be kept only for that required period. Such records are not restored as an active account or used for product personalization.</p>
       <p>If in-app deletion cannot complete or you no longer have access to the account, contact <a href="mailto:support@gymapptracker.com">support@gymapptracker.com</a>.</p>
     </section>
 
     <section>
-      <h3 id="en-rights">8. Your choices and rights</h3>
-      <p>You can edit or delete workouts, decline local or system notifications, choose not to connect Garmin, control each friend-visible category, decline or cancel requests/invitations, leave a live workout, remove or block a friend, export a workout backup, sign out, and delete your account. Turning off either recent-summary or detailed-workout sharing immediately closes any open read-only workout detail. Removing or blocking immediately denies that profile friend-detail access and closes pending workout invitations and any open live room between you; switching accounts also closes and clears the prior account's friend details. Depending on your location, you may also have rights to access, correct, erase, restrict, object to, or receive a portable copy of personal data, and to complain to a data protection authority. Contact us to exercise a right; we may need to verify the account before acting.</p>
+      <h3 id="en-rights">9. Your choices and rights</h3>
+      <p>You can edit or delete workouts, decline local or system notifications, allow or decline Android analytics and change that choice in Settings at any time, choose not to connect Garmin, control each friend-visible category, decline or cancel requests/invitations, leave a live workout, remove or block a friend, export a workout backup, sign out, and delete your account. Turning off either recent-summary or detailed-workout sharing immediately closes any open read-only workout detail. Removing or blocking immediately denies that profile friend-detail access and closes pending workout invitations and any open live room between you; switching accounts also closes and clears the prior account's friend details. Depending on your location, you may also have rights to access, correct, erase, restrict, object to, or receive a portable copy of personal data, and to complain to a data protection authority. Contact us to exercise a right; we may need to verify the account before acting.</p>
     </section>
 
     <section>
-      <h3 id="en-security">9. Security and international processing</h3>
+      <h3 id="en-security">10. Security and international processing</h3>
       <p>GymApp uses HTTPS, access controls, Supabase Row Level Security, and protected platform storage where supported; the iOS app stores session secrets in iOS Keychain. No system is perfectly secure, so keep your credentials private and contact us if you suspect misuse. Providers may process data in countries other than yours; where required, we use contractual or other lawful transfer safeguards.</p>
     </section>
 
     <section>
-      <h3 id="en-children">10. Children</h3>
+      <h3 id="en-children">11. Children</h3>
       <p>GymApp is a general fitness log and is not directed to children under 13 or the higher minimum age required in their country. We do not knowingly collect a child’s data without the authorization required by law. Contact us if you believe a child has provided data improperly.</p>
     </section>
 
     <section>
-      <h3 id="en-changes">11. Changes</h3>
+      <h3 id="en-changes">12. Changes</h3>
       <p>We may update this policy when GymApp’s features, providers, or legal obligations change. We will update the effective date and provide additional notice in the app when a change materially affects your choices.</p>
     </section>
   </article>
@@ -160,7 +174,7 @@
     <ul class="summary-grid" aria-label="Коротко про конфіденційність">
       <li><div class="summary-card"><strong>Акаунт і синхронізація</strong><span>Email, відображуване ім’я, ID акаунта та хмарний стан тренувань потрібні для входу й синхронізації.</span></div></li>
       <li><div class="summary-card"><strong>На вашому пристрої</strong><span>Training Profile, налаштування, локальний кеш і таймер залишаються локальними, як описано нижче.</span></div></li>
-      <li><div class="summary-card"><strong>Без рекламного стеження</strong><span>Без реклами, стороннього analytics SDK, IDFA, міжзастосункового стеження та продажу персональних даних.</span></div></li>
+      <li><div class="summary-card"><strong>Без реклами й продажу</strong><span>Без реклами, продажу персональних даних і аналітики на iPhone та в браузері. Аналітика Android необов’язкова й вимкнена, доки ви її не дозволите.</span></div></li>
       <li><div class="summary-card"><strong>Ваш контроль</strong><span>Обирайте, що бачать підтверджені друзі, видаляйте чи блокуйте їх, експортуйте копію, виходьте або назавжди видаляйте акаунт.</span></div></li>
     </ul>
     <nav class="policy-toc" aria-label="Зміст політики українською">
@@ -170,7 +184,8 @@
         <li><a href="#uk-data">Які дані обробляємо</a></li>
         <li><a href="#uk-device">Дані на пристрої</a></li>
         <li><a href="#uk-use">Як використовуємо дані</a></li>
-        <li><a href="#uk-no-tracking">Без стеження й продажу</a></li>
+        <li><a href="#uk-no-tracking">Реклама, стеження й продаж</a></li>
+        <li><a href="#uk-android-analytics">Аналітика Android</a></li>
         <li><a href="#uk-providers">Постачальники</a></li>
         <li><a href="#uk-retention">Зберігання й видалення</a></li>
         <li><a href="#uk-rights">Ваш вибір і права</a></li>
@@ -198,6 +213,7 @@
           <tr><td>Дані доставки сповіщень</td><td>Лише якщо ви вмикаєте необов’язкові системні сповіщення: випадковий ID інсталяції, платформа/постачальник, токен APNs чи FCM або endpoint і ключі підписки Web Push, локаль/версія застосунку, а також мінімальні непрозорі тип події, ID кімнати/об’єкта та ревізія.</td><td>Доставка необов’язкових сповіщень про друзів, запрошення й життєвий цикл live-кімнати. Прогрес окремих підходів через push не надсилається.</td></tr>
           <tr><td>Старі скарги щодо рейтингу</td><td>UUID акаунта заявника, ID профілю, час і фіксована категорія <code>inappropriate_name</code>. Нові скарги між акаунтами недоступні, поки змагальний рейтинг вимкнено.</td><td>Зберігання та завершення перевірки скарг, поданих до обмеження рейтингу.</td></tr>
           <tr><td>Необов’язкові дані Garmin</td><td>Непрозорий токен під’єднаного пристрою, плани, статус синхронізації та імпортовані тривалість, калорії або дані пульсу, якщо вони є.</td><td>Під’єднання Garmin, передавання планів та імпорт завершених тренувань.</td></tr>
+          <tr><td>Необов’язкові дані аналітики Android</td><td>Лише в застосунку Android і лише якщо ви дозволили (див. розділ 6): ідентифікатор екземпляра застосунку, рекламний ідентифікатор Android, відомості про пристрій і застосунок, приблизна локація, яку Google визначає за вашою IP-адресою, та дві події — <code>sign_up</code> і <code>first_workout</code>. Без email, імені, вмісту тренувань і даних про здоров’я.</td><td>Вимірювання того, які рекламні кампанії Google Ads приводять людей, що створюють обліковий запис і користуються GymApp, та оптимізація цих кампаній.</td></tr>
         </tbody>
       </table>
       <p>Звичайний профільний API друзів ніколи не повертає email, UUID Supabase Auth, сирий хмарний стан, історичні списки підходів, нотатки, Garmin-токен або дані пульсу/калорій. Окремо, якщо власник явно вмикає типово вимкнене налаштування детальних тренувань і залишає ввімкненими недавні підсумки, взаємно підтверджений незаблокований друг може відкрити в режимі лише читання назви вправ, вагу, повтори й підходи щонайбільше для тих самих п’яти недавніх тренувань. У цьому перегляді немає дій редагування, видалення, копіювання чи поширення і ніколи немає нотаток, сирого хмарного стану, email, Auth UUID, Garmin-токена або даних пульсу/калорій. Відкликання будь-якого з цих дозволів, припинення дружби, блокування будь-якого акаунта або зміна активного акаунта закриває перегляд і вимагає нової авторизації. Звичайне пряме запрошення містить лише назви/ідентичність вправ і планові підходи з вагою/повторами; після прийняття воно відкривається як незалежна редагована локальна чернетка, а подальші зміни не синхронізуються. Окреме live-запрошення обмежене одним підтвердженим другом, який його прийняв. Кімната показує іншому учаснику зафіксований план і завершення підходів, внесену вагу й повтори кожного, але не нотатки, email, Auth UUID, Garmin/медичні дані чи облікові секрети. Оновлення підходів передаються лише прийнятим учасникам кімнати через Supabase Realtime, а не через push.</p>
@@ -206,7 +222,7 @@
     <section>
       <h3 id="uk-device">3. Дані, що залишаються на пристрої</h3>
       <p>Залежно від платформи, Training Profile — програма, 2–6 тренувальних днів на тиждень, ціль та енергетичний баланс — і старий локальний список заблокованих профілів рейтингу зберігаються у власних налаштуваннях застосунку й не завантажуються на сервер. Локальна база/кеш, мова, тема й налаштування локальних сповіщень таймера також залишаються на відповідному пристрої, крім полів тренувань, що входять до описаного вище хмарного стану.</p>
-      <p>Телефонні застосунки GymApp не запитують вагу тіла, зріст, стать, геолокацію, контакти, камеру, мікрофон, Фото, Motion &amp; Fitness або HealthKit. Сигнали таймера відпочинку — це необов’язкові локальні сповіщення. Якщо системні сповіщення друзів/live доступні на вашій платформі, GymApp запитує дозвіл лише коли ви самі їх вмикаєте, а потім реєструє прив’язаний до акаунта токен/endpoint доставки, описаний вище. Дані сенсорів і тренувань Garmin обробляються лише за використання необов’язкової Garmin-функції та також регулюються дозволами й політикою Garmin.</p>
+      <p>Телефонні застосунки GymApp не запитують вагу тіла, зріст, стать, геолокацію, контакти, камеру, мікрофон, Фото, Motion &amp; Fitness або HealthKit; необов’язкова аналітика Android із розділу 6 не запитує дозвіл на геолокацію. Сигнали таймера відпочинку — це необов’язкові локальні сповіщення. Якщо системні сповіщення друзів/live доступні на вашій платформі, GymApp запитує дозвіл лише коли ви самі їх вмикаєте, а потім реєструє прив’язаний до акаунта токен/endpoint доставки, описаний вище. Дані сенсорів і тренувань Garmin обробляються лише за використання необов’язкової Garmin-функції та також регулюються дозволами й політикою Garmin.</p>
     </section>
 
     <section>
@@ -217,50 +233,62 @@
         <li>керуємо взаємними запитами в друзі, налаштуваннями видимості, видаленням і блокуванням; показуємо дозволений самостійно внесений прогрес та окремо дозволені деталі тренувань у режимі лише читання тільки підтвердженим друзям; доставляємо обмежені запрошення з планом і синхронізуємо прийняту live-кімнату для двох;</li>
         <li>коли ви вмикаєте їх, доставляємо необов’язкові системні сповіщення про обмежені події життєвого циклу друзів/запрошень/live; прогрес підходів лишається тільки в Realtime;</li>
         <li>забезпечуємо Garmin-синхронізацію, якщо ви її обрали;</li>
+        <li>якщо ви дозволили це в застосунку Android, вимірюємо, які рекламні кампанії Google Ads призводять до реєстрацій і перших тренувань, та оптимізуємо ці кампанії;</li>
         <li>відповідаємо на запити підтримки, конфіденційності й видалення; та</li>
         <li>виконуємо вимоги закону й захищаємо користувачів і сервіс від зловживань.</li>
       </ul>
     </section>
 
     <section>
-      <h3 id="uk-no-tracking">5. Без відстеження, реклами та продажу</h3>
-      <p>GymApp не має рекламних або сторонніх аналітичних SDK, не використовує IDFA й не поєднує дані GymApp із даними інших компаній для реклами або вимірювання. Ми не продаємо персональні дані та не передаємо їх брокерам даних.</p>
+      <h3 id="uk-no-tracking">5. Реклама, стеження та продаж</h3>
+      <p>GymApp не показує рекламу, не продає персональні дані та не передає їх брокерам даних. Застосунок iPhone і браузерна версія не містять рекламних або аналітичних SDK, не використовують IDFA й не поєднують дані GymApp із даними застосунків чи сайтів інших компаній для реклами або вимірювання. Єдиний виняток — необов’язкова аналітика Android, описана в розділі 6, яка працює лише якщо ви її дозволили.</p>
     </section>
 
     <section>
-      <h3 id="uk-providers">6. Постачальники послуг та інтеграції</h3>
+      <h3 id="uk-android-analytics">6. Необов’язкова аналітика Android і вимірювання реклами</h3>
+      <p>Цей розділ стосується лише застосунку Android. Застосунок iPhone і браузерна версія аналітику не збирають.</p>
+      <p>Під час першого запуску застосунок Android запитує, чи дозволяєте ви Google Analytics for Firebase вимірювати, як люди знаходять і використовують GymApp. Типово аналітика вимкнена, доки ви її не дозволите; змінити вибір можна будь-коли в налаштуваннях застосунку, а GymApp працює однаково й без неї. Якщо ви відмовилися або пізніше вимкнули аналітику, її дані не збираються.</p>
+      <p>Якщо ви дозволили, Google Analytics for Firebase — сервіс Google — збирає ідентифікатор екземпляра застосунку, рекламний ідентифікатор Android, відомості про пристрій і застосунок (наприклад, модель пристрою, версію ОС, версію застосунку та мову) і приблизну локацію, яку Google визначає за вашою IP-адресою. GymApp надсилає дві події: <code>sign_up</code> під час створення облікового запису (спосіб: email) і <code>first_workout</code> після завершення першого тренування. Ми не надсилаємо в Google Analytics вашу адресу email, ім’я, вміст тренувань або дані про здоров’я.</p>
+      <p>Ми використовуємо ці дані, щоб вимірювати, які рекламні кампанії Google Ads приводять людей, що створюють обліковий запис і користуються GymApp, та оптимізувати ці кампанії. У налаштуваннях згоди Google ми дозволяємо зберігання аналітики, зберігання реклами та використання даних користувача для реклами й забороняємо персоналізацію реклами, тому ці дані не використовуються для показу вам персоналізованої реклами. Google виступає нашим постачальником послуг згідно з умовами Google Analytics і Firebase; див. <a href="https://policies.google.com/privacy">політику конфіденційності Google</a> і <a href="https://firebase.google.com/support/privacy">відомості про конфіденційність Firebase</a>. Підставою цієї обробки є ваша згода.</p>
+      <p>Якщо ви вимкнете аналітику в налаштуваннях, збір припиняється, а застосунок скидає свій аналітичний ідентифікатор і дані на вашому пристрої. Рекламний ідентифікатор Android також можна скинути або видалити в налаштуваннях Android на пристрої. Зберігання вже зібраних даних описано в розділі 8.</p>
+    </section>
+
+    <section>
+      <h3 id="uk-providers">7. Постачальники послуг та інтеграції</h3>
       <p>Ми використовуємо <a href="https://supabase.com/privacy">Supabase</a> для автентифікації, бази даних, Realtime та Edge Functions. Supabase обробляє дані від нашого імені за своїми договірними умовами й вимогами безпеки. Якщо ви під’єднаєте Garmin, потрібні для синхронізації дані також обробляються в екосистемі Garmin відповідно до <a href="https://www.garmin.com/privacy/">політики Garmin</a>.</p>
       <p>Якщо ви вмикаєте системні сповіщення й функція доступна на платформі, для доставки використовується push-постачальник платформи/браузера, наприклад <a href="https://www.apple.com/legal/privacy/">Apple Push Notification service</a>, <a href="https://policies.google.com/privacy">Firebase Cloud Messaging</a> або push-служба, яку обрав браузер. Постачальник отримує токен/endpoint інсталяції та статичний локалізований текст лише з обмеженим типом події й непрозорими ID кімнати/об’єкта та ревізією. Payload не містить імені профілю чи тренування, вправи, ваги, повторів, нотаток, email, Auth UUID, токена сесії або довільного URL. Live-прогрес підходів push-постачальнику не надсилається.</p>
-      <p>Ми можемо розкрити інформацію, якщо цього вимагає закон, для захисту прав чи безпеки або під час законної передачі бізнесу з належним повідомленням і гарантіями. Постачальники не мають права використовувати дані GymApp для власної таргетованої реклами.</p>
+      <p>У застосунку є необов’язкова підтримка розробника (одноразова покупка в застосунку) через App Store на iPhone і Google Play на Android. Платіж обробляє Apple або Google за власними умовами; GymApp не отримує дані картки чи інші платіжні дані й не зберігає записів про покупки. Підтримка нічого не відкриває і нічого не змінює в застосунку.</p>
+      <p>Ми можемо розкрити інформацію, якщо цього вимагає закон, для захисту прав чи безпеки або під час законної передачі бізнесу з належним повідомленням і гарантіями. Постачальники не мають права використовувати дані GymApp для власної таргетованої реклами; для необов’язкової аналітики Android із розділу 6 персоналізацію реклами вимкнено. Google обробляє ці дані, як описано в розділі 6.</p>
     </section>
 
     <section>
-      <h3 id="uk-retention">7. Зберігання та видалення облікового запису</h3>
+      <h3 id="uk-retention">8. Зберігання та видалення облікового запису</h3>
       <p>Ми зберігаємо активні облікові й хмарні дані, поки існує обліковий запис. Звичайне запрошення на тренування без відповіді спливає через сім днів. Його вміст вправ/плану стає придатним до знеособленого очищення через 24 години після відхилення, скасування чи спливу або через 30 днів після прийняття; обмежене очищення запускається, коли будь-який учасник наступного разу оновлює екран «Друзі» або вхідні запрошення, тому неактивний запис може зберігати вміст до такого запуску або видалення акаунта. Його технічний запис ID/статусу/ревізії/ідемпотентності та інші записи життєвого циклу дружби/запитів/блокувань/приватності лишаються даними акаунта до очищення правилами продукту або видалення акаунта.</p>
       <p>Live-кімната зі статусом очікування/готовності спливає через сім днів після створення, а активна — через 24 години після запуску власником. Заплановане обмежене очищення виконується кожні п’ять хвилин. Зафіксований план, підсумок і прогрес учасників стають придатними до очищення через 24 години після скасування/спливу або через 30 днів після завершення. Термінальна кімната та всі залежні записи стають придатними до видалення через 31 день після закриття. Через обмеження обсягу кожного проходу черга може відкласти очищення після настання строку.</p>
       <p>Адреса доставки сповіщень лишається активною, поки сповіщення ввімкнено й авторизований клієнт її оновлює. Авторизоване відкликання одразу стирає сирий токен/endpoint і ключі Web Push. Активна інсталяція, яку не оновлювали 180 днів, стирається під час обмеженого очищення диспетчера; її очищений технічний запис стає придатним до видалення через 30 днів, коли на нього не посилаються записи доставки. Завершені, невдалі або прострочені наміри сповіщень і записи доставки стають придатними до видалення через 30 днів після завершення. Live-сповіщення про приєднання/старт/завершення/закриття спливають через один день; live-запрошення може очікувати лише до семиденного строку запрошення, і жодне вікно очікування доставки не перевищує сім днів.</p>
       <p>Скарги зі статусом очікування зберігаються до перевірки; закриті скарги зазвичай видаляються впродовж 90 днів, а також видаляються разом із заявником або профілем, на який поскаржилися. На iOS для остаточного видалення відкрийте <strong>Профіль → Обліковий запис, конфіденційність і видалення → Видалити обліковий запис</strong> і підтвердьте незворотний запит. В іншій версії GymApp без такого елемента зверніться до підтримки. Успішний запит видаляє користувача Supabase Auth і пов’язані активні хмарні записи, зокрема стан, профіль, приватний соціальний граф/проєкції/запрошення/live-кімнати, інсталяції/чергу сповіщень, скарги й Garmin-дані. Після цього застосунок очищає локальну сесію та дані облікового запису на відповідному пристрої.</p>
+      <p>Дані аналітики Android, які ви дозволили (розділ 6), зберігаються в Google Analytics до 14 місяців, після чого видаляються. Вимкнення аналітики припиняє нове збирання й скидає аналітичний ідентифікатор застосунку на вашому пристрої; уже зібрані дані залишаються в Google Analytics до завершення цього строку. Вони не входять до хмарного облікового запису GymApp.</p>
       <p>Саме видалення застосунку не видаляє хмарний обліковий запис. Операційні резервні копії та записи безпеки можуть залишатися ізольованими до завершення обмеженого циклу резервного зберігання постачальника, а дані, які необхідно зберігати за законом, — лише протягом обов’язкового строку. Їх не відновлюють як активний обліковий запис і не використовують для персоналізації.</p>
       <p>Якщо видалення в застосунку не завершується або ви втратили доступ, напишіть на <a href="mailto:support@gymapptracker.com">support@gymapptracker.com</a>.</p>
     </section>
 
     <section>
-      <h3 id="uk-rights">8. Ваш вибір і права</h3>
-      <p>Ви можете редагувати або видаляти тренування, відмовитися від локальних чи системних сповіщень, не під’єднувати Garmin, окремо керувати кожною видимою друзям категорією, відхиляти чи скасовувати запити/запрошення, залишати live-тренування, видаляти або блокувати друга, експортувати резервну копію, виходити й видаляти обліковий запис. Вимкнення доступу до недавніх підсумків або детальних тренувань одразу закриває вже відкриті деталі в режимі лише читання. Видалення чи блокування одразу закриває цьому профілю доступ до деталей друга, незавершені запрошення та відкриту live-кімнату між вами; зміна акаунта також закриває й очищає деталі друзів попереднього акаунта. Залежно від країни ви також можете мати право на доступ, виправлення, видалення, обмеження, заперечення, перенесення даних і скаргу до органу захисту даних. Для виконання запиту нам може знадобитися підтвердження облікового запису.</p>
+      <h3 id="uk-rights">9. Ваш вибір і права</h3>
+      <p>Ви можете редагувати або видаляти тренування, відмовитися від локальних чи системних сповіщень, дозволити або відхилити аналітику Android і будь-коли змінити цей вибір у налаштуваннях, не під’єднувати Garmin, окремо керувати кожною видимою друзям категорією, відхиляти чи скасовувати запити/запрошення, залишати live-тренування, видаляти або блокувати друга, експортувати резервну копію, виходити й видаляти обліковий запис. Вимкнення доступу до недавніх підсумків або детальних тренувань одразу закриває вже відкриті деталі в режимі лише читання. Видалення чи блокування одразу закриває цьому профілю доступ до деталей друга, незавершені запрошення та відкриту live-кімнату між вами; зміна акаунта також закриває й очищає деталі друзів попереднього акаунта. Залежно від країни ви також можете мати право на доступ, виправлення, видалення, обмеження, заперечення, перенесення даних і скаргу до органу захисту даних. Для виконання запиту нам може знадобитися підтвердження облікового запису.</p>
     </section>
 
     <section>
-      <h3 id="uk-security">9. Безпека та міжнародна обробка</h3>
+      <h3 id="uk-security">10. Безпека та міжнародна обробка</h3>
       <p>GymApp використовує HTTPS, контроль доступу, Supabase Row Level Security і захищене платформне сховище там, де воно підтримується; застосунок iOS зберігає секрети сесії в iOS Keychain. Жодна система не є абсолютно безпечною, тому не передавайте свої облікові дані й повідомте нас про підозру на зловживання. Постачальники можуть обробляти дані за межами вашої країни; де потрібно, застосовуються договірні або інші законні гарантії передавання.</p>
     </section>
 
     <section>
-      <h3 id="uk-children">10. Діти</h3>
+      <h3 id="uk-children">11. Діти</h3>
       <p>GymApp — загальний фітнес-щоденник, не призначений для дітей молодше 13 років або вищого мінімального віку у відповідній країні. Ми свідомо не збираємо дані дитини без дозволу, передбаченого законом. Повідомте нас, якщо вважаєте, що дитина неправомірно надала дані.</p>
     </section>
 
     <section>
-      <h3 id="uk-changes">11. Зміни</h3>
+      <h3 id="uk-changes">12. Зміни</h3>
       <p>Ми можемо оновлювати політику через зміни функцій, постачальників або вимог закону. Ми змінимо дату набрання чинності й додатково повідомимо в застосунку, якщо зміна істотно впливає на ваш вибір.</p>
     </section>
   </article>
@@ -271,7 +299,7 @@
     <ul class="summary-grid" aria-label="Кратко о конфиденциальности">
       <li><div class="summary-card"><strong>Аккаунт и синхронизация</strong><span>Email, отображаемое имя, ID аккаунта и облачное состояние тренировок нужны для входа и синхронизации.</span></div></li>
       <li><div class="summary-card"><strong>На вашем устройстве</strong><span>Training Profile, настройки, локальный кэш и таймер остаются локальными, как описано ниже.</span></div></li>
-      <li><div class="summary-card"><strong>Без рекламного трекинга</strong><span>Без рекламы, стороннего analytics SDK, IDFA, межприложенческого трекинга и продажи персональных данных.</span></div></li>
+      <li><div class="summary-card"><strong>Без рекламы и продажи</strong><span>Без рекламы, продажи персональных данных и аналитики на iPhone и в браузере. Аналитика Android необязательна и выключена, пока вы её не разрешите.</span></div></li>
       <li><div class="summary-card"><strong>Ваш контроль</strong><span>Выбирайте, что видят подтверждённые друзья, удаляйте или блокируйте их, экспортируйте копию, выходите или навсегда удаляйте аккаунт.</span></div></li>
     </ul>
     <nav class="policy-toc" aria-label="Содержание политики на русском">
@@ -281,7 +309,8 @@
         <li><a href="#ru-data">Какие данные обрабатываем</a></li>
         <li><a href="#ru-device">Данные на устройстве</a></li>
         <li><a href="#ru-use">Как используем данные</a></li>
-        <li><a href="#ru-no-tracking">Без трекинга и продажи</a></li>
+        <li><a href="#ru-no-tracking">Реклама, трекинг и продажа</a></li>
+        <li><a href="#ru-android-analytics">Аналитика Android</a></li>
         <li><a href="#ru-providers">Поставщики</a></li>
         <li><a href="#ru-retention">Хранение и удаление</a></li>
         <li><a href="#ru-rights">Ваш выбор и права</a></li>
@@ -309,6 +338,7 @@
           <tr><td>Данные доставки уведомлений</td><td>Только если вы включаете необязательные системные уведомления: случайный ID установки, платформа/поставщик, токен APNs или FCM либо endpoint и ключи подписки Web Push, локаль/версия приложения, а также минимальные непрозрачные тип события, ID комнаты/объекта и ревизия.</td><td>Доставка необязательных уведомлений о друзьях, приглашениях и жизненном цикле live-комнаты. Прогресс отдельных подходов через push не отправляется.</td></tr>
           <tr><td>Старые жалобы на рейтинг</td><td>UUID учётной записи заявителя, идентификатор профиля, время и фиксированная категория <code>inappropriate_name</code>. Новые жалобы между аккаунтами недоступны, пока соревновательный рейтинг отключён.</td><td>Хранение и завершение проверки жалоб, поданных до ограничения рейтинга.</td></tr>
           <tr><td>Необязательные данные Garmin</td><td>Непрозрачный токен сопряжённого устройства, планы тренировок, статус синхронизации и импортированные сведения о продолжительности, калориях или пульсе, если они имеются.</td><td>Сопряжение устройства Garmin, передача планов и импорт сведений о завершённых тренировках.</td></tr>
+          <tr><td>Необязательные данные аналитики Android</td><td>Только в приложении Android и только если вы разрешили (см. раздел 6): идентификатор экземпляра приложения, рекламный идентификатор Android, сведения об устройстве и приложении, приблизительное местоположение, которое Google определяет по вашему IP-адресу, и два события — <code>sign_up</code> и <code>first_workout</code>. Без адреса электронной почты, имени, содержимого тренировок и данных о здоровье.</td><td>Измерение того, какие рекламные кампании Google Ads приводят людей, создающих учётную запись и пользующихся GymApp, и оптимизация этих кампаний.</td></tr>
         </tbody>
       </table>
       <p>Обычный профильный API друзей никогда не возвращает email, UUID Supabase Auth, исходное облачное состояние, исторические списки подходов, заметки, токен Garmin или данные пульса/калорий. Отдельно, если владелец явно включает выключенную по умолчанию настройку детальных тренировок и оставляет включёнными недавние итоги, взаимно подтверждённый незаблокированный друг может открыть в режиме только для чтения названия упражнений, веса, повторения и подходы максимум для тех же пяти недавних тренировок. В этом просмотре нет действий редактирования, удаления, копирования или отправки и никогда нет заметок, исходного облачного состояния, email, Auth UUID, токена Garmin или данных пульса/калорий. Отзыв любого из этих разрешений, прекращение дружбы, блокировка любой учётной записи или смена активной учётной записи закрывает просмотр и требует новой авторизации. Обычное прямое приглашение содержит только названия/идентичность упражнений и плановые подходы с весом/повторами; после принятия оно открывается как независимый редактируемый локальный черновик, а дальнейшие изменения не синхронизируются. Отдельное live-приглашение ограничено одним подтверждённым другом, который его принял. Комната показывает другому участнику зафиксированный план и завершение подходов, внесённый вес и повторения каждого, но не заметки, email, Auth UUID, Garmin/медицинские данные или учётные секреты. Обновления подходов передаются только принятым участникам комнаты через Supabase Realtime, а не через push.</p>
@@ -317,7 +347,7 @@
     <section>
       <h3 id="ru-device">3. Данные, которые остаются на вашем устройстве</h3>
       <p>В зависимости от платформы ваш Training Profile — программа тренировок, 2–6 тренировочных дней в неделю, цель и энергетический баланс — и старый локальный список заблокированных профилей рейтинга хранятся в собственных настройках приложения и не загружаются на сервер. Данные локальной базы данных/кэша, настройки языка и темы, а также расписание локальных уведомлений таймера отдыха тоже остаются на соответствующем устройстве, если только поле тренировки не включено в описанное выше облачное состояние.</p>
-      <p>Приложения для телефона не запрашивают массу тела, рост, пол, геолокацию, контакты, доступ к камере, микрофону, Фото, «Движению и фитнесу» или HealthKit. Сигналы таймера отдыха являются необязательными локальными уведомлениями. Если системные уведомления друзей/live доступны на вашей платформе, GymApp запрашивает разрешение только когда вы сами их включаете, а затем регистрирует привязанный к аккаунту токен/endpoint доставки, описанный выше. Данные датчиков и тренировок Garmin обрабатываются только при использовании необязательной функции Garmin и также регулируются разрешениями и политикой Garmin.</p>
+      <p>Приложения для телефона не запрашивают массу тела, рост, пол, геолокацию, контакты, доступ к камере, микрофону, Фото, «Движению и фитнесу» или HealthKit; необязательная аналитика Android из раздела 6 не запрашивает разрешение на геолокацию. Сигналы таймера отдыха являются необязательными локальными уведомлениями. Если системные уведомления друзей/live доступны на вашей платформе, GymApp запрашивает разрешение только когда вы сами их включаете, а затем регистрирует привязанный к аккаунту токен/endpoint доставки, описанный выше. Данные датчиков и тренировок Garmin обрабатываются только при использовании необязательной функции Garmin и также регулируются разрешениями и политикой Garmin.</p>
     </section>
 
     <section>
@@ -328,51 +358,63 @@
         <li>управляем взаимными запросами в друзья, настройками видимости, удалением и блокировкой; показываем разрешённый самостоятельно внесённый прогресс и отдельно разрешённые детали тренировок в режиме только для чтения только подтверждённым друзьям; доставляем ограниченные приглашения с планом и синхронизируем принятую live-комнату для двух участников;</li>
         <li>когда вы включаете их, доставляем необязательные системные уведомления об ограниченных событиях жизненного цикла друзей/приглашений/live; прогресс подходов остаётся только в Realtime;</li>
         <li>обеспечиваем сопряжение с Garmin и передачу тренировок, если вы решите использовать эту функцию;</li>
+        <li>если вы разрешили это в приложении Android, измеряем, какие рекламные кампании Google Ads приводят к регистрациям и первым тренировкам, и оптимизируем эти кампании;</li>
         <li>отвечаем на запросы в службу поддержки, запросы по вопросам конфиденциальности и удаления учётной записи; и</li>
         <li>выполняем юридические обязательства и защищаем пользователей и сервис от злоупотреблений.</li>
       </ul>
-      <p>В применимых случаях обработка необходима для предоставления запрошенной вами услуги, основана на вашем выборе использовать необязательные функции Garmin или уведомлений либо необходима для обеспечения безопасности и соблюдения законодательства.</p>
+      <p>В применимых случаях обработка необходима для предоставления запрошенной вами услуги, основана на вашем выборе использовать необязательные функции Garmin или уведомлений, на вашем согласии на необязательную аналитику Android либо необходима для обеспечения безопасности и соблюдения законодательства.</p>
     </section>
 
     <section>
-      <h3 id="ru-no-tracking">5. Без отслеживания, рекламы и продажи</h3>
-      <p>В GymApp нет рекламы или стороннего аналитического SDK, приложение не получает доступ к IDFA и не связывает данные GymApp с данными из приложений или сайтов других компаний для рекламы или измерений. Мы не продаём персональные данные и не передаём их брокерам данных.</p>
+      <h3 id="ru-no-tracking">5. Реклама, отслеживание и продажа</h3>
+      <p>GymApp не показывает рекламу, не продаёт персональные данные и не передаёт их брокерам данных. Приложение для iPhone и браузерная версия не содержат рекламных или аналитических SDK, не получают доступ к IDFA и не связывают данные GymApp с данными из приложений или сайтов других компаний для рекламы или измерений. Единственное исключение — необязательная аналитика Android, описанная в разделе 6, которая работает только если вы её разрешили.</p>
     </section>
 
     <section>
-      <h3 id="ru-providers">6. Поставщики услуг и необязательные интеграции</h3>
+      <h3 id="ru-android-analytics">6. Необязательная аналитика Android и измерение рекламы</h3>
+      <p>Этот раздел относится только к приложению Android. Приложение для iPhone и браузерная версия аналитику не собирают.</p>
+      <p>При первом запуске приложение Android спрашивает, разрешаете ли вы Google Analytics for Firebase измерять, как люди находят и используют GymApp. По умолчанию аналитика выключена, пока вы её не разрешите; изменить выбор можно в любой момент в настройках приложения, а GymApp работает одинаково и без неё. Если вы отказались или позже выключили аналитику, её данные не собираются.</p>
+      <p>Если вы разрешили, Google Analytics for Firebase — сервис Google — собирает идентификатор экземпляра приложения, рекламный идентификатор Android, сведения об устройстве и приложении (например, модель устройства, версию ОС, версию приложения и язык) и приблизительное местоположение, которое Google определяет по вашему IP-адресу. GymApp отправляет два события: <code>sign_up</code> при создании учётной записи (способ: email) и <code>first_workout</code> после завершения первой тренировки. Мы не отправляем в Google Analytics ваш адрес электронной почты, имя, содержимое тренировок или данные о здоровье.</p>
+      <p>Мы используем эти данные, чтобы измерять, какие рекламные кампании Google Ads приводят людей, создающих учётную запись и пользующихся GymApp, и оптимизировать эти кампании. В настройках согласия Google мы разрешаем хранение аналитики, хранение рекламных данных и использование данных пользователя для рекламы и запрещаем персонализацию рекламы, поэтому эти данные не используются для показа вам персонализированной рекламы. Google выступает нашим поставщиком услуг в соответствии с условиями Google Analytics и Firebase; см. <a href="https://policies.google.com/privacy">политику конфиденциальности Google</a> и <a href="https://firebase.google.com/support/privacy">сведения о конфиденциальности Firebase</a>. Основанием этой обработки является ваше согласие.</p>
+      <p>Если вы выключите аналитику в настройках, сбор прекращается, а приложение сбрасывает свой аналитический идентификатор и данные на вашем устройстве. Рекламный идентификатор Android также можно сбросить или удалить в настройках Android на устройстве. Хранение уже собранных данных описано в разделе 8.</p>
+    </section>
+
+    <section>
+      <h3 id="ru-providers">7. Поставщики услуг и необязательные интеграции</h3>
       <p>Мы используем <a href="https://supabase.com/privacy">Supabase</a> для предоставления инфраструктуры аутентификации, базы данных, Realtime и Edge Functions. Supabase обрабатывает данные от нашего имени в соответствии со своими договорными условиями и требованиями безопасности. Если вы подключаете Garmin, сведения, необходимые для сопряжения и обмена данными о тренировках, также обрабатываются в экосистеме Garmin в соответствии с <a href="https://www.garmin.com/privacy/">политикой конфиденциальности Garmin</a>.</p>
       <p>Если вы включаете системные уведомления и функция доступна на платформе, для доставки используется push-поставщик платформы/браузера, например <a href="https://www.apple.com/legal/privacy/">Apple Push Notification service</a>, <a href="https://policies.google.com/privacy">Firebase Cloud Messaging</a> или push-служба, выбранная браузером. Поставщик получает токен/endpoint установки и статический локализованный текст только с ограниченным типом события и непрозрачными ID комнаты/объекта и ревизией. Payload не содержит имя профиля или тренировки, упражнение, вес, повторения, заметки, email, Auth UUID, токен сессии или произвольный URL. Live-прогресс подходов push-поставщику не отправляется.</p>
-      <p>Мы можем раскрывать информацию, если этого требует закон, для защиты прав или безопасности либо в рамках законной передачи бизнеса при условии надлежащего уведомления и гарантий. Мы не разрешаем поставщикам использовать данные GymApp для собственной таргетированной рекламы.</p>
+      <p>В приложении есть необязательная поддержка разработчика (разовая покупка в приложении) через App Store на iPhone и Google Play на Android. Платёж обрабатывает Apple или Google по собственным условиям; GymApp не получает данные карты или другие платёжные данные и не хранит записи о покупках. Поддержка ничего не открывает и ничего не меняет в приложении.</p>
+      <p>Мы можем раскрывать информацию, если этого требует закон, для защиты прав или безопасности либо в рамках законной передачи бизнеса при условии надлежащего уведомления и гарантий. Мы не разрешаем поставщикам использовать данные GymApp для собственной таргетированной рекламы; для необязательной аналитики Android из раздела 6 персонализация рекламы отключена. Google обрабатывает эти данные, как описано в разделе 6.</p>
     </section>
 
     <section>
-      <h3 id="ru-retention">7. Хранение и удаление учётной записи</h3>
+      <h3 id="ru-retention">8. Хранение и удаление учётной записи</h3>
       <p>Мы храним данные активной учётной записи и облачные данные, пока существует ваша учётная запись, чтобы GymApp мог обеспечивать синхронизацию и работу своих функций. Обычное приглашение на тренировку без ответа истекает через семь дней. Его содержимое упражнений/плана становится доступным для обезличенной очистки через 24 часа после отклонения, отмены или истечения либо через 30 дней после принятия; ограниченная очистка запускается, когда любой участник в следующий раз обновляет экран «Друзья» или входящие приглашения, поэтому неактивная запись может сохранять содержимое до такого запуска или удаления аккаунта. Его техническая запись ID/статуса/ревизии/идемпотентности и другие записи жизненного цикла дружбы/запросов/блокировок/приватности остаются данными аккаунта до очистки правилами продукта или удаления аккаунта.</p>
       <p>Live-комната в статусе ожидания/готовности истекает через семь дней после создания, а активная — через 24 часа после запуска владельцем. Запланированная ограниченная очистка выполняется каждые пять минут. Зафиксированный план, итог и прогресс участников становятся доступными для очистки через 24 часа после отмены/истечения или через 30 дней после завершения. Терминальная комната и все зависимые записи становятся доступными для удаления через 31 день после закрытия. Из-за ограничения объёма каждого прохода очередь может отложить очистку после наступления срока.</p>
       <p>Адрес доставки уведомлений остаётся активным, пока уведомления включены и авторизованный клиент его обновляет. Авторизованный отзыв сразу стирает исходный токен/endpoint и ключи Web Push. Активная установка, которую не обновляли 180 дней, стирается во время ограниченной очистки диспетчера; её очищенная техническая запись становится доступной для удаления через 30 дней, когда на неё не ссылаются записи доставки. Завершённые, неудачные или просроченные намерения уведомлений и записи доставки становятся доступными для удаления через 30 дней после завершения. Live-уведомления о присоединении/старте/завершении/закрытии истекают через один день; live-приглашение может ожидать лишь до семидневного срока приглашения, и ни одно окно ожидания доставки не превышает семи дней.</p>
       <p>Жалобы, ожидающие рассмотрения, хранятся до проверки; рассмотренные жалобы обычно удаляются в течение 90 дней, а также удаляются при удалении заявителя или профиля, на который подана жалоба. На iOS для окончательного удаления учётной записи откройте <strong>Профиль → Аккаунт, конфиденциальность и удаление → Удалить учётную запись</strong> и подтвердите необратимый запрос. В другой версии GymApp, где такой элемент управления отсутствует, обратитесь в службу поддержки для удаления. Успешный запрос удаляет пользователя Supabase Auth и связанные активные облачные записи, включая состояние пользователя, профиль, приватный социальный граф/проекции/приглашения/live-комнаты, установки/очередь уведомлений, жалобы и облачные записи Garmin. Затем приложение удаляет локальный сеанс учётной записи и данные учётной записи на этом устройстве.</p>
+      <p>Данные аналитики Android, которые вы разрешили (раздел 6), хранятся в Google Analytics до 14 месяцев, после чего удаляются. Выключение аналитики прекращает новый сбор и сбрасывает аналитический идентификатор приложения на вашем устройстве; уже собранные данные остаются в Google Analytics до окончания этого срока. Они не входят в облачную учётную запись GymApp.</p>
       <p>Удаление приложения с устройства само по себе не удаляет облачную учётную запись. Операционные резервные копии и записи безопасности могут оставаться изолированными до завершения ограниченного цикла резервного копирования поставщика услуг, а информация, которую мы обязаны хранить по закону, может сохраняться только в течение обязательного срока. Такие записи не восстанавливаются в качестве активной учётной записи и не используются для персонализации продукта.</p>
       <p>Если удаление в приложении не удаётся завершить или у вас больше нет доступа к учётной записи, напишите на <a href="mailto:support@gymapptracker.com">support@gymapptracker.com</a>.</p>
     </section>
 
     <section>
-      <h3 id="ru-rights">8. Ваш выбор и права</h3>
-      <p>Вы можете редактировать или удалять тренировки, отказаться от локальных или системных уведомлений, не подключать Garmin, отдельно управлять каждой видимой друзьям категорией, отклонять или отменять запросы/приглашения, выходить из live-тренировки, удалять или блокировать друга, экспортировать резервную копию, выходить и удалять учётную запись. Отключение доступа к недавним итогам или детальным тренировкам сразу закрывает уже открытые детали в режиме только для чтения. Удаление или блокировка сразу закрывает этому профилю доступ к деталям друга, незавершённые приглашения и открытую live-комнату между вами; смена учётной записи также закрывает и очищает детали друзей предыдущей учётной записи. В зависимости от вашего местонахождения вы также можете иметь право на доступ, исправление, удаление, ограничение обработки, возражение против обработки или получение переносимой копии персональных данных, а также право подать жалобу в орган по защите данных. Чтобы воспользоваться правом, свяжитесь с нами; перед выполнением запроса нам может потребоваться подтвердить учётную запись.</p>
+      <h3 id="ru-rights">9. Ваш выбор и права</h3>
+      <p>Вы можете редактировать или удалять тренировки, отказаться от локальных или системных уведомлений, разрешить или отклонить аналитику Android и в любой момент изменить этот выбор в настройках, не подключать Garmin, отдельно управлять каждой видимой друзьям категорией, отклонять или отменять запросы/приглашения, выходить из live-тренировки, удалять или блокировать друга, экспортировать резервную копию, выходить и удалять учётную запись. Отключение доступа к недавним итогам или детальным тренировкам сразу закрывает уже открытые детали в режиме только для чтения. Удаление или блокировка сразу закрывает этому профилю доступ к деталям друга, незавершённые приглашения и открытую live-комнату между вами; смена учётной записи также закрывает и очищает детали друзей предыдущей учётной записи. В зависимости от вашего местонахождения вы также можете иметь право на доступ, исправление, удаление, ограничение обработки, возражение против обработки или получение переносимой копии персональных данных, а также право подать жалобу в орган по защите данных. Чтобы воспользоваться правом, свяжитесь с нами; перед выполнением запроса нам может потребоваться подтвердить учётную запись.</p>
     </section>
 
     <section>
-      <h3 id="ru-security">9. Безопасность и международная обработка</h3>
+      <h3 id="ru-security">10. Безопасность и международная обработка</h3>
       <p>GymApp использует HTTPS, контроль доступа, Supabase Row Level Security и защищённое хранилище платформы там, где оно поддерживается; приложение iOS хранит секретные данные сеанса в iOS Keychain. Ни одна система не является абсолютно безопасной, поэтому не сообщайте свои учётные данные и свяжитесь с нами, если подозреваете неправомерное использование. Поставщики могут обрабатывать данные в странах, отличных от вашей; где это требуется, мы применяем договорные или иные законные гарантии передачи.</p>
     </section>
 
     <section>
-      <h3 id="ru-children">10. Дети</h3>
+      <h3 id="ru-children">11. Дети</h3>
       <p>GymApp — это универсальный журнал тренировок, не предназначенный для детей младше 13 лет или более высокого минимального возраста, установленного в их стране. Мы сознательно не собираем данные ребёнка без разрешения, предусмотренного законом. Свяжитесь с нами, если считаете, что ребёнок предоставил данные неправомерно.</p>
     </section>
 
     <section>
-      <h3 id="ru-changes">11. Изменения</h3>
+      <h3 id="ru-changes">12. Изменения</h3>
       <p>Мы можем обновлять эту политику при изменении функций GymApp, поставщиков или юридических обязательств. Мы обновим дату вступления в силу и предоставим дополнительное уведомление в приложении, если изменение существенно повлияет на ваш выбор.</p>
     </section>
   </article>
