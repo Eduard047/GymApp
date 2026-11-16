@@ -52,6 +52,8 @@ public enum GymTheme {
     public static let background = adaptive(light: 0xF2F2F7, dark: 0x000000)
     public static let surface = adaptive(light: 0xFFFFFF, dark: 0x1C1C1E)
     public static let surfaceVariant = adaptive(light: 0xE5E5EA, dark: 0x2C2C2E)
+    /// Raised pill of the segmented control: white in light, system gray 3 in dark.
+    public static let segmentPill = adaptive(light: 0xFFFFFF, dark: 0x636366)
 
     public static let textPrimary = adaptive(light: 0x000000, dark: 0xFFFFFF)
     /// Light #666669 is 5.13:1 on #F2F2F7 and 4.56:1 on #E5E5EA (system gray #6C6C70

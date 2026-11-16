@@ -17,8 +17,8 @@ func gymWorkoutNoteSaveErrorMessage(
     if (error as? ActiveWorkoutStoreError) == .storageUnavailable {
         return gymText(
             "The note could not be saved. Your text is still here.",
-            "Нотатку не вдалося зберегти. Твій текст залишився тут.",
-            "Заметку не удалось сохранить. Твой текст остался здесь.",
+            "Нотатку не вдалося зберегти. Текст залишився тут.",
+            "Заметку не удалось сохранить. Текст остался здесь.",
             languageCode: languageCode
         )
     }

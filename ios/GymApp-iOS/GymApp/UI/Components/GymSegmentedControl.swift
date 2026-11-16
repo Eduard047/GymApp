@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// The app's segmented control (DESIGN.md "Chips and segments"): equal-width
-/// capsules, 36pt visible inside a 44pt target, selected = brand fill with white
-/// semibold text, unselected = tonal fill with primary text. Matches the Android
-/// `GymSegmentedControl` and the web `.segmented` control.
+/// The app's segmented control in the Apple style: one grey tertiary-fill track
+/// with a raised surface pill under the selected segment, primary label colour
+/// throughout (semibold when selected). 32pt visible inside a 44pt target.
+/// Matches the Android `GymSegmentedControl`.
 ///
 /// At accessibility text sizes the segments no longer fit on one line, so the
 /// control becomes a menu (unless `menuFallback` is off because the caller
@@ -47,8 +47,10 @@ struct GymSegmentedControl<Value: Hashable>: View {
         }
     }
 
+    @Namespace private var pillNamespace
+
     private var segments: some View {
-        HStack(spacing: GymTheme.Spacing.small) {
+        HStack(spacing: 0) {
             ForEach(options) { option in
                 let isSelected = option.value == selection
                 Button {
@@ -57,18 +59,23 @@ struct GymSegmentedControl<Value: Hashable>: View {
                 } label: {
                     Text(option.label)
                         .font(.subheadline.weight(isSelected ? .semibold : .medium))
-                        .foregroundStyle(isSelected ? GymTheme.onPrimary : GymTheme.textPrimary)
+                        .foregroundStyle(GymTheme.textPrimary)
                         .multilineTextAlignment(.center)
-                        // One line, scaled to fit: a wrapped label made its capsule
+                        // One line, scaled to fit: a wrapped label made its pill
                         // taller than the neighbouring segments.
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                        .padding(.horizontal, GymTheme.Spacing.medium)
-                        .frame(maxWidth: .infinity, minHeight: 36)
-                        .background(
-                            Capsule().fill(isSelected ? GymTheme.brandFill : GymTheme.surfaceVariant)
-                        )
-                        .frame(minHeight: 44)
+                        .padding(.horizontal, GymTheme.Spacing.small)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .fill(GymTheme.segmentPill)
+                                    .frame(height: 28)
+                                    .shadow(color: .black.opacity(0.12), radius: 1.5, x: 0, y: 1)
+                                    .matchedGeometryEffect(id: "segment-pill", in: pillNamespace)
+                            }
+                        }
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(GymSegmentPressStyle())
@@ -76,6 +83,12 @@ struct GymSegmentedControl<Value: Hashable>: View {
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
+        .padding(.horizontal, 2)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(GymTheme.surfaceVariant)
+                .frame(height: 32)
+        )
         .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: selection)
         .gymSensoryFeedback(.selection, trigger: selection)
         .accessibilityElement(children: .contain)

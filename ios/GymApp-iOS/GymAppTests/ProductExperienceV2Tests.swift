@@ -65,7 +65,7 @@ final class ProductExperienceV2Tests: XCTestCase {
         XCTAssertEqual(
             AppTutorialStep.all(languageCode: "uk").map(\.title),
             [
-                "Твоє наступне тренування",
+                "Наступне тренування",
                 "Один зрозумілий наступний крок",
                 "Вправи",
                 "Прогрес і цілі",
@@ -75,7 +75,7 @@ final class ProductExperienceV2Tests: XCTestCase {
         XCTAssertEqual(
             AppTutorialStep.all(languageCode: "ru").map(\.title),
             [
-                "Твоя следующая тренировка",
+                "Следующая тренировка",
                 "Один понятный следующий шаг",
                 "Упражнения",
                 "Прогресс и цели",

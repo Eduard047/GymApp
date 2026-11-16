@@ -1712,8 +1712,8 @@ struct WorkoutDetailView: View {
                 if activityOnly {
                     Text(gymText(
                         "Watch metrics are saved. Add the exercises and sets you completed.",
-                        "Показники годинника збережено. Додай виконані вправи та підходи.",
-                        "Показатели часов сохранены. Добавь выполненные упражнения и подходы.",
+                        "Показники годинника збережено. Додайте виконані вправи та підходи.",
+                        "Показатели часов сохранены. Добавьте выполненные упражнения и подходы.",
                         languageCode: languageCode
                     ))
                     .font(.caption)
@@ -1878,8 +1878,8 @@ struct WorkoutDetailView: View {
             guard !Task.isCancelled, isStoreContextCurrent() else { return }
             shareChooserMessage = gymText(
                 "The invitation could not be submitted safely. Refresh friends and try again.",
-                "Не вдалося безпечно надіслати запрошення. Онови друзів і спробуй ще раз.",
-                "Не удалось безопасно отправить приглашение. Обнови друзей и попробуй ещё раз.",
+                "Не вдалося безпечно надіслати запрошення. Оновіть друзів і спробуйте ще раз.",
+                "Не удалось безопасно отправить приглашение. Обновите друзей и попробуйте ещё раз.",
                 languageCode: gymCurrentLanguageCode()
             )
             shareChooserMessageIsError = true
@@ -2332,8 +2332,8 @@ struct WorkoutDetailView: View {
                 ) + recordSuffix,
                 accessibilityHintText: gymText(
                     "Double tap to edit this set",
-                    "Двічі торкнись, щоб редагувати цей підхід",
-                    "Дважды нажми, чтобы редактировать этот подход",
+                    "Двічі торкніться, щоб редагувати цей підхід",
+                    "Дважды нажмите, чтобы редактировать этот подход",
                     languageCode: languageCode
                 ),
                 onToggle: {
@@ -2953,8 +2953,8 @@ private struct SavedWorkoutShareChooser: View {
                                     } else if friends.isEmpty {
                                         Text(t(
                                             "Add and confirm a friend first.",
-                                            "Спочатку додай і підтвердь друга.",
-                                            "Сначала добавь и подтверди друга."
+                                            "Спочатку додайте і підтвердьте друга.",
+                                            "Сначала добавьте и подтвердите друга."
                                         ))
                                         .foregroundStyle(GymTheme.textSecondary)
                                     } else {

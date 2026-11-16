@@ -52,8 +52,8 @@ struct ExerciseCueEditorSheet: View {
                     if limitReached {
                         Text(gymText(
                             "Too many cues. Remove some first.",
-                            "Забагато підказок. Спершу видали частину.",
-                            "Слишком много подсказок. Сначала удали часть.",
+                            "Забагато підказок. Спершу видаліть частину.",
+                            "Слишком много подсказок. Сначала удалите часть.",
                             languageCode: gymCurrentLanguageCode()
                         ))
                         .font(.caption)

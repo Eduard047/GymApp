@@ -130,8 +130,8 @@ private struct StartupFailureView: View {
             Text(
                 message ?? gymText(
                     "GymApp could not open its protected local storage. Your data was not changed.",
-                    "GymApp не вдалося відкрити захищене локальне сховище. Твої дані не змінено.",
-                    "GymApp не удалось открыть защищенное локальное хранилище. Твои данные не изменены.",
+                    "GymApp не вдалося відкрити захищене локальне сховище. Дані не змінено.",
+                    "GymApp не удалось открыть защищенное локальное хранилище. Данные не изменены.",
                     languageCode: languageCode
                 )
             )

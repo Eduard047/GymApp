@@ -356,8 +356,8 @@ struct FriendsView: View {
                             ? message
                             : t(
                                 "Showing the last saved list. Try again when convenient.",
-                                "Показуємо останній збережений список. Спробуй ще раз, коли буде зручно.",
-                                "Показываем последний сохранённый список. Повтори, когда будет удобно."
+                                "Показуємо останній збережений список. Спробуйте ще раз, коли буде зручно.",
+                                "Показываем последний сохранённый список. Повторите, когда будет удобно."
                             )
                     )
                     .font(.caption)
@@ -383,8 +383,8 @@ struct FriendsView: View {
                         title: t("Add a friend", "Додати друга", "Добавить друга"),
                         supporting: t(
                             "Enter the private code shared with you.",
-                            "Введи приватний код, яким із тобою поділилися.",
-                            "Введи приватный код, которым с тобой поделились."
+                            "Введіть приватний код, яким із вами поділилися.",
+                            "Введите приватный код, которым с вами поделились."
                         )
                     )
                     TextField(t("Friend code", "Код друга", "Код друга"), text: $friendCode)
@@ -429,8 +429,8 @@ struct FriendsView: View {
                 Text(
                     t(
                         "Open account settings to switch to a cloud account. Offline workouts stay on this iPhone.",
-                        "Відкрий налаштування акаунта, щоб перейти до хмарного акаунта. Офлайн-тренування залишаться на цьому iPhone.",
-                        "Открой настройки аккаунта, чтобы перейти в облачный аккаунт. Офлайн-тренировки останутся на этом iPhone."
+                        "Відкрийте налаштування акаунта, щоб перейти до хмарного акаунта. Офлайн-тренування залишаться на цьому iPhone.",
+                        "Откройте настройки аккаунта, чтобы перейти в облачный аккаунт. Офлайн-тренировки останутся на этом iPhone."
                     )
                 )
                 .font(.subheadline)
@@ -479,8 +479,8 @@ struct FriendsView: View {
                         subject: Text(t("GymApp friend code", "Код друга GymApp", "Код друга GymApp")),
                         message: Text(t(
                             "Add me in GymApp with this friend code.",
-                            "Додай мене в GymApp за цим кодом друга.",
-                            "Добавь меня в GymApp по этому коду друга."
+                            "Додайте мене в GymApp за цим кодом друга.",
+                            "Добавьте меня в GymApp по этому коду друга."
                         ))
                     ) {
                         Image(systemName: "square.and.arrow.up")
@@ -696,8 +696,8 @@ struct FriendsView: View {
                             Text(
                                 t(
                                     "Finish or close the current workout draft before joining.",
-                                    "Заверши або закрий поточну чернетку тренування перед приєднанням.",
-                                    "Заверши или закрой текущий черновик тренировки перед присоединением."
+                                    "Завершіть або закрийте поточну чернетку тренування перед приєднанням.",
+                                    "Завершите или закройте текущий черновик тренировки перед присоединением."
                                 )
                             )
                             .font(.caption)
@@ -890,14 +890,14 @@ struct FriendsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(t("Your training circle", "Твоє тренувальне коло", "Твой тренировочный круг"))
+                        Text(t("Your training circle", "Тренувальне коло", "Тренировочный круг"))
                             .font(GymTheme.TypeScale.sectionTitle)
                         Text(
                             dashboard.friends.isEmpty
                                 ? t(
                                     "Add your first confirmed friend.",
-                                    "Додай першого підтвердженого друга.",
-                                    "Добавь первого подтверждённого друга."
+                                    "Додайте першого підтвердженого друга.",
+                                    "Добавьте первого подтверждённого друга."
                                 )
                                 : gymPlural(
                                     dashboard.friends.count,
@@ -947,7 +947,7 @@ struct FriendsView: View {
                     }
                 }
                 if dashboard.friends.isEmpty {
-                    empty(t("Add a friend to start comparing progress.", "Додай друга, щоб порівнювати прогрес.", "Добавь друга, чтобы сравнивать прогресс."))
+                    empty(t("Add a friend to start comparing progress.", "Додайте друга, щоб порівнювати прогрес.", "Добавьте друга, чтобы сравнивать прогресс."))
                 }
                 ForEach(Array(ranked.enumerated()), id: \.element.id) { index, item in
                     rankedRow(item, place: index + 1)
@@ -1047,7 +1047,7 @@ struct FriendsView: View {
                 HStack(spacing: 6) {
                     Text(item.displayName).font(.headline)
                     if item.isCurrentUser {
-                        Text(t("You", "Ти", "Ты"))
+                        Text(t("You", "Ви", "Вы"))
                             .font(.caption2.bold())
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -1131,8 +1131,8 @@ struct FriendsView: View {
                         .font(.headline)
                     Text(t(
                         "Choose what confirmed friends can see.",
-                        "Обери, що бачать підтверджені друзі.",
-                        "Выбери, что видят подтверждённые друзья."
+                        "Оберіть, що бачать підтверджені друзі.",
+                        "Выберите, что видят подтверждённые друзья."
                     ))
                     .font(.caption)
                     .foregroundStyle(GymTheme.textSecondary)
@@ -1192,7 +1192,7 @@ struct FriendsView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text(t("Friends are unavailable", "Друзі недоступні", "Друзья недоступны"))
                     .font(.headline)
-                Text(t("Try refreshing. Your workout history was not changed.", "Спробуй оновити. Історію тренувань не змінено.", "Попробуй обновить. История тренировок не изменена."))
+                Text(t("Try refreshing. Your workout history was not changed.", "Спробуйте оновити. Історію тренувань не змінено.", "Попробуйте обновить. История тренировок не изменена."))
                     .font(.subheadline)
                     .foregroundStyle(GymTheme.textSecondary)
                 Button(t("Try again", "Спробувати ще", "Повторить")) {
@@ -1268,7 +1268,7 @@ struct FriendsView: View {
         } catch {
             errorMessage = socialError(
                 error,
-                t("Could not refresh Friends. Try again.", "Не вдалося оновити друзів. Спробуй ще раз.", "Не удалось обновить друзей. Попробуй ещё раз.")
+                t("Could not refresh Friends. Try again.", "Не вдалося оновити друзів. Спробуйте ще раз.", "Не удалось обновить друзей. Попробуйте ещё раз.")
             )
         }
         do {
@@ -1300,8 +1300,8 @@ struct FriendsView: View {
         if accept, (!canAcceptWorkoutInvites || appState.pendingSharedWorkout != nil) {
             errorMessage = t(
                 "Finish or close the current workout draft before joining this live room.",
-                "Заверши або закрий поточну чернетку тренування перед приєднанням до кімнати спільного тренування.",
-                "Заверши или закрой текущий черновик тренировки перед присоединением к комнате совместной тренировки."
+                "Завершіть або закрийте поточну чернетку тренування перед приєднанням до кімнати спільного тренування.",
+                "Завершите или закройте текущий черновик тренировки перед присоединением к комнате совместной тренировки."
             )
             return
         }
@@ -1418,8 +1418,8 @@ struct FriendsView: View {
         guard decision != .blockedByActiveWorkout else {
             errorMessage = t(
                 "Finish the active workout before opening this invitation. It remains safely available in Friends.",
-                "Заверши активне тренування, перш ніж відкривати це запрошення. Воно безпечно залишиться в Друзях.",
-                "Заверши активную тренировку, прежде чем открывать это приглашение. Оно безопасно останется в Друзьях."
+                "Завершіть активне тренування, перш ніж відкривати це запрошення. Воно безпечно залишиться в Друзях.",
+                "Завершите активную тренировку, прежде чем открывать это приглашение. Оно безопасно останется в Друзьях."
             )
             return
         }
@@ -1427,8 +1427,8 @@ struct FriendsView: View {
                 (action == .recover && invite.status == .accepted) else {
             errorMessage = t(
                 "This invitation changed. Refresh Friends before trying again.",
-                "Це запрошення змінилося. Онови Друзів і спробуй ще раз.",
-                "Это приглашение изменилось. Обнови Друзей и попробуй ещё раз."
+                "Це запрошення змінилося. Оновіть Друзів і спробуйте ще раз.",
+                "Это приглашение изменилось. Обновите Друзей и попробуйте ещё раз."
             )
             return
         }
@@ -1519,8 +1519,8 @@ struct FriendsView: View {
                 message: Text(
                     t(
                         "The friend request is removed, and this person cannot send new friend or workout requests until you unblock them.",
-                        "Запит у друзі буде видалено, і користувач не зможе надсилати нові запити в друзі чи тренування, доки ти його не розблокуєш.",
-                        "Запрос в друзья будет удалён, и пользователь не сможет отправлять новые запросы в друзья или тренировки, пока ты его не разблокируешь."
+                        "Запит у друзі буде видалено, і користувач не зможе надсилати нові запити в друзі чи тренування, доки його не розблоковано.",
+                        "Запрос в друзья будет удалён, и пользователь не сможет отправлять новые запросы в друзья или тренировки, пока не будет разблокирован."
                     )
                 ),
                 primaryButton: .destructive(Text(t("Block", "Заблокувати", "Заблокировать"))) {
@@ -1588,8 +1588,8 @@ struct FriendsView: View {
                     showStatus(confirmedSocialStatus(
                         t(
                             "Main privacy settings saved. The exact-workout-details setting was not changed; refresh and retry it.",
-                            "Основні налаштування приватності збережено. Налаштування точних деталей тренувань не змінено — онови дані й повтори його.",
-                            "Основные настройки приватности сохранены. Настройка точных деталей тренировок не изменена — обнови данные и повтори её."
+                            "Основні налаштування приватності збережено. Налаштування точних деталей тренувань не змінено — оновіть дані й повторіть його.",
+                            "Основные настройки приватности сохранены. Настройка точных деталей тренировок не изменена — обновите данные и повторите её."
                         )
                     ))
                     errorMessage = t(
@@ -1640,7 +1640,7 @@ struct FriendsView: View {
         } catch {
             errorMessage = socialError(
                 error,
-                t("This action could not be completed safely. Refresh and try again.", "Не вдалося безпечно виконати дію. Онови дані й спробуй ще раз.", "Не удалось безопасно выполнить действие. Обнови данные и попробуй ещё раз.")
+                t("This action could not be completed safely. Refresh and try again.", "Не вдалося безпечно виконати дію. Оновіть дані й спробуйте ще раз.", "Не удалось безопасно выполнить действие. Обновите данные и попробуйте ещё раз.")
             )
         }
     }
@@ -1648,7 +1648,7 @@ struct FriendsView: View {
     private func socialError(_ error: Error, _ fallback: String) -> String {
         switch socialErrorKind(for: error, sessionEnded: auth.session?.cloud == nil) {
         case .sessionEnded:
-            return t("Your cloud session ended. Sign in again.", "Хмарна сесія завершилася. Увійди знову.", "Облачная сессия завершилась. Войди снова.")
+            return t("Your cloud session ended. Sign in again.", "Хмарна сесія завершилася. Увійдіть знову.", "Облачная сессия завершилась. Войдите снова.")
         case .connection:
             return gymLocalized(
                 "Cloud request failed. Check your connection and try again.",
@@ -1803,7 +1803,7 @@ private struct FriendDetailView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(t("Friend profile unavailable", "Профіль друга недоступний", "Профиль друга недоступен"))
                                     .font(.headline)
-                                Text(t("The friendship may have changed. Return to Friends and refresh.", "Дружба могла змінитися. Повернися до друзів і онови дані.", "Дружба могла измениться. Вернись к друзьям и обнови данные."))
+                                Text(t("The friendship may have changed. Return to Friends and refresh.", "Дружба могла змінитися. Поверніться до друзів і оновіть дані.", "Дружба могла измениться. Вернитесь к друзьям и обновите данные."))
                                     .font(.subheadline)
                                     .foregroundStyle(GymTheme.textSecondary)
                             }
@@ -1912,7 +1912,7 @@ private struct FriendDetailView: View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 10) {
                 GymSectionTitle(
-                    title: t("Train together", "Тренуйся разом", "Тренируйся вместе"),
+                    title: t("Train together", "Тренуватися разом", "Тренироваться вместе"),
                     supporting: "LIVE"
                 )
                 ViewThatFits(in: .horizontal) {
@@ -2196,7 +2196,7 @@ private struct FriendDetailView: View {
             $0.profileID == friend.profileID
         }) == true else {
             isLoading = false
-            errorMessage = t("This friend profile is unavailable. Refresh Friends before trying again.", "Профіль друга недоступний. Онови список друзів і спробуй ще раз.", "Профиль друга недоступен. Обнови список друзей и попробуй ещё раз.")
+            errorMessage = t("This friend profile is unavailable. Refresh Friends before trying again.", "Профіль друга недоступний. Оновіть список друзів і спробуйте ще раз.", "Профиль друга недоступен. Обновите список друзей и попробуйте ещё раз.")
             return
         }
         do {
@@ -2254,7 +2254,7 @@ private struct FriendDetailView: View {
             friendWorkouts = []
             friendWorkoutActivityRevision = nil
             friendWorkoutDetailsAvailable = false
-            errorMessage = t("This friend profile is unavailable. Refresh Friends before trying again.", "Профіль друга недоступний. Онови список друзів і спробуй ще раз.", "Профиль друга недоступен. Обнови список друзей и попробуй ещё раз.")
+            errorMessage = t("This friend profile is unavailable. Refresh Friends before trying again.", "Профіль друга недоступний. Оновіть список друзів і спробуйте ще раз.", "Профиль друга недоступен. Обновите список друзей и попробуйте ещё раз.")
         }
         if requestRevision == loadRequestRevision { isLoading = false }
     }
@@ -2277,7 +2277,7 @@ private struct FriendDetailView: View {
             friendWorkoutActivityRevision = nil
             friendWorkoutDetailsAvailable = false
             selectedFriendWorkout = nil
-            errorMessage = t("The friend could not be removed safely. Refresh and try again.", "Не вдалося безпечно видалити друга. Онови дані й спробуй ще раз.", "Не удалось безопасно удалить друга. Обнови данные и попробуй ещё раз.")
+            errorMessage = t("The friend could not be removed safely. Refresh and try again.", "Не вдалося безпечно видалити друга. Оновіть дані й спробуйте ще раз.", "Не удалось безопасно удалить друга. Обновите данные и попробуйте ещё раз.")
         }
     }
 
@@ -2299,7 +2299,7 @@ private struct FriendDetailView: View {
             friendWorkoutActivityRevision = nil
             friendWorkoutDetailsAvailable = false
             selectedFriendWorkout = nil
-            errorMessage = t("The person could not be blocked safely. Refresh and try again.", "Не вдалося безпечно заблокувати користувача. Онови дані й спробуй ще раз.", "Не удалось безопасно заблокировать пользователя. Обнови данные и попробуй ещё раз.")
+            errorMessage = t("The person could not be blocked safely. Refresh and try again.", "Не вдалося безпечно заблокувати користувача. Оновіть дані й спробуйте ще раз.", "Не удалось безопасно заблокировать пользователя. Обновите данные и попробуйте ещё раз.")
         }
     }
 
@@ -2313,8 +2313,8 @@ private struct FriendDetailView: View {
             workoutShareMode = nil
             errorMessage = t(
                 "This friend is no longer available. Refresh Friends and try again.",
-                "Цей друг більше недоступний. Онови список друзів і спробуй ще раз.",
-                "Этот друг больше недоступен. Обнови список друзей и попробуй ещё раз."
+                "Цей друг більше недоступний. Оновіть список друзів і спробуйте ще раз.",
+                "Этот друг больше недоступен. Обновите список друзей и попробуйте ещё раз."
             )
             return
         }
@@ -2359,8 +2359,8 @@ private struct FriendDetailView: View {
             guard appState.activeAccountStorageKey == expectedAccountKey else { return }
             errorMessage = t(
                 "The workout could not be shared safely. Refresh and try again.",
-                "Не вдалося безпечно поділитися тренуванням. Онови дані й спробуй ще раз.",
-                "Не удалось безопасно поделиться тренировкой. Обнови данные и попробуй ещё раз."
+                "Не вдалося безпечно поділитися тренуванням. Оновіть дані й спробуйте ще раз.",
+                "Не удалось безопасно поделиться тренировкой. Обновите данные и попробуйте ещё раз."
             )
         }
     }
@@ -2538,13 +2538,13 @@ private struct FriendWorkoutPickerSheet: View {
                             supporting: mode == .live
                                 ? t(
                                     "Choose the frozen plan you will complete independently in two synchronized lanes.",
-                                    "Вибери зафіксований план, який ви виконуватимете незалежно у двох синхронізованих доріжках.",
-                                    "Выбери зафиксированный план, который вы будете выполнять независимо в двух синхронизированных дорожках."
+                                    "Виберіть зафіксований план, який ви виконуватимете незалежно у двох синхронізованих доріжках.",
+                                    "Выберите зафиксированный план, который вы будете выполнять независимо в двух синхронизированных дорожках."
                                 )
                                 : t(
                                     "Choose a saved workout to send as an editable copy.",
-                                    "Вибери збережене тренування для надсилання як редагованої копії.",
-                                    "Выбери сохранённую тренировку для отправки как редактируемой копии."
+                                    "Виберіть збережене тренування для надсилання як редагованої копії.",
+                                    "Выберите сохранённую тренировку для отправки как редактируемой копии."
                                 )
                         )
                         if workouts.isEmpty {
@@ -2557,8 +2557,8 @@ private struct FriendWorkoutPickerSheet: View {
                                 Text(
                                     t(
                                         "Save a workout first, then return to this friend.",
-                                        "Спочатку збережи тренування, потім повернися до цього друга.",
-                                        "Сначала сохрани тренировку, затем вернись к этому другу."
+                                        "Спочатку збережіть тренування, потім поверніться до цього друга.",
+                                        "Сначала сохраните тренировку, затем вернитесь к этому другу."
                                     )
                                 )
                             }

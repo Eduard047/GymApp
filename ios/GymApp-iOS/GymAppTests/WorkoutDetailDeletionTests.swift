@@ -442,11 +442,11 @@ final class WorkoutDetailDeletionTests: XCTestCase {
         )
         XCTAssertEqual(
             target.confirmationMessage(languageCode: "uk"),
-            "Підхід 1: Final Press\nЦе останній підхід у тренуванні, тому вправу й усе тренування також буде видалено. Скасування доступне протягом короткого часу, поки ти залишаєшся на цьому екрані."
+            "Підхід 1: Final Press\nЦе останній підхід у тренуванні, тому вправу й усе тренування також буде видалено. Скасування доступне протягом короткого часу, поки ви залишаєтеся на цьому екрані."
         )
         XCTAssertEqual(
             target.confirmationMessage(languageCode: "ru"),
-            "Подход 1: Final Press\nЭто последний подход в тренировке, поэтому упражнение и вся тренировка также будут удалены. Отмена доступна в течение короткого времени, пока ты остаёшься на этом экране."
+            "Подход 1: Final Press\nЭто последний подход в тренировке, поэтому упражнение и вся тренировка также будут удалены. Отмена доступна в течение короткого времени, пока вы остаётесь на этом экране."
         )
         XCTAssertTrue(target.isCurrent(in: store, expectedWorkoutID: workout.id))
 
@@ -508,7 +508,7 @@ final class WorkoutDetailDeletionTests: XCTestCase {
         )
         XCTAssertEqual(
             target.confirmationMessage(languageCode: "uk"),
-            "Цю вправу та всі її підходи буде видалено з тренування. Скасування доступне протягом короткого часу, поки ти залишаєшся на цьому екрані."
+            "Цю вправу та всі її підходи буде видалено з тренування. Скасування доступне протягом короткого часу, поки ви залишаєтеся на цьому екрані."
         )
         XCTAssertTrue(target.isCurrent(in: store, expectedWorkoutID: workout.id))
 

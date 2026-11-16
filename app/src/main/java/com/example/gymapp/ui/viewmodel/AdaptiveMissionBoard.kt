@@ -202,9 +202,9 @@ private fun dailyMissionCatalog(): List<DailyMissionTemplate> = buildList {
             unitEn = "workout",
             unitUk = "тренування",
             titleEn = { "Show up" },
-            titleUk = { "Прийди на тренування" },
+            titleUk = { "Прийти на тренування" },
             summaryEn = { "Complete one workout today." },
-            summaryUk = { "Заверши одне тренування сьогодні." },
+            summaryUk = { "Завершити одне тренування сьогодні." },
             progressSelector = { it.workoutCount }
         )
     )
@@ -218,7 +218,7 @@ private fun dailyMissionCatalog(): List<DailyMissionTemplate> = buildList {
             titleEn = { "Balanced session" },
             titleUk = { "Збалансоване тренування" },
             summaryEn = { "Train a realistic number of exercises today." },
-            summaryUk = { "Виконай реалістичну кількість вправ сьогодні." },
+            summaryUk = { "Виконати реалістичну кількість вправ сьогодні." },
             progressSelector = { it.exerciseCount }
         )
     )
@@ -232,7 +232,7 @@ private fun dailyMissionCatalog(): List<DailyMissionTemplate> = buildList {
             titleEn = { "Quality sets" },
             titleUk = { "Якісні підходи" },
             summaryEn = { "Complete a sustainable number of working sets today." },
-            summaryUk = { "Виконай реалістичну кількість робочих підходів сьогодні." },
+            summaryUk = { "Виконати реалістичну кількість робочих підходів сьогодні." },
             progressSelector = { it.setCount }
         )
     )
@@ -249,7 +249,7 @@ private fun dailyMissionCatalog(): List<DailyMissionTemplate> = buildList {
             titleEn = { goal -> "Volume target $goal" },
             titleUk = { goal -> "Ціль обсягу $goal" },
             summaryEn = { goal -> "Reach $goal total volume today." },
-            summaryUk = { goal -> "Набери $goal обсягу сьогодні." },
+            summaryUk = { goal -> "Набрати $goal обсягу сьогодні." },
             progressSelector = { it.totalVolume }
         )
     )
@@ -311,7 +311,7 @@ private fun weeklyMissionCatalog(): List<WeeklyMissionTemplate> = buildList {
             titleEn = { "Weekly rhythm" },
             titleUk = { "Ритм тижня" },
             summaryEn = { "Match a sustainable recent workout rhythm this week." },
-            summaryUk = { "Підтримай цього тижня сталий ритм недавніх тренувань." },
+            summaryUk = { "Підтримати цього тижня сталий ритм недавніх тренувань." },
             progressSelector = { it.workoutCount }
         )
     )
@@ -325,7 +325,7 @@ private fun weeklyMissionCatalog(): List<WeeklyMissionTemplate> = buildList {
             titleEn = { "Active days" },
             titleUk = { "Активні дні" },
             summaryEn = { "Train on a realistic number of separate days this week." },
-            summaryUk = { "Тренуйся реалістичну кількість окремих днів цього тижня." },
+            summaryUk = { "Тренуватися реалістичну кількість окремих днів цього тижня." },
             progressSelector = { it.activeDays }
         )
     )
@@ -339,7 +339,7 @@ private fun weeklyMissionCatalog(): List<WeeklyMissionTemplate> = buildList {
             titleEn = { "Steady sets" },
             titleUk = { "Сталі підходи" },
             summaryEn = { "Build a typical recent week's number of working sets." },
-            summaryUk = { "Виконай типову для недавнього тижня кількість робочих підходів." },
+            summaryUk = { "Виконати типову для недавнього тижня кількість робочих підходів." },
             progressSelector = { it.setCount }
         )
     )
@@ -356,7 +356,7 @@ private fun weeklyMissionCatalog(): List<WeeklyMissionTemplate> = buildList {
             titleEn = { goal -> "Weekly volume $goal" },
             titleUk = { goal -> "Тижневий обсяг $goal" },
             summaryEn = { goal -> "Reach $goal total volume this week." },
-            summaryUk = { goal -> "Набери $goal обсягу цього тижня." },
+            summaryUk = { goal -> "Набрати $goal обсягу цього тижня." },
             progressSelector = { it.totalVolume }
         )
     )
@@ -384,7 +384,7 @@ private fun weeklyMissionCatalog(): List<WeeklyMissionTemplate> = buildList {
             titleEn = { goal -> "High-output days: $goal" },
             titleUk = { goal -> "Потужних днів: $goal" },
             summaryEn = { goal -> "Hit 10 sets on ${enCount(goal, "day", "different days")} this week." },
-            summaryUk = { goal -> "Зроби 10 підходів у ${ukCount(goal, "день", "дні", "днів")} цього тижня." },
+            summaryUk = { goal -> "Зробити 10 підходів у ${ukCount(goal, "день", "дні", "днів")} цього тижня." },
             progressSelector = { it.daysWithTenPlusSets }
         )
     )
@@ -398,7 +398,7 @@ private fun weeklyMissionCatalog(): List<WeeklyMissionTemplate> = buildList {
             titleEn = { goal -> "Volume days: $goal" },
             titleUk = { goal -> "Днів обсягу: $goal" },
             summaryEn = { goal -> "Reach 1,000 volume on ${enCount(goal, "day", "days")} this week." },
-            summaryUk = { goal -> "Набери 1 000 обсягу у ${ukCount(goal, "день", "дні", "днів")} цього тижня." },
+            summaryUk = { goal -> "Набрати 1 000 обсягу у ${ukCount(goal, "день", "дні", "днів")} цього тижня." },
             progressSelector = { it.daysWithThousandVolume }
         )
     )
@@ -412,7 +412,7 @@ private fun weeklyMissionCatalog(): List<WeeklyMissionTemplate> = buildList {
             titleEn = { goal -> "Strong sessions: $goal" },
             titleUk = { goal -> "Сильних сесій: $goal" },
             summaryEn = { goal -> "Finish ${enCount(goal, "session", "sessions")} with eight or more sets this week." },
-            summaryUk = { goal -> "Заверши ${ukCount(goal, "сесію", "сесії", "сесій")} з вісьмома або більше підходами цього тижня." },
+            summaryUk = { goal -> "Завершити ${ukCount(goal, "сесію", "сесії", "сесій")} з вісьмома або більше підходами цього тижня." },
             progressSelector = { it.sessionsWithEightPlusSets }
         )
     )
@@ -426,7 +426,7 @@ private fun weeklyMissionCatalog(): List<WeeklyMissionTemplate> = buildList {
             titleEn = { goal -> "Wide sessions: $goal" },
             titleUk = { goal -> "Широких сесій: $goal" },
             summaryEn = { goal -> "Finish ${enCount(goal, "session", "sessions")} with three or more exercises this week." },
-            summaryUk = { goal -> "Заверши ${ukCount(goal, "сесію", "сесії", "сесій")} з трьома або більше вправами цього тижня." },
+            summaryUk = { goal -> "Завершити ${ukCount(goal, "сесію", "сесії", "сесій")} з трьома або більше вправами цього тижня." },
             progressSelector = { it.sessionsWithThreePlusExercises }
         )
     )
@@ -443,7 +443,7 @@ private fun monthlyMissionCatalog(): List<MonthlyMissionTemplate> = buildList {
             titleEn = { "Monthly base" },
             titleUk = { "Основа місяця" },
             summaryEn = { "Build on a sustainable recent month of workouts." },
-            summaryUk = { "Спирайся на сталий ритм тренувань недавнього місяця." },
+            summaryUk = { "Спиратися на сталий ритм тренувань недавнього місяця." },
             progressSelector = { it.workoutCount }
         )
     )
@@ -471,7 +471,7 @@ private fun monthlyMissionCatalog(): List<MonthlyMissionTemplate> = buildList {
             titleEn = { "Sustainable sets" },
             titleUk = { "Сталий обсяг підходів" },
             summaryEn = { "Accumulate a realistic number of working sets this month." },
-            summaryUk = { "Набери реалістичну кількість робочих підходів цього місяця." },
+            summaryUk = { "Набрати реалістичну кількість робочих підходів цього місяця." },
             progressSelector = { it.setCount }
         )
     )
@@ -488,7 +488,7 @@ private fun monthlyMissionCatalog(): List<MonthlyMissionTemplate> = buildList {
             titleEn = { goal -> "Monthly volume $goal" },
             titleUk = { goal -> "Місячний обсяг $goal" },
             summaryEn = { goal -> "Reach $goal total volume this month." },
-            summaryUk = { goal -> "Набери $goal обсягу цього місяця." },
+            summaryUk = { goal -> "Набрати $goal обсягу цього місяця." },
             progressSelector = { it.totalVolume }
         )
     )
@@ -516,7 +516,7 @@ private fun monthlyMissionCatalog(): List<MonthlyMissionTemplate> = buildList {
             titleEn = { goal -> "High-output days: $goal" },
             titleUk = { goal -> "Потужних днів: $goal" },
             summaryEn = { goal -> "Hit 10 sets on ${enCount(goal, "day", "days")} this month." },
-            summaryUk = { goal -> "Зроби 10 підходів у ${ukCount(goal, "день", "дні", "днів")} цього місяця." },
+            summaryUk = { goal -> "Зробити 10 підходів у ${ukCount(goal, "день", "дні", "днів")} цього місяця." },
             progressSelector = { it.daysWithTenPlusSets }
         )
     )
@@ -530,7 +530,7 @@ private fun monthlyMissionCatalog(): List<MonthlyMissionTemplate> = buildList {
             titleEn = { goal -> "Volume days: $goal" },
             titleUk = { goal -> "Днів обсягу: $goal" },
             summaryEn = { goal -> "Reach 1,000 volume on ${enCount(goal, "day", "days")} this month." },
-            summaryUk = { goal -> "Набери 1 000 обсягу у ${ukCount(goal, "день", "дні", "днів")} цього місяця." },
+            summaryUk = { goal -> "Набрати 1 000 обсягу у ${ukCount(goal, "день", "дні", "днів")} цього місяця." },
             progressSelector = { it.daysWithThousandVolume }
         )
     )
@@ -544,7 +544,7 @@ private fun monthlyMissionCatalog(): List<MonthlyMissionTemplate> = buildList {
             titleEn = { goal -> "Strong sessions: $goal" },
             titleUk = { goal -> "Сильних сесій: $goal" },
             summaryEn = { goal -> "Finish ${enCount(goal, "session", "sessions")} with eight or more sets this month." },
-            summaryUk = { goal -> "Заверши ${ukCount(goal, "сесію", "сесії", "сесій")} з вісьмома або більше підходами цього місяця." },
+            summaryUk = { goal -> "Завершити ${ukCount(goal, "сесію", "сесії", "сесій")} з вісьмома або більше підходами цього місяця." },
             progressSelector = { it.sessionsWithEightPlusSets }
         )
     )
@@ -558,7 +558,7 @@ private fun monthlyMissionCatalog(): List<MonthlyMissionTemplate> = buildList {
             titleEn = { goal -> "Wide sessions: $goal" },
             titleUk = { goal -> "Широких сесій: $goal" },
             summaryEn = { goal -> "Finish ${enCount(goal, "session", "sessions")} with three or more exercises this month." },
-            summaryUk = { goal -> "Заверши ${ukCount(goal, "сесію", "сесії", "сесій")} з трьома або більше вправами цього місяця." },
+            summaryUk = { goal -> "Завершити ${ukCount(goal, "сесію", "сесії", "сесій")} з трьома або більше вправами цього місяця." },
             progressSelector = { it.sessionsWithThreePlusExercises }
         )
     )

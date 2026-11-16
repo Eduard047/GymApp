@@ -8,7 +8,7 @@ class RussianTextTest {
     fun translatesRepresentativeMissionCopy() {
         assertEquals("Завершить тренировку", RussianText.translate("Complete a workout"))
         assertEquals(
-            "Выполни тридцать подходов за эту неделю.",
+            "Выполнить тридцать подходов за эту неделю.",
             RussianText.translate("Accumulate thirty sets this week.")
         )
         assertEquals(
@@ -27,7 +27,7 @@ class RussianTextTest {
         assertEquals("Объём 50 000", RussianText.translate("Fifty Thousand Volume"))
         assertEquals("Темп", RussianText.translate("Momentum"))
         assertEquals(
-            "Набери общий объём 50 000.",
+            "Набрать общий объём 50 000.",
             RussianText.translate("Accumulate fifty thousand total volume.")
         )
     }

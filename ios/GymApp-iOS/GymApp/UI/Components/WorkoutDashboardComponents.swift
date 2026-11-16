@@ -643,8 +643,8 @@ struct WorkoutProgressHero: View {
         )
         return gymText(
             "Reach \(weeklyTarget) \(trainingDays) to start your weekly rhythm.",
-            "Набери \(weeklyTarget) \(trainingDays), щоб почати тижневий ритм.",
-            "Набери \(weeklyTarget) \(trainingDays), чтобы начать недельный ритм.",
+            "Наберіть \(weeklyTarget) \(trainingDays), щоб почати тижневий ритм.",
+            "Наберите \(weeklyTarget) \(trainingDays), чтобы начать недельный ритм.",
             languageCode: gymCurrentLanguageCode()
         )
     }
@@ -1021,8 +1021,8 @@ struct WorkoutMuscleLoadCard: View {
     private var infoMessage: String {
         gymText(
             "A stronger blue means more load on that muscle group in the selected period. Tap a muscle to see the exercises behind its load.",
-            "Що насиченіший синій, то більше навантаження на цю групу м’язів за вибраний період. Торкнись м’яза, щоб побачити вправи, які його навантажували.",
-            "Чем насыщеннее синий, тем больше нагрузка на эту группу мышц за выбранный период. Нажми на мышцу, чтобы увидеть упражнения, которые её нагружали.",
+            "Що насиченіший синій, то більше навантаження на цю групу м’язів за вибраний період. Торкніться м’яза, щоб побачити вправи, які його навантажували.",
+            "Чем насыщеннее синий, тем больше нагрузка на эту группу мышц за выбранный период. Нажмите на мышцу, чтобы увидеть упражнения, которые её нагружали.",
             languageCode: gymCurrentLanguageCode()
         )
     }
@@ -1430,8 +1430,8 @@ struct AchievementGallery: View {
                 Text(
                     gymText(
                         "Your badge collection",
-                        "Твоя колекція відзнак",
-                        "Твоя коллекция значков",
+                        "Колекція відзнак",
+                        "Коллекция значков",
                         languageCode: languageCode
                     )
                 )
@@ -1624,22 +1624,22 @@ struct AchievementGallery: View {
         case "streak_7":
             gymText(
                 "Meet your weekly target for two weeks in a row.",
-                "Виконуй тижневу ціль два тижні поспіль.",
-                "Выполняй недельную цель две недели подряд.",
+                "Виконувати тижневу ціль два тижні поспіль.",
+                "Выполнять недельную цель две недели подряд.",
                 languageCode: languageCode
             )
         case "streak_14":
             gymText(
                 "Meet your weekly target for four weeks in a row.",
-                "Виконуй тижневу ціль чотири тижні поспіль.",
-                "Выполняй недельную цель четыре недели подряд.",
+                "Виконувати тижневу ціль чотири тижні поспіль.",
+                "Выполнять недельную цель четыре недели подряд.",
                 languageCode: languageCode
             )
         case "streak_30":
             gymText(
                 "Meet your weekly target for eight weeks in a row.",
-                "Виконуй тижневу ціль вісім тижнів поспіль.",
-                "Выполняй недельную цель восемь недель подряд.",
+                "Виконувати тижневу ціль вісім тижнів поспіль.",
+                "Выполнять недельную цель восемь недель подряд.",
                 languageCode: languageCode
             )
         default:

@@ -58,6 +58,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.ui.components.hairlineThickness
+import com.example.gymapp.ui.components.groupedSeparatorColor
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.ui.components.ExerciseMediaPreview
@@ -186,8 +188,8 @@ internal fun ExerciseLibraryRow(
                     .align(Alignment.BottomStart)
                     .padding(start = 72.dp)
                     .fillMaxWidth()
-                    .height(androidx.compose.ui.unit.Dp.Hairline)
-                    .background(MaterialTheme.colorScheme.outlineVariant)
+                    .height(hairlineThickness())
+                    .background(groupedSeparatorColor())
             )
         }
         Box(modifier = Modifier.align(Alignment.TopStart).padding(start = 72.dp)) {

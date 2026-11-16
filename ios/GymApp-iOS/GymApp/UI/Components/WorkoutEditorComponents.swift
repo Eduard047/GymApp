@@ -934,8 +934,8 @@ struct ExerciseMediaSheet: View {
                             } catch {
                                 errorMessage = gymText(
                                     "Couldn’t remove this image. Try again.",
-                                    "Не вдалося видалити фото. Спробуй ще раз.",
-                                    "Не удалось удалить фото. Попробуй ещё раз.",
+                                    "Не вдалося видалити фото. Спробуйте ще раз.",
+                                    "Не удалось удалить фото. Попробуйте ещё раз.",
                                     languageCode: gymCurrentLanguageCode()
                                 )
                             }
@@ -1003,8 +1003,8 @@ struct ExerciseMediaSheet: View {
                 } catch {
                     errorMessage = gymText(
                         "Couldn’t use this image. Choose a photo up to 8 MB.",
-                        "Не вдалося використати фото. Обери зображення до 8 МБ.",
-                        "Не удалось использовать фото. Выбери изображение до 8 МБ.",
+                        "Не вдалося використати фото. Оберіть зображення до 8 МБ.",
+                        "Не удалось использовать фото. Выберите изображение до 8 МБ.",
                         languageCode: gymCurrentLanguageCode()
                     )
                 }

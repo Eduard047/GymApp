@@ -1300,6 +1300,8 @@ fun ExerciseListScreen(
             exercise = selectedExercise,
             history = uiState.selectedExerciseHistory,
             muscleIds = musclesByExercise[selectedExercise.name]?.toList().orEmpty(),
+            primaryMuscleIds = uiState.muscleMappings
+                .firstOrNull { it.exerciseName == selectedExercise.name }?.primaryMuscleIds.orEmpty(),
             exerciseMediaOwnerKey = exerciseMediaOwnerKey,
             bottomContentInset = bottomContentInset,
             onBack = onDismissHistory,

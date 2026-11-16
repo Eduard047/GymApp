@@ -465,8 +465,8 @@ struct AppTutorialStep: Identifiable, Equatable, Sendable {
                 target: .todayFocus,
                 title: gymText(
                     "Your next workout",
-                    "Твоє наступне тренування",
-                    "Твоя следующая тренировка",
+                    "Наступне тренування",
+                    "Следующая тренировка",
                     languageCode: languageCode
                 ),
                 body: gymText(
@@ -498,8 +498,8 @@ struct AppTutorialStep: Identifiable, Equatable, Sendable {
                 title: gymText("Exercises", "Вправи", "Упражнения", languageCode: languageCode),
                 body: gymText(
                     "Find movements and open their technique guide.",
-                    "Знаходь вправи та відкривай підказки з техніки.",
-                    "Находи упражнения и открывай подсказки по технике.",
+                    "Знаходьте вправи та відкривайте підказки з техніки.",
+                    "Находите упражнения и открывайте подсказки по технике.",
                     languageCode: languageCode
                 )
             ),
@@ -514,8 +514,8 @@ struct AppTutorialStep: Identifiable, Equatable, Sendable {
                 ),
                 body: gymText(
                     "Review your trend, muscle load, records, and missions.",
-                    "Переглядай динаміку, навантаження м’язів, рекорди та місії.",
-                    "Смотри динамику, нагрузку мышц, рекорды и миссии.",
+                    "Переглядайте динаміку, навантаження м’язів, рекорди та місії.",
+                    "Смотрите динамику, нагрузку мышц, рекорды и миссии.",
                     languageCode: languageCode
                 )
             ),

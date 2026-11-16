@@ -269,8 +269,8 @@ struct AccountSettingsView: View {
                         Text(
                             gymText(
                                 "Make one before switching phones",
-                                "Зроби перед зміною телефона",
-                                "Сделай перед сменой телефона",
+                                "Перед зміною телефона",
+                                "Перед сменой телефона",
                                 languageCode: gymCurrentLanguageCode()
                             )
                         )
@@ -506,8 +506,8 @@ struct AccountSettingsView: View {
                     Label(
                         gymText(
                             "Finish, leave, or cancel the live workout before signing out so queued partner updates are not abandoned.",
-                            "Заверши, покинь або скасуй спільне тренування перед виходом, щоб не залишити оновлення для партнера в черзі.",
-                            "Заверши, покинь или отмени совместную тренировку перед выходом, чтобы не оставить обновления для партнёра в очереди.",
+                            "Завершіть, покиньте або скасуйте спільне тренування перед виходом, щоб не залишити оновлення для партнера в черзі.",
+                            "Завершите, покиньте или отмените совместную тренировку перед выходом, чтобы не оставить обновления для партнёра в очереди.",
                             languageCode: gymCurrentLanguageCode()
                         ),
                         systemImage: "exclamationmark.arrow.triangle.2.circlepath"
@@ -611,8 +611,8 @@ struct AccountSettingsView: View {
         if isCloudAccount {
             return gymText(
                 "Ends this session without deleting your account or cloud data. Your selected Garmin watch remains paired until you explicitly revoke it.",
-                "Завершує цей сеанс без видалення акаунта чи хмарних даних. Вибраний годинник Garmin залишиться прив’язаним, доки ти не відкличеш його вручну.",
-                "Завершает этот сеанс без удаления аккаунта или облачных данных. Выбранные часы Garmin останутся привязанными, пока ты не отзовёшь их вручную.",
+                "Завершує цей сеанс без видалення акаунта чи хмарних даних. Вибраний годинник Garmin залишиться прив’язаним, доки доступ не відкликано вручну.",
+                "Завершает этот сеанс без удаления аккаунта или облачных данных. Выбранные часы Garmin останутся привязанными, пока доступ не отозван вручную.",
                 languageCode: gymCurrentLanguageCode()
             )
         }

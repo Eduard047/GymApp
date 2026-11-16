@@ -2775,7 +2775,7 @@ final class NativePushManager: ObservableObject {
         case .friendRequestReceived:
             return (
                 gymText("New friend request", "Нова заявка в друзі", "Новая заявка в друзья", languageCode: languageCode),
-                gymText("Open GymApp to respond.", "Відкрий GymApp, щоб відповісти.", "Открой GymApp, чтобы ответить.", languageCode: languageCode)
+                gymText("Open GymApp to respond.", "Відкрийте GymApp, щоб відповісти.", "Откройте GymApp, чтобы ответить.", languageCode: languageCode)
             )
         case .friendRequestAccepted:
             return (
@@ -2785,17 +2785,17 @@ final class NativePushManager: ObservableObject {
         case .workoutInviteReceived:
             return (
                 gymText("Workout invitation", "Запрошення на тренування", "Приглашение на тренировку", languageCode: languageCode),
-                gymText("A friend shared a workout with you.", "Друг поділився з тобою тренуванням.", "Друг поделился с тобой тренировкой.", languageCode: languageCode)
+                gymText("A friend shared a workout with you.", "Друг поділився з вами тренуванням.", "Друг поделился с вами тренировкой.", languageCode: languageCode)
             )
         case .workoutInviteAccepted:
             return (
                 gymText("Workout accepted", "Тренування прийнято", "Тренировка принята", languageCode: languageCode),
-                gymText("Your friend accepted the workout.", "Друг прийняв твоє тренування.", "Друг принял твою тренировку.", languageCode: languageCode)
+                gymText("Your friend accepted the workout.", "Друг прийняв ваше тренування.", "Друг принял вашу тренировку.", languageCode: languageCode)
             )
         case .liveInviteReceived:
             return (
                 gymText("Live workout invitation", "Запрошення на спільне тренування", "Приглашение на совместную тренировку", languageCode: languageCode),
-                gymText("Open GymApp to join the workout.", "Відкрий GymApp, щоб приєднатися.", "Открой GymApp, чтобы присоединиться.", languageCode: languageCode)
+                gymText("Open GymApp to join the workout.", "Відкрийте GymApp, щоб приєднатися.", "Откройте GymApp, чтобы присоединиться.", languageCode: languageCode)
             )
         case .liveInviteAccepted:
             return (
@@ -2810,12 +2810,12 @@ final class NativePushManager: ObservableObject {
         case .liveParticipantFinished:
             return (
                 gymText("Friend finished", "Друг завершив тренування", "Друг закончил тренировку", languageCode: languageCode),
-                gymText("Open GymApp to view the latest state.", "Переглянь актуальний стан у GymApp.", "Посмотри актуальное состояние в GymApp.", languageCode: languageCode)
+                gymText("Open GymApp to view the latest state.", "Перегляньте актуальний стан у GymApp.", "Посмотрите актуальное состояние в GymApp.", languageCode: languageCode)
             )
         case .liveRoomClosed:
             return (
                 gymText("Live workout ended", "Спільне тренування завершено", "Совместная тренировка завершена", languageCode: languageCode),
-                gymText("Open GymApp to view the latest state.", "Відкрий GymApp, щоб переглянути стан.", "Открой GymApp, чтобы посмотреть состояние.", languageCode: languageCode)
+                gymText("Open GymApp to view the latest state.", "Відкрийте GymApp, щоб переглянути стан.", "Откройте GymApp, чтобы посмотреть состояние.", languageCode: languageCode)
             )
         }
     }

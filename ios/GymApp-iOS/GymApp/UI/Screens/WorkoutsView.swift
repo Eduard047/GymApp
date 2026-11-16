@@ -808,7 +808,7 @@ public struct WorkoutsView: View {
                     Text(gymText(
                         "Continue your plan",
                         "Продовж свій план",
-                        "Продолжи свой план",
+                        "Продолжить свой план",
                         languageCode: languageCode
                     ))
                     .font(.title2.bold())
@@ -824,8 +824,8 @@ public struct WorkoutsView: View {
                     HStack(alignment: .top, spacing: 8) {
                         Text(gymText(
                             "Your first plan",
-                            "Твій перший план",
-                            "Твой первый план",
+                            "Перший план",
+                            "Первый план",
                             languageCode: languageCode
                         ))
                         .font(.title2.bold())
@@ -872,8 +872,8 @@ public struct WorkoutsView: View {
                     }
                     Text(gymText(
                         "Use the suggestion now or build the workout yourself. You can adjust every setting.",
-                        "Скористайся порадою зараз або створи тренування самостійно. Усі налаштування можна змінити.",
-                        "Используй рекомендацию сейчас или собери тренировку сам. Все настройки можно изменить.",
+                        "Скористайтеся порадою зараз або створіть тренування самостійно. Усі налаштування можна змінити.",
+                        "Используйте рекомендацию сейчас или соберите тренировку сам. Все настройки можно изменить.",
                         languageCode: languageCode
                     ))
                     .font(.subheadline)
@@ -1776,8 +1776,8 @@ public struct WorkoutsView: View {
         case .train:
             gymText(
                 "Built from your goal, weekly rhythm, and recent workout history.",
-                "План враховує твою ціль, ритм тижня та недавню історію тренувань.",
-                "План учитывает твою цель, ритм недели и недавнюю историю тренировок.",
+                "План враховує ціль, ритм тижня та недавню історію тренувань.",
+                "План учитывает цель, ритм недели и недавнюю историю тренировок.",
                 languageCode: languageCode
             )
         case .recovery, .rest:
@@ -2939,8 +2939,8 @@ public struct WorkoutsView: View {
         if forcedVisible, state.tapAction(forcedVisible: true) != .openInvites {
             return gymText(
                 "Finish your current workout before starting a live workout with a friend",
-                "Заверши поточне тренування, перш ніж почати спільне тренування з другом",
-                "Заверши текущую тренировку, прежде чем начать совместную тренировку с другом",
+                "Завершіть поточне тренування, перш ніж почати спільне тренування з другом",
+                "Завершите текущую тренировку, прежде чем начать совместную тренировку с другом",
                 languageCode: languageCode
             )
         }
@@ -2962,8 +2962,8 @@ public struct WorkoutsView: View {
         case .pickFriend:
             return gymText(
                 "Choose a friend to start a live workout together",
-                "Обери друга, щоб почати спільне тренування",
-                "Выбери друга, чтобы начать совместную тренировку",
+                "Оберіть друга, щоб почати спільне тренування",
+                "Выберите друга, чтобы начать совместную тренировку",
                 languageCode: languageCode
             )
         case .pendingInvite:
@@ -3126,8 +3126,8 @@ public struct WorkoutsView: View {
                 } description: {
                     Text(gymText(
                         "Use Add workout when you are ready to log a session.",
-                        "Натисни «Додати тренування», коли будеш готовий записати тренування.",
-                        "Нажми «Добавить тренировку», когда будешь готов записать тренировку.",
+                        "Щоб записати тренування, натисніть «Додати тренування».",
+                        "Чтобы записать тренировку, нажмите «Добавить тренировку».",
                         languageCode: languageCode
                     ))
                 } actions: {

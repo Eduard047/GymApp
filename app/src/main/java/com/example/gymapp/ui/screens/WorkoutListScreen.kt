@@ -119,6 +119,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import com.example.gymapp.R
+import com.example.gymapp.ui.components.hairlineThickness
+import com.example.gymapp.ui.components.groupedSeparatorColor
 import com.example.gymapp.data.repository.DashboardStats
 import com.example.gymapp.data.repository.FirstWorkoutEffort
 import com.example.gymapp.data.repository.SmartWorkoutFocus
@@ -1382,16 +1384,16 @@ private fun TrainingHistoryPanel(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(Dp.Hairline)
-                        .background(MaterialTheme.colorScheme.outlineVariant)
+                        .height(hairlineThickness())
+                        .background(groupedSeparatorColor())
                 )
                 recentWorkouts.take(3).forEachIndexed { index, session ->
                     if (index > 0) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(Dp.Hairline)
-                                .background(MaterialTheme.colorScheme.outlineVariant)
+                                .height(hairlineThickness())
+                                .background(groupedSeparatorColor())
                         )
                     }
                     TrainingHistoryRow(

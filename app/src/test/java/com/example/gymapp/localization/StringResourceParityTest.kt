@@ -6,6 +6,7 @@ import java.nio.file.Paths
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StringResourceParityTest {
@@ -192,7 +193,7 @@ class StringResourceParityTest {
 
         val expectedRussian = mapOf(
             "auth_new_password_requirements" to
-                "Используй не менее 6 символов (до 72 байт UTF-8).",
+                "Не менее 6 символов (до 72 байт UTF-8).",
             "activity_heatmap_legend" to
                 "Чем насыщеннее синий, тем больше объём тренировок за день.",
             "smart_kind_hold_and_build" to
@@ -219,6 +220,23 @@ class StringResourceParityTest {
         )
         expectedRussian.forEach { (key, expected) ->
             assertEquals("Unexpected Russian wording for '$key'", expected, russian[key])
+        }
+    }
+
+    @Test
+    fun eyebrowsUseSentenceCaseAndRussianCopyUsesNoInformalAddress() {
+        listOf("values", "values-uk", "values-ru").forEach { directory ->
+            loadStrings(directory).filterKeys { it.endsWith("_eyebrow") }.forEach { (key, value) ->
+                assertTrue("'$key' in $directory must not be all caps: $value", value != value.uppercase())
+            }
+        }
+        val informal = Regex(
+            "(?iu)(\\b(тво[йяеёи]|твоих|твоим|твоей|твою|твоего|твоему|тебя|тебе|тобой|ты)\\b)" +
+                "|(^(введи|выбери|заверши|проверь|открой|добавь|войди|используй|запиши|укажи|подключи|повтори|нажми|скажи|создай|начни|храни|удали|попробуй|подтверди|подожди|обнови)\\b)"
+        )
+        loadStrings("values-ru").forEach { (key, value) ->
+            if (key == "friend_code_share_message" || key == "share_workout_message") return@forEach
+            assertTrue("Informal address in ru '$key': $value", !informal.containsMatchIn(value))
         }
     }
 

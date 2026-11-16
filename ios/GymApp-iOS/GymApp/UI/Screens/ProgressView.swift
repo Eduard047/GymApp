@@ -289,8 +289,8 @@ struct ProgressHubView: View {
                 .accessibilityAddTraits(.isHeader)
                 Text(gymText(
                     "Finish a workout to unlock your calendar, muscle map, and exercise trends.",
-                    "Заверши тренування, щоб відкрити календар, карту м’язів і тренди вправ.",
-                    "Заверши тренировку, чтобы открыть календарь, карту мышц и динамику упражнений.",
+                    "Завершіть тренування, щоб відкрити календар, карту м’язів і тренди вправ.",
+                    "Завершите тренировку, чтобы открыть календарь, карту мышц и динамику упражнений.",
                     languageCode: languageCode
                 ))
                 .font(.subheadline)
@@ -597,14 +597,14 @@ struct ExerciseProgressView: View {
                 GymSectionTitle(
                     title: gymText(
                         "Choose an exercise",
-                        "Обери вправу",
-                        "Выбери упражнение",
+                        "Обрати вправу",
+                        "Выбрать упражнение",
                         languageCode: languageCode
                     )
                 )
 
                 if sortedExercises.isEmpty {
-                    Text(t("Add an exercise and log a workout to see progress.", "Додай вправу й запиши тренування, щоб побачити прогрес.", "Добавь упражнение и запиши тренировку, чтобы увидеть прогресс."))
+                    Text(t("Add an exercise and log a workout to see progress.", "Додайте вправу й запишіть тренування, щоб побачити прогрес.", "Добавьте упражнение и запишите тренировку, чтобы увидеть прогресс."))
                         .font(.subheadline)
                         .foregroundStyle(GymTheme.textSecondary)
                 } else if let selectedExercise {
@@ -846,7 +846,7 @@ struct ExerciseProgressView: View {
                 GymContentUnavailableView {
                     Label(t("No progress this month", "Немає прогресу за цей місяць", "В этом месяце прогресса пока нет"), systemImage: "chart.xyaxis.line")
                 } description: {
-                    Text(t("Log sets for the selected exercise to unlock trends.", "Додай підходи для вибраної вправи, щоб відкрити тренди.", "Запиши подходы выбранного упражнения, чтобы открыть тренды."))
+                    Text(t("Log sets for the selected exercise to unlock trends.", "Додайте підходи для вибраної вправи, щоб відкрити тренди.", "Запишите подходы выбранного упражнения, чтобы открыть тренды."))
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -936,7 +936,7 @@ struct ExerciseProgressView: View {
             GymContentUnavailableView {
                 Label(t("No exercises yet", "Ще немає вправ", "Упражнений ещё нет"), systemImage: "dumbbell")
             } description: {
-                Text(t("Create an exercise and log a workout first.", "Спочатку створи вправу й запиши тренування.", "Сначала создай упражнение и запиши тренировку."))
+                Text(t("Create an exercise and log a workout first.", "Спочатку створіть вправу й запишіть тренування.", "Сначала создайте упражнение и запишите тренировку."))
             } actions: {
                 Button(action: onStartWorkout) {
                     Text(t("Start workout", "Почати тренування", "Начать тренировку"))

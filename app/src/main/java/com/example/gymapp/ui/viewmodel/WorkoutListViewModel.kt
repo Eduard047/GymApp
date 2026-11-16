@@ -1425,7 +1425,7 @@ class WorkoutListViewModel(
         val summary = when {
             allSessions.isEmpty() -> t(
                 en = "Log a workout to start your momentum.",
-                uk = "Запиши тренування, щоб запустити свій темп."
+                uk = "Записати тренування, щоб запустити свій темп."
             )
             weeklyStreakWeeks > 0 -> when {
                 isUkrainian() -> "$weeklyStreakWeeks тиж. поспіль із $weeklyTarget тренуваннями."
@@ -1433,9 +1433,9 @@ class WorkoutListViewModel(
                 else -> "$weeklyStreakWeeks successful week${if (weeklyStreakWeeks == 1) "" else "s"} in a row."
             }
             isUkrainian() ->
-                "Набери $weeklyTarget ${slavicForm(weeklyTarget, "тренувальний день", "тренувальні дні", "тренувальних днів")}, щоб почати тижневий ритм."
+                "Набрати $weeklyTarget ${slavicForm(weeklyTarget, "тренувальний день", "тренувальні дні", "тренувальних днів")}, щоб почати тижневий ритм."
             isRussian() ->
-                "Набери $weeklyTarget ${slavicForm(weeklyTarget, "тренировочный день", "тренировочных дня", "тренировочных дней")}, чтобы начать недельный ритм."
+                "Набрать $weeklyTarget ${slavicForm(weeklyTarget, "тренировочный день", "тренировочных дня", "тренировочных дней")}, чтобы начать недельный ритм."
             else -> "Reach $weeklyTarget ${if (weeklyTarget == 1) "training day" else "training days"} to start your weekly rhythm."
         }
 
@@ -1757,7 +1757,7 @@ class WorkoutListViewModel(
             return listOf(
                 TrainingRecommendationUiModel(
                     id = "start",
-                    title = t(en = "Log a few workouts", uk = "Запиши кілька тренувань"),
+                    title = t(en = "Log a few workouts", uk = "Записати кілька тренувань"),
                     supporting = t(
                         en = "Recommendations need enough history to compare muscle groups.",
                         uk = "Рекомендаціям потрібна історія, щоб порівнювати групи мʼязів."

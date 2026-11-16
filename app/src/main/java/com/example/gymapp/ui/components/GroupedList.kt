@@ -23,7 +23,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,6 +53,15 @@ object GroupedListDefaults {
     /** Separator inset when every row has a leading [GroupedRowIconTile]: 16 + 30 + 12. */
     val SeparatorInsetWithIcon = 58.dp
 }
+
+/** One physical pixel as Dp: `Dp.Hairline` only works for borders and collapses to 0 as a height. */
+@Composable
+internal fun hairlineThickness(): Dp = with(LocalDensity.current) { 1.toDp() }
+
+/** Hairline colour of the grouped list: #38383A on dark surfaces, #C6C6C8 on light ones (iOS separators). */
+@Composable
+internal fun groupedSeparatorColor(): Color =
+    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF38383A) else Color(0xFFC6C6C8)
 
 /** Collects the rows of a [GroupedSection]; each one is separated from the next by a hairline. */
 class GroupedScope internal constructor() {
@@ -119,8 +130,8 @@ fun GroupedSection(
                         Modifier
                             .padding(start = separatorInset)
                             .fillMaxWidth()
-                            .height(Dp.Hairline)
-                            .background(MaterialTheme.colorScheme.outlineVariant)
+                            .height(hairlineThickness())
+                            .background(groupedSeparatorColor())
                     )
                 }
             }

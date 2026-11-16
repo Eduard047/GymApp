@@ -41,7 +41,7 @@ struct GarminPlanDeliveryPanel: View {
             VStack(alignment: .leading, spacing: 10) {
                 if destinations.count > 1 {
                     Picker(gymText("Watch", "Годинник", "Часы", languageCode: gymCurrentLanguageCode()), selection: $selected) {
-                        Text(gymText("Choose a watch", "Вибери годинник", "Выбери часы", languageCode: gymCurrentLanguageCode())).tag("")
+                        Text(gymText("Choose a watch", "Вибрати годинник", "Выбрать часы", languageCode: gymCurrentLanguageCode())).tag("")
                         ForEach(destinations) { Text($0.name).tag($0.id) }
                     }
                     .pickerStyle(.menu)
@@ -71,8 +71,8 @@ struct GarminPlanDeliveryPanel: View {
     private var message: String {
         if destinations.isEmpty {
             return gymText("Connect a Garmin watch in Profile → Your watch before syncing a plan.",
-                "Підключи годинник Garmin у Профілі → Твій годинник перед синхронізацією плану.",
-                "Подключи часы Garmin в Профиле → Твои часы перед синхронизацией плана.", languageCode: gymCurrentLanguageCode())
+                "Перед синхронізацією плану підключіть годинник: Профіль → Годинник Garmin.",
+                "Перед синхронизацией плана подключите часы: Профиль → Часы Garmin.", languageCode: gymCurrentLanguageCode())
         }
         if selectedIsLite { return GarminPhoneSyncProtocol.liteWatchMessage(languageCode: gymCurrentLanguageCode()) }
         if selected.hasPrefix("phone:"), let status = phone.planDeliveryMessages[String(selected.dropFirst(6))] { return status }

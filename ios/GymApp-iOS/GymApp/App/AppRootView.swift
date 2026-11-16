@@ -201,8 +201,8 @@ private struct CloudSyncConflictView: View {
                             Text(
                                 gymText(
                                     "Choose this if your latest workouts were recorded on this iPhone. This history will replace the cloud copy.",
-                                    "Вибери це, якщо останні тренування записував на цьому iPhone. Ця історія замінить хмарну копію.",
-                                    "Выбери это, если последние тренировки записывал на этом iPhone. Эта история заменит облачную копию.",
+                                    "Виберіть це, якщо останні тренування записував на цьому iPhone. Ця історія замінить хмарну копію.",
+                                    "Выберите это, если последние тренировки записывал на этом iPhone. Эта история заменит облачную копию.",
                                     languageCode: languageCode
                                 )
                             )
@@ -227,8 +227,8 @@ private struct CloudSyncConflictView: View {
                             Text(
                                 gymText(
                                     "Choose this if your latest workouts were recorded on another device or in the PWA. The cloud history will replace workouts on this iPhone.",
-                                    "Вибери це, якщо останні тренування записував на іншому пристрої або в PWA. Хмарна історія замінить тренування на цьому iPhone.",
-                                    "Выбери это, если последние тренировки записывал на другом устройстве или в PWA. Облачная история заменит тренировки на этом iPhone.",
+                                    "Виберіть це, якщо останні тренування записував на іншому пристрої або в PWA. Хмарна історія замінить тренування на цьому iPhone.",
+                                    "Выберите это, если последние тренировки записывал на другом устройстве или в PWA. Облачная история заменит тренировки на этом iPhone.",
                                     languageCode: languageCode
                                 )
                             )
@@ -1205,8 +1205,8 @@ private struct MainTabShell: View {
             appState.show(
                 message: gymText(
                     "Finish the current action, import, or live workout before showing the tutorial.",
-                    "Заверши поточну дію, імпорт або спільне тренування, перш ніж показувати навчання.",
-                    "Заверши текущее действие, импорт или совместную тренировку перед показом обучения.",
+                    "Завершіть поточну дію, імпорт або спільне тренування, перш ніж показувати навчання.",
+                    "Завершите текущее действие, импорт или совместную тренировку перед показом обучения.",
                     languageCode: languageCode
                 ),
                 isError: false
@@ -1259,8 +1259,8 @@ private struct MainTabShell: View {
             appState.show(
                 message: gymText(
                     "The tutorial result could not be saved. Try again.",
-                    "Не вдалося зберегти результат навчання. Спробуй ще раз.",
-                    "Не удалось сохранить результат обучения. Попробуй ещё раз.",
+                    "Не вдалося зберегти результат навчання. Спробуйте ще раз.",
+                    "Не удалось сохранить результат обучения. Попробуйте ещё раз.",
                     languageCode: languageCode
                 ),
                 isError: true
@@ -1582,8 +1582,8 @@ private struct MainTabShell: View {
             appState.show(
                 message: gymText(
                     "Finish the current workout or draft before opening this shared plan.",
-                    "Заверши поточне тренування або чернетку, перш ніж відкривати цей спільний план.",
-                    "Заверши текущую тренировку или черновик, прежде чем открывать этот общий план.",
+                    "Завершіть поточне тренування або чернетку, перш ніж відкривати цей спільний план.",
+                    "Завершите текущую тренировку или черновик, прежде чем открывать этот общий план.",
                     languageCode: languageCode
                 ),
                 isError: true
@@ -1648,8 +1648,8 @@ private struct MainTabShell: View {
             appState.show(
                 message: gymText(
                     "A live workout cannot be discarded silently. Cancel or leave its room from Friends.",
-                    "Спільне тренування не можна непомітно відкинути. Скасуй кімнату або вийди з неї у Друзях.",
-                    "Совместную тренировку нельзя незаметно удалить. Отмени комнату или выйди из неё в Друзьях.",
+                    "Спільне тренування не можна непомітно відкинути. Скасуйте кімнату або вийдіть з неї у Друзях.",
+                    "Совместную тренировку нельзя незаметно удалить. Отмените комнату или выйдите из неё в Друзьях.",
                     languageCode: languageCode
                 ),
                 isError: true
@@ -1705,8 +1705,8 @@ private struct MainTabShell: View {
                             Text(
                                 gymText(
                                     "Open Friends to review it. This is an in-app notice, not a push notification.",
-                                    "Відкрий Друзів, щоб переглянути його. Це сповіщення в застосунку, а не push-повідомлення.",
-                                    "Открой Друзей, чтобы посмотреть его. Это уведомление в приложении, а не push-уведомление.",
+                                    "Відкрийте Друзів, щоб переглянути його. Це сповіщення в застосунку, а не push-повідомлення.",
+                                    "Откройте Друзей, чтобы посмотреть его. Это уведомление в приложении, а не push-уведомление.",
                                     languageCode: languageCode
                                 )
                             )
@@ -1753,8 +1753,8 @@ private struct MainTabShell: View {
                             Text(
                                 gymText(
                                     "Open Friends to review it. Accepting starts the workout for both immediately.",
-                                    "Відкрий Друзів, щоб переглянути. Прийняття одразу запускає тренування для обох.",
-                                    "Открой Друзей, чтобы посмотреть. Принятие сразу запускает тренировку для обоих.",
+                                    "Відкрийте Друзів, щоб переглянути. Прийняття одразу запускає тренування для обох.",
+                                    "Откройте Друзей, чтобы посмотреть. Принятие сразу запускает тренировку для обоих.",
                                     languageCode: languageCode
                                 )
                             )
@@ -2153,8 +2153,8 @@ private struct MainTabShell: View {
         appState.show(
             message: gymText(
                 "Finish or discard the current workout, draft, or live room before creating another live workout.",
-                "Заверши або відкинь поточне тренування, чернетку чи кімнату спільного тренування перед створенням нового спільного тренування.",
-                "Заверши или удали текущую тренировку, черновик или комнату совместной тренировки перед созданием новой совместной тренировки.",
+                "Завершіть або відкиньте поточне тренування, чернетку чи кімнату спільного тренування перед створенням нового спільного тренування.",
+                "Завершите или удалите текущую тренировку, черновик или комнату совместной тренировки перед созданием новой совместной тренировки.",
                 languageCode: languageCode
             ),
             isError: true
@@ -2204,8 +2204,8 @@ private struct SharedWorkoutPreviewView: View {
                     Text(
                         gymText(
                             "Nothing is saved until you choose an action. Opening as a draft lets you review and edit every set first.",
-                            "Нічого не зберігається, доки ти не вибереш дію. Після відкриття як чернетки можна перевірити й змінити кожен підхід.",
-                            "Ничего не сохраняется, пока ты не выберешь действие. После открытия как черновика можно проверить и изменить каждый подход.",
+                            "Нічого не зберігається, доки не вибрано дію. Після відкриття як чернетки можна перевірити й змінити кожен підхід.",
+                            "Ничего не сохраняется, пока не выбрано действие. После открытия как черновика можно проверить и изменить каждый подход.",
                             languageCode: languageCode
                         )
                     )
@@ -2264,8 +2264,8 @@ private struct SharedWorkoutPreviewView: View {
                         Text(
                             gymText(
                                 "Finish the active workout first. Its progress will not be replaced.",
-                                "Спочатку заверши активне тренування. Його прогрес не буде замінено.",
-                                "Сначала заверши активную тренировку. Её прогресс не будет заменён.",
+                                "Спочатку завершіть активне тренування. Його прогрес не буде замінено.",
+                                "Сначала завершите активную тренировку. Её прогресс не будет заменён.",
                                 languageCode: languageCode
                             )
                         )

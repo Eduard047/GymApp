@@ -354,14 +354,14 @@ struct ExercisesView: View {
                     store.exercises.isEmpty
                         ? gymText(
                             "Add a custom exercise to start building your library.",
-                            "Додай власну вправу, щоб почати формувати бібліотеку.",
-                            "Добавь своё упражнение, чтобы начать формировать библиотеку.",
+                            "Додайте власну вправу, щоб почати формувати бібліотеку.",
+                            "Добавьте своё упражнение, чтобы начать формировать библиотеку.",
                             languageCode: gymCurrentLanguageCode()
                         )
                         : gymText(
                             "Try another name, body area, or muscle group.",
-                            "Спробуй іншу назву, частину тіла або групу м’язів.",
-                            "Попробуй другое название, часть тела или группу мышц.",
+                            "Спробуйте іншу назву, частину тіла або групу м’язів.",
+                            "Попробуйте другое название, часть тела или группу мышц.",
                             languageCode: gymCurrentLanguageCode()
                         )
                 )
@@ -876,8 +876,8 @@ private enum ExerciseEditorValidationError: LocalizedError {
         case .invalidWeights:
             gymText(
                 "Enter 1–128 valid machine weights between 0 and 1,000,000 kg.",
-                "Вкажи від 1 до 128 допустимих ваг тренажера в діапазоні від 0 до 1 000 000 кг.",
-                "Укажи от 1 до 128 допустимых весов тренажёра в диапазоне от 0 до 1 000 000 кг.",
+                "Вкажіть від 1 до 128 допустимих ваг тренажера в діапазоні від 0 до 1 000 000 кг.",
+                "Укажите от 1 до 128 допустимых весов тренажёра в диапазоне от 0 до 1 000 000 кг.",
                 languageCode: languageCode
             )
         }

@@ -969,7 +969,7 @@ private struct GarminWatchScreen: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    title: gymText("Your watch", "Твій годинник", "Твои часы", languageCode: languageCode),
+                    title: gymText("Your watch", "Годинник Garmin", "Часы Garmin", languageCode: languageCode),
                     supporting: gymText(
                         "Bluetooth status for watches on this iPhone; cloud watches show their last sync.",
                         "Bluetooth-статус годинників на цьому iPhone; хмарні показують останню синхронізацію.",
@@ -982,8 +982,8 @@ private struct GarminWatchScreen: View {
                     GymInlineState(
                         gymText(
                             "Connect your Garmin watch to send workouts and keep your results together.",
-                            "Підключи годинник Garmin, щоб надсилати тренування та зберігати результати разом.",
-                            "Подключи часы Garmin, чтобы отправлять тренировки и хранить результаты вместе.",
+                            "Підключіть годинник Garmin, щоб надсилати тренування та зберігати результати разом.",
+                            "Подключите часы Garmin, чтобы отправлять тренировки и хранить результаты вместе.",
                             languageCode: languageCode
                         ),
                         systemImage: "applewatch"

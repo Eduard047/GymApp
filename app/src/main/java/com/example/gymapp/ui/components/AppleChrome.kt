@@ -233,8 +233,8 @@ fun AppleTabBar(
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(Dp.Hairline)
-                .background(colors.outlineVariant)
+                .height(hairlineThickness())
+                .background(groupedSeparatorColor())
         )
         Row(
             Modifier

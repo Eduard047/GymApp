@@ -122,22 +122,22 @@ internal data class PostWorkoutAchievementTranslation(
 
 internal val POST_WORKOUT_ACHIEVEMENT_UK = mapOf(
     "first_workout" to PostWorkoutAchievementTranslation(
-        "Перше тренування", "Заверши своє перше тренування.", "Перший підхід"
+        "Перше тренування", "Завершити своє перше тренування.", "Перший підхід"
     ),
     "workout_5" to PostWorkoutAchievementTranslation(
-        "Початок звички", "Заверши п’ять тренувань.", "Початок звички"
+        "Початок звички", "Завершить п’ять тренувань.", "Початок звички"
     ),
     "workout_10" to PostWorkoutAchievementTranslation(
-        "Будівник стабільності", "Заверши десять тренувань.", "Стабільність"
+        "Будівник стабільності", "Завершити десять тренувань.", "Стабільність"
     ),
     "workout_25" to PostWorkoutAchievementTranslation(
-        "Працьовитий", "Заверши двадцять п’ять тренувань.", "Працьовитий"
+        "Працьовитий", "Завершить двадцять п’ять тренувань.", "Працьовитий"
     ),
     "workout_50" to PostWorkoutAchievementTranslation(
-        "Ветеран", "Заверши п’ятдесят тренувань.", "Ветеран"
+        "Ветеран", "Завершить п’ятдесят тренувань.", "Ветеран"
     ),
     "workout_100" to PostWorkoutAchievementTranslation(
-        "Центуріон", "Заверши сто тренувань.", "Центуріон"
+        "Центуріон", "Завершити сто тренувань.", "Центуріон"
     ),
     "streak_7" to PostWorkoutAchievementTranslation(
         "Ритм двох тижнів", "Виконуй тижневу ціль два тижні поспіль.", "Імпульс"

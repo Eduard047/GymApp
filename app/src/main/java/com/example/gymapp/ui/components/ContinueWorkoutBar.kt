@@ -27,7 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
-import com.example.gymapp.util.formattedStringResource
+import com.example.gymapp.util.formattedPluralStringResource
 
 /**
  * The app-wide resume bar shows while a workout is active but minimised: never on the Today tab
@@ -83,8 +83,9 @@ fun ContinueWorkoutBar(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = formattedStringResource(
-                        R.string.continue_workout_bar_progress,
+                    text = formattedPluralStringResource(
+                        R.plurals.active_workout_hero_sets_done,
+                        totalSets,
                         completedSets,
                         totalSets
                     ),

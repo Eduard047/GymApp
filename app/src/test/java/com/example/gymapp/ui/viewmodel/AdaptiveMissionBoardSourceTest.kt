@@ -115,7 +115,7 @@ class AdaptiveMissionBoardSourceTest {
 
         val oneSession = requireNotNull(catalog["weekly-sessions-8-sets-1"])
         assertEquals("Finish 1 session with eight or more sets this week.", oneSession.summaryEn)
-        assertEquals("Заверши 1 сесію з вісьмома або більше підходами цього тижня.", oneSession.summaryUk)
+        assertEquals("Завершити 1 сесію з вісьмома або більше підходами цього тижня.", oneSession.summaryUk)
         assertEquals("session", oneSession.unitEn)
         assertEquals("сесія", oneSession.unitUk)
         assertEquals("сессия", oneSession.unitRu)
@@ -123,39 +123,39 @@ class AdaptiveMissionBoardSourceTest {
         val threeWorkouts = requireNotNull(catalog["weekly-workouts-3"])
         assertEquals("Ритм тижня", threeWorkouts.titleUk)
         assertEquals(
-            "Підтримай цього тижня сталий ритм недавніх тренувань.",
+            "Підтримати цього тижня сталий ритм недавніх тренувань.",
             threeWorkouts.summaryUk
         )
         assertEquals("тренування", threeWorkouts.unitUk)
 
         val threeExercises = requireNotNull(catalog["daily-exercises-3"])
         assertEquals("Збалансоване тренування", threeExercises.titleUk)
-        assertEquals("Виконай реалістичну кількість вправ сьогодні.", threeExercises.summaryUk)
+        assertEquals("Виконати реалістичну кількість вправ сьогодні.", threeExercises.summaryUk)
         assertEquals("вправи", threeExercises.unitUk)
         assertEquals("упражнения", threeExercises.unitRu)
         assertEquals("Сбалансированная тренировка", RussianText.translate(threeExercises.titleEn))
         assertEquals(
-            "Выполни реалистичное количество упражнений сегодня.",
+            "Выполнить реалистичное количество упражнений сегодня.",
             RussianText.translate(threeExercises.summaryEn)
         )
 
         val eightSets = requireNotNull(catalog["daily-sets-8"])
         assertEquals("Якісні підходи", eightSets.titleUk)
         assertEquals(
-            "Виконай реалістичну кількість робочих підходів сьогодні.",
+            "Виконати реалістичну кількість робочих підходів сьогодні.",
             eightSets.summaryUk
         )
         assertEquals("підходів", eightSets.unitUk)
         assertEquals("подходов", eightSets.unitRu)
         assertEquals("Качественные подходы", RussianText.translate(eightSets.titleEn))
         assertEquals(
-            "Выполни реалистичное количество рабочих подходов сегодня.",
+            "Выполнить реалистичное количество рабочих подходов сегодня.",
             RussianText.translate(eightSets.summaryEn)
         )
 
         val oneDay = requireNotNull(catalog["weekly-days-10-sets-1"])
         assertEquals("Hit 10 sets on 1 day this week.", oneDay.summaryEn)
-        assertEquals("Зроби 10 підходів у 1 день цього тижня.", oneDay.summaryUk)
+        assertEquals("Зробити 10 підходів у 1 день цього тижня.", oneDay.summaryUk)
         assertEquals("day", oneDay.unitEn)
         assertEquals("день", oneDay.unitUk)
     }

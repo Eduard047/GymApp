@@ -12,67 +12,67 @@ const [androidBoard, androidScreen, androidRussian, iosEngine] = await Promise.a
 const canonicalCopy = [
   {
     enTitle: "Show up",
-    ukTitle: "Прийди на тренування",
-    ruTitle: "Приди на тренировку",
+    ukTitle: "Прийти на тренування",
+    ruTitle: "Прийти на тренировку",
     enDescription: "Complete one workout today.",
-    ukDescription: "Заверши одне тренування сьогодні.",
-    ruDescription: "Заверши одну тренировку сегодня."
+    ukDescription: "Завершити одне тренування сьогодні.",
+    ruDescription: "Завершить одну тренировку сегодня."
   },
   {
     enTitle: "Quality sets",
     ukTitle: "Якісні підходи",
     ruTitle: "Качественные подходы",
     enDescription: "Complete a sustainable number of working sets today.",
-    ukDescription: "Виконай реалістичну кількість робочих підходів сьогодні.",
-    ruDescription: "Выполни реалистичное количество рабочих подходов сегодня."
+    ukDescription: "Виконати реалістичну кількість робочих підходів сьогодні.",
+    ruDescription: "Выполнить реалистичное количество рабочих подходов сегодня."
   },
   {
     enTitle: "Balanced session",
     ukTitle: "Збалансоване тренування",
     ruTitle: "Сбалансированная тренировка",
     enDescription: "Train a realistic number of exercises today.",
-    ukDescription: "Виконай реалістичну кількість вправ сьогодні.",
-    ruDescription: "Выполни реалистичное количество упражнений сегодня."
+    ukDescription: "Виконати реалістичну кількість вправ сьогодні.",
+    ruDescription: "Выполнить реалистичное количество упражнений сегодня."
   },
   {
     enTitle: "Weekly rhythm",
     ukTitle: "Ритм тижня",
     ruTitle: "Ритм недели",
     enDescription: "Match a sustainable recent workout rhythm this week.",
-    ukDescription: "Підтримай цього тижня сталий ритм недавніх тренувань.",
-    ruDescription: "Поддержи на этой неделе стабильный ритм недавних тренировок."
+    ukDescription: "Підтримати цього тижня сталий ритм недавніх тренувань.",
+    ruDescription: "Поддержать на этой неделе стабильный ритм недавних тренировок."
   },
   {
     enTitle: "Active days",
     ukTitle: "Активні дні",
     ruTitle: "Активные дни",
     enDescription: "Train on a realistic number of separate days this week.",
-    ukDescription: "Тренуйся реалістичну кількість окремих днів цього тижня.",
-    ruDescription: "Тренируйся реалистичное количество отдельных дней на этой неделе."
+    ukDescription: "Тренуватися реалістичну кількість окремих днів цього тижня.",
+    ruDescription: "Тренироваться реалистичное количество отдельных дней на этой неделе."
   },
   {
     enTitle: "Steady sets",
     ukTitle: "Сталі підходи",
     ruTitle: "Стабильные подходы",
     enDescription: "Build a typical recent week's number of working sets.",
-    ukDescription: "Виконай типову для недавнього тижня кількість робочих підходів.",
-    ruDescription: "Выполни типичное для недавней недели количество рабочих подходов."
+    ukDescription: "Виконати типову для недавнього тижня кількість робочих підходів.",
+    ruDescription: "Выполнить типичное для недавней недели количество рабочих подходов."
   },
   {
     enTitle: "Monthly base",
     ukTitle: "Основа місяця",
     ruTitle: "Основа месяца",
     enDescription: "Build on a sustainable recent month of workouts.",
-    ukDescription: "Спирайся на сталий ритм тренувань недавнього місяця.",
-    ruDescription: "Опирайся на стабильный ритм тренировок недавнего месяца."
+    ukDescription: "Спиратися на сталий ритм тренувань недавнього місяця.",
+    ruDescription: "Опираться на стабильный ритм тренировок недавнего месяца."
   },
   {
     enTitle: "Sustainable sets",
     ukTitle: "Сталий обсяг підходів",
     ruTitle: "Стабильный объём подходов",
     enDescription: "Accumulate a realistic number of working sets this month.",
-    ukDescription: "Набери реалістичну кількість робочих підходів цього місяця.",
-    ruDescription: "Набери реалистичное количество рабочих подходов в этом месяце."
+    ukDescription: "Набрати реалістичну кількість робочих підходів цього місяця.",
+    ruDescription: "Набрать реалистичное количество рабочих подходов в этом месяце."
   }
 ];
 

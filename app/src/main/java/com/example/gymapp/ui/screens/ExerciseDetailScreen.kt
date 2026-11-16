@@ -109,6 +109,7 @@ internal fun ExerciseDetailScreen(
     exercise: ExerciseEntity,
     history: List<ExerciseHistoryEntry>,
     muscleIds: List<String>,
+    primaryMuscleIds: List<String> = emptyList(),
     exerciseMediaOwnerKey: String,
     bottomContentInset: Dp,
     onBack: () -> Unit,
@@ -256,19 +257,21 @@ internal fun ExerciseDetailScreen(
             }
 
             item(key = "muscles") {
-                val names = muscleIds.map { localizedMuscleName(it, languageTag) }
+                val primaryIds = primaryMuscleIds.filter { it in muscleIds }.ifEmpty { muscleIds.take(1) }
+                val primaryNames = primaryIds.map { localizedMuscleName(it, languageTag) }
+                val secondaryNames = muscleIds.filterNot { it in primaryIds }.map { localizedMuscleName(it, languageTag) }
                 val header = stringResource(R.string.exercise_detail_muscles_header)
                 val primaryTitle = stringResource(R.string.exercise_detail_muscles_primary)
                 val secondaryTitle = stringResource(R.string.exercise_detail_muscles_secondary)
                 val editTitle = stringResource(R.string.exercise_detail_muscles_edit)
                 val accent = MaterialTheme.colorScheme.primary
                 GroupedSection(header = header) {
-                    if (names.isNotEmpty()) {
-                        if (isBuiltIn && names.size > 1) {
-                            row(primaryTitle, value = names.first())
-                            row(secondaryTitle, subtitle = names.drop(1).joinToString(", "))
+                    if (primaryNames.isNotEmpty()) {
+                        if (secondaryNames.isNotEmpty()) {
+                            row(primaryTitle, subtitle = primaryNames.joinToString(", "))
+                            row(secondaryTitle, subtitle = secondaryNames.joinToString(", "))
                         } else {
-                            row(header, value = names.joinToString(", "))
+                            row(primaryTitle, subtitle = primaryNames.joinToString(", "))
                         }
                     }
                     row(editTitle, titleColor = accent, chevron = true, onClick = onEditMuscles)

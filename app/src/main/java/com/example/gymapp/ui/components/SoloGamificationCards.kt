@@ -231,7 +231,7 @@ fun ActivityHeatmapCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                stringArrayResource(R.array.activity_heatmap_weekdays).forEach { weekday ->
+                stringArrayResource(R.array.weekday_short_labels).forEach { weekday ->
                     Text(
                         text = weekday,
                         style = MaterialTheme.typography.labelSmall,

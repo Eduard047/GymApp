@@ -83,12 +83,12 @@ struct TrainingProgramView: View {
     private var emptyProgramView: some View {
         GymPanel {
             VStack(alignment: .leading, spacing: 14) {
-                Text(t("Create your training program", "Створи свою програму", "Создай свою программу"))
+                Text(t("Create your training program", "Створити свою програму", "Создать свою программу"))
                     .font(GymTheme.TypeScale.sectionTitle)
                 Text(t(
                     "Choose the days you train, then prepare a workout for each day in advance.",
-                    "Обери дні тренувань і заздалегідь підготуй тренування для кожного дня.",
-                    "Выбери дни тренировок и заранее подготовь тренировку для каждого дня."
+                    "Оберіть дні тренувань і заздалегідь підготуйте тренування для кожного дня.",
+                    "Выберите дни тренировок и заранее подготовьте тренировку для каждого дня."
                 ))
                 .foregroundStyle(GymTheme.textSecondary)
                 Button(t("Choose training days", "Обрати дні тренувань", "Выбрать дни тренировок")) {
@@ -108,8 +108,8 @@ struct TrainingProgramView: View {
                     .font(GymTheme.TypeScale.sectionTitle)
                 Text(t(
                     "Tap a day to view or prepare its workout.",
-                    "Натисни на день, щоб переглянути або підготувати тренування.",
-                    "Нажми на день, чтобы посмотреть или подготовить тренировку."
+                    "Натисніть на день, щоб переглянути або підготувати тренування.",
+                    "Нажмите на день, чтобы посмотреть или подготовить тренировку."
                 ))
                 .foregroundStyle(GymTheme.textSecondary)
                 Text(t(
@@ -227,8 +227,8 @@ private struct ProgramScheduleEditor: View {
                 Section {
                     Text(t(
                         "Choose exactly \(editableProfile.workoutsPerWeek) training \(editableProfile.workoutsPerWeek == 1 ? "day" : "days").",
-                        "Обери рівно \(editableProfile.workoutsPerWeek) \(gymPlural(editableProfile.workoutsPerWeek, one: "день", few: "дні", many: "днів", languageCode: "uk")) тренувань.",
-                        "Выбери ровно \(editableProfile.workoutsPerWeek) \(gymPlural(editableProfile.workoutsPerWeek, one: "день", few: "дня", many: "дней", languageCode: "ru")) тренировок."
+                        "Оберіть рівно \(editableProfile.workoutsPerWeek) \(gymPlural(editableProfile.workoutsPerWeek, one: "день", few: "дні", many: "днів", languageCode: "uk")) тренувань.",
+                        "Выберите ровно \(editableProfile.workoutsPerWeek) \(gymPlural(editableProfile.workoutsPerWeek, one: "день", few: "дня", many: "дней", languageCode: "ru")) тренировок."
                     ))
                     .foregroundStyle(GymTheme.textSecondary)
                     Button {

@@ -1,6 +1,9 @@
 package com.example.gymapp
 
+import com.example.gymapp.data.repository.MuscleContribution
 import com.example.gymapp.data.repository.muscleContributionsForExercise
+import com.example.gymapp.data.repository.splitMusclesByWeight
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -51,5 +54,30 @@ class MuscleMappingTest {
             assertTrue("$exerciseName should map to hamstrings", muscleIds.contains("hamstrings"))
             assertFalse("$exerciseName should not map to arm biceps", muscleIds.contains("biceps"))
         }
+    }
+
+    @Test
+    fun primaryMusclesAreTheOnesWithWeightAtLeastPointNineFive() {
+        val (primary, secondary) = splitMusclesByWeight(
+            listOf(
+                MuscleContribution("triceps", 0.6),
+                MuscleContribution("chest", 1.0),
+                MuscleContribution("shoulders", 0.95),
+                MuscleContribution("abs", 0.3)
+            )
+        )
+
+        assertEquals(listOf("chest", "shoulders"), primary)
+        assertEquals(listOf("triceps", "abs"), secondary)
+    }
+
+    @Test
+    fun strongestMuscleIsPrimaryWhenNoneReachesTheThreshold() {
+        val (primary, secondary) = splitMusclesByWeight(
+            listOf(MuscleContribution("calves", 0.5), MuscleContribution("glutes", 0.7))
+        )
+
+        assertEquals(listOf("glutes"), primary)
+        assertEquals(listOf("calves"), secondary)
     }
 }

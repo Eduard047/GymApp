@@ -175,6 +175,26 @@ fun catalogContributionsForExercise(exerciseName: String): List<MuscleContributi
         .takeIf { it.isNotEmpty() }
 }
 
+/** Weight from which a muscle counts as primary (iOS `ExerciseInfo` rule). */
+const val PRIMARY_MUSCLE_MIN_WEIGHT: Double = 0.95
+
+/**
+ * Splits contributions into primary and secondary muscle ids: primary are the muscles with weight at
+ * least [PRIMARY_MUSCLE_MIN_WEIGHT] (the strongest one when none reaches it), secondary are the rest;
+ * both keep the strongest-first order, ties by the original order.
+ */
+fun splitMusclesByWeight(contributions: List<MuscleContribution>): Pair<List<String>, List<String>> {
+    val sorted = contributions
+        .withIndex()
+        .sortedWith(compareByDescending<IndexedValue<MuscleContribution>> { it.value.weight }.thenBy { it.index })
+        .map { it.value }
+        .distinctBy { it.muscleId }
+    val strong = sorted.filter { it.weight >= PRIMARY_MUSCLE_MIN_WEIGHT }.map { it.muscleId }
+    val primary = strong.ifEmpty { sorted.take(1).map { it.muscleId } }
+    val secondary = sorted.map { it.muscleId }.filterNot { it in primary }
+    return primary to secondary
+}
+
 /** The single source of default muscles: catalog definition first, then name guessing. */
 fun defaultContributionsForExercise(exerciseName: String): List<MuscleContribution> {
     return catalogContributionsForExercise(exerciseName)

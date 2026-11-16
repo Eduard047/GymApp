@@ -84,7 +84,7 @@ final class WorkoutNoteGoldenTests: XCTestCase {
         )
         XCTAssertEqual(
             gymWorkoutNoteSaveErrorMessage(ActiveWorkoutStoreError.storageUnavailable, languageCode: "ru"),
-            "Заметку не удалось сохранить. Твой текст остался здесь."
+            "Заметку не удалось сохранить. Текст остался здесь."
         )
     }
 

@@ -11,15 +11,15 @@ enum PasswordUpdateMode: Equatable {
         case .recovery:
             gymText(
                 "Choose a new password",
-                "Створи новий пароль",
-                "Создай новый пароль",
+                "Створити новий пароль",
+                "Создать новый пароль",
                 languageCode: languageCode
             )
         case .signedIn:
             gymText(
                 "Change your password",
-                "Зміни пароль",
-                "Измени пароль",
+                "Змінити пароль",
+                "Изменить пароль",
                 languageCode: languageCode
             )
         }
@@ -30,15 +30,15 @@ enum PasswordUpdateMode: Equatable {
         case .recovery:
             gymText(
                 "Your recovery link was verified. Set a new password for this account.",
-                "Посилання для відновлення підтверджено. Встанови новий пароль для цього акаунта.",
-                "Ссылка для восстановления подтверждена. Установи новый пароль для этого аккаунта.",
+                "Посилання для відновлення підтверджено. Встановіть новий пароль для цього акаунта.",
+                "Ссылка для восстановления подтверждена. Установите новый пароль для этого аккаунта.",
                 languageCode: languageCode
             )
         case .signedIn:
             gymText(
                 "Enter your current password, then choose a new password for this account.",
-                "Введи поточний пароль, а потім вибери новий пароль для цього акаунта.",
-                "Введи текущий пароль, а затем выбери новый пароль для этого аккаунта.",
+                "Введіть поточний пароль, а потім виберіть новий пароль для цього акаунта.",
+                "Введите текущий пароль, а затем выберите новый пароль для этого аккаунта.",
                 languageCode: languageCode
             )
         }
@@ -241,8 +241,8 @@ struct PasswordUpdateView: View {
         if showsVerificationCode {
             return gymText(
                 "A verification code was sent to your email. Enter it together with the new password.",
-                "Код підтвердження надіслано на твою електронну пошту. Введи його разом із новим паролем.",
-                "Код подтверждения отправлен на твою электронную почту. Введи его вместе с новым паролем.",
+                "Код підтвердження надіслано на електронну пошту. Введіть його разом із новим паролем.",
+                "Код подтверждения отправлен на электронную почту. Введите его вместе с новым паролем.",
                 languageCode: languageCode
             )
         }
@@ -254,8 +254,8 @@ struct PasswordUpdateView: View {
         if mode.requiresCurrentPassword && drafts.currentPassword.isEmpty {
             localError = gymText(
                 "Enter your current password.",
-                "Введи поточний пароль.",
-                "Введи текущий пароль.",
+                "Введіть поточний пароль.",
+                "Введите текущий пароль.",
                 languageCode: languageCode
             )
             return

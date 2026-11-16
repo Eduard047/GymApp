@@ -359,8 +359,8 @@ enum GarminPhoneSyncProtocol {
     static func planTooLargeMessage(languageCode: String) -> String {
         gymText(
             "This plan is too large for this watch. Shorten it and sync again.",
-            "План завеликий для цього годинника. Скороти його та синхронізуй знову.",
-            "План слишком большой для этих часов. Сократи его и синхронизируй снова.",
+            "План завеликий для цього годинника. Скоротіть його та синхронізуйте знову.",
+            "План слишком большой для этих часов. Сократите его и синхронизируйте снова.",
             languageCode: languageCode
         )
     }
@@ -2012,8 +2012,8 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         }
         planDeliveryMessages[binding.device] = gymText(
             "Plan saved on this iPhone. Open GymApp on the watch to receive it.",
-            "План збережено на iPhone. Відкрий GymApp на годиннику, щоб отримати його.",
-            "План сохранён на iPhone. Открой GymApp на часах, чтобы получить его.", languageCode: language)
+            "План збережено на iPhone. Відкрийте GymApp на годиннику, щоб отримати його.",
+            "План сохранён на iPhone. Откройте GymApp на часах, чтобы получить его.", languageCode: language)
         if connectIQ.deviceStatus(app.device) == .connected { sendSync(to: app) }
     }
 

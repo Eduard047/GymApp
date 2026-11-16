@@ -708,7 +708,7 @@ private fun LazyListScope.profileRootContent(
     item {
         // Identity, sync, notifications, sign-out and deletion live in the account sheet.
         val friendsTitle = stringResource(R.string.profile_friends_live_title)
-        val friendsValue = if (accountState.isCloudAccount) {
+        val friendsSubtitle = if (accountState.isCloudAccount) {
             null
         } else {
             stringResource(R.string.profile_friends_live_requires_cloud)
@@ -717,7 +717,7 @@ private fun LazyListScope.profileRootContent(
         GroupedSection(header = stringResource(R.string.profile_group_account)) {
             row(
                 title = friendsTitle,
-                value = friendsValue,
+                subtitle = friendsSubtitle,
                 chevron = true,
                 onClick = if (accountState.isCloudAccount) onOpenFriends else onOpenAccountSettings
             )

@@ -28,6 +28,7 @@ import com.example.gymapp.data.repository.MachineWeightsText
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.catalogContributionsForExercise
 import com.example.gymapp.data.repository.defaultContributionsForExercise
+import com.example.gymapp.data.repository.splitMusclesByWeight
 import com.example.gymapp.data.repository.normalizedExerciseName
 import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.util.LocalizedText
@@ -125,7 +126,9 @@ internal fun exerciseAccountUiModel(
 data class ExerciseMuscleMappingUiModel(
     val exerciseName: String,
     val muscleIds: List<String>,
-    val isMapped: Boolean
+    val isMapped: Boolean,
+    /** Muscles with weight >= 0.95 (the strongest one when none reaches it); the rest are secondary. */
+    val primaryMuscleIds: List<String> = emptyList()
 )
 
 data class ExerciseMuscleOptionUiModel(
@@ -364,7 +367,8 @@ class ExerciseListViewModel(
             ExerciseMuscleMappingUiModel(
                 exerciseName = exercise.name,
                 muscleIds = muscleIds,
-                isMapped = muscleIds.isNotEmpty()
+                isMapped = muscleIds.isNotEmpty(),
+                primaryMuscleIds = splitMusclesByWeight(contributions).first
             )
         }.sortedWith(
             compareBy<ExerciseMuscleMappingUiModel> { it.isMapped }

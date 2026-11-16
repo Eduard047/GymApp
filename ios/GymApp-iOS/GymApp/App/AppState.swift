@@ -287,8 +287,8 @@ final class AppState: ObservableObject {
             toasts.show(
                 gymText(
                     "A damaged local data file was preserved for recovery. Cloud data will restore after sign-in; offline profiles should contact support before deleting the app.",
-                    "Пошкоджений локальний файл збережено для відновлення. Хмарні дані відновляться після входу; для офлайн-профілю звернися до підтримки перед видаленням застосунку.",
-                    "Повреждённый локальный файл сохранён для восстановления. Облачные данные восстановятся после входа; для офлайн-профиля обратись в поддержку перед удалением приложения.",
+                    "Пошкоджений локальний файл збережено для відновлення. Хмарні дані відновляться після входу; для офлайн-профілю зверніться до підтримки перед видаленням застосунку.",
+                    "Повреждённый локальный файл сохранён для восстановления. Облачные данные восстановятся после входа; для офлайн-профиля обратитесь в поддержку перед удалением приложения.",
                     languageCode: gymCurrentLanguageCode(defaults: defaults)
                 ),
                 kind: .error,
@@ -367,8 +367,8 @@ final class AppState: ObservableObject {
                 show(
                     message: gymText(
                         "Finish or close the current shared workout preview before opening another link.",
-                        "Заверши або закрий поточний перегляд спільного тренування, перш ніж відкривати інше посилання.",
-                        "Заверши или закрой текущий просмотр общей тренировки, прежде чем открывать другую ссылку.",
+                        "Завершіть або закрийте поточний перегляд спільного тренування, перш ніж відкривати інше посилання.",
+                        "Завершите или закройте текущий просмотр общей тренировки, прежде чем открывать другую ссылку.",
                         languageCode: gymCurrentLanguageCode(defaults: defaults)
                     ),
                     isError: true
@@ -1100,8 +1100,8 @@ final class AppState: ObservableObject {
                   auth.session?.storageKey == pending.storageKey else { return }
             accountPreparationError = gymText(
                 "The workout histories changed before your choice was applied. Review both versions again.",
-                "Історії тренувань змінилися до застосування вибору. Перевір обидві версії ще раз.",
-                "Истории тренировок изменились до применения выбора. Проверь обе версии ещё раз.",
+                "Історії тренувань змінилися до застосування вибору. Перевірте обидві версії ще раз.",
+                "Истории тренировок изменились до применения выбора. Проверьте обе версии ещё раз.",
                 languageCode: gymCurrentLanguageCode(defaults: defaults)
             )
             cloudSyncStatus = .failed(gymSafeEnglishErrorMessage(error))

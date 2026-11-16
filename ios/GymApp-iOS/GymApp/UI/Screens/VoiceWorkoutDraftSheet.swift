@@ -101,7 +101,7 @@ struct VoiceWorkoutDraftSheet: View {
     private var dictationSection: some View {
         Section {
             TextField(
-                text("Describe exercises, sets, reps and weight", "Опиши вправи, підходи, повторення і вагу", "Опиши упражнения, подходы, повторы и вес"),
+                text("Describe exercises, sets, reps and weight", "Опишіть вправи, підходи, повторення і вагу", "Опишите упражнения, подходы, повторы и вес"),
                 text: $transcript,
                 axis: .vertical
             )
@@ -213,7 +213,7 @@ struct VoiceWorkoutDraftSheet: View {
                 text("Exercise", "Вправа", "Упражнение"),
                 selection: exerciseSelectionBinding(blockID: blockID)
             ) {
-                Text(text("Choose exercise", "Обери вправу", "Выбери упражнение"))
+                Text(text("Choose exercise", "Обрати вправу", "Выбрать упражнение"))
                     .tag(Self.unresolvedExerciseID)
                 ForEach(pickerExercises(for: block)) { exercise in
                     Text(gymExerciseName(exercise, languageCode: languageCode))
@@ -307,11 +307,11 @@ struct VoiceWorkoutDraftSheet: View {
         switch issue {
         case .chooseExercise:
             if case .ambiguous = block.matching {
-                return text("Several exercises match. Choose one.", "Підходить кілька вправ. Вибери одну.", "Подходит несколько упражнений. Выбери одно.")
+                return text("Several exercises match. Choose one.", "Підходить кілька вправ. Виберіть одну.", "Подходит несколько упражнений. Выберите одно.")
             }
-            return text("Choose an exercise from the list.", "Вибери вправу зі списку.", "Выбери упражнение из списка.")
+            return text("Choose an exercise from the list.", "Виберіть вправу зі списку.", "Выберите упражнение из списка.")
         case .fixSets:
-            return text("Add a valid weight and repetition count.", "Додай правильні вагу й кількість повторень.", "Добавь правильные вес и количество повторений.")
+            return text("Add a valid weight and repetition count.", "Додайте правильні вагу й кількість повторень.", "Добавьте правильные вес и количество повторений.")
         }
     }
 

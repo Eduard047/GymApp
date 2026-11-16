@@ -49,8 +49,8 @@ struct ExerciseRestTimeEditorSheet: View {
                     if limitReached {
                         Text(gymText(
                             "Too many custom rest times. Reset some first.",
-                            "Забагато власних часів відпочинку. Спершу скинь частину.",
-                            "Слишком много своих времён отдыха. Сначала сбрось часть.",
+                            "Забагато власних часів відпочинку. Спершу скиньте частину.",
+                            "Слишком много своих времён отдыха. Сначала сбросьте часть.",
                             languageCode: gymCurrentLanguageCode()
                         ))
                         .font(.caption)

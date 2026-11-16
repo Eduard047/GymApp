@@ -1312,11 +1312,11 @@ final class CoreParityTests: XCTestCase {
         )
         XCTAssertEqual(
             AuthCompactCopy.offlineConsequence(languageCode: "uk"),
-            "Тренування зберігаються лише на цьому пристрої, доки ти їх не експортуєш; хмарна синхронізація й відновлення недоступні."
+            "Тренування зберігаються лише на цьому пристрої, доки їх не експортовано; хмарна синхронізація й відновлення недоступні."
         )
         XCTAssertEqual(
             AuthCompactCopy.offlineConsequence(languageCode: "ru"),
-            "Тренировки хранятся только на этом устройстве, пока ты их не экспортируешь; облачная синхронизация и восстановление недоступны."
+            "Тренировки хранятся только на этом устройстве, пока не экспортированы; облачная синхронизация и восстановление недоступны."
         )
         XCTAssertEqual(AuthCompactCopy.profileName(languageCode: "en"), "Profile name")
         XCTAssertEqual(AuthCompactCopy.continueOffline(languageCode: "uk"), "Продовжити офлайн")
@@ -1326,8 +1326,8 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(AuthCompactCopy.localPlaceholder, "Local")
 
         XCTAssertEqual(gymLocalized("Sign up", languageCode: "uk"), "Зареєструватися")
-        XCTAssertEqual(gymLocalized("Repeat email", languageCode: "ru"), "Повтори email")
-        XCTAssertEqual(gymLocalized("Repeat password", languageCode: "ru"), "Повтори пароль")
+        XCTAssertEqual(gymLocalized("Repeat email", languageCode: "ru"), "Повторите email")
+        XCTAssertEqual(gymLocalized("Repeat password", languageCode: "ru"), "Повторите пароль")
         XCTAssertEqual(gymLocalized("Continue offline", languageCode: "ru"), "Продолжить офлайн")
         XCTAssertEqual(gymLocalized("Privacy Policy", languageCode: "uk"), "Політика конфіденційності")
         XCTAssertEqual(
@@ -2764,10 +2764,10 @@ final class CoreParityTests: XCTestCase {
             "Momentum": "Темп",
             "Achievements": "Достижения",
             "Resend confirmation email": "Повторно отправить письмо с подтверждением",
-            "Your training history and next best move.": "Твоя история тренировок и следующий лучший шаг.",
+            "Your training history and next best move.": "История тренировок и следующий лучший шаг.",
             "Import backup": "Импорт резервной копии",
             "Balanced": "Баланс",
-            "Sign in to keep workouts synchronized across your devices.": "Войди, чтобы синхронизировать тренировки между устройствами.",
+            "Sign in to keep workouts synchronized across your devices.": "Войдите, чтобы синхронизировать тренировки между устройствами.",
             "Avg volume": "Сред. объём",
             "Recent unlocks and the next solo milestones.": "Последние достижения и ближайшие личные цели.",
             "Total Reps": "Всего повторений",
@@ -2779,7 +2779,7 @@ final class CoreParityTests: XCTestCase {
         }
 
         let ukrainian: [String: String] = [
-            "Previous workout copied. Adjust any set before saving.": "Попереднє тренування скопійовано. За потреби зміни підходи перед збереженням.",
+            "Previous workout copied. Adjust any set before saving.": "Попереднє тренування скопійовано. За потреби змініть підходи перед збереженням.",
             "Email": "Електронна пошта",
             "Last": "Остання вага",
             "Previous": "Попередній підхід"
@@ -2810,8 +2810,8 @@ final class CoreParityTests: XCTestCase {
         ]
         let expected = [
             "en": "Something went wrong. Try again.",
-            "uk": "Щось пішло не так. Спробуй ще раз.",
-            "ru": "Что-то пошло не так. Попробуй ещё раз."
+            "uk": "Щось пішло не так. Спробуйте ще раз.",
+            "ru": "Что-то пошло не так. Попробуйте ещё раз."
         ]
 
         for error in rawErrors {
@@ -2869,11 +2869,11 @@ final class CoreParityTests: XCTestCase {
         let error = GarminCloudError.deviceCreationRecoveryRequired
         XCTAssertEqual(
             gymErrorMessage(error, languageCode: "ru"),
-            "Часы Garmin, возможно, уже были созданы на старом сервере, но ответ с их одноразовым токеном был потерян. Обнови список, выбери эти часы и смени их токен вместо создания новых."
+            "Часы Garmin, возможно, уже были созданы на старом сервере, но ответ с их одноразовым токеном был потерян. Обновите список, выберите эти часы и смените их токен вместо создания новых."
         )
         XCTAssertEqual(
             gymErrorMessage(error, languageCode: "uk"),
-            "Годинник Garmin, можливо, уже було створено на старішому сервері, але відповідь із його одноразовим токеном було втрачено. Онови список, вибери цей годинник і зміни його токен замість створення нового."
+            "Годинник Garmin, можливо, уже було створено на старішому сервері, але відповідь із його одноразовим токеном було втрачено. Оновіть список, виберіть цей годинник і змініть його токен замість створення нового."
         )
     }
 
@@ -2961,11 +2961,11 @@ final class CoreParityTests: XCTestCase {
         let hint = "Use at least 6 characters (up to 72 UTF-8 bytes)."
         XCTAssertEqual(
             gymLocalized(hint, languageCode: "uk"),
-            "Використай щонайменше 6 символів (до 72 байтів UTF-8)."
+            "Використайте щонайменше 6 символів (до 72 байтів UTF-8)."
         )
         XCTAssertEqual(
             gymLocalized(hint, languageCode: "ru"),
-            "Используй не менее 6 символов (до 72 байт UTF-8)."
+            "Используйте не менее 6 символов (до 72 байт UTF-8)."
         )
 
         let weak = GymAuthServerMessages.weakPassword
@@ -14064,8 +14064,8 @@ final class CoreParityTests: XCTestCase {
         for exactCopy in [
             "Синхронізація плану…",
             "Синхронизация плана…",
-            "Підключи годинник Garmin у Профілі → Твій годинник",
-            "Подключи часы Garmin в Профиле → Твои часы",
+            "Перед синхронізацією плану підключіть годинник: Профіль → Годинник Garmin.",
+            "Перед синхронизацией плана подключите часы: Профиль → Часы Garmin.",
             "Поточний відредагований план",
             "Текущий отредактированный план",
             "Оновлює згенеровані рядки",
@@ -14538,15 +14538,15 @@ final class CoreParityTests: XCTestCase {
             "Ритм двох тижнів",
             "Ритм чотирьох тижнів",
             "Ритм восьми тижнів",
-            "Виконуй тижневу ціль два тижні поспіль.",
-            "Виконуй тижневу ціль чотири тижні поспіль.",
-            "Виконуй тижневу ціль вісім тижнів поспіль.",
+            "Виконувати тижневу ціль два тижні поспіль.",
+            "Виконувати тижневу ціль чотири тижні поспіль.",
+            "Виконувати тижневу ціль вісім тижнів поспіль.",
             "Ритм двух недель",
             "Ритм четырёх недель",
             "Ритм восьми недель",
-            "Выполняй недельную цель две недели подряд.",
-            "Выполняй недельную цель четыре недели подряд.",
-            "Выполняй недельную цель восемь недель подряд."
+            "Выполнять недельную цель две недели подряд.",
+            "Выполнять недельную цель четыре недели подряд.",
+            "Выполнять недельную цель восемь недель подряд."
         ] {
             XCTAssertTrue(dashboardSource.contains(exactCopy), "Missing parity copy: \(exactCopy)")
         }
@@ -19182,8 +19182,8 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(applied(ack))
         XCTAssertFalse(refuses(ack))
         XCTAssertFalse(applied(changed("applied", false)))
-        XCTAssertTrue(GarminPhoneSyncProtocol.planTooLargeMessage(languageCode: "uk").contains("Скороти його"))
-        XCTAssertTrue(GarminPhoneSyncProtocol.planTooLargeMessage(languageCode: "ru").contains("Сократи его"))
+        XCTAssertTrue(GarminPhoneSyncProtocol.planTooLargeMessage(languageCode: "uk").contains("Скоротіть його"))
+        XCTAssertTrue(GarminPhoneSyncProtocol.planTooLargeMessage(languageCode: "ru").contains("Сократите его"))
         XCTAssertEqual(GarminPhoneSyncProtocol.planTooLargeMessage(languageCode: "en"),
             "This plan is too large for this watch. Shorten it and sync again.")
     }
@@ -20253,11 +20253,11 @@ final class CoreParityTests: XCTestCase {
     func testIOSPolishPasswordUpdateCopyIsLocalized() throws {
         XCTAssertEqual(
             PasswordUpdateMode.signedIn.title(languageCode: "uk"),
-            "Зміни пароль"
+            "Змінити пароль"
         )
         XCTAssertEqual(
             PasswordUpdateMode.signedIn.title(languageCode: "ru"),
-            "Измени пароль"
+            "Изменить пароль"
         )
         XCTAssertEqual(
             PasswordUpdateMode.signedIn.navigationTitle(languageCode: "uk"),
@@ -20265,7 +20265,7 @@ final class CoreParityTests: XCTestCase {
         )
         XCTAssertEqual(
             PasswordUpdateMode.signedIn.supportingText(languageCode: "ru"),
-            "Введи текущий пароль, а затем выбери новый пароль для этого аккаунта."
+            "Введите текущий пароль, а затем выберите новый пароль для этого аккаунта."
         )
 
         let validationCopy: [(String, String, String)] = [
@@ -20281,8 +20281,8 @@ final class CoreParityTests: XCTestCase {
             ),
             (
                 PasswordReauthenticationNoncePolicy.errorMessage,
-                "Введи 6–8-значний код підтвердження з листа.",
-                "Введи 6–8-значный код подтверждения из письма."
+                "Введіть 6–8-значний код підтвердження з листа.",
+                "Введите 6–8-значный код подтверждения из письма."
             )
         ]
         for (english, ukrainian, russian) in validationCopy {
@@ -20306,7 +20306,7 @@ final class CoreParityTests: XCTestCase {
         let strings = try XCTUnwrap(root["strings"] as? [String: Any])
         let expected: [String: String] = [
             "A damaged local data file was preserved for recovery. Cloud data will restore after sign-in; offline profiles should contact support before deleting the app.":
-                "Пошкоджений локальний файл збережено для відновлення. Хмарні дані відновляться після входу; для офлайн-профілю звернися до підтримки перед видаленням застосунку.",
+                "Пошкоджений локальний файл збережено для відновлення. Хмарні дані відновляться після входу; для офлайн-профілю зверніться до підтримки перед видаленням застосунку.",
             "Built-in": "Вбудована",
             "By name": "За назвою",
             "Change password": "Змінити пароль",
@@ -20317,9 +20317,9 @@ final class CoreParityTests: XCTestCase {
             "Current password": "Поточний пароль",
             "Daily": "Щоденні",
             "Direct iPhone connection": "Пряме підключення iPhone",
-            "Double tap to dismiss": "Торкнися двічі, щоб закрити",
+            "Double tap to dismiss": "Торкніться двічі, щоб закрити",
             "GymApp could not open its protected local storage. Your data was not changed.":
-                "GymApp не вдалося відкрити захищене локальне сховище. Твої дані не змінено.",
+                "GymApp не вдалося відкрити захищене локальне сховище. Дані не змінено.",
             "GymApp workout": "Тренування GymApp",
             "Least frequent": "Найрідші",
             "Locked": "Заблоковано",
@@ -20342,7 +20342,7 @@ final class CoreParityTests: XCTestCase {
             "Rating": "Рейтинг",
             "Storage unavailable": "Сховище недоступне",
             "Try again": "Спробувати ще раз",
-            "Try a different filter.": "Спробуй інший фільтр.",
+            "Try a different filter.": "Спробуйте інший фільтр.",
             "Upper body": "Верх тіла",
             "Weekly": "Щотижневі"
         ]

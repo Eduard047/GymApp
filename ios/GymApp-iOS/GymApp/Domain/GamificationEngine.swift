@@ -561,11 +561,11 @@ public enum GamificationEngine {
                 mission(
                     "daily_workout",
                     cadence: .daily,
-                    title: missionText("Show up", "Прийди на тренування", "Приди на тренировку"),
+                    title: missionText("Show up", "Прийти на тренування", "Прийти на тренировку"),
                     description: missionText(
                         "Complete one workout today.",
-                        "Заверши одне тренування сьогодні.",
-                        "Заверши одну тренировку сегодня."
+                        "Завершити одне тренування сьогодні.",
+                        "Завершить одну тренировку сегодня."
                     ),
                     systemImage: "figure.strengthtraining.traditional",
                     target: 1,
@@ -577,8 +577,8 @@ public enum GamificationEngine {
                     title: missionText("Quality sets", "Якісні підходи", "Качественные подходы"),
                     description: missionText(
                         "Complete a sustainable number of working sets today.",
-                        "Виконай реалістичну кількість робочих підходів сьогодні.",
-                        "Выполни реалистичное количество рабочих подходов сегодня."
+                        "Виконати реалістичну кількість робочих підходів сьогодні.",
+                        "Выполнить реалистичное количество рабочих подходов сегодня."
                     ),
                     systemImage: "list.number",
                     target: dailySetTarget,
@@ -590,8 +590,8 @@ public enum GamificationEngine {
                     title: missionText("Balanced session", "Збалансоване тренування", "Сбалансированная тренировка"),
                     description: missionText(
                         "Train a realistic number of exercises today.",
-                        "Виконай реалістичну кількість вправ сьогодні.",
-                        "Выполни реалистичное количество упражнений сегодня."
+                        "Виконати реалістичну кількість вправ сьогодні.",
+                        "Выполнить реалистичное количество упражнений сегодня."
                     ),
                     systemImage: "square.grid.2x2",
                     target: dailyExerciseTarget,
@@ -605,8 +605,8 @@ public enum GamificationEngine {
                     title: missionText("Weekly rhythm", "Ритм тижня", "Ритм недели"),
                     description: missionText(
                         "Match a sustainable recent workout rhythm this week.",
-                        "Підтримай цього тижня сталий ритм недавніх тренувань.",
-                        "Поддержи на этой неделе стабильный ритм недавних тренировок."
+                        "Підтримати цього тижня сталий ритм недавніх тренувань.",
+                        "Поддержать на этой неделе стабильный ритм недавних тренировок."
                     ),
                     systemImage: "calendar",
                     target: weeklyWorkoutTarget,
@@ -618,8 +618,8 @@ public enum GamificationEngine {
                     title: missionText("Active days", "Активні дні", "Активные дни"),
                     description: missionText(
                         "Train on a realistic number of separate days this week.",
-                        "Тренуйся реалістичну кількість окремих днів цього тижня.",
-                        "Тренируйся реалистичное количество отдельных дней на этой неделе."
+                        "Тренуватися реалістичну кількість окремих днів цього тижня.",
+                        "Тренироваться реалистичное количество отдельных дней на этой неделе."
                     ),
                     systemImage: "calendar.badge.checkmark",
                     target: weeklyDayTarget,
@@ -631,8 +631,8 @@ public enum GamificationEngine {
                     title: missionText("Steady sets", "Сталі підходи", "Стабильные подходы"),
                     description: missionText(
                         "Build a typical recent week's number of working sets.",
-                        "Виконай типову для недавнього тижня кількість робочих підходів.",
-                        "Выполни типичное для недавней недели количество рабочих подходов."
+                        "Виконати типову для недавнього тижня кількість робочих підходів.",
+                        "Выполнить типичное для недавней недели количество рабочих подходов."
                     ),
                     systemImage: "list.number",
                     target: weeklySetTarget,
@@ -646,8 +646,8 @@ public enum GamificationEngine {
                     title: missionText("Monthly base", "Основа місяця", "Основа месяца"),
                     description: missionText(
                         "Build on a sustainable recent month of workouts.",
-                        "Спирайся на сталий ритм тренувань недавнього місяця.",
-                        "Опирайся на стабильный ритм тренировок недавнего месяца."
+                        "Спиратися на сталий ритм тренувань недавнього місяця.",
+                        "Опираться на стабильный ритм тренировок недавнего месяца."
                     ),
                     systemImage: "calendar",
                     target: monthlyWorkoutTarget,
@@ -659,8 +659,8 @@ public enum GamificationEngine {
                     title: missionText("Sustainable sets", "Сталий обсяг підходів", "Стабильный объём подходов"),
                     description: missionText(
                         "Accumulate a realistic number of working sets this month.",
-                        "Набери реалістичну кількість робочих підходів цього місяця.",
-                        "Набери реалистичное количество рабочих подходов в этом месяце."
+                        "Набрати реалістичну кількість робочих підходів цього місяця.",
+                        "Набрать реалистичное количество рабочих подходов в этом месяце."
                     ),
                     systemImage: "list.number",
                     target: monthlySetTarget,

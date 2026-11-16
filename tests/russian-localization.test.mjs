@@ -335,7 +335,7 @@ test("runtime language switches invalidate cached labels on every client", async
   // into one compact hint row ("Backup" / "Make one before switching
   // phones") instead of a whole explanation paragraph.
   assert.match(iosAccountSettings, /"Резервная копия"/);
-  assert.match(iosAccountSettings, /"Сделай перед сменой телефона"/);
+  assert.match(iosAccountSettings, /"Перед сменой телефона"/);
   assert.match(iosAccountSettings, /"Выходит из этого профиля\. Его тренировки останутся на устройстве/);
   assert.match(
     pwaApp,

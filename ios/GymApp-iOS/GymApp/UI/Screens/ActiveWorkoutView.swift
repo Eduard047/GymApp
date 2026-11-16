@@ -926,8 +926,8 @@ struct ActiveWorkoutView: View {
                     Text(
                         gymText(
                             "Completion is safely locked. Retry Finish to confirm history and clear this screen.",
-                            "Завершення безпечно зафіксовано. Повтори завершення, щоб підтвердити історію й закрити цей екран.",
-                            "Завершение безопасно зафиксировано. Повтори завершение, чтобы подтвердить историю и закрыть этот экран.",
+                            "Завершення безпечно зафіксовано. Повторіть завершення, щоб підтвердити історію й закрити цей екран.",
+                            "Завершение безопасно зафиксировано. Повторите завершение, чтобы подтвердить историю и закрыть этот экран.",
                             languageCode: gymCurrentLanguageCode()
                         )
                     )
@@ -1189,8 +1189,8 @@ struct ActiveWorkoutView: View {
                 spotterProgressLine(
                     label: gymText(
                         "You",
-                        "Ти",
-                        "Ты",
+                        "Ви",
+                        "Вы",
                         languageCode: gymCurrentLanguageCode()
                     ),
                     completed: draft.completedSetCount,
@@ -1214,8 +1214,8 @@ struct ActiveWorkoutView: View {
                         )
                         : gymText(
                             "Your friend finished. Your local progress remains safe until you finish too.",
-                            "Друг завершив. Твій локальний прогрес залишається в безпеці, доки ти теж не завершиш.",
-                            "Друг завершил. Твой локальный прогресс остаётся в безопасности, пока ты тоже не завершишь.",
+                            "Друг завершив. Локальний прогрес залишається в безпеці, доки ви теж не завершите.",
+                            "Друг завершил. Локальный прогресс остаётся в безопасности, пока вы тоже не завершите.",
                             languageCode: gymCurrentLanguageCode()
                         )
                 )
@@ -1263,8 +1263,8 @@ struct ActiveWorkoutView: View {
     private var liveParticipantTabs: some View {
         let selfName = liveWorkoutCoordinator.selfDisplayName ?? gymText(
             "You",
-            "Ти",
-            "Ты",
+            "Ви",
+            "Вы",
             languageCode: gymCurrentLanguageCode()
         )
         let peerName = liveWorkoutCoordinator.peerDisplayName ?? gymText(
@@ -1450,8 +1450,8 @@ struct ActiveWorkoutView: View {
             liveSetLane(
                 label: gymText(
                     "You",
-                    "Ти",
-                    "Ты",
+                    "Ви",
+                    "Вы",
                     languageCode: gymCurrentLanguageCode()
                 ),
                 completed: lane.selfCompleted,
@@ -2205,8 +2205,8 @@ struct ActiveWorkoutView: View {
         .accessibilityHint(
             gymText(
                 "Double tap to reuse this weight and reps",
-                "Двічі торкнись, щоб повторити цю вагу й повторення",
-                "Дважды нажми, чтобы повторить этот вес и повторения",
+                "Двічі торкніться, щоб повторити цю вагу й повторення",
+                "Дважды нажмите, чтобы повторить этот вес и повторения",
                 languageCode: gymCurrentLanguageCode()
             )
         )
@@ -2239,8 +2239,8 @@ struct ActiveWorkoutView: View {
         .accessibilityHint(
             gymText(
                 "Say a weight and reps, repeat, or next",
-                "Скажи вагу й повторення, «повтори» або «далі»",
-                "Скажи вес и повторения, «повтори» или «дальше»",
+                "Скажіть вагу й повторення, «повтори» або «далі»",
+                "Скажите вес и повторения, «повтори» или «дальше»",
                 languageCode: gymCurrentLanguageCode()
             )
         )
@@ -2268,8 +2268,8 @@ struct ActiveWorkoutView: View {
             Text(
                 gymText(
                     "Say: \"80 by 8\", \"repeat\", \"next\"",
-                    "Скажи: «80 на 8», «повтори», «далі»",
-                    "Скажи: «80 на 8», «повтори», «дальше»",
+                    "Скажіть: «80 на 8», «повтори», «далі»",
+                    "Скажите: «80 на 8», «повтори», «дальше»",
                     languageCode: gymCurrentLanguageCode()
                 )
             )
@@ -2364,7 +2364,7 @@ struct ActiveWorkoutView: View {
                     .onSubmit {
                         submitVoiceFallback(set: set, exercise: exercise, exerciseName: exerciseName, position: position, draft: draft)
                     }
-                    .accessibilityLabel(gymText("Type a command", "Введи команду", "Введи команду", languageCode: gymCurrentLanguageCode()))
+                    .accessibilityLabel(gymText("Type a command", "Ввести команду", "Ввести команду", languageCode: gymCurrentLanguageCode()))
 
                 Button {
                     submitVoiceFallback(set: set, exercise: exercise, exerciseName: exerciseName, position: position, draft: draft)
@@ -2456,8 +2456,8 @@ struct ActiveWorkoutView: View {
             ),
             accessibilityHintText: gymText(
                 "Double tap to edit this set",
-                "Двічі торкнись, щоб редагувати цей підхід",
-                "Дважды нажми, чтобы редактировать этот подход",
+                "Двічі торкніться, щоб редагувати цей підхід",
+                "Дважды нажмите, чтобы редактировать этот подход",
                 languageCode: gymCurrentLanguageCode()
             ),
             onToggle: {
