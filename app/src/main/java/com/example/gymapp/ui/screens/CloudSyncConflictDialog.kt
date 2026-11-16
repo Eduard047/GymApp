@@ -1,24 +1,20 @@
 package com.example.gymapp.ui.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import com.example.gymapp.ui.theme.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
-import com.example.gymapp.ui.theme.TintedButton
+import com.example.gymapp.ui.components.GymAlertDialog
+import com.example.gymapp.ui.components.GymAlertDialogButton
+import com.example.gymapp.ui.components.GymAlertDialogButtonRole
+import com.example.gymapp.ui.theme.Button
 
 @Composable
 internal fun CloudSyncConflictDialog(
@@ -31,15 +27,17 @@ internal fun CloudSyncConflictDialog(
     onUseCloudVersion: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    // GymAlertDialog scrolls its text itself and gives a lone confirm slot the full width, so the
+    // three choices stack as capsules: one filled primary, a red-label neutral one, a neutral "not now".
+    GymAlertDialog(
         onDismissRequest = { if (!resolving) onDismiss() },
-        title = { Text(stringResource(R.string.cloud_sync_conflict_title)) },
+        title = stringResource(R.string.cloud_sync_conflict_title),
         text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(stringResource(R.string.cloud_sync_conflict_description))
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = stringResource(R.string.cloud_sync_conflict_description),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
                 Text(
                     text = stringResource(R.string.cloud_sync_conflict_backup_hint),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -90,26 +88,24 @@ internal fun CloudSyncConflictDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    TintedButton(
+                    GymAlertDialogButton(
                         onClick = onUseCloudVersion,
                         enabled = !resolving && !backingUp,
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 52.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        )
+                        role = GymAlertDialogButtonRole.Destructive
                     ) {
                         Text(stringResource(R.string.cloud_sync_conflict_use_cloud))
                     }
                 }
-                TextButton(
+                GymAlertDialogButton(
                     onClick = onBackupFirst,
                     enabled = !resolving && !backingUp,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 48.dp)
+                        .heightIn(min = 48.dp),
+                    role = GymAlertDialogButtonRole.Cancel
                 ) {
                     Text(stringResource(R.string.cloud_sync_conflict_not_now))
                 }

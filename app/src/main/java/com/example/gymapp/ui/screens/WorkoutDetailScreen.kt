@@ -51,7 +51,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.AlertDialog
 import com.example.gymapp.ui.theme.Button
 import com.example.gymapp.ui.theme.accentMarkColor
 import androidx.compose.material3.ButtonDefaults
@@ -60,7 +59,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.TextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -82,7 +82,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -109,6 +111,9 @@ import com.example.gymapp.garmin.setHeartRateChartPoints
 import com.example.gymapp.garmin.setRecognitionSummary
 import com.example.gymapp.garmin.totalHeartRateZoneSeconds
 import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.GymAlertDialog
+import com.example.gymapp.ui.components.GymAlertDialogButton
+import com.example.gymapp.ui.components.GymAlertDialogButtonRole
 import com.example.gymapp.ui.components.ExerciseMuscleMap
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.HeroPanel
@@ -134,7 +139,6 @@ import com.example.gymapp.util.formatVolumeTotal
 import com.example.gymapp.util.keepNumberWithUnit
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.formattedPluralStringResource
-import com.example.gymapp.ui.theme.TintedButton
 
 // Apple system grey / blue / green / yellow / orange / red (dark set; non-text marks, >= 3:1 on the dark surface).
 private val GARMIN_ZONE_COLORS = listOf(
@@ -622,25 +626,26 @@ internal fun WorkoutDetailScreen(
             details.session.durationSeconds?.let { it > 0L } == true
     } == true
     if (confirmDeleteSession && (isEditingWorkout || isActivityOnlyWorkout)) {
-        AlertDialog(
+        GymAlertDialog(
             onDismissRequest = { confirmDeleteSession = false },
-            title = { Text(text = stringResource(R.string.dialog_delete_workout_title)) },
+            title = stringResource(R.string.dialog_delete_workout_title),
             text = { Text(text = stringResource(R.string.dialog_delete_workout_message)) },
             confirmButton = {
-                TextButton(
+                GymAlertDialogButton(
                     onClick = {
                         confirmDeleteSession = false
                         onDeleteSession()
                     },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
+                    role = GymAlertDialogButtonRole.Destructive
                 ) {
                     Text(text = stringResource(R.string.action_delete))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { confirmDeleteSession = false }) {
+                GymAlertDialogButton(
+                    onClick = { confirmDeleteSession = false },
+                    role = GymAlertDialogButtonRole.Cancel
+                ) {
                     Text(text = stringResource(R.string.dialog_cancel))
                 }
             }
@@ -1636,10 +1641,7 @@ private fun GarminSetEvidenceRow(evidence: GarminSetEvidenceMetrics) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(GymCompactShape)
-            .background(
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                GymCompactShape
-            )
+            .background(MaterialTheme.colorScheme.surfaceVariant, GymCompactShape)
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -1682,10 +1684,7 @@ private fun GarminSetIntervalRow(interval: GarminSetIntervalMetrics) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(GymCompactShape)
-            .background(
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                GymCompactShape
-            )
+            .background(MaterialTheme.colorScheme.surfaceVariant, GymCompactShape)
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -2358,29 +2357,59 @@ private fun WorkoutDetailsEditPanel(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
-            TintedButton(
+            // Date and note share one field grammar (filled tonal, no border), like the iPhone edit form:
+            // a neutral row with the label at the start and the value at the end, not a tinted capsule.
+            Surface(
                 onClick = { showDatePicker = true },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 48.dp)
+                    .semantics { role = Role.Button },
+                shape = GymControlShape,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = MaterialTheme.colorScheme.onSurface
             ) {
-                Icon(imageVector = Icons.Default.Edit, contentDescription = null)
-                Text(
-                    text = DateTimeUtils.formatLongDate(draftDate),
-                    modifier = Modifier.padding(start = 8.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (noteEditable) {
+                        // The panel title is already "Date" when there is no note to edit.
+                        Text(
+                            text = stringResource(R.string.label_workout_date),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        text = DateTimeUtils.formatLongDate(draftDate),
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = if (noteEditable) {
+                            androidx.compose.ui.text.style.TextAlign.End
+                        } else {
+                            androidx.compose.ui.text.style.TextAlign.Start
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
             if (noteEditable) {
-                OutlinedTextField(
+                val noteLabel = stringResource(R.string.label_note)
+                TextField(
                     value = draftNote,
                     onValueChange = {
                         if (it.length <= WorkoutDataLimits.MAX_NOTE_LENGTH) draftNote = it
                     },
-                    label = { Text(stringResource(R.string.label_note)) },
                     placeholder = { Text(stringResource(R.string.hint_note)) },
                     minLines = 2,
                     maxLines = 5,
-                    modifier = Modifier.fillMaxWidth()
+                    shape = GymControlShape,
+                    colors = planEditorFieldColors(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics { contentDescription = noteLabel }
                 )
             }
             Button(

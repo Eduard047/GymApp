@@ -226,24 +226,48 @@ private fun ComparisonMetricCell(
             MaterialTheme.colorScheme.onSurfaceVariant
         }
         val deltaRange = comparisonDeltaRange(metric.previousAndDelta, metric.delta)
-        Text(
-            text = if (deltaRange == null) {
-                AnnotatedString(metric.previousAndDelta)
-            } else {
-                buildAnnotatedString {
-                    append(metric.previousAndDelta)
-                    addStyle(
-                        SpanStyle(color = deltaColor, fontWeight = FontWeight.SemiBold),
-                        deltaRange.first,
-                        deltaRange.last + 1
-                    )
-                }
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 4,
-            overflow = TextOverflow.Ellipsis
-        )
+        // Previous value and change on their own lines, like the iPhone tile, so the "·" separator is
+        // never left hanging at a line break. Only when the delta ends the line (every shipped locale).
+        val previousLine = deltaRange
+            ?.takeIf { it.last + 1 == metric.previousAndDelta.length }
+            ?.let { metric.previousAndDelta.substring(0, it.first).trimEnd(' ', '\u00A0', '·', ',', ':') }
+            ?.takeIf { it.isNotEmpty() }
+        if (previousLine != null) {
+            Text(
+                text = previousLine,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = metric.delta,
+                style = MaterialTheme.typography.bodySmall,
+                color = deltaColor,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        } else {
+            Text(
+                text = if (deltaRange == null) {
+                    AnnotatedString(metric.previousAndDelta)
+                } else {
+                    buildAnnotatedString {
+                        append(metric.previousAndDelta)
+                        addStyle(
+                            SpanStyle(color = deltaColor, fontWeight = FontWeight.SemiBold),
+                            deltaRange.first,
+                            deltaRange.last + 1
+                        )
+                    }
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 

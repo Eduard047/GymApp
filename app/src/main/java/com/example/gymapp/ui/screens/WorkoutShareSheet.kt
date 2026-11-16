@@ -202,7 +202,8 @@ private fun WorkoutShareFriendRow(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+        // Solid inner-tile tone: a half-transparent wash nearly disappears on the dark sheet.
+        color = MaterialTheme.colorScheme.surfaceVariant
     ) {
         Column(
             modifier = Modifier.padding(10.dp),
