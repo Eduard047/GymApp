@@ -4,14 +4,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -26,6 +29,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.ui.components.GymAlertDialog
+import com.example.gymapp.ui.components.GymAlertDialogButton
+import com.example.gymapp.ui.components.GymAlertDialogButtonRole
+import com.example.gymapp.ui.components.tabularDigits
 import com.example.gymapp.util.EXERCISE_REST_MAX_SECONDS
 import com.example.gymapp.util.EXERCISE_REST_MIN_SECONDS
 import com.example.gymapp.util.EXERCISE_REST_STEP_SECONDS
@@ -44,6 +51,9 @@ internal fun ExerciseRestTimeMenuItem(onClick: () -> Unit) {
 /**
  * Small picker for one exercise's rest: a 15 s stepper between 0:15 and 10:00 that starts at the
  * custom rest, else at the [defaultSeconds]. [onSave] takes the chosen seconds, or null for "Use default".
+ *
+ * Laid out like the iPhone rest sheet: tonal round stepper buttons around a tabular clock, and
+ * "Use default" as a separate accent text action above Cancel / Save.
  */
 @Composable
 internal fun ExerciseRestTimeDialog(
@@ -56,11 +66,22 @@ internal fun ExerciseRestTimeDialog(
 ) {
     val initial = (customSeconds ?: defaultSeconds).coerceIn(EXERCISE_REST_MIN_SECONDS, EXERCISE_REST_MAX_SECONDS)
     var seconds by remember { mutableIntStateOf(initial) }
-    AlertDialog(
+    val stepColors = IconButtonDefaults.iconButtonColors(
+        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+        disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    )
+    GymAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.exercise_rest_title)) },
+        title = stringResource(R.string.exercise_rest_title),
         text = {
-            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -68,6 +89,8 @@ internal fun ExerciseRestTimeDialog(
                 ) {
                     IconButton(
                         enabled = seconds > EXERCISE_REST_MIN_SECONDS,
+                        modifier = Modifier.size(48.dp),
+                        colors = stepColors,
                         onClick = {
                             onEdited()
                             seconds = (seconds - EXERCISE_REST_STEP_SECONDS).coerceAtLeast(EXERCISE_REST_MIN_SECONDS)
@@ -77,11 +100,14 @@ internal fun ExerciseRestTimeDialog(
                     }
                     Text(
                         text = restClockLabel(seconds).orEmpty(),
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = MaterialTheme.typography.headlineMedium.tabularDigits(),
+                        color = MaterialTheme.colorScheme.onSurface,
                         textAlign = TextAlign.Center
                     )
                     IconButton(
                         enabled = seconds < EXERCISE_REST_MAX_SECONDS,
+                        modifier = Modifier.size(48.dp),
+                        colors = stepColors,
                         onClick = {
                             onEdited()
                             seconds = (seconds + EXERCISE_REST_STEP_SECONDS).coerceAtMost(EXERCISE_REST_MAX_SECONDS)
@@ -103,19 +129,31 @@ internal fun ExerciseRestTimeDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                if (customSeconds != null) {
+                    TextButton(
+                        onClick = { onSave(null) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.exercise_rest_use_default),
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = { if (customSeconds == null && seconds == initial) onDismiss() else onSave(seconds) }) {
+            GymAlertDialogButton(
+                onClick = { if (customSeconds == null && seconds == initial) onDismiss() else onSave(seconds) }
+            ) {
                 Text(stringResource(R.string.action_save))
             }
         },
         dismissButton = {
-            Row {
-                if (customSeconds != null) {
-                    TextButton(onClick = { onSave(null) }) { Text(stringResource(R.string.exercise_rest_use_default)) }
-                }
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            GymAlertDialogButton(onClick = onDismiss, role = GymAlertDialogButtonRole.Cancel) {
+                Text(stringResource(R.string.action_cancel))
             }
         }
     )

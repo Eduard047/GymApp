@@ -141,7 +141,7 @@ internal fun ExerciseLibraryRow(
                     Text(
                         text = keepShortWordsWithNext(displayName),
                         style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
+                        fontWeight = FontWeight.Normal,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -302,7 +302,12 @@ internal fun ExerciseLibrarySearchAndFilter(
                     Icon(
                         imageVector = Icons.Default.FilterList,
                         contentDescription = stringResource(R.string.exercise_filter_button),
-                        tint = MaterialTheme.colorScheme.primary
+                        // Neutral like the iPhone filter glyph; accent only while a filter or sort is on.
+                        tint = if (tokenLabel != null || hasCustomSort) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
                     )
                 }
                 if (hasCustomSort) {

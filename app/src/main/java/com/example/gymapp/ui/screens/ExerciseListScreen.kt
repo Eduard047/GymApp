@@ -46,7 +46,6 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.AlertDialog
 import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -63,10 +62,9 @@ import com.example.gymapp.ui.components.rememberDiscardGuardedSheetState
 import com.example.gymapp.ui.components.GymMotion
 import com.example.gymapp.ui.components.rememberReduceMotion
 import com.example.gymapp.ui.components.GymSheetCloseRow
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -88,6 +86,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -109,6 +108,9 @@ import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.theme.GymCompactShape
 import com.example.gymapp.ui.components.GymSearchField
 import com.example.gymapp.ui.components.tabularDigits
+import com.example.gymapp.ui.components.GymAlertDialog
+import com.example.gymapp.ui.components.GymAlertDialogButton
+import com.example.gymapp.ui.components.GymAlertDialogButtonRole
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.SettingsRow
 import com.example.gymapp.ui.components.ExerciseMediaPreview
@@ -147,6 +149,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.util.safeGetString
+import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.theme.TintedButton
 
 private const val BACKUP_PREVIEW_CHARS = 4_000
@@ -1402,20 +1405,17 @@ private fun ExerciseDiscardChangesDialog(
     onDiscard: () -> Unit,
     onKeepEditing: () -> Unit
 ) {
-    AlertDialog(
+    GymAlertDialog(
         onDismissRequest = onKeepEditing,
-        title = { Text(stringResource(R.string.exercise_discard_title)) },
+        title = stringResource(R.string.exercise_discard_title),
         text = { Text(stringResource(R.string.workout_plan_discard_message)) },
         confirmButton = {
-            TextButton(onClick = onDiscard) {
-                Text(
-                    text = stringResource(R.string.workout_plan_discard_changes),
-                    color = MaterialTheme.colorScheme.error
-                )
+            GymAlertDialogButton(onClick = onDiscard, role = GymAlertDialogButtonRole.Destructive) {
+                Text(stringResource(R.string.workout_plan_discard_changes))
             }
         },
         dismissButton = {
-            TextButton(onClick = onKeepEditing) {
+            GymAlertDialogButton(onClick = onKeepEditing, role = GymAlertDialogButtonRole.Cancel) {
                 Text(stringResource(R.string.workout_plan_keep_editing))
             }
         }
@@ -1466,6 +1466,9 @@ private fun ExerciseLoadProfileBottomSheetContent(
                     FilterChip(
                         selected = direction == option,
                         onClick = { onDirectionChange(option) },
+                        shape = CircleShape,
+                        colors = exerciseChipColors(),
+                        border = null,
                         label = {
                             Text(
                                 stringResource(
@@ -1501,18 +1504,27 @@ private fun ExerciseLoadProfileBottomSheetContent(
             }
         }
         item {
-            OutlinedTextField(
-                value = weights,
-                onValueChange = onWeightsChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.exercise_load_weights_label)) },
-                supportingText = {
-                    Text(stringResource(R.string.exercise_load_weights_hint))
-                },
-                isError = hasError,
-                minLines = 5,
-                maxLines = 10
-            )
+            // Header above a borderless tonal field, like the direction header and the iPhone editor.
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = stringResource(R.string.exercise_load_weights_label),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                TextField(
+                    value = weights,
+                    onValueChange = onWeightsChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = {
+                        Text(stringResource(R.string.exercise_load_weights_hint))
+                    },
+                    isError = hasError,
+                    minLines = 5,
+                    maxLines = 10,
+                    shape = GymControlShape,
+                    colors = planEditorFieldColors()
+                )
+            }
         }
         if (hasError) {
             item {
@@ -1793,17 +1805,24 @@ internal fun ExerciseMuscleChip(
         },
         leadingIcon = leadingIcon,
         shape = CircleShape,
-        colors = FilterChipDefaults.filterChipColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            labelColor = MaterialTheme.colorScheme.onSurface,
-            selectedContainerColor = brandFillColor(),
-            selectedLabelColor = Color.White,
-            iconColor = MaterialTheme.colorScheme.onSurface,
-            selectedLeadingIconColor = Color.White
-        ),
+        colors = exerciseChipColors(),
         border = null
     )
 }
+
+/**
+ * Selectable chip colours shared with the plan editor's chips: neutral inner-tile fill when idle,
+ * a subtle accent tint with an accent label when selected (never a solid blue block).
+ */
+@Composable
+private fun exerciseChipColors() = FilterChipDefaults.filterChipColors(
+    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+    labelColor = MaterialTheme.colorScheme.onSurface,
+    iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+    selectedLabelColor = MaterialTheme.colorScheme.primary,
+    selectedLeadingIconColor = MaterialTheme.colorScheme.primary
+)
 
 @Composable
 private fun AddExerciseBottomSheetContent(
@@ -1823,13 +1842,19 @@ private fun AddExerciseBottomSheetContent(
             eyebrow = "",
             title = stringResource(R.string.action_add_exercise)
         )
-        OutlinedTextField(
+        val nameLabel = stringResource(R.string.label_exercise_name)
+        TextField(
             value = exerciseName,
             onValueChange = onExerciseNameChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.label_exercise_name)) },
-            placeholder = { Text(stringResource(R.string.hint_exercise_name)) },
-            singleLine = true
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics { contentDescription = nameLabel },
+            // Same placeholder as the iPhone editor ("Exercise name").
+            placeholder = { Text(nameLabel) },
+            isError = hasInputError,
+            singleLine = true,
+            shape = GymControlShape,
+            colors = planEditorFieldColors()
         )
         if (hasInputError) {
             Text(
@@ -1972,12 +1997,18 @@ private fun RenameExerciseBottomSheetContent(
             text = stringResource(R.string.exercise_rename_title),
             style = MaterialTheme.typography.headlineSmall
         )
-        OutlinedTextField(
+        val nameLabel = stringResource(R.string.label_exercise_name)
+        TextField(
             value = displayedExerciseName,
             onValueChange = onExerciseNameChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.label_exercise_name)) },
-            singleLine = true
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics { contentDescription = nameLabel },
+            placeholder = { Text(nameLabel) },
+            isError = hasInputError,
+            singleLine = true,
+            shape = GymControlShape,
+            colors = planEditorFieldColors()
         )
         if (hasInputError) {
             Text(
@@ -2136,12 +2167,12 @@ internal fun BackupJsonBottomSheetContent(
     }
 
     if (showClipboardWarning) {
-        AlertDialog(
+        GymAlertDialog(
             onDismissRequest = { showClipboardWarning = false },
-            title = { Text(stringResource(R.string.backup_copy_warning_title)) },
+            title = stringResource(R.string.backup_copy_warning_title),
             text = { Text(stringResource(R.string.backup_copy_warning_message)) },
             confirmButton = {
-                Button(
+                GymAlertDialogButton(
                     onClick = {
                         if (!SensitiveClipboard.copyBackup(context, json)) {
                             shareError = LocalizedText(R.string.backup_clipboard_too_large)
@@ -2153,7 +2184,10 @@ internal fun BackupJsonBottomSheetContent(
                 }
             },
             dismissButton = {
-                TintedButton(onClick = { showClipboardWarning = false }) {
+                GymAlertDialogButton(
+                    onClick = { showClipboardWarning = false },
+                    role = GymAlertDialogButtonRole.Cancel
+                ) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }
@@ -2192,13 +2226,15 @@ internal fun ImportBackupBottomSheetContent(
             text = stringResource(R.string.backup_import_title),
             style = MaterialTheme.typography.headlineSmall
         )
-        OutlinedTextField(
+        TextField(
             value = importJson,
             onValueChange = onImportJsonChange,
             modifier = Modifier.fillMaxWidth(),
             minLines = 6,
             maxLines = 12,
-            placeholder = { Text(stringResource(R.string.backup_import_placeholder)) }
+            placeholder = { Text(stringResource(R.string.backup_import_placeholder)) },
+            shape = GymControlShape,
+            colors = planEditorFieldColors()
         )
         TintedButton(
             onClick = { filePicker.launch(BACKUP_FILE_MIME_TYPES) },
@@ -2908,6 +2944,7 @@ private fun HistoryStat(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis
             )
@@ -2915,7 +2952,7 @@ private fun HistoryStat(
         Text(
             text = value,
             style = MaterialTheme.typography.titleSmall.tabularDigits(),
-            color = MaterialTheme.colorScheme.primary,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )

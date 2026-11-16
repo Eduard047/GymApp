@@ -1002,18 +1002,20 @@ private struct ExerciseEditorSheet: View {
                             .pickerStyle(.menu)
 
                             Text("Quick machine-stack presets")
-                                .font(.caption.weight(.semibold))
+                                .font(.footnote.weight(.medium))
                                 .foregroundStyle(.secondary)
 
                             HStack(spacing: 10) {
                                 Button("2.5 kg") { applyPreset(step: 2.5, maximum: 200) }
                                     .buttonStyle(.bordered)
+                                    .buttonBorderShape(.capsule)
                                 Button("5 kg") { applyPreset(step: 5, maximum: 300) }
                                     .buttonStyle(.bordered)
+                                    .buttonBorderShape(.capsule)
                             }
 
                             Text("Available weights (kg), one per line")
-                                .font(.caption.weight(.semibold))
+                                .font(.footnote.weight(.medium))
                                 .foregroundStyle(.secondary)
 
                             TextEditor(text: $allowedWeightsText)
