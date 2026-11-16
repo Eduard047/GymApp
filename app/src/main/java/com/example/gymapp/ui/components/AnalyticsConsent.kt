@@ -18,13 +18,18 @@ internal fun rememberConversionAnalytics(): ConversionAnalytics =
 
 /**
  * One-time ad-measurement consent, shown on first launch (before sign-in, so sign-up can be counted)
- * once the intro has left. Two equal-weight choices; it cannot be dismissed without choosing. Never
+ * once the intro has left and no first-run tutorial is showing or due (never two overlays at once).
+ * Two equal-weight choices; it cannot be dismissed without choosing. Never
  * shown in builds that cannot measure. The same choice can be changed later in Settings.
  */
 @Composable
-fun AnalyticsConsentDialog(conversionAnalytics: ConversionAnalytics, introVisible: Boolean) {
+fun AnalyticsConsentDialog(
+    conversionAnalytics: ConversionAnalytics,
+    introVisible: Boolean,
+    tutorialPending: Boolean
+) {
     val consent by conversionAnalytics.consent.collectAsState()
-    if (introVisible || consent != null || !conversionAnalytics.available) return
+    if (introVisible || tutorialPending || consent != null || !conversionAnalytics.available) return
     AlertDialog(
         onDismissRequest = {},
         title = { Text(text = stringResource(R.string.analytics_consent_title)) },

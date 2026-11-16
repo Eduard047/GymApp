@@ -5298,7 +5298,18 @@ internal fun GymAppRoot(
                 )
             }
             }
-            AnalyticsConsentDialog(conversionAnalytics = conversionAnalytics, introVisible = showIntro)
+            // Wait while the first-run tutorial is on screen or due, so two overlays never stack.
+            val consentWaitsForTutorial = tutorialMode != null ||
+                (!UiAuditHooks.isActive && expectedTutorialBinding != null &&
+                    trainingGuidanceManager.shouldRunAutomaticTutorial(
+                        FIRST_RUN_TUTORIAL_VERSION,
+                        expectedTutorialBinding
+                    ))
+            AnalyticsConsentDialog(
+                conversionAnalytics = conversionAnalytics,
+                introVisible = showIntro,
+                tutorialPending = consentWaitsForTutorial
+            )
             // Mounted once, last: above content, the tab bar and the intro/tutorial layers. Sheets host
             // their own copy (GymModalBottomSheet) because they render in a separate window.
             val density = LocalDensity.current

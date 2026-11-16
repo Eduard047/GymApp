@@ -873,7 +873,7 @@ public struct WorkoutsView: View {
                     Text(gymText(
                         "Use the suggestion now or build the workout yourself. You can adjust every setting.",
                         "Скористайтеся порадою зараз або створіть тренування самостійно. Усі налаштування можна змінити.",
-                        "Используйте рекомендацию сейчас или соберите тренировку сам. Все настройки можно изменить.",
+                        "Используйте рекомендацию сейчас или соберите тренировку сами. Все настройки можно изменить.",
                         languageCode: languageCode
                     ))
                     .font(.subheadline)
