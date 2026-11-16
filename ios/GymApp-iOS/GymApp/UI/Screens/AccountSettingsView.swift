@@ -794,6 +794,8 @@ private struct CopyableIDRow: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(Capsule().fill(GymTheme.primary.opacity(0.12)))
+                // The capsule is about 26 pt tall; the tap area reaches 44 pt.
+                .gymExpandedTapArea(vertical: 9)
             }
             .buttonStyle(.plain)
             .accessibilityHint(

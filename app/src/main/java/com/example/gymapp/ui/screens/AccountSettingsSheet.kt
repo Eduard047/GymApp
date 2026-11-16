@@ -6,7 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -29,6 +31,7 @@ import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import com.example.gymapp.ui.components.GymModalBottomSheet
@@ -51,7 +54,10 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.push.PushUiState
@@ -59,9 +65,8 @@ import com.example.gymapp.sync.CloudSyncPhase
 import com.example.gymapp.sync.CloudSyncUiStatus
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.SectionTitle
-import com.example.gymapp.ui.components.SettingsPanel
+import com.example.gymapp.ui.components.HeroTone
 import com.example.gymapp.ui.components.SettingsRow
-import com.example.gymapp.ui.components.SettingsRowDivider
 import com.example.gymapp.ui.components.SettingsRowTrailing
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
@@ -118,19 +123,11 @@ internal fun AccountSettingsSheet(
                 .padding(bottom = GymSpacing.XXLarge),
             verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = stringResource(R.string.account_sheet_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .weight(1f)
-                        .semantics { heading() }
-                )
-                TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text(stringResource(R.string.account_sheet_done))
-                }
-            }
+            AccountSheetHeader(
+                title = stringResource(R.string.account_sheet_title),
+                doneLabel = stringResource(R.string.account_sheet_done),
+                onDone = onDismiss
+            )
             AccountIdentityCard(state)
             if (state.isCloudAccount) {
                 if (cloudSyncChoiceRequired) {
@@ -149,7 +146,7 @@ internal fun AccountSettingsSheet(
                     onOpenSettings = onOpenPushSettings
                 )
             } else {
-                SettingsPanel {
+                AccountSheetPanel {
                     SettingsRow(
                         icon = Icons.Outlined.Storage,
                         title = stringResource(R.string.account_backup_title),
@@ -164,7 +161,7 @@ internal fun AccountSettingsSheet(
             }
             AccountLinksPanel(context)
             if (state.isCloudAccount || state.canLogout) {
-                SettingsPanel {
+                AccountSheetPanel {
                     if (state.isCloudAccount) {
                         SettingsRow(
                             icon = Icons.Default.Lock,
@@ -172,7 +169,7 @@ internal fun AccountSettingsSheet(
                             onClick = onChangePassword,
                             enabled = actionsEnabled
                         )
-                        if (state.canLogout) SettingsRowDivider()
+                        if (state.canLogout) AccountSheetDivider()
                     }
                     if (state.canLogout) {
                         SettingsRow(
@@ -191,14 +188,83 @@ internal fun AccountSettingsSheet(
                     }
                 }
             }
-            AccountDeleteRow(
-                isCloudAccount = state.isCloudAccount,
-                enabled = actionsEnabled,
-                onDeleteAccount = onDeleteAccount,
-                onDeleteLocalProfile = onDeleteLocalProfile
-            )
+            // Outside the groups, with its icon on the same column as the rows inside them.
+            Box(modifier = Modifier.padding(horizontal = AccountSheetPanelInset)) {
+                AccountDeleteRow(
+                    isCloudAccount = state.isCloudAccount,
+                    enabled = actionsEnabled,
+                    onDeleteAccount = onDeleteAccount,
+                    onDeleteLocalProfile = onDeleteLocalProfile
+                )
+            }
         }
     }
+}
+
+private val AccountSheetPanelInset = GymSpacing.Large
+private val AccountSheetHeaderGap = GymSpacing.Small
+
+/**
+ * Sheet header like the iPhone one: a 17sp semibold title centred in the sheet with a semibold "Done"
+ * at the end. When a long title or a large font would run under the button, the title moves to the
+ * start and wraps beside it instead.
+ */
+@Composable
+private fun AccountSheetHeader(title: String, doneLabel: String, onDone: () -> Unit) {
+    Layout(
+        modifier = Modifier.fillMaxWidth(),
+        content = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.semantics { heading() }
+            )
+            TextButton(onClick = onDone, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(doneLabel, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+            }
+        }
+    ) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val gap = AccountSheetHeaderGap.roundToPx()
+        val done = measurables[1].measure(Constraints(maxWidth = width))
+        val centredRoom = width - 2 * (done.width + gap)
+        val centred = measurables[0].maxIntrinsicWidth(Constraints.Infinity) <= centredRoom
+        val titleRoom = if (centred) centredRoom else (width - done.width - gap).coerceAtLeast(0)
+        val titlePlaceable = measurables[0].measure(Constraints(maxWidth = titleRoom))
+        val height = maxOf(titlePlaceable.height, done.height)
+        layout(width, height) {
+            titlePlaceable.placeRelative(
+                x = if (centred) (width - titlePlaceable.width) / 2 else 0,
+                y = (height - titlePlaceable.height) / 2
+            )
+            done.placeRelative(x = width - done.width, y = (height - done.height) / 2)
+        }
+    }
+}
+
+/**
+ * A group of rows on the sheet. The sheet ground is `surface`, the same tone as a regular panel, so
+ * groups here take the inner-tile tone (light grey on white, `#2C2C2E` on `#1C1C1E`) to read as
+ * separate cards the way the iPhone account sheet does.
+ */
+@Composable
+private fun AccountSheetPanel(content: @Composable ColumnScope.() -> Unit) {
+    AppPanel(modifier = Modifier.fillMaxWidth(), containerColor = HeroTone.tile) {
+        Column(
+            modifier = Modifier.padding(horizontal = AccountSheetPanelInset),
+            content = content
+        )
+    }
+}
+
+/** Hairline between two rows of an [AccountSheetPanel], starting under the title; `outline` stays visible on the tile tone. */
+@Composable
+private fun AccountSheetDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 40.dp),
+        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
+    )
 }
 
 /** Plain destructive row: no panel or filled background; each account type keeps its own flow. */
@@ -234,7 +300,7 @@ private fun AccountDeleteRow(
 
 @Composable
 private fun AccountIdentityCard(state: ExerciseListUiState) {
-    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
+    AppPanel(modifier = Modifier.fillMaxWidth(), containerColor = HeroTone.tile) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -369,7 +435,7 @@ private fun copyAccountIdentifier(context: Context, label: String, value: String
 private fun AccountLinksPanel(context: Context) {
     val openLabel = stringResource(R.string.account_open_in_browser)
     Column(verticalArrangement = Arrangement.spacedBy(GymSpacing.Small)) {
-        SettingsPanel {
+        AccountSheetPanel {
             SettingsRow(
                 icon = Icons.Outlined.PanTool,
                 title = stringResource(R.string.auth_privacy_policy),
@@ -379,7 +445,7 @@ private fun AccountLinksPanel(context: Context) {
                 onClickLabel = openLabel,
                 trailing = SettingsRowTrailing.ExternalLink
             )
-            SettingsRowDivider()
+            AccountSheetDivider()
             SettingsRow(
                 icon = Icons.AutoMirrored.Outlined.HelpOutline,
                 title = stringResource(R.string.profile_support_action),
@@ -420,7 +486,7 @@ private fun PushNotificationCard(
             else -> R.string.push_status_waiting
         }
     )
-    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = state.registered) {
+    AppPanel(modifier = Modifier.fillMaxWidth(), containerColor = HeroTone.tile) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -484,7 +550,7 @@ private fun CloudSyncStatusCard(
             CloudSyncPhase.Error -> R.string.cloud_sync_status_error
         }
     )
-    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
+    AppPanel(modifier = Modifier.fillMaxWidth(), containerColor = HeroTone.tile) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -541,7 +607,7 @@ private fun CloudSyncChoiceCard(
 ) {
     AppPanel(
         modifier = Modifier.fillMaxWidth(),
-        highlighted = true
+        containerColor = HeroTone.tile
     ) {
         Column(
             modifier = Modifier.padding(16.dp),

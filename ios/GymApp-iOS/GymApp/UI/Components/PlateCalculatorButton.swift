@@ -18,7 +18,8 @@ struct PlateCalculatorButton: View {
                 .padding(.vertical, 4)
                 .background(Capsule().fill(GymTheme.primary.opacity(0.12)))
                 .fixedSize()
-                .contentShape(Capsule())
+                // The capsule is about 24 pt tall; the tap area reaches 44 pt.
+                .gymExpandedTapArea(vertical: 10)
         }
         .buttonStyle(.plain)
 #if DEBUG

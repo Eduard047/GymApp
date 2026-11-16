@@ -1,5 +1,16 @@
 package com.example.gymapp.ui.components
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.BasicAlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.LineBreak
@@ -1065,3 +1076,166 @@ fun gymSwitchColors(): SwitchColors = SwitchDefaults.colors(
     checkedThumbColor = Color.White,
     checkedBorderColor = brandFillColor()
 )
+
+/** What a [GymAlertDialogButton] does, which picks its label colour. */
+enum class GymAlertDialogButtonRole {
+    /** Backs out without changes: neutral label. */
+    Cancel,
+    /** Confirms a safe action: accent label. */
+    Default,
+    /** Confirms a deletion or another action that cannot be undone: red label. */
+    Destructive
+}
+
+/**
+ * Confirmation dialog in the iPhone alert layout: a 17sp semibold title and secondary body text, both
+ * start-aligned, over two equal-width neutral capsules (dismiss at the start, confirm at the end). When
+ * the two labels do not fit side by side (long translations, large fonts) the capsules stack full
+ * width, confirm on top. The text scrolls when it is taller than the window, so the buttons stay on screen.
+ *
+ * The container is `surface` and the capsules are the inner-tile tone (white + light grey, or
+ * `#1C1C1E` + `#2C2C2E`), so every label keeps >= 4.5:1. Enter and exit are the platform dialog window
+ * transition, which follows the system animation scale. Buttons are [GymAlertDialogButton]s.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GymAlertDialog(
+    onDismissRequest: () -> Unit,
+    title: String,
+    confirmButton: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    dismissButton: (@Composable () -> Unit)? = null,
+    properties: DialogProperties = DialogProperties(),
+    text: (@Composable () -> Unit)? = null
+) {
+    BasicAlertDialog(
+        onDismissRequest = onDismissRequest,
+        modifier = modifier,
+        properties = properties
+    ) {
+        Surface(
+            shape = GymPanelShape,
+            color = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp
+        ) {
+            Column(modifier = Modifier.padding(GymSpacing.Large)) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState())
+                        .padding(start = GymSpacing.Small, top = GymSpacing.Small, end = GymSpacing.Small),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.semantics { heading() }
+                    )
+                    if (text != null) {
+                        CompositionLocalProvider(
+                            LocalContentColor provides MaterialTheme.colorScheme.onSurfaceVariant
+                        ) {
+                            ProvideTextStyle(MaterialTheme.typography.bodyMedium, text)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(GymSpacing.XLarge))
+                GymAlertDialogButtons(confirmButton = confirmButton, dismissButton = dismissButton)
+            }
+        }
+    }
+}
+
+/** Equal halves when both labels fit on one line each, otherwise stacked full width (confirm first). */
+@Composable
+private fun GymAlertDialogButtons(
+    confirmButton: @Composable () -> Unit,
+    dismissButton: (@Composable () -> Unit)?
+) {
+    Layout(
+        modifier = Modifier.fillMaxWidth(),
+        content = {
+            Box(propagateMinConstraints = true) { confirmButton() }
+            if (dismissButton != null) Box(propagateMinConstraints = true) { dismissButton() }
+        }
+    ) { measurables, constraints ->
+        val gap = GymSpacing.Small.roundToPx()
+        val confirm = measurables[0]
+        val dismiss = measurables.getOrNull(1)
+        val confirmWidth = confirm.maxIntrinsicWidth(Constraints.Infinity)
+        val dismissWidth = dismiss?.maxIntrinsicWidth(Constraints.Infinity) ?: 0
+        val width = if (constraints.hasBoundedWidth) {
+            constraints.maxWidth
+        } else {
+            maxOf(confirmWidth, dismissWidth) * 2 + gap
+        }
+        val half = (width - gap) / 2
+        when {
+            dismiss == null -> {
+                val placeable = confirm.measure(Constraints.fixedWidth(width))
+                layout(width, placeable.height) { placeable.placeRelative(0, 0) }
+            }
+            confirmWidth <= half && dismissWidth <= half -> {
+                val height = maxOf(confirm.minIntrinsicHeight(half), dismiss.minIntrinsicHeight(half))
+                val slot = Constraints.fixed(half, height)
+                val dismissPlaceable = dismiss.measure(slot)
+                val confirmPlaceable = confirm.measure(slot)
+                layout(width, height) {
+                    dismissPlaceable.placeRelative(0, 0)
+                    confirmPlaceable.placeRelative(width - half, 0)
+                }
+            }
+            else -> {
+                val slot = Constraints.fixedWidth(width)
+                val confirmPlaceable = confirm.measure(slot)
+                val dismissPlaceable = dismiss.measure(slot)
+                layout(width, confirmPlaceable.height + gap + dismissPlaceable.height) {
+                    confirmPlaceable.placeRelative(0, 0)
+                    dismissPlaceable.placeRelative(0, confirmPlaceable.height + gap)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A [GymAlertDialog] action: neutral tonal capsule at least 48dp tall with a 16sp semibold label
+ * coloured by [role]. Pressing scales it to 0.97 (skipped when animations are off) on top of the
+ * app-wide press tint.
+ */
+@Composable
+fun GymAlertDialogButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    role: GymAlertDialogButtonRole = GymAlertDialogButtonRole.Default,
+    content: @Composable RowScope.() -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val labelColor = when (role) {
+        GymAlertDialogButtonRole.Cancel -> colors.onSurface
+        GymAlertDialogButtonRole.Default -> colors.primary
+        GymAlertDialogButtonRole.Destructive -> colors.error
+    }
+    val interactionSource = remember { MutableInteractionSource() }
+    Button(
+        onClick = onClick,
+        modifier = modifier
+            .heightIn(min = GymSpacing.MinimumTouch)
+            .pressScale(interactionSource),
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = HeroTone.tile,
+            contentColor = labelColor,
+            disabledContainerColor = HeroTone.tile,
+            disabledContentColor = labelColor.copy(alpha = 0.38f)
+        ),
+        elevation = null,
+        contentPadding = PaddingValues(horizontal = GymSpacing.Medium, vertical = GymSpacing.Small),
+        interactionSource = interactionSource
+    ) {
+        ProvideTextStyle(MaterialTheme.typography.titleSmall) { content() }
+    }
+}

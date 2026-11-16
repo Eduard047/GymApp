@@ -5,15 +5,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import com.example.gymapp.ui.components.GymAlertDialog
+import com.example.gymapp.ui.components.GymAlertDialogButton
+import com.example.gymapp.ui.components.GymAlertDialogButtonRole
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
@@ -125,17 +128,16 @@ private fun PersistedDeleteConfirmationDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
-    AlertDialog(
+    GymAlertDialog(
         onDismissRequest = {
             if (!isDeleting) onDismiss()
         },
-        title = { Text(title) },
+        title = title,
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(message)
                 Text(
                     text = impact,
-                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error
                 )
                 if (error != null) {
@@ -148,37 +150,47 @@ private fun PersistedDeleteConfirmationDialog(
             }
         },
         confirmButton = {
-            TextButton(
+            GymAlertDialogButton(
                 onClick = onConfirm,
                 enabled = !isDeleting && error == null,
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error
-                )
+                role = GymAlertDialogButtonRole.Destructive
             ) {
-                if (isDeleting) {
+                // Both labels are always laid out, so the button keeps one width (and the dialog one
+                // button arrangement) when "Delete" turns into the "Deleting…" progress label.
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = stringResource(R.string.action_delete),
+                        maxLines = 1,
+                        modifier = if (isDeleting) HiddenLabel else Modifier
+                    )
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = if (isDeleting) Modifier else HiddenLabel
                     ) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(16.dp),
                             color = MaterialTheme.colorScheme.error,
                             strokeWidth = 2.dp
                         )
-                        Text(stringResource(R.string.action_deleting))
+                        Text(stringResource(R.string.action_deleting), maxLines = 1)
                     }
-                } else {
-                    Text(stringResource(R.string.action_delete))
                 }
             }
         },
         dismissButton = {
-            TextButton(
+            GymAlertDialogButton(
                 onClick = onDismiss,
-                enabled = !isDeleting
+                enabled = !isDeleting,
+                role = GymAlertDialogButtonRole.Cancel
             ) {
-                Text(stringResource(R.string.dialog_cancel))
+                Text(stringResource(R.string.dialog_cancel), maxLines = 1)
             }
         }
     )
 }
+
+/** Keeps a label's size in the layout while hiding it from sight and from accessibility services. */
+private val HiddenLabel = Modifier
+    .alpha(0f)
+    .clearAndSetSemantics { }

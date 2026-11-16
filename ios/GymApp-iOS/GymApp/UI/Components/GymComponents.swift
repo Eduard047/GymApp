@@ -443,6 +443,17 @@ public extension View {
     }
 }
 
+extension View {
+    /// Grows the tap area of a compact capsule (a chip inside a row or a card) by `vertical` points
+    /// above and below, so it reaches the 44 pt minimum without changing its look or the layout
+    /// around it. Apply it to the button's label, after the capsule background.
+    func gymExpandedTapArea(vertical: CGFloat) -> some View {
+        padding(.vertical, vertical)
+            .contentShape(Rectangle())
+            .padding(.vertical, -vertical)
+    }
+}
+
 /// Shared motion tokens (DESIGN.md `motion`). `standard` is the critically damped
 /// default for layout and state changes; `quick` is the shorter spring for
 /// small toggles (disclosure, expand/collapse); `gentle` is the softer spring for
