@@ -54,3 +54,12 @@ Play Console privacy policy URL stays `https://gymapptracker.com/privacy-policy.
 4. **Deletion question.** Account deletion removes the Supabase account but cannot delete data already held in Google Analytics, which is not tied to an account and expires with the retention setting. Confirm how Play wants this answered for the new data types; the privacy policy says the data is kept up to 14 months after collection.
 5. **Existing answers.** There is no earlier Data safety record in the repository. Also note that the Android manifest declares `RECORD_AUDIO` (voice workout draft), while the privacy policy says phone apps do not ask for microphone access; reconcile the policy and the existing Data safety answer separately.
 6. **Android app strings.** `account_privacy_caption` in `app/src/main/res/values*/strings.xml` says GymApp has no advertising, cross-app tracking, or sale of personal data. This should be reviewed by the app code owner now that optional analytics exists.
+
+## Optional tips (Google Play Billing)
+
+The Profile > Help > "Support the developer" screen sells six optional, consumable in-app products (`support_tip_1`, `support_tip_2`, `support_tip_3`, `support_tip_5`, `support_tip_10`, `support_tip_20`; contract in `shared/support-tips-v1.json`). Nothing is unlocked or changed by a purchase.
+
+- Payments are processed entirely by Google Play. The app never receives or stores card or other payment details, has no server-side purchase validation, and does not send, log or store purchase tokens (they are used only to consume the purchase).
+- The app adds no new data collection or sharing of its own, so no new Data safety data type is expected. **Check in Play Console:** whether the "Financial info > Purchase history" type should be answered for in-app purchases made through Google Play Billing (Google processes it; the app does not collect it). Treat this as unconfirmed until reviewed in the Data safety form.
+- Play Console steps (not done by code): create the six in-app products with the ids above, type consumable / managed one-time product, price roughly 0.99 / 1.99 / 2.99 / 4.99 / 9.99 / 19.99 USD, status Active; add the license testers; the first release containing the Billing library must be uploaded to a testing track before the products can load.
+- The privacy policy gets one short paragraph about optional tips (see `ios/GymApp-iOS/AppStore/privacy-policy.html`); it must be live before the Android release that contains the tip screen.

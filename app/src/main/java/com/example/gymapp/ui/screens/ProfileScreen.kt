@@ -125,11 +125,12 @@ import com.example.gymapp.util.getString
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.ui.theme.TintedButton
 
-/** The Profile root and the two screens it pushes: Friends & live, and the Garmin watch. */
+/** The Profile root and the screens it pushes: Friends & live, the Garmin watch and the optional tip jar. */
 private enum class ProfileDestination {
     Root,
     Friends,
-    Garmin
+    Garmin,
+    Support
 }
 
 /** Where the "С другом" pill on Today asks Profile to open. */
@@ -366,6 +367,13 @@ internal fun ProfileScreen(
                     }
                 }
             }
+            ProfileDestination.Support -> {
+                ProfileSubScreenHeader(
+                    title = stringResource(R.string.support_tips_title),
+                    onBack = { destination = ProfileDestination.Root }
+                )
+                SupportTipsScreen(modifier = Modifier.weight(1f))
+            }
             ProfileDestination.Root -> {
                 LazyColumn(
                     modifier = Modifier.weight(1f),
@@ -386,6 +394,7 @@ internal fun ProfileScreen(
                         onOpenFriends = { destination = ProfileDestination.Friends },
                         onOpenAccountSettings = { showAccountSettings = true },
                         onOpenGarmin = { destination = ProfileDestination.Garmin },
+                        onOpenSupport = { destination = ProfileDestination.Support },
                         garminDeviceState = garminDeviceState,
                         backupMessage = accountState.backupMessage,
                         onExportBackup = onExportBackup,
@@ -671,6 +680,7 @@ private fun LazyListScope.profileRootContent(
     onOpenFriends: () -> Unit,
     onOpenAccountSettings: () -> Unit,
     onOpenGarmin: () -> Unit,
+    onOpenSupport: () -> Unit,
     garminDeviceState: GarminDeviceUiState,
     backupMessage: com.example.gymapp.util.LocalizedText?,
     onExportBackup: () -> Unit,
@@ -788,12 +798,18 @@ private fun LazyListScope.profileRootContent(
     item {
         val helpTitle = stringResource(R.string.profile_help_title)
         val helpSubtitle = stringResource(R.string.profile_help_replay_tour)
+        val supportTitle = stringResource(R.string.support_tips_title)
         GroupedSection(header = stringResource(R.string.profile_group_help)) {
             row(
                 title = helpTitle,
                 subtitle = helpSubtitle,
                 chevron = true,
                 onClick = onShowTutorial
+            )
+            row(
+                title = supportTitle,
+                chevron = true,
+                onClick = onOpenSupport
             )
         }
     }

@@ -1,0 +1,167 @@
+{
+  "identifier": "3D9C7E02",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "6700000001",
+      "localizations": [
+        {
+          "description": "Optional tip. Unlocks nothing.",
+          "displayName": "Support the developer 0.99",
+          "locale": "en_US"
+        },
+        {
+          "description": "Необов’язкова підтримка. Нічого не відкриває.",
+          "displayName": "Підтримати розробника 0.99",
+          "locale": "uk"
+        },
+        {
+          "description": "Необязательная поддержка. Ничего не открывает.",
+          "displayName": "Поддержать разработчика 0.99",
+          "locale": "ru"
+        }
+      ],
+      "productID": "com.setforge.gymapp.ios.tip1",
+      "referenceName": "Support tip 0.99",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "6700000002",
+      "localizations": [
+        {
+          "description": "Optional tip. Unlocks nothing.",
+          "displayName": "Support the developer 1.99",
+          "locale": "en_US"
+        },
+        {
+          "description": "Необов’язкова підтримка. Нічого не відкриває.",
+          "displayName": "Підтримати розробника 1.99",
+          "locale": "uk"
+        },
+        {
+          "description": "Необязательная поддержка. Ничего не открывает.",
+          "displayName": "Поддержать разработчика 1.99",
+          "locale": "ru"
+        }
+      ],
+      "productID": "com.setforge.gymapp.ios.tip2",
+      "referenceName": "Support tip 1.99",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "2.99",
+      "familyShareable": false,
+      "internalID": "6700000003",
+      "localizations": [
+        {
+          "description": "Optional tip. Unlocks nothing.",
+          "displayName": "Support the developer 2.99",
+          "locale": "en_US"
+        },
+        {
+          "description": "Необов’язкова підтримка. Нічого не відкриває.",
+          "displayName": "Підтримати розробника 2.99",
+          "locale": "uk"
+        },
+        {
+          "description": "Необязательная поддержка. Ничего не открывает.",
+          "displayName": "Поддержать разработчика 2.99",
+          "locale": "ru"
+        }
+      ],
+      "productID": "com.setforge.gymapp.ios.tip3",
+      "referenceName": "Support tip 2.99",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "4.99",
+      "familyShareable": false,
+      "internalID": "6700000004",
+      "localizations": [
+        {
+          "description": "Optional tip. Unlocks nothing.",
+          "displayName": "Support the developer 4.99",
+          "locale": "en_US"
+        },
+        {
+          "description": "Необов’язкова підтримка. Нічого не відкриває.",
+          "displayName": "Підтримати розробника 4.99",
+          "locale": "uk"
+        },
+        {
+          "description": "Необязательная поддержка. Ничего не открывает.",
+          "displayName": "Поддержать разработчика 4.99",
+          "locale": "ru"
+        }
+      ],
+      "productID": "com.setforge.gymapp.ios.tip5",
+      "referenceName": "Support tip 4.99",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "9.99",
+      "familyShareable": false,
+      "internalID": "6700000005",
+      "localizations": [
+        {
+          "description": "Optional tip. Unlocks nothing.",
+          "displayName": "Support the developer 9.99",
+          "locale": "en_US"
+        },
+        {
+          "description": "Необов’язкова підтримка. Нічого не відкриває.",
+          "displayName": "Підтримати розробника 9.99",
+          "locale": "uk"
+        },
+        {
+          "description": "Необязательная поддержка. Ничего не открывает.",
+          "displayName": "Поддержать разработчика 9.99",
+          "locale": "ru"
+        }
+      ],
+      "productID": "com.setforge.gymapp.ios.tip10",
+      "referenceName": "Support tip 9.99",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "19.99",
+      "familyShareable": false,
+      "internalID": "6700000006",
+      "localizations": [
+        {
+          "description": "Optional tip. Unlocks nothing.",
+          "displayName": "Support the developer 19.99",
+          "locale": "en_US"
+        },
+        {
+          "description": "Необов’язкова підтримка. Нічого не відкриває.",
+          "displayName": "Підтримати розробника 19.99",
+          "locale": "uk"
+        },
+        {
+          "description": "Необязательная поддержка. Ничего не открывает.",
+          "displayName": "Поддержать разработчика 19.99",
+          "locale": "ru"
+        }
+      ],
+      "productID": "com.setforge.gymapp.ios.tip20",
+      "referenceName": "Support tip 19.99",
+      "type": "Consumable"
+    }
+  ],
+  "settings": {
+    "_failTransactionsEnabled": false,
+    "_locale": "en_US",
+    "_storefront": "USA",
+    "_storeKitErrors": []
+  },
+  "subscriptionGroups": [],
+  "version": {
+    "major": 4,
+    "minor": 0
+  }
+}

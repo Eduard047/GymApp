@@ -27,7 +27,9 @@ internal enum class GymHapticEvent {
     ReorderPickup,
     /** A long-press that opens a menu. */
     LongPress,
-    PersonalRecord
+    PersonalRecord,
+    /** The thank-you after an optional tip. */
+    SupportThanks
 }
 
 /** The [HapticFeedbackConstants] value for [event] on a device running [sdkInt]. */
@@ -54,7 +56,7 @@ internal fun gymHapticConstant(event: GymHapticEvent, sdkInt: Int): Int = when (
     GymHapticEvent.DestructiveConfirm, GymHapticEvent.LongPress, GymHapticEvent.PersonalRecord ->
         HapticFeedbackConstants.LONG_PRESS
     // The foreground rest-end buzz; a notification channel owns the background one, so no Vibrator here.
-    GymHapticEvent.RestEnd ->
+    GymHapticEvent.RestEnd, GymHapticEvent.SupportThanks ->
         if (sdkInt >= Build.VERSION_CODES.R) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.LONG_PRESS
     GymHapticEvent.Error ->
         if (sdkInt >= Build.VERSION_CODES.R) HapticFeedbackConstants.REJECT else HapticFeedbackConstants.LONG_PRESS

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "tips": [
+    { "key": "tip_1", "usd": "0.99", "android": "support_tip_1", "ios": "com.setforge.gymapp.ios.tip1" },
+    { "key": "tip_2", "usd": "1.99", "android": "support_tip_2", "ios": "com.setforge.gymapp.ios.tip2" },
+    { "key": "tip_3", "usd": "2.99", "android": "support_tip_3", "ios": "com.setforge.gymapp.ios.tip3" },
+    { "key": "tip_5", "usd": "4.99", "android": "support_tip_5", "ios": "com.setforge.gymapp.ios.tip5" },
+    { "key": "tip_10", "usd": "9.99", "android": "support_tip_10", "ios": "com.setforge.gymapp.ios.tip10" },
+    { "key": "tip_20", "usd": "19.99", "android": "support_tip_20", "ios": "com.setforge.gymapp.ios.tip20" }
+  ]
+}

@@ -1608,6 +1608,15 @@
     <string name="progress_section_goals">Цели</string>
     <string name="profile_help_title">Помощь</string>
     <string name="profile_help_replay_tour">Короткий обзор приложения</string>
+    <string name="support_tips_title">Поддержать разработчика</string>
+    <string name="support_tips_intro">GymApp бесплатный и останется бесплатным. Если приложение помогает, можно поддержать разработку — это ничего не открывает и ничего не меняет.</string>
+    <string name="support_tips_action">Поддержать — %1$s</string>
+    <string name="support_tips_thanks_title">Спасибо!</string>
+    <string name="support_tips_thanks_body">Спасибо за поддержку!</string>
+    <string name="support_tips_offline">Нет соединения. Повторите позже.</string>
+    <string name="support_tips_unavailable">Покупки сейчас недоступны.</string>
+    <string name="support_tips_pending">Платёж ожидает подтверждения. Спасибо!</string>
+    <string name="support_tips_error">Не удалось завершить покупку. Повторите позже.</string>
     <string name="profile_friends_live_title">Друзья и live</string>
     <string name="profile_friends_live_requires_cloud">Нужен облачный аккаунт</string>
     <string name="profile_support_action">Поддержка</string>

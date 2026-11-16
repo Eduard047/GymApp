@@ -275,6 +275,8 @@ struct ProfileView: View {
             }
             ProfileGroup(title: gymText("Help", "Допомога", "Помощь", languageCode: languageCode)) {
                 helpRow
+                settingsRowDivider
+                supportRow
             }
         }
     }
@@ -473,6 +475,17 @@ struct ProfileView: View {
                     languageCode: languageCode
                 )
             )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Optional tip jar: a pushed screen, never a popup or a prompt.
+    private var supportRow: some View {
+        NavigationLink {
+            SupportTipsView()
+                .gymTopBannerInset()
+        } label: {
+            ProfileRowLabel(title: SupportTipsCopy.title(languageCode))
         }
         .buttonStyle(.plain)
     }

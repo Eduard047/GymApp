@@ -1558,6 +1558,15 @@
     <string name="progress_section_goals">Goals</string>
     <string name="profile_help_title">Help</string>
     <string name="profile_help_replay_tour">Quick tour of the app</string>
+    <string name="support_tips_title">Support the developer</string>
+    <string name="support_tips_intro">GymApp is free and will stay free. If it helps you, you can support its development. It doesn\'t unlock or change anything.</string>
+    <string name="support_tips_action">Support — %1$s</string>
+    <string name="support_tips_thanks_title">Thank you!</string>
+    <string name="support_tips_thanks_body">Thanks for your support!</string>
+    <string name="support_tips_offline">No connection. Try again later.</string>
+    <string name="support_tips_unavailable">Purchases aren\'t available right now.</string>
+    <string name="support_tips_pending">Your payment is waiting for approval. Thank you!</string>
+    <string name="support_tips_error">Couldn\'t complete the purchase. Try again later.</string>
     <string name="profile_friends_live_title">Friends &amp; live</string>
     <string name="profile_friends_live_requires_cloud">Requires a cloud account</string>
     <string name="profile_support_action">Support</string>

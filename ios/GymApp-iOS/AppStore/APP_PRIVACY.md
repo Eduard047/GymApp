@@ -56,6 +56,7 @@ Training Profile — split, 2–6 training days per week, goal, and energy balan
 - Legacy leaderboard moderation reports remain private; the clients no longer submit new cross-account leaderboard reports.
 - Supabase is the hosting/authentication processor for account, cloud-state, profile, and Garmin cloud records. Data remains linked by the Supabase UUID.
 - Depending on platform and only when system alerts are enabled, Apple Push Notification service, Firebase Cloud Messaging, or the browser's push service processes the account-bound delivery address and minimal notification payload described above.
+- Optional "Support the developer" tips are consumable in-app purchases processed by Apple (StoreKit 2) and, on Android, Google Play. The app receives no card/payment details, stores no purchase records, and has no server-side validation; nothing is unlocked. No new collected data type is declared (the purchase flow itself is handled by Apple/Google). In App Store Connect, the six consumable products and their localizations must exist and be Ready to Submit with the build.
 - Garmin data is processed only when the user chooses the Garmin sync feature. The opaque device token is used only to pair and deliver/retrieve workout plans.
 - No data is sold, shared with data brokers, used for targeted ads, or combined with other companies' app/site data.
 

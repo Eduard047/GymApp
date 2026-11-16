@@ -4,6 +4,8 @@ import SwiftUI
 final class AppBootstrap: ObservableObject {
     let auth: AuthService
     let nativePush: NativePushManager
+    /// Owned here so the StoreKit transaction listener runs from launch.
+    let supportTips = SupportTipStore()
 
     @Published private(set) var appState: AppState?
     @Published private(set) var startupErrorMessage: String?
@@ -70,6 +72,7 @@ struct GymAppIOS: App {
                         .environmentObject(appState.workoutStore)
                         .environmentObject(bootstrap.auth)
                         .environmentObject(bootstrap.nativePush)
+                        .environmentObject(bootstrap.supportTips)
                         .environment(appState.toasts)
                         .onOpenURL { url in
                             if appState.handleActiveWorkoutURL(url) { return }

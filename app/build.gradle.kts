@@ -383,6 +383,7 @@ dependencies {
     implementation("io.github.jan-tennert.supabase:realtime-kt")
     implementation("io.ktor:ktor-client-okhttp:2.3.12")
     implementation("com.garmin.connectiq:ciq-companion-app-sdk:2.4.0@aar")
+    implementation("com.android.billingclient:billing-ktx:8.3.0")
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
