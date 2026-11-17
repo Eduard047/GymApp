@@ -1988,7 +1988,7 @@ struct AddWorkoutView: View {
         latestSmartPlan = plan
         show(
             gymText(
-                "Smart Coach built a \(plan.focus.displayName.lowercased()) workout.",
+                "Smart Coach built your \(plan.focus.displayName.lowercased()) workout.",
                 "Розумний тренер створив тренування «\(plan.focus.displayName.lowercased())».",
                 "Умный тренер создал тренировку «\(plan.focus.displayName.lowercased())».",
                 languageCode: gymCurrentLanguageCode()
