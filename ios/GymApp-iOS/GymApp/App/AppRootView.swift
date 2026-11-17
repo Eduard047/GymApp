@@ -1,4 +1,5 @@
 import SwiftUI
+import StoreKit
 import UniformTypeIdentifiers
 
 @MainActor
@@ -495,6 +496,7 @@ private struct MainTabShell: View {
     /// `ActiveWorkoutView`/`ActiveWorkoutStore` themselves.
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @Environment(\.openURL) private var openURL
+    @Environment(\.requestReview) private var requestReview
 
     @State private var selectedTab: Tab
     @State private var workoutPath: [WorkoutRoute] = []
@@ -581,6 +583,28 @@ private struct MainTabShell: View {
         _selectedTab = State(initialValue: tutorialTab ?? requestedTab ?? .workouts)
         _tutorialStepIndex = State(initialValue: tutorialScreenshotIndex)
         _tutorialIsManualReplay = State(initialValue: tutorialScreenshotIndex != nil)
+    }
+
+    /// Asks for an App Store rating right after the user taps Done on the post-workout
+    /// summary, under the `ReviewPromptPolicy` limits. The attempt is recorded up front:
+    /// the system decides whether the sheet actually appears.
+    private func requestReviewIfEligible(afterWorkout id: UUID) {
+        let reviewStore = ReviewPromptStore()
+        let now = Date()
+        guard ReviewPromptPolicy.isEligible(
+            savedWorkoutCount: store.workouts.count,
+            loggedSetsInWorkout: store.workout(id: id)?.setCount ?? 0,
+            lastRequestAt: reviewStore.lastRequestAt,
+            requestCount: reviewStore.requestCount,
+            now: now,
+            isDemo: ReviewPromptPolicy.isDemoOrAutomation
+        ) else { return }
+        reviewStore.recordRequest(at: now)
+        Task { @MainActor in
+            // Let the navigation pop back to the workouts list finish first.
+            try? await Task.sleep(for: .milliseconds(600))
+            requestReview()
+        }
     }
 
     var body: some View {
@@ -2001,7 +2025,10 @@ private struct MainTabShell: View {
                             if !workoutPath.isEmpty { workoutPath.removeLast() }
                             workoutPath.append(.detail(workoutID))
                         },
-                        onDone: { workoutPath.removeAll() }
+                        onDone: {
+                            workoutPath.removeAll()
+                            requestReviewIfEligible(afterWorkout: id)
+                        }
                     )
                 case .ranks:
                     RanksView(store: store)

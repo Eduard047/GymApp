@@ -158,6 +158,7 @@ import com.example.gymapp.ui.screens.FinishedLiveWorkoutDialog
 import com.example.gymapp.ui.screens.ProgressHubScreen
 import com.example.gymapp.ui.screens.RanksScreen
 import com.example.gymapp.ui.screens.retainedDraftSummary
+import com.example.gymapp.review.ReviewPromptRequester
 import com.example.gymapp.ui.screens.PostWorkoutSummaryScreen
 import com.example.gymapp.ui.screens.PasswordUpdateScreen
 import com.example.gymapp.ui.screens.WorkoutDetailScreen
@@ -3968,6 +3969,7 @@ internal fun GymAppRoot(
                                 )
                             )
                             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+                            val summaryContext = LocalContext.current
 
                             PostWorkoutSummaryScreen(
                                 uiState = uiState,
@@ -3992,6 +3994,17 @@ internal fun GymAppRoot(
                                             launchSingleTop = true
                                             restoreState = true
                                         }
+                                    }
+                                    // Native review prompt: only from this Done tap, after navigating back.
+                                    val reviewWorkoutCount = uiState.workoutCount
+                                    val reviewLoggedSets = uiState.setCount
+                                    coroutineScope.launch {
+                                        delay(600)
+                                        ReviewPromptRequester.maybeRequest(
+                                            context = summaryContext,
+                                            savedWorkoutCount = reviewWorkoutCount,
+                                            loggedSetsInWorkout = reviewLoggedSets
+                                        )
                                     }
                                 },
                                 onFeedbackSelected = viewModel::selectFeedback,

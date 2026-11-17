@@ -384,6 +384,8 @@ dependencies {
     implementation("io.ktor:ktor-client-okhttp:2.3.12")
     implementation("com.garmin.connectiq:ciq-companion-app-sdk:2.4.0@aar")
     implementation("com.android.billingclient:billing-ktx:8.3.0")
+    // Native in-app review prompt; used only from review/ReviewPrompt.kt after the post-workout summary.
+    implementation(libs.play.review.ktx)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
