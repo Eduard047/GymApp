@@ -1,12 +1,12 @@
-# GymApp — App Store metadata (English, U.S.)
+# Gym Workout Tracker — App Store metadata (English, U.S.)
 
 ## App information
 
-- **Name:** GymApp
+- **Name:** Gym Workout Tracker
 - **Subtitle (30 characters max):** Train smarter. Track progress.
 - **Primary category:** Health & Fitness
 - **Secondary category:** Sports
-- **Content rights:** GymApp owns or has licensed all submitted app content. Attach the open-source notices and any third-party asset licenses if App Review requests them.
+- **Content rights:** Gym Workout Tracker owns or has licensed all submitted app content. Attach the open-source notices and any third-party asset licenses if App Review requests them.
 - **Copyright:** 2026 Martynenko Eduard
 
 ## Version information
