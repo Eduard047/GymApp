@@ -107,6 +107,16 @@ internal class PhoneWearSyncManager(
 
     fun isPinnedNode(sourceNodeId: String): Boolean = bindingManager.isPinnedNode(sourceNodeId)
 
+    /** The linked (pinned) watch node, or null when no watch is linked. Reads local prefs only. */
+    fun pinnedWatchNodeId(): String? = bindingManager.pinnedSourceNodeId()
+
+    /** Unlinks the watch (Watches screen). Deletes no workouts; the watch may link again later. */
+    fun unlinkWatch(): Boolean {
+        val cleared = bindingManager.clearPinnedSource()
+        if (cleared) lastFullSyncCompletedAt.clear()
+        return cleared
+    }
+
     suspend fun sendCurrentFullSync(sourceNodeId: String, force: Boolean = false) {
         val (session, binding) = currentSessionAndBinding()
         sendFullSync(sourceNodeId, session, binding, force)

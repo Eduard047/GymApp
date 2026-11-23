@@ -1456,6 +1456,15 @@
     <string name="garmin_profile_connected">Connected now</string>
     <string name="garmin_profile_offline">Not connected now</string>
     <string name="garmin_profile_paired">Paired</string>
+    <string name="watches_wear_title">Wear OS</string>
+    <string name="watches_wear_caption">Samsung Galaxy Watch, Pixel Watch and other Wear OS watches</string>
+    <string name="watches_wear_not_linked">Install GymApp on your watch and open it — it links to this phone automatically.</string>
+    <string name="watches_wear_default_name">Wear OS watch</string>
+    <string name="watches_wear_linked">Linked</string>
+    <string name="watches_wear_unlink_action">Unlink watch</string>
+    <string name="watches_wear_unlink_title">Unlink this watch?</string>
+    <string name="watches_wear_unlink_body">Workouts not yet sent from the watch stay on the watch.</string>
+    <string name="watches_wear_unlink_confirm">Unlink</string>
     <string name="garmin_connect_action">Connect</string>
     <string name="garmin_connecting">Connecting…</string>
     <string name="garmin_connect_failed">Couldn’t connect. Open the app on the watch and try again.</string>

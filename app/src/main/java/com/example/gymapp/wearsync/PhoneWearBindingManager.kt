@@ -1,6 +1,7 @@
 package com.example.gymapp.wearsync
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.databaseName
 import java.security.MessageDigest
@@ -24,8 +25,11 @@ internal data class PhoneWearTrustedSource(
  * generations are global and monotonically increasing so a watch cannot replay a binding after
  * logout, account switching, or a new cloud login generation.
  */
-internal class PhoneWearBindingManager(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+internal class PhoneWearBindingManager(private val prefs: SharedPreferences) {
+    constructor(context: Context) : this(
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    )
+
     private val lock = Any()
 
     fun synchronizeSession(session: AccountSession?): PhoneWearAccountBinding = synchronized(lock) {
@@ -129,6 +133,18 @@ internal class PhoneWearBindingManager(context: Context) {
             ?.takeIf { it.matches(Regex("^[0-9a-f]{64}$")) }
             ?: return null
         PhoneWearTrustedSource(nodeId, ownerId)
+    }
+
+    /**
+     * The user's "Unlink watch": forgets only the pinned watch node and its owner. Account
+     * generations, sync revisions, workouts and receipts stay untouched, so nothing is deleted on
+     * either side; a later valid `request_full` from a single connected watch may pin again.
+     */
+    fun clearPinnedSource(): Boolean = synchronized(lock) {
+        prefs.edit()
+            .remove(KEY_SOURCE_NODE_ID)
+            .remove(KEY_SOURCE_OWNER_ID)
+            .commit()
     }
 
     fun pinnedSourceNodeId(): String? = synchronized(lock) {

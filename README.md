@@ -44,6 +44,7 @@ optional.
 | Platform | Technology | Availability |
 | --- | --- | --- |
 | Android | Kotlin, Jetpack Compose, Room | Production APK and Google Play AAB |
+| Wear OS | Kotlin, Jetpack Compose, Wearable Data Layer | Watch AAB built from source; ships next to the phone app on Google Play |
 | iOS | SwiftUI, iOS 17+ | Source and universal Simulator build; App Store IPA is not published yet |
 | Browser | Full offline-capable workout application, shared-workout handoff, privacy, and support | Live at [gymapptracker.com](https://gymapptracker.com/) |
 | Garmin | Connect IQ 3.2+ | Signed Connect IQ Store upload package |
@@ -60,6 +61,23 @@ and Russian. Android and iOS support light and dark appearance.
 - Exercise discovery, frequency sorting, and muscle-group mapping.
 - Profile, backups, redacted diagnostics, missions, ranks, and achievements.
 - Offline-first local accounts with optional authenticated cloud sync.
+
+## Wear OS app
+
+The `wear/` module is a companion for Wear OS watches (Samsung Galaxy Watch,
+Pixel Watch, and others): the active plan on the watch, set logging, and heart
+rate. It talks only to the GymApp phone app over the Google Play services
+Wearable Data Layer and has no account or network access of its own.
+
+- **Linking:** install GymApp on the watch and open it. The phone links the first
+  watch that asks for a full sync while it is the only connected watch, and then
+  trusts only that watch. Profile → Watches shows the link and offers
+  **Unlink watch**; workouts not yet sent from the watch stay on the watch.
+- **Debug build:** `./gradlew :wear:assembleDebug` (tests: `:wear:testDebugUnitTest`).
+- **Release build:** `scripts/build-wear-release-aab.ps1` builds and verifies
+  the signed `gymapp-wear-release.aab` with the same `GYMAPP_RELEASE_*` signing
+  environment as the phone and fails closed without it. The watch version code
+  defaults to the phone `appVersionCode` plus 50,000,000.
 
 ## Downloads
 

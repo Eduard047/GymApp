@@ -1,0 +1,629 @@
+# Builds and verifies the signed Wear OS release AAB (`:wear:bundleRelease`) for Google Play.
+# Mirrors build-play-release-aab.ps1: the same GYMAPP_RELEASE_* signing environment (fails closed
+# without it), an explicit artifact name (gymapp-wear-release.aab), and no Git or working-tree
+# changes. The watch has no Firebase configuration, so the phone's Firebase gate does not apply.
+# The watch must keep the phone's package ID and signer: the Data Layer pairs the two by both.
+param(
+    [string]$VersionName,
+    # The watch versionCode. Defaults to the phone appVersionCode + 50000000 (wear/build.gradle.kts).
+    [int]$VersionCode,
+    # The phone versionCode the watch build derives from; defaults to appVersionCode in gradle.properties.
+    [int]$PhoneVersionCode
+)
+
+$ErrorActionPreference = "Stop"
+
+$expectedPackageId = "com.setforge.gymapp"
+$wearVersionCodeOffset = 50000000
+
+function Get-Sha256Hex {
+    param([byte[]]$Bytes)
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hash = $sha256.ComputeHash($Bytes)
+    } finally {
+        $sha256.Dispose()
+    }
+    return -join ($hash | ForEach-Object { $_.ToString('x2') })
+}
+
+function Get-StreamSha256Hex {
+    param([System.IO.Stream]$Stream)
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hash = $sha256.ComputeHash($Stream)
+    } finally {
+        $sha256.Dispose()
+    }
+    return -join ($hash | ForEach-Object { $_.ToString('x2') })
+}
+
+function Get-ReleaseKeystoreCertificateSha256 {
+    param(
+        [string]$KeytoolPath,
+        [string]$KeystorePath,
+        [string]$KeyAlias,
+        [string]$StorePassword,
+        [string]$StoreType
+    )
+
+    $passwordEnvironmentName = "GYMAPP_RELEASE_STOREPASS_$PID"
+    $previousPassword = [Environment]::GetEnvironmentVariable($passwordEnvironmentName, 'Process')
+    try {
+        [Environment]::SetEnvironmentVariable(
+            $passwordEnvironmentName,
+            $StorePassword,
+            'Process'
+        )
+        $keytoolArguments = @(
+            '-J-Duser.language=en',
+            '-J-Duser.country=US',
+            '-exportcert',
+            '-rfc',
+            '-keystore', $KeystorePath,
+            '-alias', $KeyAlias,
+            '-storepass:env', $passwordEnvironmentName
+        )
+        if (-not [string]::IsNullOrWhiteSpace($StoreType)) {
+            $keytoolArguments += @('-storetype', $StoreType)
+        }
+        $certificateOutput = @(& $KeytoolPath @keytoolArguments 2>&1)
+        $keytoolExitCode = $LASTEXITCODE
+    } finally {
+        [Environment]::SetEnvironmentVariable(
+            $passwordEnvironmentName,
+            $previousPassword,
+            'Process'
+        )
+    }
+
+    if ($keytoolExitCode -ne 0) {
+        throw "Could not read the configured release signing certificate."
+    }
+    $certificateText = $certificateOutput -join "`n"
+    $certificateMatch = [regex]::Match(
+        $certificateText,
+        '(?s)-----BEGIN CERTIFICATE-----\s*(?<body>[A-Za-z0-9+/=\r\n]+?)\s*-----END CERTIFICATE-----'
+    )
+    if (-not $certificateMatch.Success) {
+        throw "Could not parse the configured release signing certificate."
+    }
+    $certificateBase64 = $certificateMatch.Groups['body'].Value -replace '\s', ''
+    try {
+        $certificateBytes = [Convert]::FromBase64String($certificateBase64)
+    } catch {
+        throw "Could not parse the configured release signing certificate."
+    }
+    return (Get-Sha256Hex $certificateBytes)
+}
+
+function ConvertFrom-JavaPropertyEscapes {
+    param([string]$Value)
+
+    if ([string]::IsNullOrEmpty($Value)) {
+        return ''
+    }
+
+    $builder = [System.Text.StringBuilder]::new()
+    $protectedLength = 0
+    $index = 0
+    while ($index -lt $Value.Length) {
+        $character = $Value[$index]
+        if ($character -ne '\' -or $index -eq $Value.Length - 1) {
+            [void]$builder.Append($character)
+            $index++
+            continue
+        }
+
+        $escaped = $Value[$index + 1]
+        $index += 2
+        switch ($escaped) {
+            't' { [void]$builder.Append("`t") }
+            'n' { [void]$builder.Append("`n") }
+            'r' { [void]$builder.Append("`r") }
+            'f' { [void]$builder.Append("`f") }
+            'u' {
+                $hex = if ($index + 4 -le $Value.Length) { $Value.Substring($index, 4) } else { '' }
+                if ($hex -match '^[0-9A-Fa-f]{4}$') {
+                    [void]$builder.Append([char][Convert]::ToInt32($hex, 16))
+                    $index += 4
+                } else {
+                    [void]$builder.Append('u')
+                }
+            }
+            default { [void]$builder.Append($escaped) }
+        }
+        # An escaped character is data, so trailing-whitespace trimming must not remove it.
+        $protectedLength = $builder.Length
+    }
+
+    $decoded = $builder.ToString()
+    $trimmed = $decoded.Substring($protectedLength).TrimEnd()
+    return $decoded.Substring(0, $protectedLength) + $trimmed
+}
+
+function Resolve-AndroidSdkPath {
+    param([string]$ProjectRoot)
+
+    $candidates = [System.Collections.Generic.List[string]]::new()
+    foreach ($environmentPath in @($env:ANDROID_SDK_ROOT, $env:ANDROID_HOME)) {
+        if (-not [string]::IsNullOrWhiteSpace($environmentPath)) {
+            $candidates.Add($environmentPath)
+        }
+    }
+
+    $localPropertiesPath = Join-Path $ProjectRoot 'local.properties'
+    if (Test-Path -LiteralPath $localPropertiesPath) {
+        foreach ($line in Get-Content -LiteralPath $localPropertiesPath) {
+            if ($line -match '^\s*sdk\.dir\s*=\s*(.+)$') {
+                $candidates.Add((ConvertFrom-JavaPropertyEscapes $matches[1]))
+            }
+        }
+    }
+
+    $userProfilePath = [Environment]::GetFolderPath('UserProfile')
+    if ($isWindowsPlatform -and $env:LOCALAPPDATA) {
+        $candidates.Add((Join-Path $env:LOCALAPPDATA 'Android\Sdk'))
+    } elseif (-not [string]::IsNullOrWhiteSpace($userProfilePath)) {
+        $candidates.Add((Join-Path $userProfilePath 'Library/Android/sdk'))
+        $candidates.Add((Join-Path $userProfilePath 'Android/Sdk'))
+    }
+
+    foreach ($candidate in $candidates) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and
+            (Test-Path -LiteralPath (Join-Path $candidate 'build-tools'))) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+    throw "Android SDK build tools were not found for release verification."
+}
+
+function Resolve-AndroidBuildTool {
+    param(
+        [string]$AndroidSdkPath,
+        [string]$ToolName
+    )
+
+    $buildToolsRoot = Join-Path $AndroidSdkPath 'build-tools'
+    $candidates = Get-ChildItem -LiteralPath $buildToolsRoot -Directory |
+        Sort-Object {
+            try { [version]$_.Name } catch { [version]'0.0' }
+        } -Descending
+    $executableNames = if ($isWindowsPlatform) {
+        @("$ToolName.exe", "$ToolName.bat", $ToolName)
+    } else {
+        @($ToolName)
+    }
+    foreach ($candidate in $candidates) {
+        foreach ($executableName in $executableNames) {
+            $toolPath = Join-Path $candidate.FullName $executableName
+            if (Test-Path -LiteralPath $toolPath -PathType Leaf) {
+                return $toolPath
+            }
+        }
+    }
+    throw "Android SDK tool '$ToolName' was not found for release verification."
+}
+
+function Assert-ZipArchiveEntries {
+    param(
+        [string]$ArchivePath,
+        [string[]]$RequiredEntries,
+        [switch]$RequireSingleJarSigner
+    )
+
+    try {
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($ArchivePath)
+    } catch {
+        throw "Release AAB is not a valid ZIP archive."
+    }
+    try {
+        if ($archive.Entries.Count -eq 0) {
+            throw "Release AAB is empty."
+        }
+        foreach ($requiredEntry in $RequiredEntries) {
+            if ($null -eq $archive.GetEntry($requiredEntry)) {
+                throw "Release AAB is missing a required entry."
+            }
+        }
+        $buffer = New-Object byte[] 81920
+        foreach ($entry in $archive.Entries) {
+            if ($entry.FullName.EndsWith('/')) {
+                continue
+            }
+            $stream = $entry.Open()
+            try {
+                while ($stream.Read($buffer, 0, $buffer.Length) -gt 0) {
+                    # Reading every entry to EOF detects truncated/invalid compressed data.
+                }
+            } finally {
+                $stream.Dispose()
+            }
+        }
+        if ($RequireSingleJarSigner) {
+            $signatureMetadata = @(
+                $archive.Entries |
+                    Where-Object { $_.FullName -match '^META-INF/[^/]+\.SF$' }
+            )
+            $signatureBlocks = @(
+                $archive.Entries |
+                    Where-Object { $_.FullName -match '^META-INF/[^/]+\.(RSA|DSA|EC)$' }
+            )
+            if ($signatureMetadata.Count -ne 1 -or $signatureBlocks.Count -ne 1) {
+                throw "Release AAB must contain exactly one JAR signer."
+            }
+        }
+    } finally {
+        $archive.Dispose()
+    }
+}
+
+function Get-ZipEntrySha256 {
+    param(
+        [string]$ArchivePath,
+        [string]$EntryName
+    )
+
+    try {
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($ArchivePath)
+    } catch {
+        throw "Could not open a release manifest container."
+    }
+    try {
+        $entry = $archive.GetEntry($EntryName)
+        if ($null -eq $entry) {
+            throw "A release manifest container is missing its manifest."
+        }
+        $stream = $entry.Open()
+        try {
+            return (Get-StreamSha256Hex $stream)
+        } finally {
+            $stream.Dispose()
+        }
+    } finally {
+        $archive.Dispose()
+    }
+}
+
+function Assert-ReleaseManifestMetadata {
+    param(
+        [string]$MetadataPath,
+        [int]$ExpectedVersionCode,
+        [string]$ExpectedVersionName
+    )
+
+    if (-not (Test-Path -LiteralPath $MetadataPath)) {
+        throw "Release AAB manifest metadata was not generated."
+    }
+    try {
+        $metadata = Get-Content -LiteralPath $MetadataPath -Raw | ConvertFrom-Json
+    } catch {
+        throw "Release AAB manifest metadata is invalid."
+    }
+    $elements = @($metadata.elements)
+    if ($metadata.artifactType.type -ne 'MERGED_MANIFESTS' -or
+        $metadata.applicationId -ne $expectedPackageId -or
+        $metadata.variantName -ne 'release' -or
+        $elements.Count -ne 1 -or
+        [string]($elements[0].outputFile) -ne 'AndroidManifest.xml' -or
+        [long]($elements[0].versionCode) -ne [long]$ExpectedVersionCode -or
+        [string]($elements[0].versionName) -cne $ExpectedVersionName) {
+        throw "Release AAB metadata does not match the requested production build."
+    }
+}
+
+function Assert-AaptReleaseIdentity {
+    param(
+        [string]$Aapt2Path,
+        [string]$ManifestContainerPath,
+        [int]$ExpectedVersionCode,
+        [string]$ExpectedVersionName
+    )
+
+    $badgingOutput = @(& $Aapt2Path dump badging $ManifestContainerPath 2>&1)
+    $aaptExitCode = $LASTEXITCODE
+    if ($aaptExitCode -ne 0) {
+        throw "Could not inspect the release AAB manifest."
+    }
+    $badgingText = $badgingOutput -join "`n"
+    $packageMatch = [regex]::Match(
+        $badgingText,
+        "(?m)^package: name='(?<package>[^']+)' versionCode='(?<code>[0-9]+)' versionName='(?<name>[^']*)'"
+    )
+    if (-not $packageMatch.Success -or
+        $packageMatch.Groups['package'].Value -ne $expectedPackageId -or
+        [long]$packageMatch.Groups['code'].Value -ne [long]$ExpectedVersionCode -or
+        $packageMatch.Groups['name'].Value -cne $ExpectedVersionName) {
+        throw "Release AAB manifest does not match the requested production build."
+    }
+    if ($badgingText -match '(?m)^application-debuggable(?:\s|$)' -or
+        $badgingText -match '(?m)^application-testOnly(?:\s|$)') {
+        throw "Release AAB must be non-debuggable and non-test-only."
+    }
+}
+
+function Assert-AabSignature {
+    param(
+        [string]$JarsignerPath,
+        [string]$KeytoolPath,
+        [string]$BundlePath,
+        [string]$KeystorePath,
+        [string]$StorePassword,
+        [string]$StoreType,
+        [string]$ExpectedCertificateSha256
+    )
+
+    $passwordEnvironmentName = "GYMAPP_RELEASE_STOREPASS_$PID"
+    $previousPassword = [Environment]::GetEnvironmentVariable($passwordEnvironmentName, 'Process')
+    try {
+        [Environment]::SetEnvironmentVariable(
+            $passwordEnvironmentName,
+            $StorePassword,
+            'Process'
+        )
+        $jarsignerArguments = @(
+            '-J-Duser.language=en',
+            '-J-Duser.country=US',
+            '-verify',
+            '-strict',
+            '-verbose',
+            '-certs',
+            '-keystore', $KeystorePath,
+            '-storepass:env', $passwordEnvironmentName
+        )
+        if (-not [string]::IsNullOrWhiteSpace($StoreType)) {
+            $jarsignerArguments += @('-storetype', $StoreType)
+        }
+        $jarsignerArguments += $BundlePath
+        $jarsignerOutput = @(& $JarsignerPath @jarsignerArguments 2>&1)
+        $jarsignerExitCode = $LASTEXITCODE
+    } finally {
+        [Environment]::SetEnvironmentVariable(
+            $passwordEnvironmentName,
+            $previousPassword,
+            'Process'
+        )
+    }
+    $jarsignerText = $jarsignerOutput -join "`n"
+    if ($jarsignerExitCode -ne 0 -or
+        $jarsignerText -notmatch '(?im)^jar verified\.\s*$') {
+        throw "Release AAB JAR signature verification failed."
+    }
+
+    $printCertificateArguments = @(
+        '-J-Duser.language=en',
+        '-J-Duser.country=US',
+        '-printcert',
+        '-jarfile', $BundlePath
+    )
+    $certificateOutput = @(& $KeytoolPath @printCertificateArguments 2>&1)
+    $keytoolExitCode = $LASTEXITCODE
+    if ($keytoolExitCode -ne 0) {
+        throw "Could not read the release AAB signing certificate."
+    }
+    $certificateText = $certificateOutput -join "`n"
+    $certificateMatch = [regex]::Match(
+        $certificateText,
+        '(?im)^\s*SHA256:\s*(?<digest>(?:[0-9A-F]{2}:){31}[0-9A-F]{2})\s*$'
+    )
+    if (-not $certificateMatch.Success) {
+        throw "Could not parse the release AAB signing certificate."
+    }
+    $artifactCertificateSha256 = $certificateMatch.Groups['digest'].Value.Replace(':', '').ToLowerInvariant()
+    if ($artifactCertificateSha256 -cne $ExpectedCertificateSha256.ToLowerInvariant()) {
+        throw "Release AAB signer does not match the configured release keystore."
+    }
+}
+
+$projectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+Set-Location $projectRoot
+
+$isWindowsPlatform = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+$javaExecutableName = if ($isWindowsPlatform) { "java.exe" } else { "java" }
+$gradleWrapperPath = Join-Path $projectRoot $(if ($isWindowsPlatform) { "gradlew.bat" } else { "gradlew" })
+$javaExePath = $null
+if ($env:JAVA_HOME) {
+    $candidate = Join-Path $env:JAVA_HOME "bin/$javaExecutableName"
+    if (Test-Path $candidate) {
+        $javaExePath = $candidate
+    }
+}
+
+if (-not $javaExePath) {
+    $fallbackHomes = if ($isWindowsPlatform) {
+        @(
+            "$env:ProgramFiles\Android\Android Studio\jbr",
+            "$env:ProgramFiles\Java\jdk-21",
+            "$env:ProgramFiles\Java\jdk-17"
+        )
+    } else {
+        @(
+            "/Applications/Android Studio.app/Contents/jbr/Contents/Home",
+            "/opt/android-studio/jbr",
+            "/usr/lib/jvm/java-21-openjdk"
+        )
+    }
+
+    foreach ($javaHomeCandidate in $fallbackHomes) {
+        $candidate = Join-Path $javaHomeCandidate "bin/$javaExecutableName"
+        if (Test-Path $candidate) {
+            $env:JAVA_HOME = $javaHomeCandidate
+            $javaExePath = $candidate
+            break
+        }
+    }
+}
+
+if (-not $javaExePath) {
+    $javaCommand = Get-Command java -ErrorAction SilentlyContinue
+    if ($javaCommand) {
+        $javaExePath = $javaCommand.Source
+        $env:JAVA_HOME = Split-Path -Parent (Split-Path -Parent $javaExePath)
+    }
+}
+
+if (-not $javaExePath) {
+    throw "Java not found. Set JAVA_HOME or install a JDK."
+}
+
+$javaBinPath = Split-Path -Parent $javaExePath
+$keytoolExecutableName = if ($isWindowsPlatform) { 'keytool.exe' } else { 'keytool' }
+$jarsignerExecutableName = if ($isWindowsPlatform) { 'jarsigner.exe' } else { 'jarsigner' }
+$keytoolPath = Join-Path $javaBinPath $keytoolExecutableName
+$jarsignerPath = Join-Path $javaBinPath $jarsignerExecutableName
+if (-not (Test-Path -LiteralPath $keytoolPath -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $jarsignerPath -PathType Leaf)) {
+    throw "keytool and jarsigner must be available next to the selected Java runtime."
+}
+
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+if (-not (Test-Path $gradleWrapperPath)) {
+    throw "Gradle wrapper not found at: $gradleWrapperPath"
+}
+
+$keystorePath = $env:GYMAPP_RELEASE_KEYSTORE_PATH
+$releaseKeyAlias = $env:GYMAPP_RELEASE_KEY_ALIAS
+$releaseStorePassword = $env:GYMAPP_RELEASE_STORE_PASSWORD
+$releaseKeyPassword = $env:GYMAPP_RELEASE_KEY_PASSWORD
+$releaseStoreType = $env:GYMAPP_RELEASE_STORE_TYPE
+if (@($keystorePath, $releaseKeyAlias, $releaseStorePassword, $releaseKeyPassword) |
+    Where-Object { [string]::IsNullOrWhiteSpace($_) }) {
+    throw "Release signing requires all GYMAPP_RELEASE_* environment variables."
+}
+if (-not [System.IO.Path]::IsPathRooted($keystorePath)) {
+    throw "GYMAPP_RELEASE_KEYSTORE_PATH must be an absolute path outside the repository."
+}
+$keystorePath = [System.IO.Path]::GetFullPath($keystorePath)
+$repositoryPrefix = [System.IO.Path]::GetFullPath($projectRoot).TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+if ($keystorePath.StartsWith($repositoryPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "The release keystore must be stored outside the repository."
+}
+if (-not (Test-Path -LiteralPath $keystorePath -PathType Leaf)) {
+    throw "The external release keystore file was not found."
+}
+
+$gradlePropertiesPath = Join-Path $projectRoot "gradle.properties"
+if (-not (Test-Path $gradlePropertiesPath)) {
+    throw "gradle.properties not found at: $gradlePropertiesPath"
+}
+$releaseProperties = @{}
+foreach ($line in Get-Content $gradlePropertiesPath) {
+    if ($line -match '^\s*([^#!\s][^=]*)=(.*)$') {
+        $releaseProperties[$matches[1].Trim()] = $matches[2].Trim()
+    }
+}
+
+if (-not $PhoneVersionCode) {
+    $configuredVersionCode = 0
+    if (-not [int]::TryParse($releaseProperties['appVersionCode'], [ref]$configuredVersionCode) -or
+        $configuredVersionCode -le 0) {
+        throw "appVersionCode must be a positive integer in gradle.properties or supplied with -PhoneVersionCode."
+    }
+    $PhoneVersionCode = $configuredVersionCode
+}
+if ($PhoneVersionCode -le 0 -or $PhoneVersionCode -gt 2100000000) {
+    throw "PhoneVersionCode must be between 1 and 2100000000."
+}
+
+if (-not $VersionCode) {
+    $VersionCode = $PhoneVersionCode + $wearVersionCodeOffset
+}
+
+if (-not $VersionName) {
+    $VersionName = $releaseProperties['appVersionName']
+}
+
+if ($VersionCode -le 0 -or $VersionCode -gt 2100000000) {
+    throw "VersionCode must be between 1 and 2100000000."
+}
+if ([string]::IsNullOrWhiteSpace($VersionName) -or
+    $VersionName.Length -gt 64 -or
+    $VersionName -match '[\x00-\x1F\x7F]') {
+    throw "VersionName must be 1-64 visible characters."
+}
+
+Write-Host "Building Wear OS release AAB with versionCode=$VersionCode versionName=$VersionName"
+
+& $gradleWrapperPath :wear:bundleRelease "-PappVersionCode=$PhoneVersionCode" "-PwearVersionCode=$VersionCode" "-PwearVersionName=$VersionName" "-PdevApplicationIdSuffix=false"
+if ($LASTEXITCODE -ne 0) {
+    throw "Gradle build failed."
+}
+
+$bundleSource = Join-Path $projectRoot "wear/build/outputs/bundle/release/wear-release.aab"
+$bundleTarget = Join-Path $projectRoot "gymapp-wear-release.aab"
+
+if (-not (Test-Path $bundleSource)) {
+    throw "Wear OS release AAB not found at: $bundleSource"
+}
+
+$androidSdkPath = Resolve-AndroidSdkPath $projectRoot
+$aapt2Path = Resolve-AndroidBuildTool $androidSdkPath 'aapt2'
+$keystoreCertificateArguments = @{
+    KeytoolPath = $keytoolPath
+    KeystorePath = $keystorePath
+    KeyAlias = $releaseKeyAlias
+    StorePassword = $releaseStorePassword
+    StoreType = $releaseStoreType
+}
+$expectedCertificateSha256 = Get-ReleaseKeystoreCertificateSha256 @keystoreCertificateArguments
+$manifestMetadataPath = Join-Path $projectRoot 'wear/build/intermediates/merged_manifests/release/processReleaseManifest/output-metadata.json'
+$manifestContainerCandidates = @(
+    'wear/build/intermediates/shrunk_resources_proto_format/release/minifyReleaseWithR8/shrunk-resources-proto-format-release.ap_',
+    'wear/build/intermediates/linked_resources_proto_format/release/processReleaseResources/linked-resources-proto-format-release.ap_',
+    'wear/build/intermediates/linked_resources_for_bundle_proto_format/release/bundleReleaseResources/linked-resources-for-bundle-proto-format.ap_'
+)
+$manifestContainerPath = $manifestContainerCandidates |
+    ForEach-Object { Join-Path $projectRoot $_ } |
+    Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+    Select-Object -First 1
+if (-not $manifestContainerPath) {
+    throw "Release AAB manifest container was not generated."
+}
+
+$bundleZipArguments = @{
+    ArchivePath = $bundleSource
+    RequiredEntries = @('BundleConfig.pb', 'base/manifest/AndroidManifest.xml')
+    RequireSingleJarSigner = $true
+}
+Assert-ZipArchiveEntries @bundleZipArguments
+Assert-ZipArchiveEntries $manifestContainerPath @('AndroidManifest.xml')
+$bundleManifestSha256 = Get-ZipEntrySha256 $bundleSource 'base/manifest/AndroidManifest.xml'
+$generatedManifestSha256 = Get-ZipEntrySha256 $manifestContainerPath 'AndroidManifest.xml'
+if ($bundleManifestSha256 -cne $generatedManifestSha256) {
+    throw "Release AAB contains a stale or unexpected manifest."
+}
+$manifestMetadataArguments = @{
+    MetadataPath = $manifestMetadataPath
+    ExpectedVersionCode = $VersionCode
+    ExpectedVersionName = $VersionName
+}
+Assert-ReleaseManifestMetadata @manifestMetadataArguments
+Assert-AaptReleaseIdentity $aapt2Path $manifestContainerPath $VersionCode $VersionName
+$aabSignatureArguments = @{
+    JarsignerPath = $jarsignerPath
+    KeytoolPath = $keytoolPath
+    BundlePath = $bundleSource
+    KeystorePath = $keystorePath
+    StorePassword = $releaseStorePassword
+    StoreType = $releaseStoreType
+    ExpectedCertificateSha256 = $expectedCertificateSha256
+}
+Assert-AabSignature @aabSignatureArguments
+
+Copy-Item -Path $bundleSource -Destination $bundleTarget -Force
+
+$metadataDir = Join-Path $projectRoot "tmp"
+New-Item -ItemType Directory -Path $metadataDir -Force | Out-Null
+$metadataPath = Join-Path $metadataDir "last-wear-release-aab.json"
+[ordered]@{
+    versionCode = $VersionCode
+    phoneVersionCode = $PhoneVersionCode
+    versionName = $VersionName
+    bundle = $bundleTarget
+} | ConvertTo-Json | Set-Content -Path $metadataPath -Encoding UTF8
+
+Write-Host "Copied Wear OS release AAB to: $bundleTarget"
+Write-Host "Build metadata written to: $metadataPath"

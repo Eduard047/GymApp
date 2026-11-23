@@ -107,6 +107,7 @@ import com.example.gymapp.auth.NEW_PASSWORD_POLICY_ERROR
 import com.example.gymapp.garmin.openGymWorkoutTrackerInGarminStore
 import com.example.gymapp.garmin.GarminDeviceUiState
 import com.example.gymapp.ui.viewmodel.HealthDataUiState
+import com.example.gymapp.ui.viewmodel.WearWatchUiState
 import com.example.gymapp.ui.viewmodel.WatchSource
 import com.example.gymapp.ui.viewmodel.connectedWatchSources
 import com.example.gymapp.ui.viewmodel.watchesStatusLine
@@ -227,6 +228,9 @@ internal fun ProfileScreen(
     onHealthImportNow: () -> Unit = {},
     onHealthDisconnect: () -> Unit = {},
     onRefreshHealthData: () -> Unit = {},
+    wearWatchState: WearWatchUiState? = null,
+    onRefreshWearWatch: () -> Unit = {},
+    onUnlinkWearWatch: () -> Unit = {},
     onRetryLoad: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -375,8 +379,10 @@ internal fun ProfileScreen(
                 WatchesScreen(
                     garminDeviceState = garminDeviceState,
                     healthDataState = healthDataState,
+                    wearWatchState = wearWatchState,
                     onOpened = {
                         onRefreshGarminDevices()
+                        onRefreshWearWatch()
                         onRefreshHealthData()
                     },
                     onResetGarminPairing = onResetGarminPairing,
@@ -384,6 +390,7 @@ internal fun ProfileScreen(
                     onHealthPermissionRequestFinished = onHealthPermissionRequestFinished,
                     onHealthImportNow = onHealthImportNow,
                     onHealthDisconnect = onHealthDisconnect,
+                    onUnlinkWearWatch = onUnlinkWearWatch,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -418,6 +425,7 @@ internal fun ProfileScreen(
                         onOpenHealthApp = { showHealthAppSheet = true },
                         garminDeviceState = garminDeviceState,
                         healthDataState = healthDataState,
+                        wearWatchState = wearWatchState,
                         backupMessage = accountState.backupMessage,
                         onExportBackup = onExportBackup,
                         onExportDiagnostics = onExportDiagnostics,
@@ -683,6 +691,7 @@ private fun LazyListScope.profileRootContent(
     onOpenHealthApp: () -> Unit,
     garminDeviceState: GarminDeviceUiState,
     healthDataState: HealthDataUiState?,
+    wearWatchState: WearWatchUiState?,
     backupMessage: com.example.gymapp.util.LocalizedText?,
     onExportBackup: () -> Unit,
     onExportDiagnostics: () -> Unit,
@@ -790,10 +799,11 @@ private fun LazyListScope.profileRootContent(
         val watchesTitle = stringResource(R.string.watches_title)
         val sourceLabels = mapOf(
             WatchSource.GARMIN to stringResource(R.string.watches_source_garmin),
+            WatchSource.WEAR_OS to stringResource(R.string.watches_wear_title),
             WatchSource.HEALTH_DATA to stringResource(R.string.health_data_title)
         )
         val watchesStatus = watchesStatusLine(
-            sources = connectedWatchSources(garminDeviceState, healthDataState),
+            sources = connectedWatchSources(garminDeviceState, healthDataState, wearWatchState),
             label = { sourceLabels.getValue(it) },
             none = stringResource(R.string.watches_status_none)
         )

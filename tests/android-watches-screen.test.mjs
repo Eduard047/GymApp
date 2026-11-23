@@ -47,21 +47,23 @@ test("Watches is a pushed Profile screen and Profile has the single Watches row"
 });
 
 test("the Profile row shows the connected sources through the pure status helpers", () => {
-  assert.match(profile, /connectedWatchSources\(garminDeviceState, healthDataState\)/);
+  assert.match(profile, /connectedWatchSources\(garminDeviceState, healthDataState, wearWatchState\)/);
   assert.match(profile, /watchesStatusLine\(/);
   assert.match(profile, /R\.string\.watches_status_none/);
   assert.match(profile, /WatchSource\.GARMIN to stringResource\(R\.string\.watches_source_garmin\)/);
+  assert.match(profile, /WatchSource\.WEAR_OS to stringResource\(R\.string\.watches_wear_title\)/);
   assert.match(profile, /WatchSource\.HEALTH_DATA to stringResource\(R\.string\.health_data_title\)/);
+  assert.match(state, /enum class WatchSource \{ GARMIN, WEAR_OS, HEALTH_DATA \}/);
   assert.match(state, /joinToString\(" · "\)/);
 });
 
-test("Watches order is Garmin, a Wear OS slot, then Health data", () => {
+test("Watches order is Garmin, Wear OS, then Health data", () => {
   const garmin = watches.indexOf("GarminDeviceCard(\n                state = garminDeviceState");
-  const slot = watches.indexOf("Wear OS");
+  const wear = watches.indexOf("WearWatchCard(\n                    state = wearWatchState");
   const health = watches.indexOf("HealthDataCard(\n                    state = healthDataState");
   assert.ok(garmin > 0, "Garmin card call");
-  assert.ok(slot > garmin, "Wear OS slot after Garmin");
-  assert.ok(health > slot, "Health data after the Wear OS slot");
+  assert.ok(wear > garmin, "Wear OS card after Garmin");
+  assert.ok(health > wear, "Health data after the Wear OS card");
 });
 
 test("every Garmin and Health flow stays wired from the Watches screen", () => {
@@ -77,7 +79,10 @@ test("every Garmin and Health flow stays wired from the Watches screen", () => {
   }
   assert.match(watches, /onResetGarminPairing\(\)[\s\S]*garmin_reset_pairing_confirm/);
   assert.match(watches, /LaunchedEffect\(Unit\) \{ onOpened\(\) \}/);
-  assert.match(profile, /onOpened = \{\s*onRefreshGarminDevices\(\)\s*onRefreshHealthData\(\)\s*\}/);
+  assert.match(
+    profile,
+    /onOpened = \{\s*onRefreshGarminDevices\(\)\s*onRefreshWearWatch\(\)\s*onRefreshHealthData\(\)\s*\}/
+  );
   // Foreground auto-import is owned by the navigation graph, independent of the open screen.
   assert.match(graph, /healthDataViewModel\?\.importOnForeground\(\)/);
   assert.match(graph, /onRefreshHealthData = \{ healthDataViewModel\?\.refresh\(\) \}/);

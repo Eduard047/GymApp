@@ -10,6 +10,7 @@ class WatchesStateTest {
     private val labels = { source: WatchSource ->
         when (source) {
             WatchSource.GARMIN -> "Garmin"
+            WatchSource.WEAR_OS -> "Wear OS"
             WatchSource.HEALTH_DATA -> "Health data"
         }
     }
@@ -72,6 +73,40 @@ class WatchesStateTest {
         assertEquals(
             "Health data",
             watchesStatusLine(listOf(WatchSource.HEALTH_DATA), labels, "Not connected")
+        )
+    }
+
+    private val linkedWear = WearWatchUiState(apiAvailable = true, linked = true)
+
+    @Test
+    fun wearOsCountsOnlyWhenLinkedAndTheWearableApiIsAvailable() {
+        val none = GarminDeviceUiState()
+        assertEquals(listOf(WatchSource.WEAR_OS), connectedWatchSources(none, null, linkedWear))
+        // Not looked up yet, API missing (card hidden) or no watch linked: not a connected source.
+        assertEquals(emptyList<WatchSource>(), connectedWatchSources(none, null, null))
+        assertEquals(
+            emptyList<WatchSource>(),
+            connectedWatchSources(none, null, WearWatchUiState(apiAvailable = false, linked = true))
+        )
+        assertEquals(
+            emptyList<WatchSource>(),
+            connectedWatchSources(none, null, WearWatchUiState(apiAvailable = true))
+        )
+        // A linked watch that is offline right now still counts as linked.
+        assertEquals(
+            listOf(WatchSource.WEAR_OS),
+            connectedWatchSources(none, null, linkedWear.copy(connected = false))
+        )
+    }
+
+    @Test
+    fun statusOrderIsGarminWearOsHealthData() {
+        val all = connectedWatchSources(garmin(paired = true), health(), linkedWear)
+        assertEquals(listOf(WatchSource.GARMIN, WatchSource.WEAR_OS, WatchSource.HEALTH_DATA), all)
+        assertEquals("Garmin · Wear OS · Health data", watchesStatusLine(all, labels, "Not connected"))
+        assertEquals(
+            "Wear OS · Health data",
+            watchesStatusLine(connectedWatchSources(GarminDeviceUiState(), health(), linkedWear), labels, "-")
         )
     }
 }

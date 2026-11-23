@@ -42,30 +42,33 @@ import com.example.gymapp.ui.theme.Button
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.theme.TintedButton
 import com.example.gymapp.ui.viewmodel.HealthDataUiState
+import com.example.gymapp.ui.viewmodel.WearWatchUiState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
- * The Watches screen pushed from Profile: every watch connection in one place. Order: Garmin, then
- * Health data (Health Connect). The Profile root only shows a one-line status for it. The screen
+ * The Watches screen pushed from Profile: every watch connection in one place. Order: Garmin, Wear OS
+ * (hidden without the Google Play services Wearable API), then Health data (Health Connect). The Profile root only shows a one-line status for it. The screen
  * keeps no connection state itself; foreground auto-import still runs from the navigation graph.
  */
 @Composable
 internal fun WatchesScreen(
     garminDeviceState: GarminDeviceUiState,
     healthDataState: HealthDataUiState?,
+    wearWatchState: WearWatchUiState?,
     onOpened: () -> Unit,
     onResetGarminPairing: () -> Unit,
     onPairGarminDevice: suspend (deviceId: Long) -> Boolean,
     onHealthPermissionRequestFinished: () -> Unit,
     onHealthImportNow: () -> Unit,
     onHealthDisconnect: () -> Unit,
+    onUnlinkWearWatch: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     var showGarminResetConfirmation by rememberSaveable { mutableStateOf(false) }
-    // Opening the screen refreshes both sources so the cards never show a stale connection.
+    // Opening the screen refreshes every source so the cards never show a stale connection.
     LaunchedEffect(Unit) { onOpened() }
 
     LazyColumn(
@@ -85,7 +88,16 @@ internal fun WatchesScreen(
                 onPairGarminDevice = onPairGarminDevice
             )
         }
-        // Future "Wear OS" watch card (stage 4) goes here, between Garmin and Health data.
+        // Wear OS, between Garmin and Health data; the card hides itself without the Wearable API.
+        if (wearWatchState != null) {
+            item {
+                WearWatchCard(
+                    state = wearWatchState,
+                    onUnlink = onUnlinkWearWatch,
+                    modifier = Modifier.padding(top = GymSpacing.Medium)
+                )
+            }
+        }
         if (healthDataState != null) {
             item {
                 HealthDataCard(

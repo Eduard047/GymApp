@@ -167,6 +167,7 @@ import com.example.gymapp.ui.screens.WorkoutShareSheet
 import com.example.gymapp.ui.screens.shareWorkoutUrl
 import com.example.gymapp.ui.viewmodel.AddWorkoutViewModel
 import com.example.gymapp.ui.viewmodel.HealthDataViewModel
+import com.example.gymapp.ui.viewmodel.WearWatchViewModel
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutViewModel
 import com.example.gymapp.ui.viewmodel.activeWorkoutFocus
 import com.example.gymapp.ui.viewmodel.ExerciseListViewModel
@@ -1132,6 +1133,15 @@ internal fun GymAppRoot(
         )
     }
     val healthDataState = healthDataViewModel?.state?.collectAsStateWithLifecycle()?.value
+    // Wear OS watch link (Watches card + Profile status). The pin is per phone, not per account.
+    val wearWatchViewModel = rootGraphEntry?.takeIf { authState.session != null }?.let { owner ->
+        viewModel<WearWatchViewModel>(
+            viewModelStoreOwner = owner,
+            key = "wear-watch",
+            factory = WearWatchViewModel.factory(applicationContext.gymApplication)
+        )
+    }
+    val wearWatchState = wearWatchViewModel?.state?.collectAsStateWithLifecycle()?.value
     val rootDraftSyncClient = remember(applicationContext) {
         PhoneSyncClient(applicationContext)
     }
@@ -4345,6 +4355,7 @@ internal fun GymAppRoot(
                                 friendsViewModel?.refreshAll()
                                 liveWorkoutViewModel?.refresh()
                                 healthDataViewModel?.refresh()
+                                wearWatchViewModel?.refresh()
                             }
 
                             ProfileScreen(
@@ -4814,6 +4825,9 @@ internal fun GymAppRoot(
                                 onHealthImportNow = { healthDataViewModel?.importNow() },
                                 onHealthDisconnect = { healthDataViewModel?.disconnect() },
                                 onRefreshHealthData = { healthDataViewModel?.refresh() },
+                                wearWatchState = wearWatchState,
+                                onRefreshWearWatch = { wearWatchViewModel?.refresh() },
+                                onUnlinkWearWatch = { wearWatchViewModel?.unlink() },
                                 onRetryLoad = profileViewModel::retryLoad,
                                 modifier = Modifier.fillMaxSize()
                             )

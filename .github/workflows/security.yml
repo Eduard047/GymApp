@@ -209,6 +209,7 @@ jobs:
             --max-target-bytes 2000000 \
             --exclude .gradle \
             --exclude app/build \
+            --exclude wear/build \
             --exclude garmin/build \
             --exclude ios/DerivedData \
             --exclude .github/security/semgrep-tests \
@@ -527,6 +528,16 @@ jobs:
             :app:lintDebug \
             :app:lintQa \
             :app:compileDebugAndroidTestKotlin
+
+      - name: Test, assemble, and lint Wear OS
+        shell: bash
+        run: |
+          bash ./gradlew --no-daemon \
+            -PappVersionCode=2000000001 \
+            -PappVersionName=ci \
+            :wear:testDebugUnitTest \
+            :wear:assembleDebug \
+            :wear:lintDebug
 
       - name: Verify downloadable QA artifact boundaries
         shell: bash

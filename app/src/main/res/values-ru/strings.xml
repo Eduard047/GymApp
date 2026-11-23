@@ -1506,6 +1506,15 @@
     <string name="garmin_profile_connected">Сейчас подключено</string>
     <string name="garmin_profile_offline">Сейчас не подключено</string>
     <string name="garmin_profile_paired">Привязано</string>
+    <string name="watches_wear_title">Wear OS</string>
+    <string name="watches_wear_caption">Samsung Galaxy Watch, Pixel Watch и другие часы Wear OS</string>
+    <string name="watches_wear_not_linked">Установите GymApp на часы и откройте его — оно автоматически свяжется с этим телефоном.</string>
+    <string name="watches_wear_default_name">Часы Wear OS</string>
+    <string name="watches_wear_linked">Связаны</string>
+    <string name="watches_wear_unlink_action">Отвязать часы</string>
+    <string name="watches_wear_unlink_title">Отвязать эти часы?</string>
+    <string name="watches_wear_unlink_body">Тренировки, ещё не отправленные с часов, останутся на них.</string>
+    <string name="watches_wear_unlink_confirm">Отвязать</string>
     <string name="garmin_connect_action">Подключить</string>
     <string name="garmin_connecting">Подключение…</string>
     <string name="garmin_connect_failed">Не удалось подключить. Откройте приложение на часах и повторите.</string>
