@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "protocolVersion": 1,
+  "description": "iPhone <-> Apple Watch sync over WatchConnectivity. Phone publishes the account binding, plan and exercise catalog with updateApplicationContext; the watch sends finished workouts with transferUserInfo; the phone answers with ack/nack via transferUserInfo. Source of truth for WatchSyncProtocol (GymAppWatchShared) and its golden tests. iOS only.",
+  "transport": {
+    "envelopeKey": "gymappWatchSync",
+    "maximumEnvelopeBytes": 65536,
+    "context": "updateApplicationContext",
+    "workout": "transferUserInfo",
+    "ack": "transferUserInfo",
+    "nack": "transferUserInfo"
+  },
+  "formats": {
+    "requestId": "^aw-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    "accountBinding": "^[0-9a-f]{64}$",
+    "digest": "^[0-9a-f]{64}$",
+    "languages": ["en", "uk", "ru"]
+  },
+  "bounds": {
+    "maximumExerciseCharacters": 160,
+    "maximumExerciseBytes": 640,
+    "maximumTotalExerciseBytes": 12000,
+    "maximumPlanExercises": 30,
+    "maximumPlanSets": 100,
+    "maximumSetsPerExercise": 20,
+    "maximumCatalogNames": 100,
+    "maximumWorkoutSets": 100,
+    "weight": { "minimum": 0, "maximum": 1000000, "maximumDecimals": 2 },
+    "reps": { "minimum": 1, "maximum": 10000 },
+    "restSeconds": { "minimum": 0, "maximum": 3600, "default": 90 },
+    "planRevision": { "minimum": 1, "maximum": 9007199254740991 },
+    "minimumStartedAtMillis": 946684800000,
+    "maximumFutureSkewMillis": 86400000,
+    "durationSeconds": { "minimum": 1, "maximum": 604800 },
+    "setTimeToleranceMillis": 60000,
+    "heartRateBpm": { "minimum": 25, "maximum": 240 },
+    "activeKilocalories": { "minimum": 0, "maximum": 100000 },
+    "maximumOutboxItems": 50,
+    "maximumReceiptsPerHour": 60,
+    "maximumReceiptRecords": 256
+  },
+  "messages": {
+    "context": {
+      "requiredKeys": ["type", "protocolVersion", "state", "sentAtMillis"],
+      "optionalKeys": ["accountBinding", "language", "planRevision", "plan", "exercises"],
+      "type": "context",
+      "states": {
+        "unbound": "Phone signed out or deleting/switching. Only type, protocolVersion, state, sentAtMillis. Watch drops the cached plan and catalog, keeps the outbox, disables Start.",
+        "bound": "accountBinding, language, planRevision required; plan (array, may be empty = no plan) and exercises (array) required."
+      },
+      "planExercise": { "keys": ["name", "restSeconds", "sets"], "set": { "keys": ["weight", "reps"] } },
+      "exercises": "Free-workout picker catalog: unique trimmed names, plan names first, then library names (GarminPhoneSyncProtocol.exerciseCatalog without Latin conversion)."
+    },
+    "workout": {
+      "requiredKeys": ["type", "protocolVersion", "requestId", "accountBinding", "mode", "startedAtMillis", "endedAtMillis", "durationSeconds", "sets", "healthKit"],
+      "optionalKeys": ["planRevision", "averageHeartRate", "maximumHeartRate", "activeKilocalories"],
+      "type": "workout",
+      "mode": ["plan", "free"],
+      "set": { "keys": ["exerciseName", "weight", "reps", "completedAtMillis"] },
+      "healthKit": ["saved", "off", "failed"],
+      "rules": [
+        "endedAtMillis > startedAtMillis; startedAtMillis >= minimumStartedAtMillis; endedAtMillis <= receiver now + maximumFutureSkewMillis.",
+        "durationSeconds <= ceil((endedAtMillis - startedAtMillis) / 1000).",
+        "Every completedAtMillis lies in [startedAtMillis - setTimeToleranceMillis, endedAtMillis + setTimeToleranceMillis].",
+        "averageHeartRate and maximumHeartRate are both present or both absent; average <= maximum.",
+        "planRevision is present only when mode is plan.",
+        "Names: trimmed, non-empty, no Unicode Cc, <= maximumExerciseCharacters scalars and maximumExerciseBytes UTF-8; total name bytes <= maximumTotalExerciseBytes."
+      ]
+    },
+    "ack": {
+      "keys": ["type", "protocolVersion", "requestId", "accountBinding", "status"],
+      "type": "ack",
+      "status": ["committed", "duplicate"]
+    },
+    "nack": {
+      "keys": ["type", "protocolVersion", "requestId", "reason"],
+      "type": "nack"
+    }
+  },
+  "nackReasons": {
+    "transient": ["not-ready", "storage", "rate-limited"],
+    "hold": ["foreign-account", "unsupported-version"],
+    "deterministic": ["malformed", "conflict", "invalid"]
+  },
+  "watchOutboxRules": [
+    "An outbox item is deleted only after an ack whose requestId and accountBinding match the item.",
+    "transient: keep the item queued and retry with backoff 60, 300, 900, 3600 s (cap 3600) and on every new bound context.",
+    "hold: keep the item and do not send it until a context arrives whose accountBinding equals the item's (foreign-account) or whose protocolVersion is greater than the last one seen (unsupported-version).",
+    "deterministic: keep the item, mark it failed and show it under Unsent workouts; only an explicit user Discard (with a confirmation step) deletes it.",
+    "Items are sent only while the latest context is bound to the item's accountBinding.",
+    "The item stores the exact encoded envelope; resends are byte-identical so the phone digest matches."
+  ],
+  "phoneRules": [
+    "Decision order: envelope bytes/JSON/shape -> protocolVersion -> ready account -> accountBinding -> ledger(requestId) -> rate limit -> write.",
+    "Envelope over maximumEnvelopeBytes, not JSON, or without a valid requestId: drop silently (cannot correlate).",
+    "Otherwise malformed shape or bounds: nack malformed, no ledger or store write.",
+    "protocolVersion greater than supported: nack unsupported-version.",
+    "No signed-in account, store not bound or account transition in progress: nack not-ready.",
+    "accountBinding differs from the active account's binding: nack foreign-account; nothing is written (no ledger, no workout).",
+    "requestId already committed with the same digest: ack duplicate, no write. Pending with the same digest: verify the workout exists, then commit and ack; if missing, drop the pending record and import again.",
+    "requestId known with a different digest: nack conflict.",
+    "More than maximumReceiptsPerHour receipts in the last hour: nack rate-limited.",
+    "Write the pending receipt durably before the store write; ack only after the workout is stored and the receipt is committed durably. Store validation error -> nack invalid; persistence error -> nack storage.",
+    "Sets present -> WorkoutStore.createWorkout(date:note:namedSets:durationSeconds:); no sets -> createActivityWorkout(date:note:durationSeconds:).",
+    "The import never consults Health import receipts or the Health overlap rule; it never skips a valid watch workout because another workout overlaps it."
+  ],
+  "accountBinding": {
+    "cloud": "sha256hex(\"gymapp-watch-account/v1\\u0000\" + lowercased cloud user UUID)",
+    "local": "random sha256hex stored per account storage key (defaults key watch-phone-local-account.v1.<sha256hex(storageKey)>)"
+  },
+  "fixtures": {
+    "activeAccount": "1111111111111111111111111111111111111111111111111111111111111111",
+    "foreignAccount": "2222222222222222222222222222222222222222222222222222222222222222",
+    "nowMillis": 1795000000000
+  },
+  "cases": [
+    {
+      "id": "context-bound-with-cyrillic-plan",
+      "direction": "phoneToWatch",
+      "message": {
+        "type": "context", "protocolVersion": 1, "state": "bound", "sentAtMillis": 1795000000000,
+        "accountBinding": "1111111111111111111111111111111111111111111111111111111111111111",
+        "language": "ru", "planRevision": 7,
+        "plan": [
+          { "name": "Жим лёжа", "restSeconds": 120, "sets": [ { "weight": 60, "reps": 8 }, { "weight": 62.5, "reps": 6 } ] },
+          { "name": "Присед", "restSeconds": 90, "sets": [ { "weight": 100, "reps": 5 } ] }
+        ],
+        "exercises": ["Жим лёжа", "Присед", "Тяга штанги"]
+      },
+      "expect": { "valid": true }
+    },
+    {
+      "id": "context-unbound",
+      "direction": "phoneToWatch",
+      "message": { "type": "context", "protocolVersion": 1, "state": "unbound", "sentAtMillis": 1795000000000 },
+      "expect": { "valid": true, "watchDropsPlan": true }
+    },
+    {
+      "id": "context-unbound-with-account-rejected",
+      "direction": "phoneToWatch",
+      "message": { "type": "context", "protocolVersion": 1, "state": "unbound", "sentAtMillis": 1795000000000, "accountBinding": "1111111111111111111111111111111111111111111111111111111111111111" },
+      "expect": { "valid": false }
+    },
+    {
+      "id": "workout-plan-imported",
+      "direction": "watchToPhone",
+      "message": {
+        "type": "workout", "protocolVersion": 1, "requestId": "aw-0f8fad5b-d9cb-469f-a165-70867728950e",
+        "accountBinding": "1111111111111111111111111111111111111111111111111111111111111111",
+        "mode": "plan", "planRevision": 7,
+        "startedAtMillis": 1794996000000, "endedAtMillis": 1794999000000, "durationSeconds": 3000,
+        "sets": [
+          { "exerciseName": "Жим лёжа", "weight": 60, "reps": 8, "completedAtMillis": 1794996300000 },
+          { "exerciseName": "Жим лёжа", "weight": 62.5, "reps": 6, "completedAtMillis": 1794996600000 }
+        ],
+        "healthKit": "saved", "averageHeartRate": 118, "maximumHeartRate": 161, "activeKilocalories": 312.4
+      },
+      "expect": { "result": "ack", "status": "committed", "storeCall": "createWorkout", "workoutWrites": 1 }
+    },
+    {
+      "id": "workout-free-time-only",
+      "direction": "watchToPhone",
+      "message": {
+        "type": "workout", "protocolVersion": 1, "requestId": "aw-7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "accountBinding": "1111111111111111111111111111111111111111111111111111111111111111",
+        "mode": "free", "startedAtMillis": 1794990000000, "endedAtMillis": 1794992400000, "durationSeconds": 2400,
+        "sets": [], "healthKit": "off"
+      },
+      "expect": { "result": "ack", "status": "committed", "storeCall": "createActivityWorkout", "workoutWrites": 1 }
+    },
+    {
+      "id": "workout-duplicate-same-bytes",
+      "direction": "watchToPhone",
+      "replayOf": "workout-plan-imported",
+      "expect": { "result": "ack", "status": "duplicate", "workoutWrites": 0 }
+    },
+    {
+      "id": "workout-conflicting-replay",
+      "direction": "watchToPhone",
+      "replayOf": "workout-plan-imported",
+      "mutate": { "durationSeconds": 2999 },
+      "expect": { "result": "nack", "reason": "conflict", "workoutWrites": 0 }
+    },
+    {
+      "id": "workout-foreign-account",
+      "direction": "watchToPhone",
+      "replayOf": "workout-free-time-only",
+      "mutate": { "requestId": "aw-16fd2706-8baf-433b-82eb-8c7fada847da", "accountBinding": "2222222222222222222222222222222222222222222222222222222222222222" },
+      "expect": { "result": "nack", "reason": "foreign-account", "workoutWrites": 0, "ledgerWrites": 0 }
+    },
+    {
+      "id": "workout-not-ready",
+      "direction": "watchToPhone",
+      "phoneState": "signedOut",
+      "replayOf": "workout-free-time-only",
+      "expect": { "result": "nack", "reason": "not-ready", "workoutWrites": 0, "ledgerWrites": 0 }
+    },
+    {
+      "id": "workout-future-version",
+      "direction": "watchToPhone",
+      "replayOf": "workout-free-time-only",
+      "mutate": { "protocolVersion": 2 },
+      "expect": { "result": "nack", "reason": "unsupported-version", "workoutWrites": 0 }
+    },
+    { "id": "malformed-unknown-key", "direction": "watchToPhone", "replayOf": "workout-free-time-only", "mutate": { "extra": true }, "expect": { "result": "nack", "reason": "malformed" } },
+    { "id": "malformed-name-too-long", "direction": "watchToPhone", "replayOf": "workout-plan-imported", "mutate": { "sets[0].exerciseName": "REPEAT(Ж,161)" }, "expect": { "result": "nack", "reason": "malformed" } },
+    { "id": "malformed-control-char-name", "direction": "watchToPhone", "replayOf": "workout-plan-imported", "mutate": { "sets[0].exerciseName": "Жим\u0007" }, "expect": { "result": "nack", "reason": "malformed" } },
+    { "id": "malformed-zero-reps", "direction": "watchToPhone", "replayOf": "workout-plan-imported", "mutate": { "sets[0].reps": 0 }, "expect": { "result": "nack", "reason": "malformed" } },
+    { "id": "malformed-negative-weight", "direction": "watchToPhone", "replayOf": "workout-plan-imported", "mutate": { "sets[0].weight": -1 }, "expect": { "result": "nack", "reason": "malformed" } },
+    { "id": "malformed-ended-before-start", "direction": "watchToPhone", "replayOf": "workout-free-time-only", "mutate": { "endedAtMillis": 1794989999000 }, "expect": { "result": "nack", "reason": "malformed" } },
+    { "id": "malformed-too-many-sets", "direction": "watchToPhone", "replayOf": "workout-plan-imported", "mutate": { "sets": "REPEAT(sets[0],101)" }, "expect": { "result": "nack", "reason": "malformed" } },
+    { "id": "malformed-hr-half-present", "direction": "watchToPhone", "replayOf": "workout-plan-imported", "mutate": { "maximumHeartRate": null }, "expect": { "result": "nack", "reason": "malformed" } },
+    { "id": "drop-bad-request-id", "direction": "watchToPhone", "replayOf": "workout-free-time-only", "mutate": { "requestId": "garmin-123" }, "expect": { "result": "drop" } },
+    { "id": "drop-oversized-envelope", "direction": "watchToPhone", "envelopeBytes": 65537, "expect": { "result": "drop" } }
+  ]
+}

@@ -95,7 +95,7 @@ enum HealthImportRules {
     static let receiptKeyPrefix = "apple_health:"
     static let notePrefix = "Apple Health"
     /// Bundle id of this app. A `.`-suffixed variant (development or test builds) is also ours.
-    static let ownSourceIds: [String] = ["com.setforge.gymapp.ios"]
+    static let ownSourceIds: [String] = ["com.setforge.gymapp.ios", "com.setforge.gymapp.ios.watchkitapp"]
     static let gymExerciseTypes: Set<String> = [
         "traditionalStrengthTraining",
         "functionalStrengthTraining",

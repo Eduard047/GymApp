@@ -46,7 +46,7 @@ internal enum class HealthImportStore(
         wire = "healthKit",
         receiptKeyPrefix = "apple_health:",
         notePrefix = "Apple Health",
-        ownSourceIds = setOf("com.setforge.gymapp.ios"),
+        ownSourceIds = setOf("com.setforge.gymapp.ios", "com.setforge.gymapp.ios.watchkitapp"),
         typeLabels = linkedMapOf(
             "traditionalStrengthTraining" to HealthTypeLabel(
                 "Strength training", "Силове тренування", "Силовая тренировка"

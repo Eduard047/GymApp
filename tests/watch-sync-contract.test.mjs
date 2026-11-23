@@ -1,0 +1,86 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const contract = JSON.parse(readFileSync(new URL("../shared/watch-sync-v1.json", import.meta.url), "utf8"));
+
+test("watch sync contract: transport and formats", () => {
+  assert.equal(contract.schemaVersion, 1);
+  assert.equal(contract.protocolVersion, 1);
+  const t = contract.transport;
+  assert.equal(t.envelopeKey, "gymappWatchSync");
+  assert.equal(t.maximumEnvelopeBytes, 65536);
+  assert.equal(t.context, "updateApplicationContext");
+  for (const key of ["workout", "ack", "nack"]) assert.equal(t[key], "transferUserInfo");
+  const requestId = new RegExp(contract.formats.requestId);
+  assert.ok(requestId.test("aw-0f8fad5b-d9cb-469f-a165-70867728950e"));
+  assert.ok(!requestId.test("aw-0F8FAD5B-D9CB-469F-A165-70867728950E"));
+  assert.ok(!requestId.test("garmin-123"));
+  const hash = new RegExp(contract.formats.accountBinding);
+  assert.ok(hash.test(contract.fixtures.activeAccount));
+  assert.ok(hash.test(contract.fixtures.foreignAccount));
+  assert.notEqual(contract.fixtures.activeAccount, contract.fixtures.foreignAccount);
+  assert.deepEqual(contract.formats.languages, ["en", "uk", "ru"]);
+});
+
+test("watch sync contract: bounds are consistent", () => {
+  const b = contract.bounds;
+  assert.ok(b.maximumExerciseCharacters * 4 >= b.maximumExerciseBytes);
+  assert.ok(b.maximumExerciseBytes < b.maximumTotalExerciseBytes);
+  assert.ok(b.maximumTotalExerciseBytes < contract.transport.maximumEnvelopeBytes);
+  assert.ok(b.maximumSetsPerExercise <= b.maximumPlanSets);
+  assert.ok(b.maximumPlanExercises <= b.maximumPlanSets);
+  for (const key of ["weight", "reps", "restSeconds", "planRevision", "durationSeconds", "heartRateBpm", "activeKilocalories"]) {
+    assert.ok(b[key].minimum <= b[key].maximum, key);
+  }
+  assert.ok(b.restSeconds.default >= b.restSeconds.minimum && b.restSeconds.default <= b.restSeconds.maximum);
+  assert.equal(b.planRevision.maximum, Number.MAX_SAFE_INTEGER);
+  assert.ok(b.reps.minimum >= 1 && b.weight.minimum >= 0);
+  assert.ok(b.maximumReceiptsPerHour <= b.maximumReceiptRecords);
+  assert.ok(b.minimumStartedAtMillis > 0 && b.maximumFutureSkewMillis > 0);
+});
+
+test("watch sync contract: nack reasons fall in exactly one group", () => {
+  const groups = contract.nackReasons;
+  assert.deepEqual(Object.keys(groups).sort(), ["deterministic", "hold", "transient"]);
+  const all = Object.values(groups).flat();
+  assert.equal(new Set(all).size, all.length);
+  assert.deepEqual(groups.transient, ["not-ready", "storage", "rate-limited"]);
+  assert.deepEqual(groups.hold, ["foreign-account", "unsupported-version"]);
+  assert.deepEqual(groups.deterministic, ["malformed", "conflict", "invalid"]);
+});
+
+test("watch sync contract: cases are unique and well-formed", () => {
+  const ids = contract.cases.map((item) => item.id);
+  assert.equal(new Set(ids).size, ids.length);
+  const reasons = new Set(Object.values(contract.nackReasons).flat());
+  const byId = new Map(contract.cases.map((item) => [item.id, item]));
+  for (const item of contract.cases) {
+    assert.ok(["phoneToWatch", "watchToPhone"].includes(item.direction), item.id);
+    assert.ok(item.message || item.replayOf || item.envelopeBytes, item.id);
+    if (item.replayOf) assert.ok(byId.get(item.replayOf)?.message, `${item.id}: replayOf`);
+    if (item.envelopeBytes) assert.ok(item.envelopeBytes > contract.transport.maximumEnvelopeBytes, item.id);
+    const e = item.expect;
+    if (item.direction === "phoneToWatch") {
+      assert.equal(typeof e.valid, "boolean", item.id);
+      assert.equal(item.message.type, "context", item.id);
+    } else {
+      assert.ok(["ack", "nack", "drop"].includes(e.result), item.id);
+      if (e.result === "nack") assert.ok(reasons.has(e.reason), item.id);
+      if (e.result === "ack") assert.ok(["committed", "duplicate"].includes(e.status), item.id);
+    }
+    const message = item.message ?? byId.get(item.replayOf)?.message;
+    if (message?.type === "workout") {
+      assert.ok(new RegExp(contract.formats.requestId).test(message.requestId), item.id);
+      for (const key of Object.keys(message)) {
+        assert.ok(
+          contract.messages.workout.requiredKeys.includes(key) || contract.messages.workout.optionalKeys.includes(key),
+          `${item.id}: ${key}`,
+        );
+      }
+    }
+  }
+  for (const reason of ["foreign-account", "not-ready", "unsupported-version", "malformed", "conflict"]) {
+    assert.ok(contract.cases.some((item) => item.expect.reason === reason), `no case for ${reason}`);
+  }
+});

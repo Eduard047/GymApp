@@ -114,6 +114,13 @@
 			path = GymAppTests;
 			sourceTree = "<group>";
 		};
+		A00000000000000000000025 /* GymAppWatchShared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			path = GymAppWatchShared;
+			sourceTree = "<group>";
+		};
 		D366C3269955DD2E87BE1247 /* GymAppShared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -177,6 +184,7 @@
 				A0000000000000000000000B /* Products */,
 				E3221E9E0F5509E424221D1C /* GymAppLiveActivity */,
 				D366C3269955DD2E87BE1247 /* GymAppShared */,
+				A00000000000000000000025 /* GymAppWatchShared */,
 				AD5EA00000000000000000A3 /* Frameworks */,
 			);
 			sourceTree = "<group>";
@@ -209,6 +217,7 @@
 			fileSystemSynchronizedGroups = (
 				A00000000000000000000003 /* GymApp */,
 				D366C3269955DD2E87BE1247 /* GymAppShared */,
+				A00000000000000000000025 /* GymAppWatchShared */,
 			);
 			name = GymApp;
 			packageProductDependencies = (

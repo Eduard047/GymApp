@@ -29,7 +29,7 @@
   ],
   "rules": {
     "invalidRecord": "Skip when the record id is empty, or when receiptKeyPrefix + recordId is longer than maxReceiptKeyLength UTF-16 code units, or when the record id contains a control character (Unicode category Cc: U+0000..U+001F and U+007F..U+009F). Checked first; such records never count toward sessionCap and are never given a receipt, so one malformed id cannot block a run.",
-    "ownApp": "Skip when the record's source package or bundle id is listed in the store's ownSourceIds.",
+    "ownApp": "Skip when the record's source package or bundle id is listed in the store's ownSourceIds. HealthKit also treats a `.`-suffixed variant of a listed bundle id (app extensions, the Apple Watch app) as own.",
     "notGymType": "Skip when the record's exercise type is missing or not listed in the store's gymExerciseTypes.",
     "duration": "durationSeconds = floor((endMillis - startMillis) / 1000). Skip when the interval is empty, inverted or outside the supported timestamp range, or when durationSeconds is below minDurationSeconds or above maxDurationSeconds.",
     "inProgress": "Skip when endMillis is later than the run's start time nowMillis (the session is still running or lies in the future); a session that ends exactly at nowMillis is imported. It is picked up by a later run once it has ended.",
@@ -119,7 +119,8 @@
       "receiptKeyPrefix": "apple_health:",
       "notePrefix": "Apple Health",
       "ownSourceIds": [
-        "com.setforge.gymapp.ios"
+        "com.setforge.gymapp.ios",
+        "com.setforge.gymapp.ios.watchkitapp"
       ],
       "gymExerciseTypes": [
         "traditionalStrengthTraining",
@@ -1271,6 +1272,27 @@
         "endMillis": 1750001200000,
         "exerciseType": "traditionalStrengthTraining",
         "sourceId": "com.setforge.gymapp.ios",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750001260000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:own-app"
+      }
+    },
+    {
+      "id": "hk-own-app-apple-watch",
+      "description": "Workouts saved by the GymApp Apple Watch app arrive over WatchConnectivity and are never re-imported from Apple Health.",
+      "store": "healthKit",
+      "language": "en",
+      "session": {
+        "recordId": "A1B2C3D4-0000-4000-8000-0000000000F8",
+        "startMillis": 1750000000000,
+        "endMillis": 1750001200000,
+        "exerciseType": "traditionalStrengthTraining",
+        "sourceId": "com.setforge.gymapp.ios.watchkitapp",
         "kilocalories": null,
         "heartRateSamples": []
       },

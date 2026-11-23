@@ -100,6 +100,7 @@ final class AppState: ObservableObject {
     let cloudSync: CloudSyncService
     let garminCloud: GarminCloudService
     let garminPhoneSync: GarminPhoneSyncService
+    let watchSync: WatchConnectivityService
     /// Read-only import of gym workouts and heart rate from Apple Health.
     let healthImport: HealthKitImportService
     /// Apple Ads install attribution (AdServices). Started once at launch; uploads
@@ -269,6 +270,10 @@ final class AppState: ObservableObject {
             auth: auth,
             defaults: defaults
         )
+        self.watchSync = WatchConnectivityService(
+            auth: auth,
+            defaults: defaults
+        )
         self.healthImport = HealthKitImportService(
             auth: auth,
             defaults: defaults
@@ -296,6 +301,7 @@ final class AppState: ObservableObject {
         try? initialActiveStore.rebindExercises(to: openedStore.store)
         self.activeWorkoutStore = initialActiveStore
         self.garminPhoneSync.bind(workoutStore: openedStore.store)
+        self.watchSync.bind(workoutStore: openedStore.store)
         self.healthImport.bind(workoutStore: openedStore.store)
         self.restTimers.bindToAccount(
             ownerFingerprint: initialRestTimerOwnerFingerprint,
@@ -2727,6 +2733,7 @@ final class AppState: ObservableObject {
             }
         }
         garminPhoneSync.clearLocalData(storageKey: storageKey)
+        watchSync.clearLocalData(storageKey: storageKey)
         healthImport.clearLocalData(storageKey: storageKey)
         TrainingProfileStore(defaults: defaults).clear(accountStorageKey: storageKey)
         AppTutorialStore(defaults: defaults).clear(accountStorageKey: storageKey)
@@ -3626,6 +3633,7 @@ final class AppState: ObservableObject {
             activeWorkoutStore = newActiveStore
         }
         garminPhoneSync.bind(workoutStore: store)
+        watchSync.bind(workoutStore: store)
         healthImport.bind(workoutStore: store)
         observeStore()
         bindLiveActivityController()
@@ -3667,6 +3675,10 @@ final class AppState: ObservableObject {
             forKey: leaderboardHiddenProfilesDefaultsKey(for: storageKey)
         )
         GarminPhoneSyncService.clearStoredData(
+            defaults: defaults,
+            storageKey: storageKey
+        )
+        WatchConnectivityService.clearStoredData(
             defaults: defaults,
             storageKey: storageKey
         )

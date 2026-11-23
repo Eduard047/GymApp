@@ -165,3 +165,13 @@ test("record id and in-progress boundaries sit exactly on the documented edge", 
   const exact = byId["hc-ends-exactly-now-imported"];
   assert.equal(exact.session.endMillis, exact.nowMillis);
 });
+
+test("the Apple Watch app is an own HealthKit source", () => {
+  const watchId = "com.setforge.gymapp.ios.watchkitapp";
+  assert.deepEqual(contract.stores.healthKit.ownSourceIds, ["com.setforge.gymapp.ios", watchId]);
+  const item = contract.cases.find((entry) => entry.id === "hk-own-app-apple-watch");
+  assert.ok(item, "golden case hk-own-app-apple-watch");
+  assert.equal(item.store, "healthKit");
+  assert.equal(item.session.sourceId, watchId);
+  assert.equal(item.expected.outcome, "skipped:own-app");
+});

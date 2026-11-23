@@ -157,6 +157,7 @@ struct AddWorkoutView: View {
     @ObservedObject private var activeWorkoutStore: ActiveWorkoutStore
     @ObservedObject private var garminCloud: GarminCloudService
     private let garminPhone: GarminPhoneSyncService?
+    private let appleWatch: WatchConnectivityService?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -246,6 +247,7 @@ struct AddWorkoutView: View {
             activeWorkoutStore: activeWorkoutStore,
             garminCloud: appState.garminCloud,
             garminPhone: appState.garminPhoneSync,
+            appleWatch: appState.watchSync,
             isCloudAccount: appState.auth.session?.cloud != nil,
             initialDrafts: initialDrafts,
             launchSeed: launchSeed,
@@ -288,6 +290,7 @@ struct AddWorkoutView: View {
         activeWorkoutStore: ActiveWorkoutStore,
         garminCloud: GarminCloudService,
         garminPhone: GarminPhoneSyncService? = nil,
+        appleWatch: WatchConnectivityService? = nil,
         isCloudAccount: Bool,
         initialDrafts: [WorkoutExerciseDraft] = [],
         launchSeed: WorkoutLaunchSeed? = nil,
@@ -314,6 +317,7 @@ struct AddWorkoutView: View {
         _activeWorkoutStore = ObservedObject(wrappedValue: activeWorkoutStore)
         _garminCloud = ObservedObject(wrappedValue: garminCloud)
         self.garminPhone = garminPhone
+        self.appleWatch = appleWatch
         let storedProfile = TrainingProfileStore().load(
             accountStorageKey: store.accountStorageKey
         )
@@ -1166,6 +1170,9 @@ struct AddWorkoutView: View {
                     sendPhone: syncPlanToPhoneWatch, sendCloud: syncPlanToGarmin)
             } else {
                 garminCloudPanel
+            }
+            if let appleWatch {
+                AppleWatchPlanPanel(watch: appleWatch, isEmpty: drafts.isEmpty, send: sendPlanToAppleWatch)
             }
         }
     }
@@ -2342,6 +2349,7 @@ struct AddWorkoutView: View {
                 key: key
             )
             garminDraftSubmission = submission
+            publishPlanToAppleWatch(submission.plan)
             Task { @MainActor in
                 do {
                     try await garminCloud.submit(
@@ -2378,8 +2386,43 @@ struct AddWorkoutView: View {
             let submission = try prepareGarminDraftSubmission(existing: garminDraftSubmission, key: key)
             garminDraftSubmission = submission
             try garminPhone.queuePlan(submission.plan, deviceID: deviceID)
+            publishPlanToAppleWatch(submission.plan)
             statusMessage = nil
         } catch { show(gymErrorMessage(error), error: true) }
+    }
+
+    /// The plan sent to a Garmin watch is also kept for the Apple Watch (best effort: a failure
+    /// here must not fail the Garmin send).
+    private func publishPlanToAppleWatch(_ plan: GarminWorkoutPlan) {
+        try? appleWatch?.publishPlan(plan)
+    }
+
+    private func sendPlanToAppleWatch() {
+        if let message = validationMessage() { show(message, error: true); return }
+        guard let appleWatch else { return }
+        do {
+            let key = try currentGarminSyncKey(deviceID: "apple-watch")
+            try appleWatch.publishPlan(GarminWorkoutPlan(
+                source: "gymapp-ios",
+                version: 1,
+                title: key.title,
+                createdAt: key.startedAt,
+                startedAt: key.startedAt,
+                note: key.note,
+                exercises: key.exercises
+            ))
+            if let message = appleWatch.statusMessage { show(message, error: false) }
+        } catch {
+            show(
+                gymText(
+                    "The plan could not be sent to Apple Watch.",
+                    "Не вдалося надіслати план на Apple Watch.",
+                    "Не удалось отправить план на Apple Watch.",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                error: true
+            )
+        }
     }
 
     private func show(_ message: String, error: Bool) {
@@ -2891,6 +2934,44 @@ private extension SmartWorkoutEffortAdjustment {
                 "Тяжёлый режим изменён на стандартный, потому что как минимум половина целевых мышц ещё восстанавливается.",
                 languageCode: gymCurrentLanguageCode()
             )
+        }
+    }
+}
+
+/// "Send to Apple Watch": shown only while a paired Apple Watch has GymApp installed.
+private struct AppleWatchPlanPanel: View {
+    @ObservedObject var watch: WatchConnectivityService
+    let isEmpty: Bool
+    let send: () -> Void
+
+    var body: some View {
+        if watch.isPaired && watch.isWatchAppInstalled {
+            GymPanel {
+                VStack(alignment: .leading, spacing: 10) {
+                    Button(action: send) {
+                        Label(
+                            gymText(
+                                "Send to Apple Watch",
+                                "Надіслати на Apple Watch",
+                                "Отправить на Apple Watch",
+                                languageCode: gymCurrentLanguageCode()
+                            ),
+                            systemImage: "applewatch"
+                        )
+                    }
+                    .buttonStyle(GymSecondaryButtonStyle())
+                    .disabled(isEmpty)
+                    Text(gymText(
+                        "The current edited plan is sent to your Apple Watch. No workout is saved or started.",
+                        "Поточний відредагований план буде надіслано на Apple Watch. Тренування не буде збережено чи розпочато.",
+                        "Текущий отредактированный план будет отправлен на Apple Watch. Тренировка не будет сохранена или начата.",
+                        languageCode: gymCurrentLanguageCode()
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
     }
 }
