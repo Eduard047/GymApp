@@ -67,7 +67,7 @@ test("Android release metadata remains aligned with GymApp Android 4.4.2", () =>
 test("iOS app target and archive defaults agree on release version and build", () => {
   // Order of appearance in project.pbxproj: GymAppLiveActivity (Debug), GymApp
   // (Debug), GymApp (Release), GymAppTests (Debug), GymAppTests (Release),
-  // GymAppLiveActivity (Release).
+  // GymAppWatch (Debug), GymAppWatch (Release), GymAppLiveActivity (Release).
   assert.deepEqual(
     matches(xcodeProject, /^\s*MARKETING_VERSION = ([^;]+);$/gm),
     [
@@ -76,6 +76,8 @@ test("iOS app target and archive defaults agree on release version and build", (
       expected.iosMarketingVersion,
       "1.0",
       "1.0",
+      expected.iosMarketingVersion,
+      expected.iosMarketingVersion,
       expected.iosMarketingVersion,
     ]
   );
@@ -87,6 +89,8 @@ test("iOS app target and archive defaults agree on release version and build", (
       expected.iosBuildNumber,
       "1",
       "1",
+      expected.iosBuildNumber,
+      expected.iosBuildNumber,
       expected.iosBuildNumber,
     ]
   );
@@ -144,6 +148,38 @@ test("GymAppLiveActivity extension matches the GymApp app target's version and b
     /<key>CFBundleVersion<\/key>\s*<string>\$\(CURRENT_PROJECT_VERSION\)<\/string>/,
     "GymAppLiveActivity Info.plist must derive CFBundleVersion from CURRENT_PROJECT_VERSION"
   );
+});
+
+test("GymAppWatch app matches the GymApp app target's version and build (App Store parity)", () => {
+  assert.match(
+    xcodeProject,
+    /PRODUCT_BUNDLE_IDENTIFIER = com\.setforge\.gymapp\.ios\.watchkitapp;/,
+    "GymAppWatch target must exist in the Xcode project"
+  );
+  // App Store validation rejects a watch app whose CFBundleShortVersionString or
+  // CFBundleVersion differ from the companion iPhone app's.
+  const watchConfigBlocks = [
+    ...xcodeProject.matchAll(
+      /buildSettings = \{[^}]*PRODUCT_BUNDLE_IDENTIFIER = com\.setforge\.gymapp\.ios\.watchkitapp;[^}]*\}/g
+    ),
+  ].map((match) => match[0]);
+  assert.equal(
+    watchConfigBlocks.length,
+    2,
+    "expected exactly one Debug and one Release build configuration for GymAppWatch"
+  );
+  for (const block of watchConfigBlocks) {
+    assert.match(
+      block,
+      new RegExp(`MARKETING_VERSION = ${expected.iosMarketingVersion.replaceAll(".", "\\.")};`),
+      "GymAppWatch MARKETING_VERSION must match the GymApp app target"
+    );
+    assert.match(
+      block,
+      new RegExp(`CURRENT_PROJECT_VERSION = ${expected.iosBuildNumber};`),
+      "GymAppWatch CURRENT_PROJECT_VERSION must match the GymApp app target"
+    );
+  }
 });
 
 test("Garmin, iOS, Android, and PWA remain aligned for Android 4.4.2, iOS 4.4.2 and Garmin 4.2.4", () => {

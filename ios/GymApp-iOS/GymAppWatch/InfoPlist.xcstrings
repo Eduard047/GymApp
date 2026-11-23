@@ -1,0 +1,30 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "CFBundleDisplayName" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GymApp" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "GymApp" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "GymApp" } }
+      }
+    },
+    "NSHealthShareUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GymApp reads your heart rate and energy during workouts you record on Apple Watch." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "GymApp считывает пульс и активную энергию во время тренировок, которые ты записываешь на Apple Watch." } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "GymApp зчитує пульс і активну енергію під час тренувань, які ти записуєш на Apple Watch." } }
+      }
+    },
+    "NSHealthUpdateUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GymApp saves workouts you record on Apple Watch to Apple Health." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "GymApp сохраняет тренировки, записанные на Apple Watch, в Apple Health." } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "GymApp зберігає тренування, записані на Apple Watch, в Apple Health." } }
+      }
+    }
+  },
+  "version" : "1.0"
+}
