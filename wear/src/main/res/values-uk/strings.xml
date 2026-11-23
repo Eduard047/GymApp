@@ -65,7 +65,7 @@
     <string name="a11y_rest">Відпочинок, %1$d хв %2$d с</string>
     <string name="a11y_change_exercise">Змінити вправу</string>
     <string name="choose_exercise">Обрати вправу</string>
-    <string name="queued_title">Невідправлене тренування</string>
+    <string name="queued_title">Не надіслано</string>
     <string name="queued_body">Надішли його на телефон, щоб почати нове.</string>
     <string name="send_now">Надіслати</string>
 </resources>

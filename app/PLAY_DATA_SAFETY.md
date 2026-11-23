@@ -24,7 +24,7 @@ For each type below add the listed answer. If the type is already declared for a
 | Device or other IDs → **Device or other IDs** (app-instance ID, Android advertising ID) | Yes | No (see uncertain point 1) | **Optional** | Analytics; Advertising or marketing |
 | Location → **Approximate location** (derived from IP by Google) | Yes (see uncertain point 2) | No (see uncertain point 1) | **Optional** | Analytics; Advertising or marketing |
 
-Not collected by this feature, so do not add: Personal info (email, name), Precise location, Health and fitness data, workout content, Financial info, Contacts, Photos/videos, Audio, Web browsing, Messages.
+Not collected by the analytics feature, so do not add these for the analytics purposes: Personal info (email, name), Precise location, Health and fitness data, workout content, Financial info, Contacts, Photos/videos, Audio, Web browsing, Messages. Health and fitness data is collected by other features (Health Connect import and the Wear OS app) and is declared for App functionality; see "Health Connect import and Wear OS heart rate" below.
 
 Ephemeral processing does not apply: the data is stored by Google Analytics and used for advertising measurement.
 
@@ -63,3 +63,20 @@ The Profile > Help > "Support the developer" screen sells six optional, consumab
 - The app adds no new data collection or sharing of its own, so no new Data safety data type is expected. **Check in Play Console:** whether the "Financial info > Purchase history" type should be answered for in-app purchases made through Google Play Billing (Google processes it; the app does not collect it). Treat this as unconfirmed until reviewed in the Data safety form.
 - Play Console steps (not done by code): create the six in-app products with the ids above, type consumable / managed one-time product, price roughly 0.99 / 1.99 / 2.99 / 4.99 / 9.99 / 19.99 USD, status Active; add the license testers; the first release containing the Billing library must be uploaded to a testing track before the products can load.
 - The privacy policy gets one short paragraph about optional tips (see `ios/GymApp-iOS/AppStore/privacy-policy.html`); it must be live before the Android release that contains the tip screen.
+
+## Health Connect import and Wear OS heart rate
+
+Two features handle health data. Neither is used for advertising or analytics, and nothing from them is sent to Google Analytics.
+
+- **Health Connect import (phone app).** Off until the user connects Health Connect in the app and grants access. Read-only: the app reads exercise sessions, heart rate, and total calories burned and saves them as workouts in the user's own GymApp workouts. It never writes to Health Connect. Manifest permissions: `android.permission.health.READ_EXERCISE`, `android.permission.health.READ_HEART_RATE`, `android.permission.health.READ_TOTAL_CALORIES_BURNED`.
+- **Wear OS app (same applicationId).** During a workout the user starts on the watch, it reads heart rate on the watch through Health Services and sends the average and maximum heart rate with the workout to the user's own phone over the Wearable Data Layer. Manifest permissions: `android.permission.BODY_SENSORS` / `android.permission.health.READ_HEART_RATE`, `android.permission.ACTIVITY_RECOGNITION`, `android.permission.FOREGROUND_SERVICE_HEALTH` (foreground service type `health`), `android.permission.WAKE_LOCK`.
+
+Data safety form: keep the existing Health and fitness answers and make sure they cover this data.
+
+| Play category → type | Collected | Shared | Optional | Purposes |
+|---|---|---|---|---|
+| Health and fitness → **Health info** (heart rate) and **Fitness info** (exercise sessions, calories) | Yes | No | **Optional** (only after the user connects Health Connect or starts a workout on the watch) | App functionality |
+
+- Linked to the user only through their own synchronized workouts. Not shared, not used for advertising or marketing, not used for analytics.
+- **Play Console (not done by code):** complete the Health Connect permissions declaration (App content → Health apps) for the three read permissions above before the release that contains the import; the privacy policy must describe the import, which `ios/GymApp-iOS/AppStore/privacy-policy.html` now does in English/Ukrainian/Russian and which must be live first.
+- **Check in Play Console:** whether the Wear OS release also needs the foreground service (health) declaration and a body-sensors permission declaration, and the exact Health and fitness type names in the current form. Treat these as unconfirmed until reviewed there.

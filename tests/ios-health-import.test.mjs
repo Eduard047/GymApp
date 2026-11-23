@@ -60,3 +60,41 @@ test("privacy documents describe the opt-in read-only Apple Health import", asyn
     assert.doesNotMatch(text, /microphone, HealthKit, Motion/, file);
   }
 });
+
+test("privacy documents say the Apple Watch app saves its workouts to Apple Health", async () => {
+  const policy = await readFile(`${ios}/AppStore/privacy-policy.html`, "utf8");
+  for (const phrase of [
+    "saves the workout to Apple Health",
+    "зберігає тренування в Apple Health",
+    "сохраняет тренировку в Apple Health",
+    "never writes to Health Connect",
+  ]) {
+    assert.ok(policy.includes(phrase), phrase);
+  }
+  // The blanket claims were true only before the watch app existed.
+  assert.doesNotMatch(policy, /it only reads, never writes to Apple Health/);
+  assert.doesNotMatch(policy, /він лише читає, ніколи не записує/);
+  assert.doesNotMatch(policy, /оно только читает, никогда не записывает/);
+
+  for (const file of ["APP_PRIVACY.md", "REVIEW_NOTES.md"]) {
+    const text = await readFile(`${ios}/AppStore/${file}`, "utf8");
+    assert.match(text, /com\.setforge\.gymapp\.ios\.watchkitapp/, file);
+    assert.match(text, /saves the workout to Apple Health/, file);
+    assert.doesNotMatch(text, /the app never writes to Health\)/, file);
+    assert.doesNotMatch(text, /\. It never writes to Apple Health/, file);
+    assert.doesNotMatch(text, /are never written back/, file);
+  }
+  const notes = await readFile(`${ios}/AppStore/REVIEW_NOTES.md`, "utf8");
+  assert.match(notes, /NSHealthShareUsageDescription/);
+  assert.match(notes, /NSHealthUpdateUsageDescription/);
+
+  const play = await readFile("app/PLAY_DATA_SAFETY.md", "utf8");
+  for (const phrase of [
+    "android.permission.health.READ_EXERCISE",
+    "android.permission.health.READ_TOTAL_CALORIES_BURNED",
+    "Health Connect permissions declaration",
+    "Wearable Data Layer",
+  ]) {
+    assert.ok(play.includes(phrase), phrase);
+  }
+});

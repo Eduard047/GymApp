@@ -11,6 +11,7 @@ Native SwiftUI port of the Android GymApp. The project targets iOS 18 and is bui
 - Email/password Supabase account, secure Keychain session storage, cloud state and owner-only protected progress.
 - Offline account so core workout tracking never requires registration.
 - Garmin watches connect over Bluetooth through Garmin Connect (Connect IQ) from Profile → Watches; no token is created or pasted. The Supabase cloud plan queue remains only for accounts that already have a cloud-linked watch (removal-only card in Account).
+- Apple Watch app (`com.setforge.gymapp.ios.watchkitapp`): a workout started on the watch is recorded as a strength workout with heart rate through HealthKit, saved to Apple Health, and sent to the iPhone app. The iPhone's own Apple Health import stays read-only.
 - English, Ukrainian and Russian UI, light/dark appearance, Dynamic Type and VoiceOver labels.
 - In-app privacy/support links, password recovery and account-deletion UI.
 - Privacy manifest, App Store metadata drafts, review notes and submission checklist.

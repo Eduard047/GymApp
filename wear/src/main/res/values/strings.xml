@@ -65,7 +65,7 @@
     <string name="a11y_rest">Rest, %1$d min %2$d s</string>
     <string name="a11y_change_exercise">Change exercise</string>
     <string name="choose_exercise">Choose exercise</string>
-    <string name="queued_title">Unsent workout</string>
+    <string name="queued_title">Unsent</string>
     <string name="queued_body">Send it to your phone before starting a new one.</string>
     <string name="send_now">Send now</string>
 </resources>

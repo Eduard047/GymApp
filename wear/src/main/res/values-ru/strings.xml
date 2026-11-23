@@ -65,7 +65,7 @@
     <string name="a11y_rest">Отдых, %1$d мин %2$d с</string>
     <string name="a11y_change_exercise">Сменить упражнение</string>
     <string name="choose_exercise">Выбрать упражнение</string>
-    <string name="queued_title">Неотправленная тренировка</string>
+    <string name="queued_title">Не отправлено</string>
     <string name="queued_body">Отправь её на телефон, чтобы начать новую.</string>
     <string name="send_now">Отправить</string>
 </resources>
