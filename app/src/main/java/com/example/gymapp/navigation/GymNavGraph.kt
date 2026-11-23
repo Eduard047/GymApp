@@ -4777,6 +4777,10 @@ internal fun GymAppRoot(
                                             .resetSecureGarminPairing()
                                     }
                                 },
+                                onPairGarminDevice = { deviceId ->
+                                    applicationContext.gymApplication.garminSyncManager
+                                        .pairWatch(deviceId)
+                                },
                                 selectedLanguage = selectedLanguage,
                                 onLanguageSelected = onLanguageSelected,
                                 onRetryLoad = profileViewModel::retryLoad,

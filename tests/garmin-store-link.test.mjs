@@ -20,10 +20,10 @@ function quotedValueFollowing(source, marker) {
 }
 
 test("native clients open our Garmin listing with platform store fallbacks", async () => {
-  const [androidLauncher, androidScreen, iosSettings, iosInfo] = await Promise.all([
+  const [androidLauncher, androidScreen, iosProfile, iosInfo] = await Promise.all([
     readFile("app/src/main/java/com/example/gymapp/garmin/GarminStoreLauncher.kt", "utf8"),
     readFile("app/src/main/java/com/example/gymapp/ui/screens/ProfileScreen.kt", "utf8"),
-    readFile("ios/GymApp-iOS/GymApp/UI/Screens/AccountSettingsView.swift", "utf8"),
+    readFile("ios/GymApp-iOS/GymApp/UI/Screens/ProfileView.swift", "utf8"),
     readFile("ios/GymApp-iOS/GymApp/Resources/Info.plist", "utf8")
   ]);
 
@@ -36,14 +36,14 @@ test("native clients open our Garmin listing with platform store fallbacks", asy
   assert.equal(quotedValueFollowing(androidLauncher, "CONNECT_IQ_GOOGLE_PLAY_URL"), CONNECT_IQ_PLAY_URL);
   assert.equal(androidScreen.includes("openGymWorkoutTrackerInGarminStore(context)"), true);
 
-  assert.equal(quotedValueFollowing(iosSettings, "private let garminStoreURL"), GARMIN_STORE_URL);
-  assert.equal(quotedValueFollowing(iosSettings, "private let connectIQAppStoreURL"), CONNECT_IQ_APP_STORE_URL);
-  assert.equal(iosSettings.includes("application.canOpenURL(connectIQSchemeURL)"), true);
+  assert.equal(quotedValueFollowing(iosProfile, "private let garminStoreURL"), GARMIN_STORE_URL);
+  assert.equal(quotedValueFollowing(iosProfile, "private let connectIQAppStoreURL"), CONNECT_IQ_APP_STORE_URL);
+  assert.equal(iosProfile.includes("application.canOpenURL(connectIQSchemeURL)"), true);
   assert.equal(iosInfo.includes("<string>connectiq</string>"), true);
 
   assert.equal(androidLauncher.includes(OLD_QA_DOWNLOAD), false);
   assert.equal(androidScreen.includes(OLD_QA_DOWNLOAD), false);
-  assert.equal(iosSettings.includes(OLD_QA_DOWNLOAD), false);
+  assert.equal(iosProfile.includes(OLD_QA_DOWNLOAD), false);
 });
 
 test("iOS Info.plist declares no background BLE mode and keeps foreground Bluetooth usage strings", async () => {

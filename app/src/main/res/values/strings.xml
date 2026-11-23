@@ -1444,6 +1444,10 @@
     <string name="garmin_profile_connected">Connected now</string>
     <string name="garmin_profile_offline">Not connected now</string>
     <string name="garmin_profile_paired">Paired</string>
+    <string name="garmin_connect_action">Connect</string>
+    <string name="garmin_connecting">Connecting…</string>
+    <string name="garmin_connect_failed">Couldn’t connect. Open the app on the watch and try again.</string>
+    <string name="garmin_connect_reset_pending">Finish the Garmin pairing reset below before connecting a watch.</string>
     <string name="garmin_lite_free_only_notice">This watch supports free workouts only. Plans stay on your phone.</string>
     <string name="garmin_profile_no_devices">No Garmin watch is paired in Garmin Connect.</string>
     <string name="garmin_profile_unavailable">Garmin Connect is unavailable on this device.</string>

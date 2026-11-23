@@ -72,6 +72,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -103,6 +104,7 @@ import com.example.gymapp.auth.LiveInboxRoom
 import com.example.gymapp.auth.NEW_PASSWORD_POLICY_ERROR
 import com.example.gymapp.garmin.openGymWorkoutTrackerInGarminStore
 import com.example.gymapp.garmin.GarminDeviceUiState
+import com.example.gymapp.garmin.garminDeviceOffersConnect
 import com.example.gymapp.push.PushUiState
 import com.example.gymapp.push.PushNavigationTarget
 import com.example.gymapp.ui.components.AppPanel
@@ -118,6 +120,7 @@ import com.example.gymapp.ui.components.SettingsRowTrailing
 import com.example.gymapp.ui.components.appLanguageOptions
 import com.example.gymapp.ui.components.nativeName
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
+import com.example.gymapp.ui.theme.Button
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
 import com.example.gymapp.ui.viewmodel.FriendsUiState
@@ -127,6 +130,8 @@ import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.getString
 import com.example.gymapp.util.formattedStringResource
 import com.example.gymapp.ui.theme.TintedButton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 /** The Profile root and the screens it pushes: Friends & live, the Garmin watch and the optional tip jar. */
 private enum class ProfileDestination {
@@ -208,6 +213,7 @@ internal fun ProfileScreen(
     garminDeviceState: GarminDeviceUiState,
     onRefreshGarminDevices: () -> Unit,
     onResetGarminPairing: () -> Unit,
+    onPairGarminDevice: suspend (deviceId: Long) -> Boolean,
     selectedLanguage: AppLanguage,
     onLanguageSelected: (AppLanguage) -> Unit,
     onRetryLoad: () -> Unit = {},
@@ -365,7 +371,8 @@ internal fun ProfileScreen(
                         GarminDeviceCard(
                             state = garminDeviceState,
                             onOpenGarminApp = { openGymWorkoutTrackerInGarminStore(context) },
-                            onResetGarminPairing = { showGarminResetConfirmation = true }
+                            onResetGarminPairing = { showGarminResetConfirmation = true },
+                            onPairGarminDevice = onPairGarminDevice
                         )
                     }
                 }
@@ -999,8 +1006,12 @@ private fun ProfileLanguageRow(
 private fun GarminDeviceCard(
     state: GarminDeviceUiState,
     onOpenGarminApp: () -> Unit,
-    onResetGarminPairing: () -> Unit
+    onResetGarminPairing: () -> Unit,
+    onPairGarminDevice: suspend (deviceId: Long) -> Boolean
 ) {
+    val pairingScope = rememberCoroutineScope()
+    var connectingDeviceId by remember { mutableStateOf<Long?>(null) }
+    var failedDeviceId by remember { mutableStateOf<Long?>(null) }
     AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -1022,6 +1033,8 @@ private fun GarminDeviceCard(
                 )
             } else {
                 state.devices.forEach { device ->
+                    val connecting = connectingDeviceId == device.deviceId
+                    val failed = failedDeviceId == device.deviceId && !connecting
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -1051,13 +1064,55 @@ private fun GarminDeviceCard(
                                 }
                             )
                         }
-                        if (device.trustedForActiveAccount) {
+                        // A failed attempt keeps the watch pinned (the pin precedes the first sync),
+                        // so a retry stays available after the tag already reads "Paired".
+                        val offersConnect = garminDeviceOffersConnect(state, device) ||
+                            (failed && state.canPair && !state.pairingResetPending && device.connected)
+                        if (connecting) {
+                            Text(
+                                text = stringResource(R.string.garmin_connecting),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else if (offersConnect) {
+                            Button(
+                                onClick = {
+                                    if (connectingDeviceId == null) {
+                                        val deviceId = device.deviceId
+                                        connectingDeviceId = deviceId
+                                        failedDeviceId = null
+                                        pairingScope.launch {
+                                            val paired = try {
+                                                onPairGarminDevice(deviceId)
+                                            } catch (error: CancellationException) {
+                                                throw error
+                                            } catch (_: Exception) {
+                                                false
+                                            }
+                                            failedDeviceId = if (paired) null else deviceId
+                                            connectingDeviceId = null
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                elevation = null
+                            ) {
+                                Text(stringResource(R.string.garmin_connect_action))
+                            }
+                        } else if (device.trustedForActiveAccount) {
                             Text(
                                 text = stringResource(R.string.garmin_profile_paired),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
+                    }
+                    if (failed) {
+                        Text(
+                            text = stringResource(R.string.garmin_connect_failed),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
                     }
                     if (device.liteMode) {
                         Text(
@@ -1067,6 +1122,13 @@ private fun GarminDeviceCard(
                         )
                     }
                 }
+            }
+            if (state.sdkReady && state.pairingResetPending) {
+                Text(
+                    text = stringResource(R.string.garmin_connect_reset_pending),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             // Without the Garmin SDK there is nothing to open, so the card only states that.
             if (state.sdkReady) {

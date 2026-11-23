@@ -154,12 +154,18 @@ data class GarminDeviceSummary(
     val connected: Boolean,
     val trustedForActiveAccount: Boolean,
     /** Free-workout-only watch (96 KiB tier): it never receives or shows plans. */
-    val liteMode: Boolean = false
+    val liteMode: Boolean = false,
+    /** Connect IQ device identifier, used only to pair exactly the watch the user tapped. */
+    val deviceId: Long = 0L
 )
 
 data class GarminDeviceUiState(
     val sdkReady: Boolean = false,
-    val devices: List<GarminDeviceSummary> = emptyList()
+    val devices: List<GarminDeviceSummary> = emptyList(),
+    /** An account is signed in and ready, so an explicit Connect tap may pair a watch. */
+    val canPair: Boolean = false,
+    /** An auth-transition reset is pending: the existing reset flow must finish before pairing. */
+    val pairingResetPending: Boolean = false
 ) {
     /** True when the watch paired to the active account is a free-workout-only watch. */
     val trustedWatchIsLite: Boolean
@@ -798,6 +804,165 @@ class GarminSyncManager(
             true
             }
         }
+    }
+
+    /**
+     * Pairs exactly the watch the user tapped in Profile, with no plan sync needed first.
+     *
+     * The tap is the choice: it works with several connected Garmin watches and pins only the
+     * tapped device, while inbound messages are still accepted only from the single pinned watch.
+     * Pairing reuses the existing trust and sync machinery and no new message keys: with a cached
+     * plan for the active account it sends that plan through the ordinary plan-sync path, otherwise
+     * (or for a free-workout-only watch) a binding-only sync. `resetWorkout` is never set, so an
+     * active watch workout and a plan the watch already holds for the same account survive.
+     * A pending auth-transition reset is never bypassed; it still needs the reset flow.
+     */
+    suspend fun pairWatch(deviceId: Long): Boolean {
+        val paired = try {
+            if (!ensureSdkReady()) {
+                lastPlanSyncStatus = "Garmin SDK not ready"
+                false
+            } else {
+                pairingStateMutex.withLock {
+                    outboundSyncMutex.withLock { pairWatchLocked(deviceId) }
+                }
+            }
+        } finally {
+            refreshDeviceUiState()
+        }
+        return paired
+    }
+
+    private suspend fun pairWatchLocked(deviceId: Long): Boolean {
+        val resetPending = pendingAuthTransition() != null
+        val account = activeAccountContext()
+        val resolution = resolveGarminDevices()
+        if (resolution.failedStatus != null) {
+            lastPlanSyncStatus = resolution.failedStatus
+            return false
+        }
+        val tappedBinding = deviceId.toString()
+        val tapped = resolution.connected.firstOrNull { deviceBinding(it) == tappedBinding }
+        val trusted = synchronized(accountBindingLock) {
+            trustedDeviceResolutionLocked(preferences(), migrateLegacy = true)
+        }
+        val decision = decideGarminWatchPairing(
+            tappedBinding = tappedBinding,
+            connectedBindings = resolution.connected.map(::deviceBinding),
+            trustedState = trusted.state,
+            trustedBinding = trusted.binding,
+            resetPending = resetPending,
+            accountReady = account != null,
+            hasCachedPlan = account != null &&
+                cachedPlan(account, tappedBinding).isNotEmpty(),
+            isLiteWatch = liteWatches.isLite(tappedBinding)
+        )
+        val pair = when (decision) {
+            is GarminWatchPairingDecision.Refuse -> {
+                lastPlanSyncStatus = when (decision.reason) {
+                    GarminWatchPairingRefusal.ResetPending ->
+                        "Open Garmin pairing reset before syncing the active account"
+                    GarminWatchPairingRefusal.AccountNotReady -> "Sign in before Garmin sync"
+                    GarminWatchPairingRefusal.TrustConflict ->
+                        "Garmin trusted-device state conflicts; reset is blocked"
+                    GarminWatchPairingRefusal.AnotherWatchPinned ->
+                        "Another Garmin watch is already paired"
+                    GarminWatchPairingRefusal.NotConnected -> "Garmin watch is not connected"
+                    GarminWatchPairingRefusal.InvalidDevice -> "Invalid Garmin watch"
+                }
+                Log.i(TAG, lastPlanSyncStatus)
+                return false
+            }
+            is GarminWatchPairingDecision.Pair -> decision
+        }
+        if (account == null || tapped == null) return false
+        registerAppEvents(tapped)
+        val language = application.languageManager.currentLanguage()
+        return when (pair.mode) {
+            GarminPairingSyncMode.BindingOnly ->
+                sendBindingOnlyPairing(account, tapped, language)
+            GarminPairingSyncMode.CachedPlan -> {
+                val plan = cachedPlan(account, pair.deviceBinding)
+                val exercises = runCatching {
+                    application.repositoryFor(account.session)
+                        .getExerciseNamesForSync(limit = MAX_WATCH_EXERCISES)
+                }.getOrElse {
+                    lastPlanSyncStatus = "Cannot read the exercise catalog for Garmin"
+                    return false
+                }
+                val catalog = mergedGarminExerciseCatalogForFreeOrder(
+                    plan = plan,
+                    exercises = exercises,
+                    maximumCount = MAX_WATCH_EXERCISES
+                ) ?: run {
+                    lastPlanSyncStatus = "Exercise catalog is outside Garmin limits"
+                    return false
+                }
+                if (!isStillActive(account)) {
+                    lastPlanSyncStatus = "Account changed before Garmin sync"
+                    return false
+                }
+                // Pin the tapped watch first: the ordinary plan path then targets exactly the
+                // pinned watch even when several are connected. Pinning precedes the first
+                // account-bound mutation for the reason documented in the plan path.
+                if (!trustDevice(account, pair.deviceBinding)) {
+                    lastPlanSyncStatus = "Cannot persist trusted Garmin device"
+                    return false
+                }
+                val sent = sendToConnectedDevicesLocked(
+                    account = account,
+                    planToCache = plan,
+                    exerciseCatalog = catalog,
+                    language = language
+                )
+                // A watch that answered "lite" or "plan too large" applied the pairing fields
+                // already; confirm the pairing with the plan-free message instead of failing.
+                sent || (
+                    (liteWatches.isLite(pair.deviceBinding) ||
+                        lastPlanSyncStatus == GARMIN_PLAN_TOO_LARGE_STATUS) &&
+                        sendBindingOnlyPairing(account, tapped, language)
+                    )
+            }
+        }
+    }
+
+    private suspend fun sendBindingOnlyPairing(
+        account: GarminAccountContext,
+        device: IQDevice,
+        language: AppLanguage
+    ): Boolean {
+        val deviceBinding = deviceBinding(device)
+        if (!isStillActive(account)) {
+            lastPlanSyncStatus = "Account changed before Garmin sync"
+            return false
+        }
+        val supportsGeneration = pairingGenerationSupported(account, deviceBinding)
+        val pairingGeneration = if (supportsGeneration) {
+            activePairingGeneration(account, deviceBinding) ?: run {
+                lastPlanSyncStatus = "Cannot persist Garmin pairing generation"
+                return false
+            }
+        } else {
+            LEGACY_GARMIN_FALLBACK_GENERATION
+        }
+        // Same ordering as the plan path: pin before the first account-bound mutation.
+        if (!trustDevice(account, deviceBinding)) {
+            lastPlanSyncStatus = "Cannot persist trusted Garmin device"
+            return false
+        }
+        val paired = sendLiteBindingSync(
+            device = device,
+            account = account,
+            binding = GarminBinding(
+                account = account.binding,
+                device = deviceBinding,
+                pairingGeneration = pairingGeneration
+            ),
+            supportsGeneration = supportsGeneration,
+            language = language
+        )
+        if (paired) lastPlanSyncStatus = "Garmin watch paired"
+        return paired
     }
 
     internal fun clearCloudAccountLocalState(
@@ -1979,6 +2144,7 @@ class GarminSyncManager(
             val committed = editor.commit()
             if (committed) {
                 readyAuthTransitionKey = target.key
+                refreshDeviceUiState()
             } else {
                 lastPlanSyncStatus = "Garmin reset acknowledged but local state was not saved"
             }
@@ -2066,9 +2232,12 @@ class GarminSyncManager(
                         connected = latestDeviceStatuses[device.deviceIdentifier] ==
                             IQDevice.IQDeviceStatus.CONNECTED,
                         trustedForActiveAccount = trustedBinding == deviceBinding(device),
-                        liteMode = liteWatches.isLite(deviceBinding(device))
+                        liteMode = liteWatches.isLite(deviceBinding(device)),
+                        deviceId = device.deviceIdentifier
                     )
-                }
+                },
+            canPair = account != null && isStillActive(account),
+            pairingResetPending = pendingAuthTransition() != null
         )
     }
 

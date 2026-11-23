@@ -63,12 +63,10 @@ struct AccountSettingsView: View {
                     if isCloudAccount {
                         notificationsCard
                     }
-                    if isCloudAccount {
-                        GarminSettingsCard(
-                            garminCloud: appState.garminCloud,
-                            garminPhoneSync: appState.garminPhoneSync
-                        )
-                    }
+                    GarminLegacyCloudSection(
+                        garminCloud: appState.garminCloud,
+                        isCloudAccount: isCloudAccount
+                    )
                     privacyAndSupportCard
                     sessionCard
                     dangerZone
@@ -90,6 +88,11 @@ struct AccountSettingsView: View {
             }
         }
         .alert(item: $prompt, content: makePrompt)
+        .task {
+            // The cloud-linked watch card appears only when the account already owns one.
+            guard isCloudAccount, !appState.garminCloud.isWorking else { return }
+            try? await appState.garminCloud.refreshDevices()
+        }
 #if DEBUG
         .task {
             // UI-audit: presents the first deletion alert once; "Continue" is never tapped.
@@ -819,456 +822,152 @@ private struct CopyableIDRow: View {
     }
 }
 
-private struct GarminTokenPresentation: Identifiable {
-    let credential: GarminPairingCredential
-    let canRevoke: Bool
-
-    var id: String { credential.id }
-}
-
-enum GarminWatchName {
-    /// Resolves the default name at use time so it follows the language active now, not when the view was created.
-    static func effectiveGarminDisplayName(_ typed: String) -> String {
-        let trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? gymLocalized("Garmin watch") : trimmed
+/// Cloud-linked watches exist only for accounts that registered one before
+/// watches connected over Bluetooth. This card is a removal-only legacy surface:
+/// it renders only while the signed-in account still has at least one.
+enum GarminLegacyCloudCardPolicy {
+    static func isVisible(isCloudAccount: Bool, cloudDeviceCount: Int) -> Bool {
+        isCloudAccount && cloudDeviceCount > 0
     }
 }
 
 @MainActor
-private struct GarminSettingsCard: View {
+private struct GarminLegacyCloudSection: View {
     @ObservedObject var garminCloud: GarminCloudService
-    @ObservedObject var garminPhoneSync: GarminPhoneSyncService
+    let isCloudAccount: Bool
 
-    @State private var displayName = ""
+    var body: some View {
+        if GarminLegacyCloudCardPolicy.isVisible(
+            isCloudAccount: isCloudAccount,
+            cloudDeviceCount: garminCloud.availableDevices.count
+        ) {
+            GarminLegacyCloudCard(garminCloud: garminCloud)
+        }
+    }
+}
+
+@MainActor
+private struct GarminLegacyCloudCard: View {
+    @ObservedObject var garminCloud: GarminCloudService
+
     @State private var errorMessage: String?
-    @State private var tokenPresentation: GarminTokenPresentation?
-    private let garminStoreURL = URL(
-        string: "https://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f"
-    )!
-    private let connectIQSchemeURL = URL(string: "connectiq://")!
-    private let connectIQAppStoreURL = URL(
-        string: "https://apps.apple.com/app/connect-iq-store/id1317652970"
-    )!
-    @State private var showsRevokeConfirmation = false
+    @State private var pendingRemoval: GarminDeviceSummary?
+
+    private var languageCode: String { gymCurrentLanguageCode() }
 
     var body: some View {
         GymPanel {
             VStack(alignment: .leading, spacing: 14) {
                 GymSectionTitle(
-                    title: "Paired watches",
-                    supporting: "Choose exactly which active watch receives iOS workout plans. The selected device is stored securely for this Supabase account."
+                    title: gymText(
+                        "Cloud-linked watches",
+                        "Годинники з хмарною прив’язкою",
+                        "Часы с облачной привязкой",
+                        languageCode: languageCode
+                    ),
+                    supporting: gymText(
+                        "New watches connect over Bluetooth.",
+                        "Нові годинники підключаються через Bluetooth.",
+                        "Новые часы подключаются по Bluetooth.",
+                        languageCode: languageCode
+                    )
                 )
-
-                Button(action: openGarminStore) {
-                    Label("Open Gym Workout Tracker in Garmin", systemImage: "arrow.up.right.square")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(GymSecondaryButtonStyle())
-                .accessibilityHint("Opens this app in Connect IQ, or opens the App Store if Connect IQ is not installed")
-
-                Button {
-                    garminPhoneSync.selectDevices()
-                } label: {
-                    Label("Connect this iPhone to Garmin", systemImage: "iphone.and.arrow.forward")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(GymPrimaryButtonStyle())
-                .accessibilityHint("Opens Garmin Connect so you can choose which paired watches may send completed workouts to this iPhone")
-
-                if let message = garminPhoneSync.statusMessage {
-                    GymStatusBanner(message: message, isError: garminPhoneSync.statusIsError)
-                }
-
-                if !garminPhoneSync.devices.isEmpty {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text("Direct iPhone connection")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(GymTheme.textSecondary)
-                        ForEach(garminPhoneSync.devices) { device in
-                            HStack(spacing: 9) {
-                                Image(systemName: device.connected ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(
-                                        device.connected ? GymTheme.primary : GymTheme.textSecondary
-                                    )
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(device.name)
-                                        .font(.subheadline.weight(.semibold))
-                                    Text(device.model)
-                                        .font(.caption)
-                                        .foregroundStyle(GymTheme.textSecondary)
-                                    if device.lite {
-                                        Text(GarminPhoneSyncProtocol.liteWatchMessage(
-                                            languageCode: gymCurrentLanguageCode()))
-                                            .font(.caption)
-                                            .foregroundStyle(GymTheme.textSecondary)
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    }
-                                }
-                                Spacer()
-                                Text(device.connected ? "Connected" : "Offline")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(
-                                        device.connected ? GymTheme.primary : GymTheme.textSecondary
-                                    )
-                            }
-                            .padding(11)
-                            .background(
-                                RoundedRectangle(
-                                    cornerRadius: GymTheme.controlCornerRadius,
-                                    style: .continuous
-                                )
-                                .fill(GymTheme.surfaceVariant)
-                            )
-                        }
-                    }
-                }
 
                 if let errorMessage {
                     GymStatusBanner(message: errorMessage, isError: true)
                 }
 
-                if garminCloud.availableDevices.isEmpty {
-                    Label(
-                        garminCloud.isWorking ? "Loading Garmin watches…" : "No active Garmin watches found.",
-                        systemImage: "applewatch"
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(GymTheme.textSecondary)
-                } else {
-                    VStack(spacing: 8) {
-                        ForEach(garminCloud.availableDevices) { device in
-                            deviceButton(device)
-                        }
+                VStack(spacing: 8) {
+                    ForEach(garminCloud.availableDevices) { device in
+                        deviceRow(device)
                     }
                 }
-
-                Button {
-                    Task { await refreshDevices() }
-                } label: {
-                    Label("Refresh watches", systemImage: "arrow.clockwise")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(GymSecondaryButtonStyle())
-                .disabled(garminCloud.isWorking)
-
-                Divider()
-
-                if garminCloud.selectedDevice != nil {
-                    Button {
-                        Task { await rotateToken() }
-                    } label: {
-                        Label("Rotate token for selected watch", systemImage: "key.horizontal")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(GymSecondaryButtonStyle())
-                    .disabled(garminCloud.isWorking)
-
-                    Text("Use token rotation to reconnect the same watch. It preserves the device ID already pinned by the Garmin app.")
-                        .font(.caption)
-                        .foregroundStyle(GymTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Button(role: .destructive) {
-                        showsRevokeConfirmation = true
-                    } label: {
-                        Label("Revoke selected watch", systemImage: "applewatch")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(GymSecondaryButtonStyle(destructive: true))
-                    .disabled(garminCloud.isWorking)
-                }
-
-                Divider()
-
-                TextField("Watch name", text: $displayName, prompt: Text(gymLocalized("Garmin watch")))
-                    .textInputAutocapitalization(.words)
-                    .autocorrectionDisabled()
-                    .gymTextFieldChrome()
-                    .accessibilityHint("A label up to 80 characters for a new Garmin watch")
-
-                Button {
-                    Task { await createNewDevice() }
-                } label: {
-                    if garminCloud.isWorking {
-                        HStack(spacing: 9) {
-                            ProgressView().tint(.white)
-                            Text("Pairing…")
-                        }
-                    } else {
-                        Label("Pair a brand-new watch", systemImage: "plus.circle")
-                    }
-                }
-                .buttonStyle(GymPrimaryButtonStyle())
-                .disabled(garminCloud.isWorking)
-
-                Text("Create a new device ID only for a watch that has never used GymApp cloud sync. For an existing watch, select it above or rotate its token.")
-                    .font(.caption)
-                    .foregroundStyle(GymTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .task { await refreshDevices() }
-        .sheet(item: $tokenPresentation, onDismiss: { tokenPresentation = nil }) { presentation in
-            NavigationStack {
-                GarminTokenView(
-                    presentation: presentation,
-                    selectedDeviceID: garminCloud.selectedDevice?.deviceID,
-                    revoke: { try await garminCloud.revokeSelectedDevice() },
-                    onClose: { tokenPresentation = nil }
-                )
+        .alert(
+            gymText(
+                "Remove cloud link?",
+                "Прибрати хмарну прив’язку?",
+                "Убрать облачную привязку?",
+                languageCode: languageCode
+            ),
+            isPresented: Binding(
+                get: { pendingRemoval != nil },
+                set: { if !$0 { pendingRemoval = nil } }
+            ),
+            presenting: pendingRemoval
+        ) { device in
+            Button(
+                gymText("Remove", "Прибрати", "Убрать", languageCode: languageCode),
+                role: .destructive
+            ) {
+                Task { await remove(device) }
             }
-            .gymSheetPresentation()
-        }
-        .alert("Revoke selected Garmin watch?", isPresented: $showsRevokeConfirmation) {
-            Button("Revoke", role: .destructive) {
-                Task { await revokeSelectedDevice() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This invalidates the watch token and quarantines its pending plans. Reusing this watch with a new device ID requires resetting GymApp on the watch. Use token rotation instead when reconnecting the same watch.")
+            Button(
+                gymText("Cancel", "Скасувати", "Отменить", languageCode: languageCode),
+                role: .cancel
+            ) {}
+        } message: { _ in
+            Text(gymText(
+                "This invalidates the watch’s cloud token and discards its pending cloud plans. Connect the watch over Bluetooth in Profile → Garmin watch.",
+                "Це скасовує хмарний токен годинника й відхиляє його плани, що очікують у хмарі. Підключіть годинник через Bluetooth: Профіль → Годинник Garmin.",
+                "Это отзывает облачный токен часов и отклоняет их ожидающие облачные планы. Подключите часы по Bluetooth: Профиль → Часы Garmin.",
+                languageCode: languageCode
+            ))
         }
     }
 
-    private func openGarminStore() {
-        let application = UIApplication.shared
-        let destination = application.canOpenURL(connectIQSchemeURL)
-            ? garminStoreURL
-            : connectIQAppStoreURL
-        application.open(destination)
-    }
-
-    private func deviceButton(_ device: GarminDeviceSummary) -> some View {
-        let selected = garminCloud.selectedDevice?.deviceID == device.id
-        let identifierSuffix = String(device.id.suffix(8))
-        let identifierLabel: String
-        let deviceAccessibilityLabel: String
-        switch gymCurrentLanguageCode() {
-        case AppLanguage.ukrainian.rawValue:
-            identifierLabel = "Пристрій …\(identifierSuffix)"
-            deviceAccessibilityLabel = "\(device.displayName), останні символи ідентифікатора пристрою: \(identifierSuffix)"
-        case AppLanguage.russian.rawValue:
-            identifierLabel = "Устройство …\(identifierSuffix)"
-            deviceAccessibilityLabel = "\(device.displayName), последние символы идентификатора устройства: \(identifierSuffix)"
-        default:
-            identifierLabel = "Device …\(identifierSuffix)"
-            deviceAccessibilityLabel = "\(device.displayName), device ending \(identifierSuffix)"
-        }
-        return Button {
-            do {
-                try garminCloud.selectDevice(device)
-                errorMessage = nil
-            } catch {
-                errorMessage = gymErrorMessage(error)
+    private func deviceRow(_ device: GarminDeviceSummary) -> some View {
+        let suffix = String(device.id.suffix(8))
+        let identifierLabel = gymText(
+            "Device …\(suffix)",
+            "Пристрій …\(suffix)",
+            "Устройство …\(suffix)",
+            languageCode: languageCode
+        )
+        return HStack(spacing: 11) {
+            Image(systemName: "applewatch")
+                .foregroundStyle(GymTheme.textSecondary)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(device.displayName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(GymTheme.textPrimary)
+                Text(identifierLabel)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(GymTheme.textSecondary)
             }
-        } label: {
-            HStack(spacing: 11) {
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(selected ? GymTheme.primary : GymTheme.textSecondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(device.displayName)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(GymTheme.textPrimary)
-                    Text(identifierLabel)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(GymTheme.textSecondary)
-                }
-                Spacer(minLength: 8)
-                if selected {
-                    Text("Selected")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(GymTheme.primary)
-                }
+            Spacer(minLength: 8)
+            Button(role: .destructive) {
+                pendingRemoval = device
+            } label: {
+                Text(gymText("Remove", "Прибрати", "Убрать", languageCode: languageCode))
+                    .font(.subheadline.weight(.semibold))
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .buttonStyle(.plain)
+            .foregroundStyle(GymTheme.error)
+            .disabled(garminCloud.isWorking)
+            .accessibilityLabel(gymText(
+                "Remove cloud link from \(device.displayName)",
+                "Прибрати хмарну прив’язку з \(device.displayName)",
+                "Убрать облачную привязку у \(device.displayName)",
+                languageCode: languageCode
+            ))
         }
-        .buttonStyle(.plain)
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                .fill(selected ? GymTheme.primary.opacity(0.1) : GymTheme.surfaceVariant)
+                .fill(GymTheme.surfaceVariant)
         )
-        .disabled(garminCloud.isWorking)
-        .accessibilityLabel(deviceAccessibilityLabel)
-        .accessibilityValue(selected ? "Selected" : "Not selected")
     }
 
-    private func refreshDevices() async {
-        guard !garminCloud.isWorking else { return }
+    private func remove(_ device: GarminDeviceSummary) async {
         do {
-            try await garminCloud.refreshDevices()
+            try await garminCloud.revokeDevice(device)
             errorMessage = nil
         } catch {
             errorMessage = gymErrorMessage(error)
         }
-    }
-
-    private func createNewDevice() async {
-        do {
-            let credential = try await garminCloud.createDevice(displayName: GarminWatchName.effectiveGarminDisplayName(displayName))
-            tokenPresentation = GarminTokenPresentation(
-                credential: credential,
-                canRevoke: true
-            )
-            errorMessage = nil
-        } catch {
-            errorMessage = gymErrorMessage(error)
-        }
-    }
-
-    private func rotateToken() async {
-        do {
-            let credential = try await garminCloud.rotateSelectedDeviceToken()
-            tokenPresentation = GarminTokenPresentation(
-                credential: credential,
-                canRevoke: false
-            )
-            errorMessage = nil
-        } catch {
-            errorMessage = gymErrorMessage(error)
-        }
-    }
-
-    private func revokeSelectedDevice() async {
-        do {
-            try await garminCloud.revokeSelectedDevice()
-            errorMessage = nil
-        } catch {
-            errorMessage = gymErrorMessage(error)
-        }
-    }
-}
-
-@MainActor
-private struct GarminTokenView: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.scenePhase) private var scenePhase
-
-    let presentation: GarminTokenPresentation
-    let selectedDeviceID: String?
-    let revoke: () async throws -> Void
-    let onClose: () -> Void
-
-    @State private var showsCopyWarning = false
-    @State private var copied = false
-    @State private var isRevoking = false
-    @State private var errorMessage: String?
-
-    var body: some View {
-        GymBackground {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    GymSectionTitle(
-                        eyebrow: "One-time secret",
-                        title: "Save the Garmin token now",
-                        supporting: "Paste this token only into GymApp settings in Garmin Connect IQ. It will not be stored or shown again."
-                    )
-
-                    if let errorMessage {
-                        GymStatusBanner(message: errorMessage, isError: true)
-                    }
-
-                    GymPanel(highlighted: true) {
-                        Text(presentation.credential.deviceToken)
-                            .font(.system(.body, design: .monospaced, weight: .semibold))
-                            .foregroundStyle(GymTheme.textPrimary)
-                            .privacySensitive()
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityLabel("One-time Garmin pairing token")
-                    }
-
-                    Button {
-                        showsCopyWarning = true
-                    } label: {
-                        Label(copied ? "Copied for 5 minutes" : "Copy token", systemImage: "doc.on.doc")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(GymPrimaryButtonStyle())
-                    .disabled(isRevoking)
-
-                    Text("Copying is optional and requires confirmation. The clipboard item stays on this device and expires after five minutes, but another app opened during that time may be able to read it.")
-                        .font(.caption)
-                        .foregroundStyle(GymTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Button("I saved the token") { close() }
-                        .buttonStyle(GymSecondaryButtonStyle())
-                        .disabled(isRevoking)
-
-                    if presentation.canRevoke {
-                        Button(role: .destructive) {
-                            revokeAndClose()
-                        } label: {
-                            if isRevoking {
-                                ProgressView("Revoking…")
-                                    .frame(maxWidth: .infinity)
-                            } else {
-                                Label("Cancel and revoke this new watch", systemImage: "xmark.shield")
-                                    .frame(maxWidth: .infinity)
-                            }
-                        }
-                        .buttonStyle(GymSecondaryButtonStyle())
-                        .disabled(isRevoking)
-                    } else {
-                        Button("Close without saving") { close() }
-                            .buttonStyle(GymSecondaryButtonStyle())
-                            .disabled(isRevoking)
-                    }
-                }
-                .padding(18)
-            }
-        }
-        .navigationTitle("Garmin pairing")
-        .navigationBarTitleDisplayMode(.inline)
-        .interactiveDismissDisabled()
-        .alert("Copy this secret token?", isPresented: $showsCopyWarning) {
-            Button("Copy for 5 minutes") { copyToken() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Only continue if you will paste it directly into this watch’s Garmin Connect IQ settings. Do not send or save it elsewhere.")
-        }
-        .onChange(of: selectedDeviceID) { _, currentID in
-            if currentID != presentation.credential.id { close() }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase != .active { close() }
-        }
-    }
-
-    private func copyToken() {
-        UIPasteboard.general.setItems(
-            [[UTType.utf8PlainText.identifier: presentation.credential.deviceToken]],
-            options: [
-                UIPasteboard.OptionsKey.localOnly: true,
-                UIPasteboard.OptionsKey.expirationDate: Date().addingTimeInterval(5 * 60)
-            ]
-        )
-        copied = true
-    }
-
-    private func revokeAndClose() {
-        guard !isRevoking else { return }
-        isRevoking = true
-        Task {
-            do {
-                try await revoke()
-                clearMatchingClipboard()
-                close()
-            } catch {
-                errorMessage = gymErrorMessage(error)
-                isRevoking = false
-            }
-        }
-    }
-
-    private func clearMatchingClipboard() {
-        if UIPasteboard.general.string == presentation.credential.deviceToken {
-            UIPasteboard.general.items = []
-        }
-    }
-
-    private func close() {
-        onClose()
-        dismiss()
     }
 }
 

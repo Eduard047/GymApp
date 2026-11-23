@@ -1494,6 +1494,10 @@
     <string name="garmin_profile_connected">Сейчас подключено</string>
     <string name="garmin_profile_offline">Сейчас не подключено</string>
     <string name="garmin_profile_paired">Привязано</string>
+    <string name="garmin_connect_action">Подключить</string>
+    <string name="garmin_connecting">Подключение…</string>
+    <string name="garmin_connect_failed">Не удалось подключить. Откройте приложение на часах и повторите.</string>
+    <string name="garmin_connect_reset_pending">Завершите сброс привязки Garmin ниже, прежде чем подключать часы.</string>
     <string name="garmin_lite_free_only_notice">Эти часы поддерживают только свободные тренировки. Планы остаются на телефоне.</string>
     <string name="garmin_profile_no_devices">В Garmin Connect нет сопряжённых часов.</string>
     <string name="garmin_profile_unavailable">Garmin Connect недоступен на этом устройстве.</string>

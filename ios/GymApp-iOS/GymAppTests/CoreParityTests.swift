@@ -16,11 +16,12 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(ExerciseProgressTrend.classify(start: 100, end: 102.5, pointCount: 2), .change(2.5))
     }
 
-    func testEffectiveGarminDisplayNameFallsBackToLocalizedDefaultAndTrimsTypedName() {
-        let fallback = gymLocalized("Garmin watch")
-        XCTAssertEqual(GarminWatchName.effectiveGarminDisplayName(""), fallback)
-        XCTAssertEqual(GarminWatchName.effectiveGarminDisplayName("  \n\t "), fallback)
-        XCTAssertEqual(GarminWatchName.effectiveGarminDisplayName("  Fenix 6 \n"), "Fenix 6")
+    func testGarminLegacyCloudCardRendersOnlyForCloudAccountsWithARegisteredDevice() {
+        XCTAssertFalse(GarminLegacyCloudCardPolicy.isVisible(isCloudAccount: true, cloudDeviceCount: 0))
+        XCTAssertTrue(GarminLegacyCloudCardPolicy.isVisible(isCloudAccount: true, cloudDeviceCount: 1))
+        XCTAssertTrue(GarminLegacyCloudCardPolicy.isVisible(isCloudAccount: true, cloudDeviceCount: 3))
+        XCTAssertFalse(GarminLegacyCloudCardPolicy.isVisible(isCloudAccount: false, cloudDeviceCount: 1))
+        XCTAssertFalse(GarminLegacyCloudCardPolicy.isVisible(isCloudAccount: false, cloudDeviceCount: 0))
     }
 
     func testAddExerciseAtAccountLimitThrowsExerciseLimitReached() throws {
@@ -18821,6 +18822,125 @@ final class CoreParityTests: XCTestCase {
         XCTAssertNil(try freshStore.load(account: account.storageKey, binding: binding))
     }
 
+    func testGarminConnectSendsPairingSyncImmediatelyAndShowsPairedOnlyAfterAcknowledgement() async throws {
+        let defaults = temporaryDefaults(named: "garmin-phone-connect-flow")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let account = AppAccountSession.local(id: "00000000-0000-4000-8000-000000000221", displayName: "Connect flow")
+        try auth.installSessionForTesting(account)
+        let store = try WorkoutStore(accountStorageKey: account.storageKey,
+            directoryURL: try temporaryDirectory(named: "connect-flow-workouts"))
+        _ = try store.addExercise(name: "Connect exercise")
+        let planStore = GarminPhonePlanStore(root: try temporaryDirectory(named: "connect-flow-deliveries"))
+        let transport = FakeGarminPhoneConnectIQTransport()
+        let id = UUID(uuidString: "11111111-2222-3333-4444-555555555577")!
+        let device = try XCTUnwrap(IQDevice(id: id, modelName: "Venu 3", friendlyName: "Flow watch"))
+        transport.selectionResponse = [device]
+        transport.statuses[id] = .connected
+        let service = GarminPhoneSyncService(auth: auth, defaults: defaults, connectIQ: transport, planStore: planStore)
+        service.bind(workoutStore: store)
+        XCTAssertFalse(service.isConnecting)
+
+        service.selectDevices()
+        XCTAssertTrue(service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!))
+        // The pairing sync goes out right away, without syncing a plan first.
+        let handshakeSent = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(handshakeSent)
+        XCTAssertTrue(service.isConnecting)
+        XCTAssertEqual(service.devices.map(\.paired), [false])
+        let handshake = try XCTUnwrap(transport.sent.first)
+        XCTAssertEqual(handshake.message["type"] as? String, "sync")
+        XCTAssertEqual(handshake.message["planNames"] as? [String], [])
+
+        service.receivedMessage(syncAcknowledgement(for: handshake.message), from: handshake.app)
+        let ordinarySent = await waitUntil { transport.sent.count == 2 }
+        XCTAssertTrue(ordinarySent)
+        XCTAssertEqual(transport.sent.last?.message["resetWorkout"] as? Bool, false)
+        XCTAssertEqual(service.devices.map(\.paired), [true])
+        XCTAssertFalse(service.isConnecting)
+        XCTAssertFalse(service.statusIsError)
+    }
+
+    func testGarminReconnectOfPairedWatchSendsCachedPlanWithoutReset() async throws {
+        let defaults = temporaryDefaults(named: "garmin-phone-reconnect-plan")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let account = AppAccountSession.local(id: "00000000-0000-4000-8000-000000000222", displayName: "Reconnect")
+        try auth.installSessionForTesting(account)
+        let store = try WorkoutStore(accountStorageKey: account.storageKey,
+            directoryURL: try temporaryDirectory(named: "reconnect-workouts"))
+        _ = try store.addExercise(name: "Reconnect exercise")
+        let planStore = GarminPhonePlanStore(root: try temporaryDirectory(named: "reconnect-deliveries"))
+        let transport = FakeGarminPhoneConnectIQTransport()
+        let id = UUID(uuidString: "11111111-2222-3333-4444-555555555578")!
+        let device = try XCTUnwrap(IQDevice(id: id, modelName: "Venu 3", friendlyName: "Reconnect watch"))
+        transport.selectionResponse = [device]
+        transport.statuses[id] = .connected
+        let service = GarminPhoneSyncService(auth: auth, defaults: defaults, connectIQ: transport, planStore: planStore)
+        service.bind(workoutStore: store)
+        service.selectDevices()
+        XCTAssertTrue(service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!))
+        let handshakeSent = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(handshakeSent)
+        service.receivedMessage(syncAcknowledgement(for: transport.sent[0].message), from: transport.sent[0].app)
+        let ordinarySent = await waitUntil { transport.sent.count == 2 }
+        XCTAssertTrue(ordinarySent)
+        let plan = GarminWorkoutPlan(source: "gymapp-ios", version: 1, title: "Plan",
+            createdAt: "2026-09-08T10:00:00.000Z", startedAt: "2026-09-08T10:00:00.000Z", note: "",
+            exercises: [.init(name: "Bench press", sets: [.init(weight: 60, reps: 8, orderIndex: 0)])])
+        try service.queuePlan(plan, deviceID: id.uuidString)
+        let planSent = await waitUntil { transport.sent.count == 3 }
+        XCTAssertTrue(planSent)
+        XCTAssertEqual(transport.sent.last?.message["planNames"] as? [String], ["Bench Press"])
+        // Let the plan send's completion settle before connecting again.
+        try? await Task.sleep(for: .milliseconds(80))
+
+        // Connecting again keeps the confirmed binding: the next pairing sync
+        // carries the cached plan and never resets the watch.
+        let beforeReconnect = transport.sent.count
+        service.selectDevices()
+        XCTAssertTrue(service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!))
+        let reconnectSent = await waitUntil { transport.sent.count > beforeReconnect }
+        XCTAssertTrue(reconnectSent)
+        let reconnect = try XCTUnwrap(transport.sent.last)
+        XCTAssertEqual(reconnect.message["resetWorkout"] as? Bool, false)
+        XCTAssertEqual(reconnect.message["planNames"] as? [String], ["Bench Press"])
+        XCTAssertEqual(service.devices.map(\.paired), [true])
+        XCTAssertFalse(service.isConnecting)
+    }
+
+    func testGarminConnectToUnreachableWatchFailsWithRetryGuidanceInEveryLanguage() async throws {
+        let defaults = temporaryDefaults(named: "garmin-phone-connect-timeout")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let account = AppAccountSession.local(id: "00000000-0000-4000-8000-000000000223", displayName: "Timeout")
+        try auth.installSessionForTesting(account)
+        let store = try WorkoutStore(accountStorageKey: account.storageKey,
+            directoryURL: try temporaryDirectory(named: "connect-timeout-workouts"))
+        _ = try store.addExercise(name: "Timeout exercise")
+        let transport = FakeGarminPhoneConnectIQTransport()
+        let id = UUID(uuidString: "11111111-2222-3333-4444-555555555579")!
+        let device = try XCTUnwrap(IQDevice(id: id, modelName: "Venu 3", friendlyName: "Silent watch"))
+        transport.selectionResponse = [device]
+        transport.statuses[id] = .notConnected
+        defaults.set(AppLanguage.ukrainian.rawValue, forKey: "app-language")
+        let service = GarminPhoneSyncService(
+            auth: auth, defaults: defaults, connectIQ: transport,
+            connectingTimeout: .milliseconds(60)
+        )
+        // Let the initial session activation settle before connecting.
+        try? await Task.sleep(for: .milliseconds(30))
+        service.bind(workoutStore: store)
+        service.selectDevices()
+        XCTAssertTrue(service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!))
+        XCTAssertTrue(service.isConnecting)
+        let failed = await waitUntil { !service.isConnecting }
+        XCTAssertTrue(failed)
+        XCTAssertTrue(service.statusIsError)
+        XCTAssertEqual(
+            service.statusMessage,
+            "Не вдалося підключити. Відкрийте застосунок на годиннику й повторіть."
+        )
+        XCTAssertEqual(service.devices.map(\.paired), [false])
+    }
+
     func testGarminCyrillicCustomExerciseRoundTripsThroughLatinWatchNames() async throws {
         let defaults = temporaryDefaults(named: "garmin-latin-round-trip")
         let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
@@ -20310,13 +20430,11 @@ final class CoreParityTests: XCTestCase {
             "Built-in": "Вбудована",
             "By name": "За назвою",
             "Change password": "Змінити пароль",
-            "Connect this iPhone to Garmin": "Під’єднати цей iPhone до Garmin",
             "Connected": "Підключено",
             "Core": "Кор",
             "Current": "Поточний",
             "Current password": "Поточний пароль",
             "Daily": "Щоденні",
-            "Direct iPhone connection": "Пряме підключення iPhone",
             "Double tap to dismiss": "Торкніться двічі, щоб закрити",
             "GymApp could not open its protected local storage. Your data was not changed.":
                 "GymApp не вдалося відкрити захищене локальне сховище. Дані не змінено.",
@@ -20330,13 +20448,10 @@ final class CoreParityTests: XCTestCase {
             "No results": "Немає результатів",
             "No results for “%@”.": "Немає результатів для «%@».",
             "OK": "Гаразд",
-            "Offline": "Не в мережі",
             "Opening this account's protected workout data.":
                 "Відкриваємо захищені дані тренувань цього акаунта.",
             "Opens a form that requires the current password":
                 "Відкриває форму, для якої потрібен поточний пароль",
-            "Opens Garmin Connect so you can choose which paired watches may send completed workouts to this iPhone":
-                "Відкриває Garmin Connect, де можна вибрати сполучені годинники для надсилання завершених тренувань на цей iPhone",
             "Preparing account": "Підготовка акаунта",
             "Ranks": "Ранги",
             "Rating": "Рейтинг",

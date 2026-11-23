@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 enum NativePushScrollBehavior: Equatable, Sendable {
@@ -967,6 +968,13 @@ private struct GarminWatchScreen: View {
     @ObservedObject var garminCloud: GarminCloudService
     @ObservedObject var garminPhoneSync: GarminPhoneSyncService
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
+    private let garminStoreURL = URL(
+        string: "https://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f"
+    )!
+    private let connectIQSchemeURL = URL(string: "connectiq://")!
+    private let connectIQAppStoreURL = URL(
+        string: "https://apps.apple.com/app/connect-iq-store/id1317652970"
+    )!
 
     var body: some View {
         GymBackground {
@@ -989,9 +997,9 @@ private struct GarminWatchScreen: View {
                 GymSectionTitle(
                     title: gymText("Your watch", "Годинник Garmin", "Часы Garmin", languageCode: languageCode),
                     supporting: gymText(
-                        "Bluetooth status for watches on this iPhone; cloud watches show their last sync.",
-                        "Bluetooth-статус годинників на цьому iPhone; хмарні показують останню синхронізацію.",
-                        "Bluetooth-статус часов на этом iPhone; облачные показывают последнюю синхронизацию.",
+                        "Live connection status from Garmin Connect on this phone.",
+                        "Поточний стан з’єднання з Garmin Connect на цьому телефоні.",
+                        "Текущее состояние подключения из Garmin Connect на этом телефоне.",
                         languageCode: languageCode
                     )
                 )
@@ -1006,22 +1014,16 @@ private struct GarminWatchScreen: View {
                         ),
                         systemImage: "applewatch"
                     )
-                    Button(gymText("Connect Garmin", "Підключити Garmin", "Подключить Garmin", languageCode: languageCode)) {
-                        garminPhoneSync.selectDevices()
-                    }
-                    .buttonStyle(GymPrimaryButtonStyle())
-                    if let message = garminPhoneSync.statusMessage {
-                        GymStatusBanner(message: message, isError: garminPhoneSync.statusIsError)
-                    }
                 } else {
                     ForEach(garminPhoneSync.devices) { device in
                         garminDeviceRow(
                             name: device.name,
                             detail: device.model,
                             status: device.connected
-                                ? gymText("Connected now", "Зараз підключено", "Подключены сейчас", languageCode: languageCode)
-                                : gymText("Not connected now", "Зараз не підключено", "Сейчас не подключены", languageCode: languageCode),
+                                ? gymText("Connected now", "Зараз підключено", "Сейчас подключено", languageCode: languageCode)
+                                : gymText("Not connected now", "Зараз не підключено", "Сейчас не подключено", languageCode: languageCode),
                             connected: device.connected,
+                            paired: device.paired,
                             note: device.lite
                                 ? GarminPhoneSyncProtocol.liteWatchMessage(languageCode: languageCode)
                                 : nil
@@ -1034,12 +1036,65 @@ private struct GarminWatchScreen: View {
                             status: device.lastSeenAt == nil
                                 ? gymText("Waiting for first watch sync", "Очікуємо першу синхронізацію годинника", "Ожидаем первую синхронизацию часов", languageCode: languageCode)
                                 : gymText("Recently synchronized with GymApp cloud", "Нещодавно синхронізовано з хмарою GymApp", "Недавно синхронизировано с облаком GymApp", languageCode: languageCode),
-                            connected: device.lastSeenAt != nil
+                            connected: device.lastSeenAt != nil,
+                            paired: false
                         )
                     }
                 }
+
+                connectButton
+
+                if let message = garminPhoneSync.statusMessage {
+                    GymStatusBanner(message: message, isError: garminPhoneSync.statusIsError)
+                }
+
+                Button(action: openGarminStore) {
+                    Text(gymText(
+                        "Open Gym Workout Tracker in Garmin",
+                        "Відкрити Gym Workout Tracker у Garmin",
+                        "Открыть Gym Workout Tracker в Garmin",
+                        languageCode: languageCode
+                    ))
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GymSecondaryButtonStyle())
             }
         }
+    }
+
+    /// The single connect action: Garmin Connect opens for watch selection and,
+    /// on return, the pairing sync is sent right away.
+    @ViewBuilder
+    private var connectButton: some View {
+        let hasWatches = !garminPhoneSync.devices.isEmpty || selectedCloudDevice != nil
+        let button = Button {
+            garminPhoneSync.selectDevices()
+        } label: {
+            if garminPhoneSync.isConnecting {
+                HStack(spacing: 9) {
+                    ProgressView()
+                    Text(gymText("Connecting…", "Підключення…", "Подключение…", languageCode: languageCode))
+                }
+                .frame(maxWidth: .infinity)
+            } else {
+                Text(gymText("Connect Garmin", "Підключити Garmin", "Подключить Garmin", languageCode: languageCode))
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .disabled(garminPhoneSync.isConnecting)
+        if hasWatches {
+            button.buttonStyle(GymSecondaryButtonStyle())
+        } else {
+            button.buttonStyle(GymPrimaryButtonStyle())
+        }
+    }
+
+    private func openGarminStore() {
+        let application = UIApplication.shared
+        let destination = application.canOpenURL(connectIQSchemeURL)
+            ? garminStoreURL
+            : connectIQAppStoreURL
+        application.open(destination)
     }
 
     private var selectedCloudDevice: GarminDeviceSummary? { garminSelectedCloudDevice(garminCloud) }
@@ -1049,6 +1104,7 @@ private struct GarminWatchScreen: View {
         detail: String,
         status: String,
         connected: Bool,
+        paired: Bool,
         note: String? = nil
     ) -> some View {
         HStack(spacing: 12) {
@@ -1075,6 +1131,11 @@ private struct GarminWatchScreen: View {
                 }
             }
             Spacer(minLength: 4)
+            if paired {
+                Text(gymText("Paired", "Прив’язано", "Привязано", languageCode: languageCode))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(GymTheme.primary)
+            }
         }
         // Flat inside the panel: no nested tonal card (card-in-card).
         .padding(.vertical, 4)

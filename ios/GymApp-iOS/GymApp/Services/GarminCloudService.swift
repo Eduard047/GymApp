@@ -605,7 +605,7 @@ enum GarminCloudError: LocalizedError {
         case .busy: return "Another Garmin operation is already in progress. Try again."
         case .pendingRevocation: return "A previous Garmin pairing is still awaiting secure revocation. Keep the app open and retry."
         case .bindingPersistenceFailed: return "The Garmin watch selection could not be stored securely, so its one-time token was not shown."
-        case .deviceRefreshRequired: return "Refresh the Garmin watch list before rotating its token."
+        case .deviceRefreshRequired: return "Refresh the Garmin watch list and try again."
         case .deviceCreationRecoveryRequired: return "A Garmin watch may already have been created by an older server, but its one-time token response was lost. Refresh the list, select that watch, and rotate its token instead of creating another one."
         case .rotationConflict: return "This watch changed elsewhere. Its details were refreshed; review the selection and retry token rotation."
         case .enqueueConflict: return "This workout queue request conflicts with an earlier submission and was not duplicated."
@@ -939,12 +939,21 @@ final class GarminCloudService: ObservableObject {
         return result.credential
     }
 
-    func revokeSelectedDevice() async throws {
+    /// Removes one legacy cloud-linked watch. The server contract is unchanged:
+    /// `revokeDevice` invalidates the device capability and quarantines its
+    /// pending plans. A local binding is dropped only when it names this device.
+    func revokeDevice(_ device: GarminDeviceSummary) async throws {
+        guard canonicalUUID(device.id) == device.id else {
+            throw GarminCloudError.invalidBinding
+        }
         try beginOperation()
         defer { isWorking = false }
 
         let identity = try activeIdentity()
-        let binding = try requiredBinding(for: identity)
+        guard availableDevicesUserID == identity.canonicalUserID,
+              availableDevices.contains(where: { $0.id == device.id }) else {
+            throw GarminCloudError.deviceRefreshRequired
+        }
         let session = try await auth.validCloudSession(expectedUserID: identity.rawUserID)
         try ensureIdentityIsCurrent(identity)
         try await recoverPendingRevocation(identity: identity, token: session.accessToken)
@@ -956,18 +965,21 @@ final class GarminCloudService: ObservableObject {
                 path: "/functions/v1/garmin-sync",
                 method: "POST",
                 token: token,
-                body: ["action": "revokeDevice", "deviceId": binding.deviceID]
+                body: ["action": "revokeDevice", "deviceId": device.id]
             )
         }
         guard let status = object["status"] as? String,
               status == "revoked" || status == "already_revoked" else {
             throw GarminCloudError.invalidResponse
         }
-        try bindingStore.deleteBinding(for: identity.canonicalUserID)
         try ensureIdentityIsCurrent(identity)
-        selectedDevice = nil
-        availableDevices.removeAll { $0.id == binding.deviceID }
-        lastMessage = "Garmin watch revoked. Reset GymApp on that watch before pairing it with a new device ID."
+        if let binding = try bindingStore.binding(for: identity.canonicalUserID),
+           binding.deviceID == device.id {
+            try bindingStore.deleteBinding(for: identity.canonicalUserID)
+            selectedDevice = nil
+        }
+        availableDevices.removeAll { $0.id == device.id }
+        lastMessage = "Cloud link removed. The watch connects over Bluetooth."
     }
 
     func clearLocalBindingData(for userID: String) throws {

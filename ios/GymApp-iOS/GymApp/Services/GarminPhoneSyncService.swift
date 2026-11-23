@@ -11,6 +11,8 @@ struct GarminPhoneDeviceSummary: Identifiable, Equatable {
     let connected: Bool
     /// 96 KiB watches record free workouts only and never receive plans.
     var lite: Bool = false
+    /// The watch acknowledged this iPhone's account/device/generation binding.
+    var paired: Bool = false
 }
 
 struct GarminPhoneBinding: Codable, Equatable {
@@ -1929,11 +1931,15 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
     @Published private(set) var statusMessage: String?
     @Published private(set) var statusIsError = false
     @Published private(set) var planDeliveryMessages: [String: String] = [:]
+    /// True from the return of Garmin Connect until every selected watch has
+    /// acknowledged the pairing sync, delivery failed, or the wait timed out.
+    @Published private(set) var isConnecting = false
 
     private let auth: AuthService
     private let defaults: UserDefaults
     private let connectIQ: GarminPhoneConnectIQTransport
     private let syncDeliveryTimeout: Duration
+    private let connectingTimeout: Duration
     private let planStore: GarminPhonePlanStore
     private weak var workoutStore: WorkoutStore?
     private var sessionSubscription: AnyCancellable?
@@ -1943,18 +1949,21 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
     private var syncInFlight: [UUID: UUID] = [:]
     private var syncDeliveryTimeoutTasks: [UUID: Task<Void, Never>] = [:]
     private var pendingDeviceSelection: GarminDeviceSelectionTransaction?
+    private var connectingTask: Task<Void, Never>?
 
     init(
         auth: AuthService,
         defaults: UserDefaults = .standard,
         connectIQ: GarminPhoneConnectIQTransport? = nil,
         syncDeliveryTimeout: Duration = .seconds(15),
+        connectingTimeout: Duration = .seconds(30),
         planStore: GarminPhonePlanStore = GarminPhonePlanStore()
     ) {
         self.auth = auth
         self.defaults = defaults
         self.connectIQ = connectIQ ?? LiveGarminPhoneConnectIQTransport()
         self.syncDeliveryTimeout = syncDeliveryTimeout
+        self.connectingTimeout = connectingTimeout
         self.planStore = planStore
         super.init()
         self.connectIQ.initialize(urlScheme: Self.returnURLScheme)
@@ -2069,14 +2078,58 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             planStore.retain(account: activeStorageKey, devices: rawDevices.keys.map { $0.uuidString.lowercased() })
         }
         registerDevices()
-        synchronizeConnectedDevices()
+        // Publish before syncing so an error raised while preparing the pairing
+        // sync is never overwritten by this success message.
         publishStatus(
             selected.isEmpty
                 ? "No Garmin watches are connected to this iPhone."
                 : "Garmin watches connected. Open GymApp on the watch to synchronize.",
             isError: false
         )
+        // The pairing sync goes out now for every reachable watch: the cached
+        // plan for an already-paired watch, otherwise the binding handshake.
+        synchronizeConnectedDevices()
+        beginConnectingIfNeeded()
         return true
+    }
+
+    private func beginConnectingIfNeeded() {
+        connectingTask?.cancel()
+        connectingTask = nil
+        guard !rawDevices.isEmpty, !devices.allSatisfy(\.paired) else {
+            isConnecting = false
+            return
+        }
+        isConnecting = true
+        let timeout = connectingTimeout
+        connectingTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: timeout)
+            } catch {
+                return
+            }
+            self?.failConnecting()
+        }
+    }
+
+    private func failConnecting() {
+        guard isConnecting else { return }
+        stopConnecting()
+        publishStatus(
+            gymText(
+                "Couldn't connect. Open the app on the watch and try again.",
+                "Не вдалося підключити. Відкрийте застосунок на годиннику й повторіть.",
+                "Не удалось подключить. Откройте приложение на часах и повторите.",
+                languageCode: normalizedLanguage(gymCurrentLanguageCode(defaults: defaults))
+            ),
+            isError: true
+        )
+    }
+
+    private func stopConnecting() {
+        connectingTask?.cancel()
+        connectingTask = nil
+        isConnecting = false
     }
 
     private func activate(_ session: AppAccountSession?) {
@@ -2089,6 +2142,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             }
         }
         pendingDeviceSelection = nil
+        stopConnecting()
         connectIQ.unregisterAllDeviceEvents(delegate: self)
         connectIQ.unregisterAllAppMessages(delegate: self)
         apps.removeAll()
@@ -2181,10 +2235,14 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                     name: device.friendlyName,
                     model: device.modelName,
                     connected: connected,
-                    lite: isLiteWatch(deviceBinding: (device.uuid as UUID).uuidString.lowercased())
+                    lite: isLiteWatch(deviceBinding: (device.uuid as UUID).uuidString.lowercased()),
+                    paired: binding(for: device).map(isBindingConfirmed) ?? false
                 )
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        if isConnecting, !devices.isEmpty, devices.allSatisfy(\.paired) {
+            stopConnecting()
+        }
     }
 
     private func synchronizeConnectedDevices() {
@@ -2478,7 +2536,9 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         }
         guard self.binding(for: app.device) == binding else { return }
         let transitionConfirmed = transition != nil && isBindingConfirmed(binding)
-        if !delivered && !transitionConfirmed {
+        if !delivered && !transitionConfirmed && isConnecting && !isBindingConfirmed(binding) {
+            failConnecting()
+        } else if !delivered && !transitionConfirmed {
             publishStatus(
                 timedOut
                     ? "Garmin message delivery timed out. Reconnect the watch to retry."
@@ -2507,6 +2567,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                 return
             }
             removePendingAuthTransition(pending)
+            refreshDeviceSummaries()
             publishStatus("Garmin watch synchronized securely.", isError: false)
             sendSync(to: app)
             return
@@ -2594,6 +2655,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             if let pending = pendingAuthTransition(binding) {
                 removePendingAuthTransition(pending)
             }
+            refreshDeviceSummaries()
             cancelSyncAttempt(deviceID: app.device.uuid as UUID)
             sendSync(to: app)
         } else if claim.pairingGeneration == nil {
