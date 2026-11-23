@@ -8,6 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.text.font.FontWeight
@@ -86,6 +87,7 @@ import com.example.gymapp.util.rememberHapticsPreference
 import com.example.gymapp.util.rememberKeepScreenOnPreference
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
@@ -237,6 +239,10 @@ internal fun ProfileScreen(
     var destination by rememberSaveable { mutableStateOf(ProfileDestination.Root) }
     var showTrainingSettings by rememberSaveable { mutableStateOf(false) }
     var showAccountSettings by rememberSaveable { mutableStateOf(false) }
+    var showHealthAppSheet by rememberSaveable { mutableStateOf(false) }
+    if (showHealthAppSheet && HEALTH_APP_PLAY_LISTING_PUBLIC) {
+        HealthAppRecommendationSheet(onDismiss = { showHealthAppSheet = false })
+    }
     if (showTrainingSettings && trainingProfile != null) {
         TrainingSettingsSheet(
             profile = trainingProfile,
@@ -409,6 +415,7 @@ internal fun ProfileScreen(
                         onOpenAccountSettings = { showAccountSettings = true },
                         onOpenWatches = { destination = ProfileDestination.Watches },
                         onOpenSupport = { destination = ProfileDestination.Support },
+                        onOpenHealthApp = { showHealthAppSheet = true },
                         garminDeviceState = garminDeviceState,
                         healthDataState = healthDataState,
                         backupMessage = accountState.backupMessage,
@@ -673,6 +680,7 @@ private fun LazyListScope.profileRootContent(
     onOpenAccountSettings: () -> Unit,
     onOpenWatches: () -> Unit,
     onOpenSupport: () -> Unit,
+    onOpenHealthApp: () -> Unit,
     garminDeviceState: GarminDeviceUiState,
     healthDataState: HealthDataUiState?,
     backupMessage: com.example.gymapp.util.LocalizedText?,
@@ -707,6 +715,37 @@ private fun LazyListScope.profileRootContent(
             friendCount = identityFriendCount,
             pendingCount = pendingAttentionCount
         )
+    }
+    // "Our apps": the owner's other app, right under the identity card. Hidden until the Play listing is public.
+    if (HEALTH_APP_PLAY_LISTING_PUBLIC) {
+        item {
+            val healthAppDescription = stringResource(R.string.health_app_row_description)
+            val healthAppTitle = stringResource(R.string.health_app_row_title)
+            val healthAppSubtitle = stringResource(R.string.health_app_row_subtitle)
+            GroupedSection(header = stringResource(R.string.profile_group_our_apps)) {
+                row(
+                    title = healthAppTitle,
+                    subtitle = healthAppSubtitle,
+                    modifier = Modifier.clearAndSetSemantics {
+                        contentDescription = healthAppDescription
+                        role = Role.Button
+                        onClick(label = null) {
+                            onOpenHealthApp()
+                            true
+                        }
+                    },
+                    trailing = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    },
+                    onClick = onOpenHealthApp
+                )
+            }
+        }
     }
     item {
         // Identity, sync, notifications, sign-out and deletion live in the account sheet.

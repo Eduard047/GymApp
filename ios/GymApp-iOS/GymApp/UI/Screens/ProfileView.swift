@@ -48,6 +48,7 @@ struct ProfileView: View {
     @State private var fulfilledNativePushRequestID: UUID?
     @State private var requestedNativePushAccessibilityTarget: NativePushProfileFocus?
     @State private var showsFriends = false
+    @State private var showsHealthAppSheet = false
     @State private var backupExpanded = false
     @State private var trainingProfile: TrainingProfile
     private let canAcceptWorkoutInvites: Bool
@@ -137,6 +138,10 @@ struct ProfileView: View {
             .environmentObject(appState)
             .environmentObject(auth)
             .gymSheetPresentation(.full)
+        }
+        .sheet(isPresented: $showsHealthAppSheet) {
+            HealthAppRecommendationSheet(languageCode: languageCode)
+                .gymSheetPresentation(.standard)
         }
         .alert(item: $activeAlert, content: makeAlert)
         .fileImporter(
@@ -250,11 +255,14 @@ struct ProfileView: View {
         }
     }
 
-    /// Inset-grouped Profile root: Account, Workouts, Devices, App, Data, Help.
+    /// Inset-grouped Profile root: Our apps, Account, Workouts, Devices, App, Data, Help.
     /// Rows are 17pt regular titles with a status-only subtitle or a secondary
     /// value on the right; every feature keeps its destination.
     private var settingsGroups: some View {
         VStack(alignment: .leading, spacing: GymTheme.contentSpacing + 4) {
+            ProfileGroup(title: gymText("Our apps", "Наші застосунки", "Наши приложения", languageCode: languageCode)) {
+                healthAppRow
+            }
             settingsGroup
             ProfileGroup(title: gymText("Workouts", "Тренування", "Тренировки", languageCode: languageCode)) {
                 trainingSettingsRow
@@ -463,6 +471,39 @@ struct ProfileView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 6)
         .frame(minHeight: 48)
+    }
+
+    /// The owner's other app, always visible right under the profile header. Opens the
+    /// explainer sheet; the App Store opens only from that sheet's primary button.
+    private var healthAppRow: some View {
+        Button {
+            showsHealthAppSheet = true
+        } label: {
+            ProfileRowLabel(
+                title: "HealthApp",
+                subtitle: gymText(
+                    "Sleep, HRV and recovery from your watch — by the same developer",
+                    "Сон, HRV і відновлення з вашого годинника — від того ж розробника",
+                    "Сон, HRV и восстановление с ваших часов — от того же разработчика",
+                    languageCode: languageCode
+                ),
+                subtitleLineLimit: 2,
+                trailingSymbol: "arrow.up.right"
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(gymText(
+            "Open HealthApp in the App Store",
+            "Відкрити HealthApp в App Store",
+            "Открыть HealthApp в App Store",
+            languageCode: languageCode
+        ))
+        .accessibilityHint(gymText(
+            "Shows a short description first",
+            "Спочатку показує короткий опис",
+            "Сначала показывает краткое описание",
+            languageCode: languageCode
+        ))
     }
 
     /// The help row's one action (replay the tutorial).
@@ -1381,6 +1422,8 @@ private struct ProfileRowLabel: View {
     var subtitle: String?
     var value: String?
     var showsChevron = true
+    var subtitleLineLimit = 1
+    var trailingSymbol = "chevron.right"
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1393,7 +1436,7 @@ private struct ProfileRowLabel: View {
                     Text(subtitle)
                         .font(.subheadline)
                         .foregroundStyle(GymTheme.textSecondary)
-                        .gymLineLimit(1)
+                        .gymLineLimit(subtitleLineLimit)
                         .minimumScaleFactor(0.8)
                 }
             }
@@ -1406,7 +1449,7 @@ private struct ProfileRowLabel: View {
                     .minimumScaleFactor(0.8)
             }
             if showsChevron {
-                Image(systemName: "chevron.right")
+                Image(systemName: trailingSymbol)
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(GymTheme.textSecondary.opacity(0.7))
                     .accessibilityHidden(true)
@@ -1488,5 +1531,107 @@ private struct ProfileDisclosureRow: View {
                 configuration.content
             }
         }
+    }
+}
+
+/// The verified HealthApp App Store listing ("HealthApp: Recovery & Sleep").
+private let healthAppStoreURL = URL(string: "https://apps.apple.com/app/id6831768175")!
+
+/// Short explainer for the owner's other app. The store opens only from the primary
+/// button; "Not now" and a swipe-down just close the sheet. A device that cannot open
+/// the store fails silently.
+private struct HealthAppRecommendationSheet: View {
+    let languageCode: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("HealthApp: Recovery & Sleep")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(GymTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                Text(gymText(
+                    "Your training is only half the story. HealthApp shows how well you recover, so you know when to push and when to rest.",
+                    "Тренування — це лише половина справи. HealthApp показує, як ви відновлюєтеся, щоб ви знали, коли навантажувати себе, а коли відпочити.",
+                    "Тренировки — это только половина дела. HealthApp показывает, как вы восстанавливаетесь, чтобы вы знали, когда нагружать себя, а когда отдохнуть.",
+                    languageCode: languageCode
+                ))
+                .font(.body)
+                .foregroundStyle(GymTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 14) {
+                    benefit("bed.double", gymText(
+                        "Sleep and recovery every morning",
+                        "Сон і відновлення щоранку",
+                        "Сон и восстановление каждое утро",
+                        languageCode: languageCode
+                    ))
+                    benefit("waveform.path.ecg", gymText(
+                        "HRV, resting heart rate and readiness",
+                        "HRV, пульс спокою та готовність",
+                        "HRV, пульс покоя и готовность",
+                        languageCode: languageCode
+                    ))
+                    benefit("chart.line.uptrend.xyaxis", gymText(
+                        "Garmin, Oura and Apple Health",
+                        "Дані з Garmin, Oura та Apple Health",
+                        "Данные из Garmin, Oura и Apple Health",
+                        languageCode: languageCode
+                    ))
+                }
+                Text(gymText(
+                    "Free · From the developer of GymApp",
+                    "Безкоштовно · Від розробника GymApp",
+                    "Бесплатно · От разработчика GymApp",
+                    languageCode: languageCode
+                ))
+                .font(.footnote)
+                .foregroundStyle(GymTheme.textSecondary)
+                VStack(spacing: 10) {
+                    Button {
+                        UIApplication.shared.open(healthAppStoreURL)
+                        dismiss()
+                    } label: {
+                        Text(gymText(
+                            "Open in App Store",
+                            "Відкрити в App Store",
+                            "Открыть в App Store",
+                            languageCode: languageCode
+                        ))
+                    }
+                    .buttonStyle(GymPrimaryButtonStyle())
+                    Button {
+                        dismiss()
+                    } label: {
+                        Text(gymText("Not now", "Не зараз", "Не сейчас", languageCode: languageCode))
+                            .font(.body)
+                            .foregroundStyle(GymTheme.primary)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 4)
+            }
+            .padding(.horizontal, GymTheme.screenHorizontalInset)
+            .padding(.top, 28)
+            .padding(.bottom, 24)
+        }
+    }
+
+    private func benefit(_ symbol: String, _ text: String) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: symbol)
+                .font(.title3)
+                .foregroundStyle(GymTheme.primary)
+                .frame(width: 30)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(.body)
+                .foregroundStyle(GymTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
