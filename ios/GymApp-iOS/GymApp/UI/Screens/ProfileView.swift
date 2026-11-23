@@ -264,7 +264,7 @@ struct ProfileView: View {
                 hapticsRow
             }
             ProfileGroup(title: gymText("Devices", "Пристрої", "Устройства", languageCode: languageCode)) {
-                garminRow
+                watchesRow
             }
             ProfileGroup(title: gymText("App", "Застосунок", "Приложение", languageCode: languageCode)) {
                 languageRow
@@ -510,11 +510,12 @@ struct ProfileView: View {
         .buttonStyle(.plain)
     }
 
-    /// One row for every Garmin watch: status value on the right, the existing
-    /// watch card lives on the pushed screen.
-    private var garminRow: some View {
+    /// One row for every watch connection (Garmin, health data): the connected
+    /// sources as a one-line status. The cards live on the pushed Watches screen.
+    /// Always shown, also for local/offline profiles: Garmin and Health both work offline.
+    private var watchesRow: some View {
         NavigationLink {
-            GarminWatchScreen(
+            WatchesScreen(
                 garminCloud: garminCloud,
                 garminPhoneSync: garminPhoneSync,
                 healthImport: appState.healthImport
@@ -522,21 +523,26 @@ struct ProfileView: View {
                 .gymTopBannerInset()
         } label: {
             ProfileRowLabel(
-                title: gymText("Garmin watch", "Годинник Garmin", "Часы Garmin", languageCode: languageCode),
-                value: garminConnected
-                    ? gymText("Connected", "Підключено", "Подключены", languageCode: languageCode)
-                    : gymText("Not connected", "Не підключено", "Не подключены", languageCode: languageCode)
+                title: gymText("Watches", "Годинники", "Часы", languageCode: languageCode),
+                subtitle: WatchesStatus.summary(
+                    garminPaired: garminPaired,
+                    healthConnected: appState.healthImport.isConnected,
+                    languageCode: languageCode
+                )
             )
         }
         .buttonStyle(.plain)
     }
 
-    private var garminConnected: Bool {
+    /// A Garmin watch is paired for the active account: a confirmed Bluetooth
+    /// binding, or the legacy cloud-linked watch when no phone watch is listed.
+    private var garminPaired: Bool {
         if garminPhoneSync.devices.isEmpty {
-            return garminSelectedCloudDevice(garminCloud)?.lastSeenAt != nil
+            return garminSelectedCloudDevice(garminCloud) != nil
         }
-        return garminPhoneSync.devices.contains { $0.connected }
+        return garminPhoneSync.devices.contains { $0.paired }
     }
+
     private var trainingSettingsSummaryText: String {
         [
             trainingProfile.goal.gymDisplayName,
@@ -967,8 +973,9 @@ enum BackupFileReader {
     }
 }
 
-/// The existing "Your watch" card (Bluetooth status and cloud watch) on its own screen.
-private struct GarminWatchScreen: View {
+/// Every watch connection on one screen: the Garmin card, then the health data
+/// card. Order: Garmin, (future Apple Watch card), Health data.
+private struct WatchesScreen: View {
     @ObservedObject var garminCloud: GarminCloudService
     @ObservedObject var garminPhoneSync: GarminPhoneSyncService
     @ObservedObject var healthImport: HealthKitImportService
@@ -986,6 +993,8 @@ private struct GarminWatchScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: GymTheme.contentSpacing) {
                     garminCard
+                    // WATCHES-APPLE-WATCH-SLOT (stage 5): the Apple Watch card goes here,
+                    // between the Garmin card and the health data card. No UI yet.
                     HealthDataCard(service: healthImport)
                 }
                 .padding(.horizontal, GymTheme.screenHorizontalInset)
@@ -993,7 +1002,7 @@ private struct GarminWatchScreen: View {
                 .padding(.bottom, GymTheme.screenBottomInset)
             }
         }
-        .navigationTitle(gymText("Garmin watch", "Годинник Garmin", "Часы Garmin", languageCode: languageCode))
+        .navigationTitle(gymText("Watches", "Годинники", "Часы", languageCode: languageCode))
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -1001,11 +1010,11 @@ private struct GarminWatchScreen: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    title: gymText("Your watch", "Годинник Garmin", "Часы Garmin", languageCode: languageCode),
+                    title: gymText("Garmin", "Garmin", "Garmin", languageCode: languageCode),
                     supporting: gymText(
-                        "Live connection status from Garmin Connect on this phone.",
-                        "Поточний стан з’єднання з Garmin Connect на цьому телефоні.",
-                        "Текущее состояние подключения из Garmin Connect на этом телефоне.",
+                        "Plan on the watch, sets and heart rate",
+                        "План на годиннику, підходи й пульс",
+                        "План на часах, подходы и пульс",
                         languageCode: languageCode
                     )
                 )

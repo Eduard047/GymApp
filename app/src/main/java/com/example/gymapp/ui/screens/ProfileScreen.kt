@@ -105,6 +105,9 @@ import com.example.gymapp.auth.NEW_PASSWORD_POLICY_ERROR
 import com.example.gymapp.garmin.openGymWorkoutTrackerInGarminStore
 import com.example.gymapp.garmin.GarminDeviceUiState
 import com.example.gymapp.ui.viewmodel.HealthDataUiState
+import com.example.gymapp.ui.viewmodel.WatchSource
+import com.example.gymapp.ui.viewmodel.connectedWatchSources
+import com.example.gymapp.ui.viewmodel.watchesStatusLine
 import com.example.gymapp.garmin.garminDeviceOffersConnect
 import com.example.gymapp.push.PushUiState
 import com.example.gymapp.push.PushNavigationTarget
@@ -134,11 +137,11 @@ import com.example.gymapp.ui.theme.TintedButton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-/** The Profile root and the screens it pushes: Friends & live, the Garmin watch and the optional tip jar. */
+/** The Profile root and the screens it pushes: Friends & live, Watches and the optional tip jar. */
 private enum class ProfileDestination {
     Root,
     Friends,
-    Garmin,
+    Watches,
     Support
 }
 
@@ -221,12 +224,12 @@ internal fun ProfileScreen(
     onHealthPermissionRequestFinished: () -> Unit = {},
     onHealthImportNow: () -> Unit = {},
     onHealthDisconnect: () -> Unit = {},
+    onRefreshHealthData: () -> Unit = {},
     onRetryLoad: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
-    var showGarminResetConfirmation by rememberSaveable { mutableStateOf(false) }
     var showPasswordChange by rememberSaveable { mutableStateOf(false) }
     var showAccountDeletion by rememberSaveable { mutableStateOf(false) }
     var showLocalProfileDeletion by rememberSaveable { mutableStateOf(false) }
@@ -358,41 +361,25 @@ internal fun ProfileScreen(
                     modifier = Modifier.weight(1f)
                 )
             }
-            ProfileDestination.Garmin -> {
+            ProfileDestination.Watches -> {
                 ProfileSubScreenHeader(
-                    title = stringResource(R.string.garmin_row_title),
+                    title = stringResource(R.string.watches_title),
                     onBack = { destination = ProfileDestination.Root }
                 )
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(
-                        start = screenHorizontalPadding,
-                        top = GymSpacing.Small,
-                        end = screenHorizontalPadding,
-                        bottom = GymSpacing.ScreenBottom
-                    )
-                ) {
-                    item {
-                        GarminDeviceCard(
-                            state = garminDeviceState,
-                            onOpenGarminApp = { openGymWorkoutTrackerInGarminStore(context) },
-                            onResetGarminPairing = { showGarminResetConfirmation = true },
-                            onPairGarminDevice = onPairGarminDevice
-                        )
-                    }
-                    // Directly under the Garmin card; both move to a "Watches" screen later.
-                    if (healthDataState != null) {
-                        item {
-                            HealthDataCard(
-                                state = healthDataState,
-                                onPermissionRequestFinished = onHealthPermissionRequestFinished,
-                                onImportNow = onHealthImportNow,
-                                onDisconnect = onHealthDisconnect,
-                                modifier = Modifier.padding(top = GymSpacing.Medium)
-                            )
-                        }
-                    }
-                }
+                WatchesScreen(
+                    garminDeviceState = garminDeviceState,
+                    healthDataState = healthDataState,
+                    onOpened = {
+                        onRefreshGarminDevices()
+                        onRefreshHealthData()
+                    },
+                    onResetGarminPairing = onResetGarminPairing,
+                    onPairGarminDevice = onPairGarminDevice,
+                    onHealthPermissionRequestFinished = onHealthPermissionRequestFinished,
+                    onHealthImportNow = onHealthImportNow,
+                    onHealthDisconnect = onHealthDisconnect,
+                    modifier = Modifier.weight(1f)
+                )
             }
             ProfileDestination.Support -> {
                 ProfileSubScreenHeader(
@@ -420,9 +407,10 @@ internal fun ProfileScreen(
                         pendingAttentionCount = pendingAttentionCount,
                         onOpenFriends = { destination = ProfileDestination.Friends },
                         onOpenAccountSettings = { showAccountSettings = true },
-                        onOpenGarmin = { destination = ProfileDestination.Garmin },
+                        onOpenWatches = { destination = ProfileDestination.Watches },
                         onOpenSupport = { destination = ProfileDestination.Support },
                         garminDeviceState = garminDeviceState,
+                        healthDataState = healthDataState,
                         backupMessage = accountState.backupMessage,
                         onExportBackup = onExportBackup,
                         onExportDiagnostics = onExportDiagnostics,
@@ -448,33 +436,6 @@ internal fun ProfileScreen(
         onImportFile = onImportFile,
         onImportBackup = onImportBackup
     )
-
-    if (showGarminResetConfirmation) {
-        GymAlertDialog(
-            onDismissRequest = { showGarminResetConfirmation = false },
-            title = stringResource(R.string.garmin_reset_pairing_title),
-            text = { Text(stringResource(R.string.garmin_reset_pairing_description)) },
-            confirmButton = {
-                GymAlertDialogButton(
-                    onClick = {
-                        showGarminResetConfirmation = false
-                        onResetGarminPairing()
-                    },
-                    role = GymAlertDialogButtonRole.Destructive
-                ) {
-                    Text(stringResource(R.string.garmin_reset_pairing_confirm))
-                }
-            },
-            dismissButton = {
-                GymAlertDialogButton(
-                    onClick = { showGarminResetConfirmation = false },
-                    role = GymAlertDialogButtonRole.Cancel
-                ) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            }
-        )
-    }
 
     if (showPasswordChange) {
         ChangePasswordDialog(
@@ -710,9 +671,10 @@ private fun LazyListScope.profileRootContent(
     pendingAttentionCount: Int,
     onOpenFriends: () -> Unit,
     onOpenAccountSettings: () -> Unit,
-    onOpenGarmin: () -> Unit,
+    onOpenWatches: () -> Unit,
     onOpenSupport: () -> Unit,
     garminDeviceState: GarminDeviceUiState,
+    healthDataState: HealthDataUiState?,
     backupMessage: com.example.gymapp.util.LocalizedText?,
     onExportBackup: () -> Unit,
     onExportDiagnostics: () -> Unit,
@@ -786,18 +748,22 @@ private fun LazyListScope.profileRootContent(
         }
     }
     item {
-        val watchConnected = garminDeviceState.sdkReady && garminDeviceState.devices.any { it.connected }
-        val watchTitle = stringResource(R.string.garmin_row_title)
-        val watchStatus = stringResource(
-            if (watchConnected) R.string.garmin_status_connected
-            else R.string.garmin_status_not_connected
+        val watchesTitle = stringResource(R.string.watches_title)
+        val sourceLabels = mapOf(
+            WatchSource.GARMIN to stringResource(R.string.watches_source_garmin),
+            WatchSource.HEALTH_DATA to stringResource(R.string.health_data_title)
+        )
+        val watchesStatus = watchesStatusLine(
+            sources = connectedWatchSources(garminDeviceState, healthDataState),
+            label = { sourceLabels.getValue(it) },
+            none = stringResource(R.string.watches_status_none)
         )
         GroupedSection(header = stringResource(R.string.profile_group_devices)) {
             row(
-                title = watchTitle,
-                value = watchStatus,
+                title = watchesTitle,
+                value = watchesStatus,
                 chevron = true,
-                onClick = onOpenGarmin
+                onClick = onOpenWatches
             )
         }
     }
@@ -1014,160 +980,6 @@ private fun ProfileLanguageRow(
                         }
                     )
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun GarminDeviceCard(
-    state: GarminDeviceUiState,
-    onOpenGarminApp: () -> Unit,
-    onResetGarminPairing: () -> Unit,
-    onPairGarminDevice: suspend (deviceId: Long) -> Boolean
-) {
-    val pairingScope = rememberCoroutineScope()
-    var connectingDeviceId by remember { mutableStateOf<Long?>(null) }
-    var failedDeviceId by remember { mutableStateOf<Long?>(null) }
-    AppPanel(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            SectionTitle(
-                eyebrow = stringResource(R.string.garmin_profile_eyebrow),
-                title = stringResource(R.string.garmin_profile_title),
-                supporting = stringResource(R.string.garmin_profile_supporting)
-            )
-            if (!state.sdkReady || state.devices.isEmpty()) {
-                Text(
-                    text = stringResource(
-                        if (state.sdkReady) R.string.garmin_profile_no_devices
-                        else R.string.garmin_profile_unavailable
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                state.devices.forEach { device ->
-                    val connecting = connectingDeviceId == device.deviceId
-                    val failed = failedDeviceId == device.deviceId && !connecting
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Watch,
-                            contentDescription = null,
-                            tint = if (device.connected) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(device.name, style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                text = stringResource(
-                                    if (device.connected) R.string.garmin_profile_connected
-                                    else R.string.garmin_profile_offline
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (device.connected) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            )
-                        }
-                        // A failed attempt keeps the watch pinned (the pin precedes the first sync),
-                        // so a retry stays available after the tag already reads "Paired".
-                        val offersConnect = garminDeviceOffersConnect(state, device) ||
-                            (failed && state.canPair && !state.pairingResetPending && device.connected)
-                        if (connecting) {
-                            Text(
-                                text = stringResource(R.string.garmin_connecting),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else if (offersConnect) {
-                            Button(
-                                onClick = {
-                                    if (connectingDeviceId == null) {
-                                        val deviceId = device.deviceId
-                                        connectingDeviceId = deviceId
-                                        failedDeviceId = null
-                                        pairingScope.launch {
-                                            val paired = try {
-                                                onPairGarminDevice(deviceId)
-                                            } catch (error: CancellationException) {
-                                                throw error
-                                            } catch (_: Exception) {
-                                                false
-                                            }
-                                            failedDeviceId = if (paired) null else deviceId
-                                            connectingDeviceId = null
-                                        }
-                                    }
-                                },
-                                modifier = Modifier.heightIn(min = 48.dp),
-                                elevation = null
-                            ) {
-                                Text(stringResource(R.string.garmin_connect_action))
-                            }
-                        } else if (device.trustedForActiveAccount) {
-                            Text(
-                                text = stringResource(R.string.garmin_profile_paired),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                    if (failed) {
-                        Text(
-                            text = stringResource(R.string.garmin_connect_failed),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                    if (device.liteMode) {
-                        Text(
-                            text = stringResource(R.string.garmin_lite_free_only_notice),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-            if (state.sdkReady && state.pairingResetPending) {
-                Text(
-                    text = stringResource(R.string.garmin_connect_reset_pending),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            // Without the Garmin SDK there is nothing to open, so the card only states that.
-            if (state.sdkReady) {
-                TintedButton(
-                    onClick = onOpenGarminApp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(stringResource(R.string.garmin_open_app))
-                }
-            }
-            // Always available: the reset is also the explicit user action that clears a pending
-            // reset left by an account change, and the SDK device list can be empty while it is not ready.
-            // Rare and destructive, so it is a low-emphasis text button (the app's destructive text style).
-            TextButton(
-                onClick = onResetGarminPairing,
-                modifier = Modifier.heightIn(min = 48.dp),
-                contentPadding = PaddingValues(horizontal = 0.dp),
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error
-                )
-            ) {
-                Text(stringResource(R.string.garmin_reset_pairing_action))
             }
         }
     }

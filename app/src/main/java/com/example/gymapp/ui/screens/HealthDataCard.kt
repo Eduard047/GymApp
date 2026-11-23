@@ -39,9 +39,9 @@ import com.example.gymapp.util.formattedStringResource
 private const val HEALTH_CONNECT_PACKAGE = "com.google.android.apps.healthdata"
 
 /**
- * Health Connect import card. Self-contained (state + callbacks) so it can move to a "Watches"
- * screen later. It never asks for permissions by itself: the Health Connect permission screen
- * opens only from the Connect button, and [onPermissionRequestFinished] reports its return.
+ * Health Connect import card on the Watches screen. Self-contained (state + callbacks). It never asks
+ * for permissions by itself: the Health Connect permission screen opens only from the Connect button,
+ * and [onPermissionRequestFinished] reports its return.
  */
 @Composable
 internal fun HealthDataCard(
@@ -72,7 +72,8 @@ internal fun HealthDataCard(
         ) {
             SectionTitle(
                 eyebrow = "",
-                title = stringResource(R.string.health_data_title)
+                title = stringResource(R.string.health_data_title),
+                supporting = stringResource(R.string.watches_health_capability)
             )
             when (mode) {
                 HealthDataCardMode.UNAVAILABLE -> BodyText(R.string.health_data_unavailable)

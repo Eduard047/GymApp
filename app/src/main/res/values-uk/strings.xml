@@ -739,7 +739,7 @@
     <string name="message_plan_outside_garmin_limits">План тренування виходить за обмеження Garmin.</string>
     <string name="message_garmin_plan_set_limit">План Garmin може містити не більше ніж 30 підходів.</string>
     <string name="message_garmin_sdk_not_ready">Garmin Connect IQ ще не готовий. Перевірте з’єднання та повторіть спробу.</string>
-    <string name="message_no_trusted_garmin_watch">Підключіть годинник Garmin у Профілі → Годинник Garmin перед синхронізацією плану.</string>
+    <string name="message_no_trusted_garmin_watch">Підключіть годинник Garmin у Профілі → Годинники перед синхронізацією плану.</string>
     <string name="message_garmin_ack_missing">Годинник не підтвердив план. Відкрийте GymApp на годиннику та повторіть спробу.</string>
     <string name="message_garmin_plan_too_large">План завеликий для цього годинника. Скороти його та синхронізуй знову.</string>
     <string name="message_garmin_sign_in_required">Увійдіть в обліковий запис перед синхронізацією з Garmin.</string>
@@ -1485,12 +1485,12 @@
     <string name="profile_group_app">Застосунок</string>
     <string name="profile_group_data">Дані</string>
     <string name="profile_group_help">Допомога</string>
-    <string name="garmin_row_title">Годинник Garmin</string>
-    <string name="garmin_status_connected">Підключено</string>
-    <string name="garmin_status_not_connected">Не підключено</string>
-    <string name="garmin_profile_eyebrow">Garmin</string>
-    <string name="garmin_profile_title">Годинник Garmin</string>
-    <string name="garmin_profile_supporting">Поточний стан з’єднання з Garmin Connect на цьому телефоні.</string>
+    <string name="watches_title">Годинники</string>
+    <string name="watches_source_garmin">Garmin</string>
+    <string name="watches_status_none">Не підключено</string>
+    <string name="watches_garmin_capability">План на годиннику, підходи й пульс</string>
+    <string name="watches_health_capability">Імпортує тренування й пульс</string>
+    <string name="garmin_profile_title">Garmin</string>
     <string name="garmin_profile_connected">Зараз підключено</string>
     <string name="garmin_profile_offline">Зараз не підключено</string>
     <string name="garmin_profile_paired">Прив’язано</string>

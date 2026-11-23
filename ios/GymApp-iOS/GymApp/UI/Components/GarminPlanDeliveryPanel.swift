@@ -70,9 +70,9 @@ struct GarminPlanDeliveryPanel: View {
 
     private var message: String {
         if destinations.isEmpty {
-            return gymText("Connect a Garmin watch in Profile → Your watch before syncing a plan.",
-                "Перед синхронізацією плану підключіть годинник: Профіль → Годинник Garmin.",
-                "Перед синхронизацией плана подключите часы: Профиль → Часы Garmin.", languageCode: gymCurrentLanguageCode())
+            return gymText("Connect a Garmin watch in Profile → Watches before syncing a plan.",
+                "Перед синхронізацією плану підключіть годинник: Профіль → Годинники.",
+                "Перед синхронизацией плана подключите часы: Профиль → Часы.", languageCode: gymCurrentLanguageCode())
         }
         if selectedIsLite { return GarminPhoneSyncProtocol.liteWatchMessage(languageCode: gymCurrentLanguageCode()) }
         if selected.hasPrefix("phone:"), let status = phone.planDeliveryMessages[String(selected.dropFirst(6))] { return status }

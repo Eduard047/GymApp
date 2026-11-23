@@ -11,6 +11,7 @@ const strings = Object.fromEntries(
 const kotlin = "java/com/example/gymapp";
 const card = await read(`${kotlin}/ui/screens/HealthDataCard.kt`);
 const profile = await read(`${kotlin}/ui/screens/ProfileScreen.kt`);
+const watches = await read(`${kotlin}/ui/screens/WatchesScreen.kt`);
 const graph = await read(`${kotlin}/navigation/GymNavGraph.kt`);
 const viewModel = await read(`${kotlin}/ui/viewmodel/HealthDataViewModel.kt`);
 const rationale = await read(`${kotlin}/health/HealthPermissionRationaleActivity.kt`);
@@ -55,12 +56,13 @@ test("the shared copy matches the agreed wording", () => {
   assert.match(strings.ru, />Samsung, Xiaomi, Huawei, Amazfit, Polar, Fitbit и другие часы — через Health Connect\.</);
 });
 
-test("the card sits directly after the Garmin card in Profile", () => {
-  const garmin = profile.indexOf("GarminDeviceCard(\n                            state = garminDeviceState");
-  const health = profile.indexOf("HealthDataCard(\n                                state = healthDataState");
+test("the card sits directly after the Garmin card on the Watches screen, not inline in Profile", () => {
+  const garmin = watches.indexOf("GarminDeviceCard(\n                state = garminDeviceState");
+  const health = watches.indexOf("HealthDataCard(\n                    state = healthDataState");
   assert.ok(garmin > 0, "Garmin card call");
   assert.ok(health > garmin, "Health data card comes after the Garmin card");
   assert.ok(health - garmin < 900, "no other card in between");
+  assert.equal(profile.includes("HealthDataCard("), false, "Profile no longer hosts the card");
 });
 
 test("the card is wired from the navigation graph and refreshes on resume", () => {
@@ -68,6 +70,9 @@ test("the card is wired from the navigation graph and refreshes on resume", () =
   assert.match(graph, /onHealthImportNow = \{ healthDataViewModel\?\.importNow\(\) \}/);
   assert.match(graph, /onHealthDisconnect = \{ healthDataViewModel\?\.disconnect\(\) \}/);
   assert.match(graph, /healthDataViewModel\?\.importOnForeground\(\)/);
+  // Profile still refreshes on open (status line); the Watches screen refreshes again when it opens.
+  assert.match(graph, /healthDataViewModel\?\.refresh\(\)/);
+  assert.match(graph, /onRefreshHealthData = \{ healthDataViewModel\?\.refresh\(\) \}/);
 });
 
 test("permissions are requested only from the Connect button, never automatically", () => {

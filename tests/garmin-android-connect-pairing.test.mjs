@@ -12,15 +12,17 @@ function section(source, start, end) {
   return source.slice(from, to);
 }
 
-test("Android Profile watch card offers a one-tap Connect that pairs exactly the tapped watch", async () => {
+test("Android Watches screen Garmin card offers a one-tap Connect that pairs exactly the tapped watch", async () => {
   const [screen, navGraph, manager, pairing] = await Promise.all([
-    read("app/src/main/java/com/example/gymapp/ui/screens/ProfileScreen.kt"),
+    read("app/src/main/java/com/example/gymapp/ui/screens/WatchesScreen.kt"),
     read("app/src/main/java/com/example/gymapp/navigation/GymNavGraph.kt"),
     read("app/src/main/java/com/example/gymapp/garmin/GarminSyncManager.kt"),
     read("app/src/main/java/com/example/gymapp/garmin/GarminWatchPairing.kt")
   ]);
 
-  const card = section(screen, "private fun GarminDeviceCard(", "private fun ChangePasswordDialog(");
+  // GarminDeviceCard is the last function in WatchesScreen.kt.
+  const card = screen.slice(screen.indexOf("private fun GarminDeviceCard("));
+  assert.ok(card.length > 100, "Missing GarminDeviceCard");
   assert.match(card, /garminDeviceOffersConnect\(state, device\)/);
   assert.match(card, /onPairGarminDevice\(deviceId\)/);
   for (const id of ["garmin_connect_action", "garmin_connecting", "garmin_connect_failed", "garmin_connect_reset_pending"]) {

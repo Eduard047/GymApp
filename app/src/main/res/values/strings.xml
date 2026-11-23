@@ -715,7 +715,7 @@
     <string name="message_plan_outside_garmin_limits">The workout plan is outside Garmin limits.</string>
     <string name="message_garmin_plan_set_limit">Garmin plans support up to 30 sets.</string>
     <string name="message_garmin_sdk_not_ready">Garmin Connect IQ is not ready. Check the connection and try again.</string>
-    <string name="message_no_trusted_garmin_watch">Connect a Garmin watch in Profile → Your watch before syncing a plan.</string>
+    <string name="message_no_trusted_garmin_watch">Connect a Garmin watch in Profile → Watches before syncing a plan.</string>
     <string name="message_garmin_ack_missing">The watch did not confirm the plan. Open GymApp on the watch and try again.</string>
     <string name="message_garmin_plan_too_large">This plan is too large for this watch. Shorten it and sync again.</string>
     <string name="message_garmin_sign_in_required">Sign in before syncing with Garmin.</string>
@@ -1435,12 +1435,12 @@
     <string name="profile_group_app">App</string>
     <string name="profile_group_data">Data</string>
     <string name="profile_group_help">Help</string>
-    <string name="garmin_row_title">Garmin watch</string>
-    <string name="garmin_status_connected">Connected</string>
-    <string name="garmin_status_not_connected">Not connected</string>
-    <string name="garmin_profile_eyebrow">Garmin</string>
-    <string name="garmin_profile_title">Your watch</string>
-    <string name="garmin_profile_supporting">Live connection status from Garmin Connect on this phone.</string>
+    <string name="watches_title">Watches</string>
+    <string name="watches_source_garmin">Garmin</string>
+    <string name="watches_status_none">Not connected</string>
+    <string name="watches_garmin_capability">Plan on the watch, sets and heart rate</string>
+    <string name="watches_health_capability">Imports workouts and heart rate</string>
+    <string name="garmin_profile_title">Garmin</string>
     <string name="garmin_profile_connected">Connected now</string>
     <string name="garmin_profile_offline">Not connected now</string>
     <string name="garmin_profile_paired">Paired</string>

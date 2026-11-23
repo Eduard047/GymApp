@@ -34,7 +34,8 @@ test("native clients open our Garmin listing with platform store fallbacks", asy
     `market://details?id=${CONNECT_IQ_PACKAGE}`
   );
   assert.equal(quotedValueFollowing(androidLauncher, "CONNECT_IQ_GOOGLE_PLAY_URL"), CONNECT_IQ_PLAY_URL);
-  assert.equal(androidScreen.includes("openGymWorkoutTrackerInGarminStore(context)"), true);
+  const watchesScreen = await readFile("app/src/main/java/com/example/gymapp/ui/screens/WatchesScreen.kt", "utf8");
+  assert.equal(watchesScreen.includes("openGymWorkoutTrackerInGarminStore(context)"), true);
 
   assert.equal(quotedValueFollowing(iosProfile, "private let garminStoreURL"), GARMIN_STORE_URL);
   assert.equal(quotedValueFollowing(iosProfile, "private let connectIQAppStoreURL"), CONNECT_IQ_APP_STORE_URL);
@@ -88,9 +89,10 @@ test("Android profile is grouped sections with Friends & live and the Garmin wat
     assert.equal(androidScreen.includes(`R.string.profile_group_${group}`), true, group);
   }
   assert.equal(androidScreen.includes("ProfileDestination.Friends"), true);
-  assert.equal(androidScreen.includes("ProfileDestination.Garmin"), true);
-  assert.equal(androidScreen.includes("R.string.garmin_row_title"), true);
-  assert.equal(androidScreen.includes("GarminDeviceCard("), true);
+  assert.equal(androidScreen.includes("ProfileDestination.Watches"), true);
+  assert.equal(androidScreen.includes("R.string.watches_title"), true);
+  assert.equal(androidScreen.includes("WatchesScreen("), true);
+  assert.equal(androidScreen.includes("GarminDeviceCard("), false);
   assert.equal(navGraph.includes("showContinueBarDiscardConfirmation"), false);
 });
 

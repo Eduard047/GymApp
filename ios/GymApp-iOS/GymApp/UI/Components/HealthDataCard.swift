@@ -1,8 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Read-only Apple Health import: connect, import now, disconnect. Self-contained so it
-/// can move into a dedicated "Watches" screen unchanged.
+/// Read-only Apple Health import: connect, import now, disconnect. Self-contained and shown on the Watches screen.
 struct HealthDataCard: View {
     @ObservedObject var service: HealthKitImportService
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
@@ -13,9 +12,9 @@ struct HealthDataCard: View {
                 GymSectionTitle(
                     title: gymText("Health data", "Дані здоров’я", "Данные здоровья", languageCode: languageCode),
                     supporting: gymText(
-                        "Samsung, Xiaomi, Huawei, Amazfit, Polar, Fitbit and other watches — through Apple Health.",
-                        "Samsung, Xiaomi, Huawei, Amazfit, Polar, Fitbit та інші годинники — через Apple Health.",
-                        "Samsung, Xiaomi, Huawei, Amazfit, Polar, Fitbit и другие часы — через Apple Health.",
+                        "Imports workouts and heart rate",
+                        "Імпортує тренування й пульс",
+                        "Импортирует тренировки и пульс",
                         languageCode: languageCode
                     )
                 )
@@ -39,6 +38,17 @@ struct HealthDataCard: View {
                 if let failure = service.failure {
                     GymStatusBanner(message: failureText(failure), isError: true)
                 }
+
+                // Brand caption: which watches reach GymApp through Apple Health.
+                Text(gymText(
+                    "Samsung, Xiaomi, Huawei, Amazfit, Polar, Fitbit and other watches — through Apple Health.",
+                    "Samsung, Xiaomi, Huawei, Amazfit, Polar, Fitbit та інші годинники — через Apple Health.",
+                    "Samsung, Xiaomi, Huawei, Amazfit, Polar, Fitbit и другие часы — через Apple Health.",
+                    languageCode: languageCode
+                ))
+                .font(.caption)
+                .foregroundStyle(GymTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

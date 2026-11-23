@@ -14020,12 +14020,13 @@ final class CoreParityTests: XCTestCase {
             try XCTUnwrap(tailSource.range(of: "gymText(\"Workouts\"")).lowerBound
         )
         XCTAssertTrue(profile.contains("private struct ProfileFriendsScreen"))
-        XCTAssertTrue(profile.contains("private struct GarminWatchScreen"))
-        XCTAssertTrue(profile.contains("garminRow"))
+        XCTAssertTrue(profile.contains("private struct WatchesScreen"))
+        XCTAssertFalse(profile.contains("GarminWatchScreen"))
+        XCTAssertTrue(profile.contains("watchesRow"))
         XCTAssertFalse(profile.contains("sectionPicker"))
         for copy in [
             "Не гасить экран на тренировке", "Не вимикати екран на тренуванні", "Keep screen on in workouts",
-            "Часы Garmin", "Годинник Garmin", "Не подключены", "Не підключено",
+            "gymText(\"Garmin\", \"Garmin\", \"Garmin\"", "Годинники", "Часы",
             "Короткий обзор приложения", "Короткий огляд застосунку", "Quick tour of the app",
             "Резервные копии и диагностика", "Друзья и live"
         ] {
@@ -14065,8 +14066,8 @@ final class CoreParityTests: XCTestCase {
         for exactCopy in [
             "Синхронізація плану…",
             "Синхронизация плана…",
-            "Перед синхронізацією плану підключіть годинник: Профіль → Годинник Garmin.",
-            "Перед синхронизацией плана подключите часы: Профиль → Часы Garmin.",
+            "Перед синхронізацією плану підключіть годинник: Профіль → Годинники.",
+            "Перед синхронизацией плана подключите часы: Профиль → Часы.",
             "Поточний відредагований план",
             "Текущий отредактированный план",
             "Оновлює згенеровані рядки",

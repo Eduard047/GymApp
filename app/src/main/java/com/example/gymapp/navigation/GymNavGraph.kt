@@ -4813,6 +4813,7 @@ internal fun GymAppRoot(
                                 },
                                 onHealthImportNow = { healthDataViewModel?.importNow() },
                                 onHealthDisconnect = { healthDataViewModel?.disconnect() },
+                                onRefreshHealthData = { healthDataViewModel?.refresh() },
                                 onRetryLoad = profileViewModel::retryLoad,
                                 modifier = Modifier.fillMaxSize()
                             )

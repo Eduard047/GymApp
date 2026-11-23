@@ -1451,18 +1451,18 @@
         }
       }
     },
-    "Connect a Garmin watch in Profile → Your watch before syncing a plan." : {
+    "Connect a Garmin watch in Profile → Watches before syncing a plan." : {
       "localizations" : {
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Перед синхронизацией плана подключите часы: Профиль → Часы Garmin."
+            "value" : "Перед синхронизацией плана подключите часы: Профиль → Часы."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Перед синхронізацією плану підключіть годинник: Профіль → Годинник Garmin."
+            "value" : "Перед синхронізацією плану підключіть годинник: Профіль → Годинники."
           }
         }
       }
