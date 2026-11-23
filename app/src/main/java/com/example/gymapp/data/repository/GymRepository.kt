@@ -34,6 +34,8 @@ import com.example.gymapp.data.entity.GarminWorkoutProvenanceEntity
 import com.example.gymapp.data.entity.HealthImportReceiptEntity
 import com.example.gymapp.data.entity.HealthImportStateEntity
 import com.example.gymapp.data.entity.SetEntryEntity
+import com.example.gymapp.data.entity.WearMutationReceiptEntity
+import com.example.gymapp.data.entity.WearSyncSetRow
 import com.example.gymapp.data.entity.WorkoutExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.entity.WorkoutSessionEntity
@@ -264,6 +266,25 @@ enum class DiscardActiveWorkoutResult {
     Stale
 }
 
+data class PhoneWearRepositorySnapshot(
+    val setRows: List<WearSyncSetRow>,
+    val exerciseNames: List<String>
+)
+
+enum class WearMutationApplyResult {
+    Applied,
+    AlreadyApplied,
+
+    /** Deterministic refusal (invalid target, digest conflict, daily limit): the watch may drop it. */
+    Rejected,
+
+    /** Per-account daily cap for watch-created workouts reached; deterministic like [Rejected]. */
+    RateLimited,
+
+    /** Receipt journal full; transient, so the phone sends no ack and the watch retries later. */
+    ReceiptStoreFull
+}
+
 enum class GarminWorkoutApplyResult {
     Applied,
     AlreadyApplied,
@@ -489,6 +510,7 @@ class GymRepository(
     private val activeWorkoutDao = database.activeWorkoutDao()
     private val workoutPlanDraftDao = database.workoutPlanDraftDao()
     private val healthImportDao = database.healthImportDao()
+    private val wearMutationDao = database.wearMutationDao()
     private val deletionStoreToken = UUID.randomUUID().toString()
     private val activeWorkoutMutationMutex = Mutex()
     private val healthImportSidecarGuard = HealthImportSidecarGuard()
@@ -3855,6 +3877,33 @@ class GymRepository(
             .distinctBy { it.lowercase() }
     }
 
+    /** Bounded, transactionally consistent source snapshot for the phone-to-watch mirror. */
+    suspend fun getPhoneWearSyncSnapshot(
+        maxSetRows: Int,
+        maxExerciseNames: Int
+    ): PhoneWearRepositorySnapshot {
+        require(maxSetRows in 1..WorkoutDataLimits.MAX_TOTAL_SETS)
+        require(maxExerciseNames in 1..WorkoutDataLimits.MAX_EXERCISES)
+        return database.withTransaction {
+            val rowsWithSentinel = workoutDao.getWearSyncRows(maxSetRows + 1)
+            val rows = if (rowsWithSentinel.size > maxSetRows) {
+                // The final session may be partial at the SQL LIMIT boundary. Drop it as a whole
+                // rather than presenting a truncated workout as authoritative on the watch.
+                val potentiallyPartialSessionId = rowsWithSentinel.last().sessionId
+                rowsWithSentinel.dropLastWhile { it.sessionId == potentiallyPartialSessionId }
+            } else {
+                rowsWithSentinel
+            }
+            PhoneWearRepositorySnapshot(
+                setRows = rows,
+                exerciseNames = exerciseDao.getExerciseNamesForSync(maxExerciseNames)
+                    .map(String::trim)
+                    .filter(String::isNotBlank)
+                    .distinctBy { it.lowercase() }
+            )
+        }
+    }
+
     /**
      * Atomically persists a bound Garmin workout and its durable idempotency receipt.
      *
@@ -4154,6 +4203,145 @@ class GymRepository(
                 activePairingGeneration = pairingGeneration,
                 retainFrom = retainFrom
             )
+        }
+    }
+
+    suspend fun applyWearCreateWorkout(
+        ownerId: String,
+        accountGeneration: Long,
+        operationId: String,
+        sourceNodeId: String,
+        payloadDigest: String,
+        date: Long,
+        note: String?,
+        sets: List<NamedWorkoutSetDraft>,
+        durationSeconds: Long? = null
+    ): WearMutationApplyResult {
+        return applyWearMutation(
+            ownerId = ownerId,
+            accountGeneration = accountGeneration,
+            operationId = operationId,
+            sourceNodeId = sourceNodeId,
+            mutationType = WEAR_MUTATION_CREATE,
+            payloadDigest = payloadDigest
+        ) {
+            createWorkoutSessionFromNamedSets(
+                date = date,
+                note = note,
+                sets = sets,
+                durationSeconds = durationSeconds
+            ) != null
+        }
+    }
+
+    suspend fun applyWearUpdateSet(
+        ownerId: String,
+        accountGeneration: Long,
+        operationId: String,
+        sourceNodeId: String,
+        payloadDigest: String,
+        setId: Long,
+        weight: Double,
+        reps: Int
+    ): WearMutationApplyResult {
+        require(setId > 0)
+        requireValidSet(weight, reps)
+        return applyWearMutation(
+            ownerId = ownerId,
+            accountGeneration = accountGeneration,
+            operationId = operationId,
+            sourceNodeId = sourceNodeId,
+            mutationType = WEAR_MUTATION_UPDATE,
+            payloadDigest = payloadDigest
+        ) {
+            val existing = setDao.getById(setId) ?: return@applyWearMutation false
+            setDao.update(existing.copy(weight = weight, reps = reps))
+            true
+        }
+    }
+
+    suspend fun applyWearDeleteSet(
+        ownerId: String,
+        accountGeneration: Long,
+        operationId: String,
+        sourceNodeId: String,
+        payloadDigest: String,
+        setId: Long
+    ): WearMutationApplyResult {
+        require(setId > 0)
+        return applyWearMutation(
+            ownerId = ownerId,
+            accountGeneration = accountGeneration,
+            operationId = operationId,
+            sourceNodeId = sourceNodeId,
+            mutationType = WEAR_MUTATION_DELETE,
+            payloadDigest = payloadDigest
+        ) {
+            val workoutExerciseId = setDao.getWorkoutExerciseIdBySetId(setId)
+                ?: return@applyWearMutation false
+            setDao.deleteById(setId)
+            cleanupAfterSetDeletion(workoutExerciseId)
+            true
+        }
+    }
+
+    private suspend fun applyWearMutation(
+        ownerId: String,
+        accountGeneration: Long,
+        operationId: String,
+        sourceNodeId: String,
+        mutationType: String,
+        payloadDigest: String,
+        mutation: suspend () -> Boolean
+    ): WearMutationApplyResult {
+        require(ownerId.matches(Regex("^[0-9a-f]{64}$")))
+        require(accountGeneration in 1L..9_007_199_254_740_991L)
+        require(operationId.matches(WEAR_OPERATION_ID_PATTERN))
+        require(sourceNodeId.isNotBlank() && sourceNodeId.length <= 256 && sourceNodeId.none(Char::isISOControl))
+        require(mutationType in WEAR_MUTATION_TYPES)
+        require(payloadDigest.matches(Regex("^[0-9a-f]{64}$")))
+
+        return database.withTransaction {
+            val now = System.currentTimeMillis()
+            // Receipts are keyed by (owner, operation) regardless of generation so a same-owner
+            // re-login can replay an unacknowledged watch operation idempotently. They are pruned
+            // by age, far beyond the 7-day message-age window, never by generation.
+            wearMutationDao.deleteOlderThan(now - WEAR_RECEIPT_RETENTION_MS)
+            val existing = wearMutationDao.get(ownerId, operationId)
+            if (existing != null) {
+                return@withTransaction if (
+                    existing.sourceNodeId == sourceNodeId &&
+                    existing.mutationType == mutationType &&
+                    existing.payloadDigest == payloadDigest
+                ) {
+                    WearMutationApplyResult.AlreadyApplied
+                } else {
+                    WearMutationApplyResult.Rejected
+                }
+            }
+            if (wearMutationDao.count(ownerId) >= MAX_WEAR_MUTATION_RECEIPTS) {
+                return@withTransaction WearMutationApplyResult.ReceiptStoreFull
+            }
+            if (
+                mutationType == WEAR_MUTATION_CREATE &&
+                wearMutationDao.countSince(ownerId, WEAR_MUTATION_CREATE, startOfLocalDay(now)) >=
+                MAX_WEAR_CREATES_PER_DAY
+            ) {
+                return@withTransaction WearMutationApplyResult.RateLimited
+            }
+            if (!mutation()) return@withTransaction WearMutationApplyResult.Rejected
+            wearMutationDao.insert(
+                WearMutationReceiptEntity(
+                    ownerId = ownerId,
+                    accountGeneration = accountGeneration,
+                    operationId = operationId,
+                    sourceNodeId = sourceNodeId,
+                    mutationType = mutationType,
+                    payloadDigest = payloadDigest,
+                    createdAt = now
+                )
+            )
+            WearMutationApplyResult.Applied
         }
     }
 
@@ -4612,6 +4800,28 @@ class GymRepository(
         val GARMIN_DEVICE_BINDING_PATTERN = Regex("^-?[0-9]{1,19}$")
         val GARMIN_REQUEST_ID_PATTERN = Regex("^[A-Za-z0-9_.:-]{16,128}$")
         val SHA256_HEX_PATTERN = Regex("^[0-9a-f]{64}$")
+        const val MAX_WEAR_MUTATION_RECEIPTS = 100_000
+        const val MAX_WEAR_CREATES_PER_DAY = 50
+        const val WEAR_RECEIPT_RETENTION_MS = 30L * 24 * 60 * 60 * 1_000
+        private fun startOfLocalDay(timeMillis: Long): Long =
+            java.util.Calendar.getInstance().apply {
+                this.timeInMillis = timeMillis
+                set(java.util.Calendar.HOUR_OF_DAY, 0)
+                set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+            }.timeInMillis
+        const val WEAR_MUTATION_CREATE = "create_workout"
+        const val WEAR_MUTATION_UPDATE = "update_set"
+        const val WEAR_MUTATION_DELETE = "delete_set"
+        val WEAR_MUTATION_TYPES = setOf(
+            WEAR_MUTATION_CREATE,
+            WEAR_MUTATION_UPDATE,
+            WEAR_MUTATION_DELETE
+        )
+        val WEAR_OPERATION_ID_PATTERN = Regex(
+            "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        )
     }
 }
 

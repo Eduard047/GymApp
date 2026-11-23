@@ -2,28 +2,34 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [appBuild, appDebugManifest, releaseScript] = await Promise.all([
+const [appBuild, wearBuild, appDebugManifest, releaseScript] = await Promise.all([
   readFile("app/build.gradle.kts", "utf8"),
+  readFile("wear/build.gradle.kts", "utf8"),
   readFile("app/src/debug/AndroidManifest.xml", "utf8"),
   readFile("scripts/publish-debug-release.ps1", "utf8"),
 ]);
 
 test("public debug builds do not expose Compose tooling or test activities", () => {
-  assert.doesNotMatch(
-    appBuild,
-    /debugImplementation\(libs\.androidx\.compose\.ui\.tooling\)/,
-    "phone debug build must not package PreviewActivity"
-  );
-  assert.doesNotMatch(
-    appBuild,
-    /debugImplementation\(libs\.androidx\.compose\.ui\.test\.manifest\)/,
-    "phone debug build must not package the exported test ComponentActivity"
-  );
-  assert.match(
-    appBuild,
-    /implementation\(libs\.androidx\.compose\.ui\.tooling\.preview\)/,
-    "phone may retain compile-time preview annotations"
-  );
+  for (const [label, build] of [
+    ["phone", appBuild],
+    ["watch", wearBuild],
+  ]) {
+    assert.doesNotMatch(
+      build,
+      /debugImplementation\(libs\.androidx\.compose\.ui\.tooling\)/,
+      `${label} debug build must not package PreviewActivity`
+    );
+    assert.doesNotMatch(
+      build,
+      /debugImplementation\(libs\.androidx\.compose\.ui\.test\.manifest\)/,
+      `${label} debug build must not package the exported test ComponentActivity`
+    );
+    assert.match(
+      build,
+      /implementation\(libs\.androidx\.compose\.ui\.tooling\.preview\)/,
+      `${label} may retain compile-time preview annotations`
+    );
+  }
   assert.match(
     appDebugManifest,
     /android:name="androidx\.activity\.ComponentActivity"[\s\S]*?android:exported="false"/,

@@ -13,6 +13,7 @@ import com.example.gymapp.data.dao.GarminLatinNameDao
 import com.example.gymapp.data.dao.ExerciseLoadProfileDao
 import com.example.gymapp.data.dao.AppMetadataDao
 import com.example.gymapp.data.dao.GarminWorkoutReceiptDao
+import com.example.gymapp.data.dao.WearMutationDao
 import com.example.gymapp.data.dao.HealthImportDao
 import com.example.gymapp.data.dao.MuscleMappingDao
 import com.example.gymapp.data.dao.SetDao
@@ -35,6 +36,7 @@ import com.example.gymapp.data.entity.GarminWorkoutProvenanceEntity
 import com.example.gymapp.data.entity.HealthImportReceiptEntity
 import com.example.gymapp.data.entity.HealthImportStateEntity
 import com.example.gymapp.data.entity.SetEntryEntity
+import com.example.gymapp.data.entity.WearMutationReceiptEntity
 import com.example.gymapp.data.entity.WorkoutExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionEntity
 import com.example.gymapp.data.entity.WorkoutPlanDraftEntity
@@ -61,9 +63,10 @@ import java.util.concurrent.ConcurrentHashMap
         WorkoutPlanDraftEntity::class,
         GarminLatinNameEntity::class,
         HealthImportReceiptEntity::class,
-        HealthImportStateEntity::class
+        HealthImportStateEntity::class,
+        WearMutationReceiptEntity::class
     ],
-    version = 19,
+    version = 20,
     exportSchema = true
 )
 abstract class GymDatabase : RoomDatabase() {
@@ -79,6 +82,7 @@ abstract class GymDatabase : RoomDatabase() {
     abstract fun activeWorkoutDao(): ActiveWorkoutDao
     abstract fun workoutPlanDraftDao(): WorkoutPlanDraftDao
     abstract fun healthImportDao(): HealthImportDao
+    abstract fun wearMutationDao(): WearMutationDao
 
     companion object {
         private val INSTANCES = ConcurrentHashMap<String, GymDatabase>()
@@ -268,7 +272,7 @@ abstract class GymDatabase : RoomDatabase() {
                         mutationType TEXT NOT NULL,
                         payloadDigest TEXT NOT NULL,
                         createdAt INTEGER NOT NULL,
-                        PRIMARY KEY(ownerId, accountGeneration, operationId)
+                        PRIMARY KEY(ownerId, operationId)
                     )
                     """.trimIndent()
                 )
@@ -631,6 +635,36 @@ abstract class GymDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Wear OS companion: durable replay journal for watch mutations, keyed by the account
+         * owner digest and the watch-generated operation id (the generation is informational so a
+         * same-owner re-login can replay an unacknowledged operation idempotently).
+         */
+        internal val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS wear_mutation_receipts (
+                        ownerId TEXT NOT NULL,
+                        accountGeneration INTEGER NOT NULL,
+                        operationId TEXT NOT NULL,
+                        sourceNodeId TEXT NOT NULL,
+                        mutationType TEXT NOT NULL,
+                        payloadDigest TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        PRIMARY KEY(ownerId, operationId)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS index_wear_mutation_receipts_createdAt
+                    ON wear_mutation_receipts(createdAt)
+                    """.trimIndent()
+                )
+            }
+        }
+
         internal val REGISTERED_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -649,7 +683,8 @@ abstract class GymDatabase : RoomDatabase() {
             MIGRATION_15_16,
             MIGRATION_16_17,
             MIGRATION_17_18,
-            MIGRATION_18_19
+            MIGRATION_18_19,
+            MIGRATION_19_20
         )
 
         fun getInstance(context: Context, databaseName: String = "gym_database"): GymDatabase {

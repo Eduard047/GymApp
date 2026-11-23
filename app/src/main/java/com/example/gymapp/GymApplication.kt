@@ -30,6 +30,7 @@ import com.example.gymapp.util.LanguageManager
 import com.example.gymapp.util.RestTimerController
 import com.example.gymapp.util.TrainingGuidanceManager
 import com.example.gymapp.util.TrainingProfileManager
+import com.example.gymapp.wearsync.PhoneWearSyncManager
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import android.util.Log
@@ -68,6 +69,7 @@ class GymApplication : Application() {
     val trainingGuidanceManager: TrainingGuidanceManager by lazy { TrainingGuidanceManager(this) }
     val restTimerController: RestTimerController by lazy { RestTimerController(this) }
     val garminSyncManager: GarminSyncManager by lazy { GarminSyncManager(this) }
+    internal val phoneWearSyncManager: PhoneWearSyncManager by lazy { PhoneWearSyncManager(this) }
     internal val sharedWorkoutInbox = SharedWorkoutInbox()
     /** App-level toast queue; the Activity posts to it and the root `GymToastHost` draws it. */
     internal val toastController = GymToastController()
@@ -80,7 +82,6 @@ class GymApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         hapticsPreference
-        deleteSharedPreferences(RETIRED_PHONE_WEAR_PREFERENCES)
         val authManager = cloudAuthManager
         val profileManager = trainingProfileManager
         val guidanceManager = trainingGuidanceManager
@@ -183,6 +184,7 @@ class GymApplication : Application() {
             }
         }
         garminManager.initialize()
+        phoneWearSyncManager.initialize()
         nativePushManager.initialize()
         runGuarded("conversion analytics") { conversionAnalytics.applyStoredChoice() }
     }
@@ -288,5 +290,3 @@ class GymApplication : Application() {
 
 val Context.gymApplication: GymApplication
     get() = applicationContext as GymApplication
-
-private const val RETIRED_PHONE_WEAR_PREFERENCES = "phone_wear_sync"

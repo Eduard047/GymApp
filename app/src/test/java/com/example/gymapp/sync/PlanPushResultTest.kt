@@ -46,4 +46,39 @@ class PlanPushResultTest {
         }
         assertEquals(R.string.message_garmin_send_failed, planSyncErrorText(error).resourceId)
     }
+
+    @Test
+    fun deliveredWearPlanDoesNotMaskAGarminFailure() {
+        assertThrows(IllegalStateException::class.java) {
+            combinedPlanPushResult(
+                wearDelivered = true,
+                wearFailed = false,
+                garminDelivered = false,
+                garminStatus = "Send timeout"
+            )
+        }
+    }
+
+    @Test
+    fun wearOnlyUserWithNoGarminStaysDelivered() {
+        assertEquals(
+            PlanPushResult.Delivered,
+            combinedPlanPushResult(true, false, false, GARMIN_PLAN_QUEUED_STATUS)
+        )
+        assertEquals(
+            PlanPushResult.Delivered,
+            combinedPlanPushResult(true, false, false, "Trusted Garmin watch is not paired")
+        )
+    }
+
+    @Test
+    fun failedWearSendDoesNotHideBehindDeliveredGarmin() {
+        assertThrows(IllegalStateException::class.java) {
+            combinedPlanPushResult(false, true, true, "ACK")
+        }
+        assertEquals(
+            PlanPushResult.Delivered,
+            combinedPlanPushResult(false, false, true, "ACK")
+        )
+    }
 }

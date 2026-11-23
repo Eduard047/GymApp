@@ -373,6 +373,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
+    // Wear OS companion: Data Layer messaging with the paired watch (wearsync/).
+    implementation("com.google.android.gms:play-services-wearable:20.0.1")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     // Read-only Health Connect import (health/); minSdk 26 library, guarded at runtime, see AndroidManifest.xml.
     implementation("androidx.health.connect:connect-client:1.1.0")

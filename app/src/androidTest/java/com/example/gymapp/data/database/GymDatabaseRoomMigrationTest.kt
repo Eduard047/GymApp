@@ -815,6 +815,61 @@ class GymDatabaseRoomMigrationTest {
         }
     }
 
+    @Test
+    fun migrationNineteenToTwentyAddsWearMutationReceiptsAndKeepsWorkouts() {
+        migrationHelper.createDatabase(WEAR_RECEIPTS_TEST_DATABASE, 19).apply {
+            execSQL(
+                "INSERT INTO workout_sessions(id, date, note) VALUES (4, 1750000000000, 'Keep workout')"
+            )
+            close()
+        }
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            WEAR_RECEIPTS_TEST_DATABASE,
+            20,
+            true,
+            *GymDatabase.REGISTERED_MIGRATIONS
+        )
+        try {
+            migrated.query("SELECT note FROM workout_sessions WHERE id = 4").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Keep workout", cursor.getString(0))
+            }
+            migrated.query("SELECT COUNT(*) FROM wear_mutation_receipts").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+            val owner = "a".repeat(64)
+            val digest = "b".repeat(64)
+            migrated.execSQL(
+                "INSERT INTO wear_mutation_receipts(ownerId, accountGeneration, operationId, " +
+                    "sourceNodeId, mutationType, payloadDigest, createdAt) " +
+                    "VALUES ('$owner', 1, 'op-1', 'node-1', 'create_workout', '$digest', 1750000001000)"
+            )
+            // The primary key is the replay guard: the same owner/operation is unique, even when a
+            // same-owner re-login replays it under a newer generation.
+            val duplicateRejected = try {
+                migrated.execSQL(
+                    "INSERT INTO wear_mutation_receipts(ownerId, accountGeneration, operationId, " +
+                        "sourceNodeId, mutationType, payloadDigest, createdAt) " +
+                        "VALUES ('$owner', 2, 'op-1', 'node-1', 'create_workout', '$digest', 1750000002000)"
+                )
+                false
+            } catch (_: android.database.sqlite.SQLiteConstraintException) {
+                true
+            }
+            assertTrue(duplicateRejected)
+            // A receipt must outlive the workout it created.
+            migrated.execSQL("DELETE FROM workout_sessions WHERE id = 4")
+            migrated.query("SELECT COUNT(*) FROM wear_mutation_receipts").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(1, cursor.getInt(0))
+            }
+        } finally {
+            migrated.close()
+        }
+    }
+
     private companion object {
         const val TEST_DATABASE = "room-migration-7-to-8"
         const val FAVORITE_TEST_DATABASE = "room-migration-8-to-9"
@@ -828,6 +883,7 @@ class GymDatabaseRoomMigrationTest {
         const val ACTIVITY_BASELINE_TEST_DATABASE = "room-migration-16-to-17"
         const val GARMIN_LATIN_NAMES_TEST_DATABASE = "room-migration-17-to-18"
         const val HEALTH_IMPORT_TEST_DATABASE = "room-migration-18-to-19"
+        const val WEAR_RECEIPTS_TEST_DATABASE = "room-migration-19-to-20"
         const val V229_TO_ACTIVE_WORKOUT_TEST_DATABASE = "room-migration-11-to-14"
     }
 }

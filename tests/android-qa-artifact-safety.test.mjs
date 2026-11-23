@@ -4,6 +4,7 @@ import test from "node:test";
 
 const [
   phoneBuild,
+  wearBuild,
   mainManifest,
   debugManifest,
   qaManifest,
@@ -15,6 +16,7 @@ const [
   securityWorkflow,
 ] = await Promise.all([
   readFile("app/build.gradle.kts", "utf8"),
+  readFile("wear/build.gradle.kts", "utf8"),
   readFile("app/src/main/AndroidManifest.xml", "utf8"),
   readFile("app/src/debug/AndroidManifest.xml", "utf8"),
   readFile("app/src/qa/AndroidManifest.xml", "utf8"),
@@ -33,16 +35,21 @@ function qaBlock(build) {
 }
 
 test("public QA variants inherit release behavior and stay outside production", () => {
-  const qa = qaBlock(phoneBuild);
-  assert.match(qa, /initWith\(getByName\("release"\)\)/, "phone QA must inherit release");
-  assert.match(qa, /applicationIdSuffix\s*=\s*"\.dev"/, "phone QA must not use production ID");
-  assert.match(qa, /versionNameSuffix\s*=\s*"-qa"/, "phone QA must be visibly labelled");
-  assert.match(qa, /isDebuggable\s*=\s*false/, "phone QA must be non-debuggable");
-  assert.match(
-    qa,
-    /signingConfig\s*=\s*signingConfigs\.getByName\("debug"\)/,
-    "phone QA must use only the non-production test certificate"
-  );
+  for (const [label, build] of [
+    ["phone", phoneBuild],
+    ["watch", wearBuild],
+  ]) {
+    const qa = qaBlock(build);
+    assert.match(qa, /initWith\(getByName\("release"\)\)/, `${label} QA must inherit release`);
+    assert.match(qa, /applicationIdSuffix\s*=\s*"\.dev"/, `${label} QA must not use production ID`);
+    assert.match(qa, /versionNameSuffix\s*=\s*"-qa"/, `${label} QA must be visibly labelled`);
+    assert.match(qa, /isDebuggable\s*=\s*false/, `${label} QA must be non-debuggable`);
+    assert.match(
+      qa,
+      /signingConfig\s*=\s*signingConfigs\.getByName\("debug"\)/,
+      `${label} QA must use only the non-production test certificate`
+    );
+  }
 });
 
 test("the QA source set does not inherit the phone debug receiver", () => {
@@ -79,6 +86,15 @@ test("Phone production releases require external environment-only signing materi
   assert.match(phoneBuild, /create\("release"\)[\s\S]*?storeFile/);
   assert.match(
     phoneBuild,
+    /release\s*\{[\s\S]*?if \(releaseSigningConfigured\)[\s\S]*?signingConfig/
+  );
+  // The watch shares the phone's external, environment-only production signing contract.
+  assert.match(wearBuild, /environmentVariable\("GYMAPP_RELEASE_KEYSTORE_PATH"\)/);
+  assert.match(wearBuild, /release keystore must be stored outside the repository/i);
+  assert.doesNotMatch(wearBuild, /keystore\.properties/);
+  assert.match(wearBuild, /create\("release"\)[\s\S]*?storeFile/);
+  assert.match(
+    wearBuild,
     /release\s*\{[\s\S]*?if \(releaseSigningConfigured\)[\s\S]*?signingConfig/
   );
   for (const script of [phoneReleaseScript, playReleaseScript]) {
