@@ -100,6 +100,8 @@ final class AppState: ObservableObject {
     let cloudSync: CloudSyncService
     let garminCloud: GarminCloudService
     let garminPhoneSync: GarminPhoneSyncService
+    /// Read-only import of gym workouts and heart rate from Apple Health.
+    let healthImport: HealthKitImportService
     /// Apple Ads install attribution (AdServices). Started once at launch; uploads
     /// only for a signed-in cloud account, never for local-only profiles.
     let appleAdsAttribution: AppleAdsAttributionService
@@ -267,6 +269,10 @@ final class AppState: ObservableObject {
             auth: auth,
             defaults: defaults
         )
+        self.healthImport = HealthKitImportService(
+            auth: auth,
+            defaults: defaults
+        )
         if let appleAdsAttribution {
             self.appleAdsAttribution = appleAdsAttribution
         } else {
@@ -290,6 +296,7 @@ final class AppState: ObservableObject {
         try? initialActiveStore.rebindExercises(to: openedStore.store)
         self.activeWorkoutStore = initialActiveStore
         self.garminPhoneSync.bind(workoutStore: openedStore.store)
+        self.healthImport.bind(workoutStore: openedStore.store)
         self.restTimers.bindToAccount(
             ownerFingerprint: initialRestTimerOwnerFingerprint,
             discardPersistedState: hadPendingDeletion
@@ -2720,6 +2727,7 @@ final class AppState: ObservableObject {
             }
         }
         garminPhoneSync.clearLocalData(storageKey: storageKey)
+        healthImport.clearLocalData(storageKey: storageKey)
         TrainingProfileStore(defaults: defaults).clear(accountStorageKey: storageKey)
         AppTutorialStore(defaults: defaults).clear(accountStorageKey: storageKey)
         ExerciseCueStore(defaults: defaults).clear(accountStorageKey: storageKey)
@@ -2839,6 +2847,8 @@ final class AppState: ObservableObject {
     func handleAppDidBecomeActive() {
         liveActivityController.adoptRunningActivities(draft: activeWorkoutStore.draft)
         resumeCloudSyncIfNeeded()
+        let healthImport = healthImport
+        Task { await healthImport.autoImportIfDue() }
         if appleAdsAttributionStarted {
             let service = appleAdsAttribution
             Task { await service.refresh() }
@@ -3616,6 +3626,7 @@ final class AppState: ObservableObject {
             activeWorkoutStore = newActiveStore
         }
         garminPhoneSync.bind(workoutStore: store)
+        healthImport.bind(workoutStore: store)
         observeStore()
         bindLiveActivityController()
         activeAccountStorageKey = activeStorageKey

@@ -1,16 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Voice workout dictation: on-device recognition only, requested at first use. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Health Connect, read-only: gym workouts, their heart rate and calories from any watch brand.
+         The library declares minSdk 26; every call is guarded by an API 26 + availability check
+         (health/HealthConnectImporter.kt), so the app keeps minSdk 24. -->
+    <uses-sdk tools:overrideLibrary="androidx.health.connect.client" />
+    <uses-permission android:name="android.permission.health.READ_EXERCISE" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED" />
 
     <queries>
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+        <package android:name="com.google.android.apps.healthdata" />
     </queries>
 
     <application
@@ -113,6 +122,28 @@
                     android:scheme="${authCallbackScheme}" />
             </intent-filter>
         </activity>
+
+        <!-- Health Connect permission rationale: static text, no input is read from the intent. -->
+        <activity
+            android:name=".health.HealthPermissionRationaleActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.GymApp">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+        <!-- Android 14+: Health Connect opens this from its "privacy policy" entry. -->
+        <activity-alias
+            android:name=".health.ViewPermissionUsageActivity"
+            android:exported="true"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE"
+            android:targetActivity=".health.HealthPermissionRationaleActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
 
         <service
             android:name=".service.RestTimerService"

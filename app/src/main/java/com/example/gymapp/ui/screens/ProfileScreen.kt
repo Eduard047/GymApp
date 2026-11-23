@@ -104,6 +104,7 @@ import com.example.gymapp.auth.LiveInboxRoom
 import com.example.gymapp.auth.NEW_PASSWORD_POLICY_ERROR
 import com.example.gymapp.garmin.openGymWorkoutTrackerInGarminStore
 import com.example.gymapp.garmin.GarminDeviceUiState
+import com.example.gymapp.ui.viewmodel.HealthDataUiState
 import com.example.gymapp.garmin.garminDeviceOffersConnect
 import com.example.gymapp.push.PushUiState
 import com.example.gymapp.push.PushNavigationTarget
@@ -216,6 +217,10 @@ internal fun ProfileScreen(
     onPairGarminDevice: suspend (deviceId: Long) -> Boolean,
     selectedLanguage: AppLanguage,
     onLanguageSelected: (AppLanguage) -> Unit,
+    healthDataState: HealthDataUiState? = null,
+    onHealthPermissionRequestFinished: () -> Unit = {},
+    onHealthImportNow: () -> Unit = {},
+    onHealthDisconnect: () -> Unit = {},
     onRetryLoad: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -374,6 +379,18 @@ internal fun ProfileScreen(
                             onResetGarminPairing = { showGarminResetConfirmation = true },
                             onPairGarminDevice = onPairGarminDevice
                         )
+                    }
+                    // Directly under the Garmin card; both move to a "Watches" screen later.
+                    if (healthDataState != null) {
+                        item {
+                            HealthDataCard(
+                                state = healthDataState,
+                                onPermissionRequestFinished = onHealthPermissionRequestFinished,
+                                onImportNow = onHealthImportNow,
+                                onDisconnect = onHealthDisconnect,
+                                modifier = Modifier.padding(top = GymSpacing.Medium)
+                            )
+                        }
                     }
                 }
             }

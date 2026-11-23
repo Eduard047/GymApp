@@ -23,7 +23,7 @@ In Apple's terminology, data is “collected” when it is transmitted off the d
 |---|---|---:|---:|---|
 | Contact Info → **Name** | Account display name stored with the protected profile and shown to confirmed friends, request recipients, and workout-invite recipients | Yes | No | App Functionality |
 | Contact Info → **Email Address** | Supabase email/password account creation, confirmation, login, and session refresh | Yes | No | App Functionality |
-| Health & Fitness → **Health** | Optional Garmin-import notes can contain heart-rate metrics | Yes | No | App Functionality; Product Personalization |
+| Health & Fitness → **Health** | Optional Garmin-import notes and, only after the user connects Apple Health, heart rate read from Apple Health (read-only; the app never writes to Health) | Yes | No | App Functionality; Product Personalization |
 | Health & Fitness → **Fitness** | Workout dates, exercise names, sets, weights, repetitions, workout plans, duration, calories, progress, derived XP/level/workout count, bounded friend-visible summaries/records, separately consented read-only exact detail for the same latest five workouts, direct workout invitations, and accepted two-person live-workout plans/progress | Yes | No | App Functionality; Product Personalization |
 | User Content → **Other User Content** | Free-form workout notes; friend requests, privacy/block choices, workout-invite/live-room lifecycle; and any legacy fixed-category leaderboard report retained for moderation | Yes | No | App Functionality |
 | Identifiers → **User ID** | Supabase account UUID and random UUID-free friend/profile code | Yes | No | App Functionality |
@@ -43,9 +43,10 @@ In Apple's terminology, data is “collected” when it is transmitted off the d
 - advertising data other than the Apple Ads install attribution listed above;
 - generic tap/click analytics or other cross-app usage analytics;
 - crash, performance, or diagnostic telemetry;
-- camera, microphone, HealthKit, Motion & Fitness, or advertising identifier data.
+- camera, microphone, Motion & Fitness, or advertising identifier data;
+- HealthKit data other than the read-only import described above: workouts, heart rate, and active energy are read from Apple Health only after the user connects it, are never written back, never used for advertising or tracking, and stay on the device and in the user's own synchronized workouts.
 
-Training Profile — split, 2–6 training days per week, goal, and energy balance — and any legacy list of leaderboard profiles blocked on this device stay in first-party app preferences. Friend dashboards and the separately authorized read-only exact-workout details are held only in memory by the clients and closed and cleared on account change; the authoritative request, friendship, block, privacy, invitation, and live-room state is protected in Supabase. The app does not ask for body weight, height, sex, location, contacts, camera, microphone, or HealthKit access. Rest-timer alerts remain local. A remote notification delivery address is registered only after the user enables optional system alerts and grants the platform/browser notification permission.
+Training Profile — split, 2–6 training days per week, goal, and energy balance — and any legacy list of leaderboard profiles blocked on this device stay in first-party app preferences. Friend dashboards and the separately authorized read-only exact-workout details are held only in memory by the clients and closed and cleared on account change; the authoritative request, friendship, block, privacy, invitation, and live-room state is protected in Supabase. The app does not ask for body weight, height, sex, location, contacts, camera, or microphone access, and asks for read-only Apple Health access only when the user taps Connect Apple Health. Rest-timer alerts remain local. A remote notification delivery address is registered only after the user enables optional system alerts and grants the platform/browser notification permission.
 
 ## Visibility and processors
 

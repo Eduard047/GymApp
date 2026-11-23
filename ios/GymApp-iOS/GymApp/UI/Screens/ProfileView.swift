@@ -514,7 +514,11 @@ struct ProfileView: View {
     /// watch card lives on the pushed screen.
     private var garminRow: some View {
         NavigationLink {
-            GarminWatchScreen(garminCloud: garminCloud, garminPhoneSync: garminPhoneSync)
+            GarminWatchScreen(
+                garminCloud: garminCloud,
+                garminPhoneSync: garminPhoneSync,
+                healthImport: appState.healthImport
+            )
                 .gymTopBannerInset()
         } label: {
             ProfileRowLabel(
@@ -967,6 +971,7 @@ enum BackupFileReader {
 private struct GarminWatchScreen: View {
     @ObservedObject var garminCloud: GarminCloudService
     @ObservedObject var garminPhoneSync: GarminPhoneSyncService
+    @ObservedObject var healthImport: HealthKitImportService
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     private let garminStoreURL = URL(
         string: "https://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f"
@@ -981,6 +986,7 @@ private struct GarminWatchScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: GymTheme.contentSpacing) {
                     garminCard
+                    HealthDataCard(service: healthImport)
                 }
                 .padding(.horizontal, GymTheme.screenHorizontalInset)
                 .padding(.top, GymTheme.screenVerticalInset)

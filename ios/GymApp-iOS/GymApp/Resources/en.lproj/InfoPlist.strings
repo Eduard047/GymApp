@@ -1,6 +1,7 @@
 "CFBundleDisplayName" = "Gym Workout Tracker";
 "NSBluetoothAlwaysUsageDescription" = "GymApp uses Bluetooth to receive your completed workout and set metrics from your selected Garmin watch.";
 "NSBluetoothPeripheralUsageDescription" = "GymApp uses Bluetooth to exchange workout plans and completed workouts with your selected Garmin watch.";
+"NSHealthShareUsageDescription" = "GymApp reads your gym workouts, heart rate and calories from Apple Health to add workouts recorded by your watch.";
 "NSMicrophoneUsageDescription" = "GymApp uses the microphone only when you tap the mic, to turn your speech into a workout plan or log a set. Audio stays on this device.";
 "NSSpeechRecognitionUsageDescription" = "GymApp uses on-device speech recognition only when you tap the mic, to create a workout plan or log a set from your voice. Nothing is sent off this device.";
 "Start workout" = "Start workout";

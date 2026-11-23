@@ -374,6 +374,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
+    // Read-only Health Connect import (health/); minSdk 26 library, guarded at runtime, see AndroidManifest.xml.
+    implementation("androidx.health.connect:connect-client:1.1.0")
     implementation(platform("com.google.firebase:firebase-bom:34.16.0"))
     implementation("com.google.firebase:firebase-messaging")
     // Conversion measurement only; every call lives in analytics/ConversionAnalytics.kt and

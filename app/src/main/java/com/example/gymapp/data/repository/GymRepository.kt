@@ -26,7 +26,13 @@ import com.example.gymapp.data.entity.GarminWorkoutReceiptEntity
 import com.example.gymapp.garmin.GarminLatinAssignment
 import com.example.gymapp.garmin.GarminLatinEntry
 import com.example.gymapp.garmin.GarminLatinNames
+import com.example.gymapp.health.HealthExistingWorkout
+import com.example.gymapp.health.HealthImportPersistResult
+import com.example.gymapp.health.HealthImportRules
+import com.example.gymapp.health.HealthImportSidecarGuard
 import com.example.gymapp.data.entity.GarminWorkoutProvenanceEntity
+import com.example.gymapp.data.entity.HealthImportReceiptEntity
+import com.example.gymapp.data.entity.HealthImportStateEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.entity.WorkoutExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionDetails
@@ -482,8 +488,10 @@ class GymRepository(
     private val activityOnlyWorkoutDao = database.activityOnlyWorkoutDao()
     private val activeWorkoutDao = database.activeWorkoutDao()
     private val workoutPlanDraftDao = database.workoutPlanDraftDao()
+    private val healthImportDao = database.healthImportDao()
     private val deletionStoreToken = UUID.randomUUID().toString()
     private val activeWorkoutMutationMutex = Mutex()
+    private val healthImportSidecarGuard = HealthImportSidecarGuard()
     @Volatile
     private var liveWorkoutSidecarStore: LiveWorkoutSidecarStore? = null
     @Volatile
@@ -884,7 +892,9 @@ class GymRepository(
     }
 
     suspend fun getActivityOnlyWorkoutSnapshot(): ActivityOnlyWorkoutLocalSnapshot =
-        database.withTransaction { currentActivityOnlyWorkoutSnapshot() }
+        healthImportSidecarGuard.readSnapshot {
+            database.withTransaction { currentActivityOnlyWorkoutSnapshot() }
+        }
 
     /**
      * Replaces the private sidecar and its unshadowed zero-exercise mirrors with one already
@@ -892,93 +902,99 @@ class GymRepository(
      * so an ambiguous/core-invalid history fails closed without a partial replacement.
      */
     suspend fun reconcileActivityOnlyWorkoutSidecar(
-        targetItems: List<ActivityOnlyWorkoutItem>
+        requestedItems: List<ActivityOnlyWorkoutItem>
     ): ActivityOnlyWorkoutLocalSnapshot {
-        requireValidActivityOnlyWorkoutItems(targetItems)
-        return database.withTransaction {
-            val targetByStartedAt = targetItems.associateBy(
-                ActivityOnlyWorkoutItem::workoutStartedAt
-            )
-            val current = currentActivityOnlyWorkoutSnapshot()
-            val relevantStartedAt = (current.items.map(ActivityOnlyWorkoutItem::workoutStartedAt) +
-                targetByStartedAt.keys).toSet()
-            val sessionsByDate = workoutDao.getAllSessionDetailsForBackup()
-                .map(::sortSessionDetails)
-                .filter { it.session.date in relevantStartedAt }
-                .groupBy { it.session.date }
-
-            data class MirrorPlan(
-                val target: ActivityOnlyWorkoutItem?,
-                val mirror: WorkoutSessionEntity?
-            )
-
-            val plans = relevantStartedAt.sorted().map { startedAt ->
-                val collisions = sessionsByDate[startedAt].orEmpty()
-                val validCoreExists = collisions.any { details ->
-                    details.workoutExercises.isNotEmpty() &&
-                        details.workoutExercises.all { exercise -> exercise.sets.isNotEmpty() }
-                }
-                val invalidCoreExists = collisions.any { details ->
-                    details.workoutExercises.isNotEmpty() &&
-                        details.workoutExercises.any { exercise -> exercise.sets.isEmpty() }
-                }
-                require(!invalidCoreExists) {
-                    "Activity-only workout collides with an invalid core workout."
-                }
-                val activityMirrors = collisions.filter { details ->
-                    details.workoutExercises.isEmpty() &&
-                        details.session.durationSeconds?.let { it > 0L } == true
-                }
-                require(activityMirrors.size <= 1 &&
-                    (validCoreExists || activityMirrors.size == collisions.size)) {
-                    "Activity-only workout mirror collision is ambiguous."
-                }
-                require(!validCoreExists || activityMirrors.isEmpty()) {
-                    "Activity-only workout core collision has a stale visible mirror."
-                }
-                MirrorPlan(
-                    target = if (validCoreExists) null else targetByStartedAt[startedAt],
-                    mirror = activityMirrors.singleOrNull()?.session
+        requireValidActivityOnlyWorkoutItems(requestedItems)
+        return healthImportSidecarGuard.reconcile {
+            database.withTransaction {
+                val current = currentActivityOnlyWorkoutSnapshot()
+                // Health imports that committed after the caller read its snapshot are not in the
+                // caller's merged target; keep them instead of deleting their mirrors.
+                val targetItems = healthImportSidecarGuard.protect(requestedItems, current.items)
+                requireValidActivityOnlyWorkoutItems(targetItems)
+                val targetByStartedAt = targetItems.associateBy(
+                    ActivityOnlyWorkoutItem::workoutStartedAt
                 )
-            }
+                val relevantStartedAt = (current.items.map(ActivityOnlyWorkoutItem::workoutStartedAt) +
+                    targetByStartedAt.keys).toSet()
+                val sessionsByDate = workoutDao.getAllSessionDetailsForBackup()
+                    .map(::sortSessionDetails)
+                    .filter { it.session.date in relevantStartedAt }
+                    .groupBy { it.session.date }
 
-            val deletions = plans.filter { it.target == null && it.mirror != null }
-            val insertions = plans.count { it.target != null && it.mirror == null }
-            val finalSessionCount = workoutDao.getSessionCount() - deletions.size + insertions
-            require(finalSessionCount <= WorkoutDataLimits.MAX_SESSIONS) {
-                "Activity-only workout history exceeds the local workout limit."
-            }
+                data class MirrorPlan(
+                    val target: ActivityOnlyWorkoutItem?,
+                    val mirror: WorkoutSessionEntity?
+                )
 
-            plans.forEach { plan ->
-                val mirror = plan.mirror
-                val target = plan.target
-                when {
-                    target == null && mirror != null -> workoutDao.deleteSessionById(mirror.id)
-                    target != null && mirror == null -> insertValidatedWorkoutSession(
-                        date = target.workoutStartedAt,
-                        note = target.note,
-                        workoutExercises = emptyList(),
-                        durationSeconds = target.durationSeconds
+                val plans = relevantStartedAt.sorted().map { startedAt ->
+                    val collisions = sessionsByDate[startedAt].orEmpty()
+                    val validCoreExists = collisions.any { details ->
+                        details.workoutExercises.isNotEmpty() &&
+                            details.workoutExercises.all { exercise -> exercise.sets.isNotEmpty() }
+                    }
+                    val invalidCoreExists = collisions.any { details ->
+                        details.workoutExercises.isNotEmpty() &&
+                            details.workoutExercises.any { exercise -> exercise.sets.isEmpty() }
+                    }
+                    require(!invalidCoreExists) {
+                        "Activity-only workout collides with an invalid core workout."
+                    }
+                    val activityMirrors = collisions.filter { details ->
+                        details.workoutExercises.isEmpty() &&
+                            details.session.durationSeconds?.let { it > 0L } == true
+                    }
+                    require(activityMirrors.size <= 1 &&
+                        (validCoreExists || activityMirrors.size == collisions.size)) {
+                        "Activity-only workout mirror collision is ambiguous."
+                    }
+                    require(!validCoreExists || activityMirrors.isEmpty()) {
+                        "Activity-only workout core collision has a stale visible mirror."
+                    }
+                    MirrorPlan(
+                        target = if (validCoreExists) null else targetByStartedAt[startedAt],
+                        mirror = activityMirrors.singleOrNull()?.session
                     )
-                    target != null && mirror != null &&
-                        (mirror.durationSeconds != target.durationSeconds ||
-                            mirror.note != target.note) -> workoutDao.update(
-                        mirror.copy(
-                            durationSeconds = target.durationSeconds,
-                            note = target.note
+                }
+
+                val deletions = plans.filter { it.target == null && it.mirror != null }
+                val insertions = plans.count { it.target != null && it.mirror == null }
+                val finalSessionCount = workoutDao.getSessionCount() - deletions.size + insertions
+                require(finalSessionCount <= WorkoutDataLimits.MAX_SESSIONS) {
+                    "Activity-only workout history exceeds the local workout limit."
+                }
+
+                plans.forEach { plan ->
+                    val mirror = plan.mirror
+                    val target = plan.target
+                    when {
+                        target == null && mirror != null -> workoutDao.deleteSessionById(mirror.id)
+                        target != null && mirror == null -> insertValidatedWorkoutSession(
+                            date = target.workoutStartedAt,
+                            note = target.note,
+                            workoutExercises = emptyList(),
+                            durationSeconds = target.durationSeconds
                         )
+                        target != null && mirror != null &&
+                            (mirror.durationSeconds != target.durationSeconds ||
+                                mirror.note != target.note) -> workoutDao.update(
+                            mirror.copy(
+                                durationSeconds = target.durationSeconds,
+                                note = target.note
+                            )
+                        )
+                    }
+                }
+                activityOnlyWorkoutDao.deleteAll()
+                if (targetItems.isNotEmpty()) {
+                    activityOnlyWorkoutDao.upsertAll(
+                        targetItems.map(ActivityOnlyWorkoutEntity::fromItem)
                     )
                 }
-            }
-            activityOnlyWorkoutDao.deleteAll()
-            if (targetItems.isNotEmpty()) {
-                activityOnlyWorkoutDao.upsertAll(
-                    targetItems.map(ActivityOnlyWorkoutEntity::fromItem)
-                )
-            }
-            currentActivityOnlyWorkoutSnapshot().also { reconciled ->
-                require(reconciled.items == targetItems) {
-                    "Activity-only workout reconciliation did not produce the canonical snapshot."
+                currentActivityOnlyWorkoutSnapshot().also { reconciled ->
+                    require(reconciled.items == targetItems) {
+                        "Activity-only workout reconciliation did not produce the canonical snapshot."
+                    }
                 }
             }
         }
@@ -4380,6 +4396,93 @@ class GymRepository(
         }
         return result
     }
+
+    /**
+     * Stores one workout read from Health Connect / HealthKit as an activity-only workout and its
+     * durable receipt in a single transaction. Idempotent: the receipt and the overlap check are
+     * repeated inside the transaction, so a concurrent or repeated import changes nothing. No
+     * Garmin provenance or Garmin receipt is written. See shared/health-import-v1.json.
+     */
+    internal suspend fun importHealthActivity(
+        item: ActivityOnlyWorkoutItem,
+        receiptKey: String,
+        importedAt: Long = currentTimeMillis()
+    ): HealthImportPersistResult {
+        requireValidActivityOnlyWorkoutItem(item)
+        require(receiptKey.length in 3..256 && receiptKey.none { it.isISOControl() }) {
+            "Health import receipt key is invalid."
+        }
+        // Serialised with the activity-only sidecar read/reconcile; see HealthImportSidecarGuard.
+        return healthImportSidecarGuard.importWorkout(item.workoutStartedAt) {
+            database.withTransaction {
+                if (healthImportDao.countReceipt(receiptKey) > 0) {
+                    return@withTransaction HealthImportPersistResult.DUPLICATE_RECEIPT
+                }
+                val tolerance = HealthImportRules.OVERLAP_TOLERANCE_MILLIS
+                val endMillis = item.workoutStartedAt + item.durationSeconds * 1_000L
+                if (healthImportDao.countOverlappingWorkouts(
+                        windowStart = item.workoutStartedAt - tolerance,
+                        windowEnd = endMillis + tolerance,
+                        maxDurationSeconds = WorkoutDataLimits.MAX_WORKOUT_DURATION_SECONDS
+                    ) > 0 ||
+                    activityOnlyWorkoutDao.getByStartedAt(item.workoutStartedAt) != null
+                ) {
+                    return@withTransaction HealthImportPersistResult.OVERLAP
+                }
+                if (workoutDao.getSessionCount() >= WorkoutDataLimits.MAX_SESSIONS) {
+                    return@withTransaction HealthImportPersistResult.CAPACITY_REACHED
+                }
+                insertValidatedWorkoutSession(
+                    date = item.workoutStartedAt,
+                    note = item.note,
+                    workoutExercises = emptyList(),
+                    durationSeconds = item.durationSeconds
+                )
+                activityOnlyWorkoutDao.upsert(ActivityOnlyWorkoutEntity.fromItem(item))
+                healthImportDao.insertReceipt(
+                    HealthImportReceiptEntity(
+                        receiptKey = receiptKey,
+                        importedAt = importedAt,
+                        workoutStartedAt = item.workoutStartedAt
+                    )
+                )
+                HealthImportPersistResult.IMPORTED
+            }
+        }
+    }
+
+    /** Start and duration of every local workout that starts at or after [fromMillis]. */
+    internal suspend fun healthImportExistingWorkouts(fromMillis: Long): List<HealthExistingWorkout> =
+        healthImportDao.workoutIntervalsFrom(fromMillis).map {
+            HealthExistingWorkout(it.startMillis, it.durationSeconds)
+        }
+
+    /** The subset of [keys] that already has a durable import receipt. */
+    internal suspend fun healthImportKnownReceipts(keys: Collection<String>): Set<String> =
+        keys.distinct().chunked(500).flatMap { healthImportDao.existingReceiptKeys(it) }.toSet()
+
+    internal suspend fun healthImportLastImportAt(): Long? = healthImportDao.getState()?.lastImportAt
+
+    internal suspend fun healthImportSetLastImportAt(millis: Long) {
+        database.withTransaction {
+            healthImportDao.insertStateIfMissing(HealthImportStateEntity())
+            healthImportDao.updateLastImportAt(millis)
+        }
+    }
+
+    /** Whether this account opted in to the health import (off by default, per account). */
+    internal suspend fun healthImportIsEnabled(): Boolean =
+        healthImportDao.getState()?.enabled == true
+
+    internal suspend fun healthImportSetEnabled(enabled: Boolean) {
+        database.withTransaction {
+            healthImportDao.insertStateIfMissing(HealthImportStateEntity())
+            healthImportDao.updateEnabled(enabled)
+        }
+    }
+
+    /** Number of workouts this account imported so far, deleted ones included (receipts stay). */
+    internal suspend fun healthImportReceiptCount(): Int = healthImportDao.countReceipts()
 
     /** Must only be called inside [database]'s transaction after validation and capacity checks. */
     private suspend fun insertValidatedWorkoutSession(

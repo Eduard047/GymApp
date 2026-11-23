@@ -1874,4 +1874,25 @@
     <string name="exercise_equipment_plate">Диск</string>
     <string name="exercise_equipment_band">Гумка</string>
     <string name="exercise_equipment_bodyweight">Власна вага</string>
+
+    <!-- Health Connect import card (Profile) and permission rationale -->
+    <string name="health_data_title">Дані здоров’я</string>
+    <string name="health_data_unavailable">Health Connect недоступний на цьому телефоні.</string>
+    <string name="health_data_install">Встановити Health Connect</string>
+    <string name="health_data_connect">Підключити Health Connect</string>
+    <plurals name="health_data_summary">
+        <item quantity="one">Імпортовано %1$d тренування · останній імпорт %2$s</item>
+        <item quantity="few">Імпортовано %1$d тренування · останній імпорт %2$s</item>
+        <item quantity="many">Імпортовано %1$d тренувань · останній імпорт %2$s</item>
+        <item quantity="other">Імпортовано %1$d тренування · останній імпорт %2$s</item>
+    </plurals>
+    <string name="health_data_last_import">Останній імпорт %1$s</string>
+    <string name="health_data_import_now">Імпортувати зараз</string>
+    <string name="health_data_disconnect">Відключити</string>
+    <string name="health_data_importing">Імпорт…</string>
+    <string name="health_data_empty">Нових тренувань у залі не знайдено.</string>
+    <string name="health_data_failed">Не вдалося імпортувати. Спробуйте ще раз.</string>
+    <string name="health_data_caption">Samsung, Xiaomi, Huawei, Amazfit, Polar, Fitbit та інші годинники — через Health Connect.</string>
+    <string name="health_import_rationale_title">Як GymApp використовує дані здоров’я</string>
+    <string name="health_import_rationale_body">GymApp читає ваші тренування в залі, пульс і калорії з Health Connect лише після того, як ви його підключите, щоб додати тренування, записані вашим годинником. Він ніколи не записує дані в Health Connect і не використовує їх для реклами.</string>
 </resources>

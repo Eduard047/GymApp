@@ -166,6 +166,7 @@ import com.example.gymapp.ui.screens.WorkoutListScreen
 import com.example.gymapp.ui.screens.WorkoutShareSheet
 import com.example.gymapp.ui.screens.shareWorkoutUrl
 import com.example.gymapp.ui.viewmodel.AddWorkoutViewModel
+import com.example.gymapp.ui.viewmodel.HealthDataViewModel
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutViewModel
 import com.example.gymapp.ui.viewmodel.activeWorkoutFocus
 import com.example.gymapp.ui.viewmodel.ExerciseListViewModel
@@ -1111,6 +1112,26 @@ internal fun GymAppRoot(
             )
         )
     }
+    // Health Connect import state of the signed-in account (Profile card + foreground auto-import).
+    val healthDataViewModel = rootGraphEntry?.takeIf { authState.session != null }?.let { owner ->
+        viewModel<HealthDataViewModel>(
+            viewModelStoreOwner = owner,
+            key = "health-data",
+            factory = HealthDataViewModel.factory(
+                context = applicationContext,
+                repository = repository,
+                language = languageManager::currentLanguage,
+                isAccountActive = {
+                    val current = authManager.authState.value
+                    current.session != null && accountUiIsolationKey(
+                        session = current.session,
+                        needsPasswordUpdate = current.needsPasswordUpdate
+                    ) == uiIsolationKey
+                }
+            )
+        )
+    }
+    val healthDataState = healthDataViewModel?.state?.collectAsStateWithLifecycle()?.value
     val rootDraftSyncClient = remember(applicationContext) {
         PhoneSyncClient(applicationContext)
     }
@@ -1463,10 +1484,12 @@ internal fun GymAppRoot(
         dashboardCount = friendsState?.dashboard?.pendingWorkoutInviteCount
     ) + liveWorkoutState.inbox?.invitations.orEmpty().size).coerceAtMost(99)
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, friendsViewModel, liveWorkoutViewModel) {
+    DisposableEffect(lifecycleOwner, friendsViewModel, liveWorkoutViewModel, healthDataViewModel) {
         var hasObservedInitialResume = false
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
+                // Only runs for an account that connected Health Connect; never asks for permissions.
+                healthDataViewModel?.importOnForeground()
                 if (shouldRefreshSocialSurfacesOnResume(hasObservedInitialResume)) {
                     friendsViewModel?.refreshAll()
                     liveWorkoutViewModel?.refresh()
@@ -4321,6 +4344,7 @@ internal fun GymAppRoot(
                             LaunchedEffect(Unit) {
                                 friendsViewModel?.refreshAll()
                                 liveWorkoutViewModel?.refresh()
+                                healthDataViewModel?.refresh()
                             }
 
                             ProfileScreen(
@@ -4783,6 +4807,12 @@ internal fun GymAppRoot(
                                 },
                                 selectedLanguage = selectedLanguage,
                                 onLanguageSelected = onLanguageSelected,
+                                healthDataState = healthDataState,
+                                onHealthPermissionRequestFinished = {
+                                    healthDataViewModel?.onPermissionRequestFinished()
+                                },
+                                onHealthImportNow = { healthDataViewModel?.importNow() },
+                                onHealthDisconnect = { healthDataViewModel?.disconnect() },
                                 onRetryLoad = profileViewModel::retryLoad,
                                 modifier = Modifier.fillMaxSize()
                             )

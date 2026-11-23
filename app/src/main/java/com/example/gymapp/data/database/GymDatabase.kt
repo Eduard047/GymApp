@@ -13,6 +13,7 @@ import com.example.gymapp.data.dao.GarminLatinNameDao
 import com.example.gymapp.data.dao.ExerciseLoadProfileDao
 import com.example.gymapp.data.dao.AppMetadataDao
 import com.example.gymapp.data.dao.GarminWorkoutReceiptDao
+import com.example.gymapp.data.dao.HealthImportDao
 import com.example.gymapp.data.dao.MuscleMappingDao
 import com.example.gymapp.data.dao.SetDao
 import com.example.gymapp.data.dao.WorkoutDao
@@ -31,6 +32,8 @@ import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
 import com.example.gymapp.data.entity.GarminLatinNameEntity
 import com.example.gymapp.data.entity.GarminWorkoutReceiptEntity
 import com.example.gymapp.data.entity.GarminWorkoutProvenanceEntity
+import com.example.gymapp.data.entity.HealthImportReceiptEntity
+import com.example.gymapp.data.entity.HealthImportStateEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.entity.WorkoutExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionEntity
@@ -56,9 +59,11 @@ import java.util.concurrent.ConcurrentHashMap
         ActiveWorkoutExerciseEntity::class,
         ActiveWorkoutSetEntity::class,
         WorkoutPlanDraftEntity::class,
-        GarminLatinNameEntity::class
+        GarminLatinNameEntity::class,
+        HealthImportReceiptEntity::class,
+        HealthImportStateEntity::class
     ],
-    version = 18,
+    version = 19,
     exportSchema = true
 )
 abstract class GymDatabase : RoomDatabase() {
@@ -73,6 +78,7 @@ abstract class GymDatabase : RoomDatabase() {
     abstract fun activityOnlyWorkoutDao(): ActivityOnlyWorkoutDao
     abstract fun activeWorkoutDao(): ActiveWorkoutDao
     abstract fun workoutPlanDraftDao(): WorkoutPlanDraftDao
+    abstract fun healthImportDao(): HealthImportDao
 
     companion object {
         private val INSTANCES = ConcurrentHashMap<String, GymDatabase>()
@@ -595,6 +601,36 @@ abstract class GymDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Health Connect / HealthKit import: one durable receipt per imported record (kept after the
+         * workout is deleted) plus the account's import state: last completed import time and the
+         * per-account opt-in flag (off until the account connects).
+         */
+        internal val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS health_import_receipts (
+                        receiptKey TEXT NOT NULL,
+                        importedAt INTEGER NOT NULL,
+                        workoutStartedAt INTEGER NOT NULL,
+                        PRIMARY KEY(receiptKey)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS health_import_state (
+                        id INTEGER NOT NULL,
+                        lastImportAt INTEGER,
+                        enabled INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         internal val REGISTERED_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -612,7 +648,8 @@ abstract class GymDatabase : RoomDatabase() {
             MIGRATION_14_15,
             MIGRATION_15_16,
             MIGRATION_16_17,
-            MIGRATION_17_18
+            MIGRATION_17_18,
+            MIGRATION_18_19
         )
 
         fun getInstance(context: Context, databaseName: String = "gym_database"): GymDatabase {

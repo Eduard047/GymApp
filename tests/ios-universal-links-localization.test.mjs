@@ -65,6 +65,7 @@ test("Bluetooth and voice permission copy has exact English fallback plus Ukrain
   const expectedKeys = [
     "NSBluetoothAlwaysUsageDescription",
     "NSBluetoothPeripheralUsageDescription",
+    "NSHealthShareUsageDescription",
     "NSMicrophoneUsageDescription",
     "NSSpeechRecognitionUsageDescription"
   ];
@@ -77,7 +78,7 @@ test("Bluetooth and voice permission copy has exact English fallback plus Ukrain
   ];
   for (const [locale, values] of locales) {
     assert.deepEqual(Object.keys(values).sort(), expectedKeys, `${locale} must localize the Bluetooth and voice prompts`);
-    for (const key of ["NSMicrophoneUsageDescription", "NSSpeechRecognitionUsageDescription"]) {
+    for (const key of ["NSHealthShareUsageDescription", "NSMicrophoneUsageDescription", "NSSpeechRecognitionUsageDescription"]) {
       assert.ok(values[key].length >= 50 && values[key].length <= 220, `${locale} ${key} must be bounded and explanatory`);
       assert.match(values[key], /GymApp/);
     }

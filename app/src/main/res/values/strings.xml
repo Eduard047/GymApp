@@ -1818,4 +1818,23 @@
     <string name="exercise_equipment_plate">Plate</string>
     <string name="exercise_equipment_band">Band</string>
     <string name="exercise_equipment_bodyweight">Bodyweight</string>
+
+    <!-- Health Connect import card (Profile) and permission rationale -->
+    <string name="health_data_title">Health data</string>
+    <string name="health_data_unavailable">Health Connect isn’t available on this phone.</string>
+    <string name="health_data_install">Install Health Connect</string>
+    <string name="health_data_connect">Connect Health Connect</string>
+    <plurals name="health_data_summary">
+        <item quantity="one">Imported %1$d workout · last import %2$s</item>
+        <item quantity="other">Imported %1$d workouts · last import %2$s</item>
+    </plurals>
+    <string name="health_data_last_import">Last import %1$s</string>
+    <string name="health_data_import_now">Import now</string>
+    <string name="health_data_disconnect">Disconnect</string>
+    <string name="health_data_importing">Importing…</string>
+    <string name="health_data_empty">No new gym workouts found.</string>
+    <string name="health_data_failed">Couldn’t import. Try again.</string>
+    <string name="health_data_caption">Samsung, Xiaomi, Huawei, Amazfit, Polar, Fitbit and other watches — through Health Connect.</string>
+    <string name="health_import_rationale_title">How GymApp uses health data</string>
+    <string name="health_import_rationale_body">GymApp reads your gym workouts, heart rate and calories from Health Connect only after you connect it, to add workouts recorded by your watch. It never writes to Health Connect and never uses this data for ads.</string>
 </resources>

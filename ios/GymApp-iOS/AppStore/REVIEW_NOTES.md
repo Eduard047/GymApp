@@ -58,7 +58,8 @@ Deletion removes the Supabase Auth user and cascades `user_states`, `profiles`, 
 ## Privacy and permissions
 
 - No advertising, analytics, IDFA, cross-app/site tracking, fingerprinting, or ATT prompt.
-- No camera, microphone, location, Contacts, Photos, Motion & Fitness, or HealthKit access.
+- No camera, microphone, location, Contacts, Photos, or Motion & Fitness access.
+- HealthKit is read-only and opt-in: after the user taps Connect Apple Health in Profile › Garmin watch, the app reads gym-type workouts, heart rate, and active energy (last 30 days) and saves them as activity-only workouts. It never writes to Apple Health and never uses the data for ads or tracking. To review: record a strength-training workout in Apple Health or any app that writes to it, then tap Import now. Access can be removed in Settings › Health › Data Access.
 - Rest-timer alerts remain local notifications. Where system social/live alerts are supported and configured, notification authorization is requested contextually when the reviewer enables them; declining it prevents those system alerts but does not block workout logging, friendships, or an opened live workout.
 - `PrivacyInfo.xcprivacy` declares no tracking, the actual server-collected data categories, and required-reason API `UserDefaults` with approved first-party reason `CA92.1`.
 - Account/cloud data includes email, Supabase UUID, display name, workout logs, notes, derived XP/level/workout count, friend/request/block/privacy/invitation/live-room state, optional notification delivery address, and optional Garmin token/plans/import metrics. Friend RPCs use a random UUID-free profile code and return only mutually authorized, enabled categories: XP/level/workout count, up to five date-only summaries, and up to 100 entered exercise bests. They never return email, Auth UUID, raw cloud state, notes, full set history, Garmin token, or health metrics.

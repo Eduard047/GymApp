@@ -1,0 +1,2082 @@
+{
+  "schemaVersion": 1,
+  "description": "Read-only import of gym-type workouts and heart rate from Health Connect (Android) and HealthKit (iPhone) as GymApp activity-only workouts. Source of truth for both clients.",
+  "windowDays": 30,
+  "maxSessionsPerRun": 200,
+  "maxRecordsScannedPerRun": 1000,
+  "minDurationSeconds": 60,
+  "maxDurationSeconds": 86400,
+  "overlapToleranceSeconds": 120,
+  "minAutoImportIntervalSeconds": 3600,
+  "heartRate": {
+    "minPlausibleBpm": 25,
+    "maxPlausibleBpm": 240
+  },
+  "calories": {
+    "maxKilocalories": 100000
+  },
+  "maxReceiptKeyLength": 256,
+  "maxHeartRateSamplesPerRun": 50000,
+  "noteSeparator": " · ",
+  "decisionOrder": [
+    "invalid-record",
+    "own-app",
+    "not-gym-type",
+    "duration",
+    "in-progress",
+    "duplicate-receipt",
+    "overlap"
+  ],
+  "rules": {
+    "invalidRecord": "Skip when the record id is empty, or when receiptKeyPrefix + recordId is longer than maxReceiptKeyLength UTF-16 code units, or when the record id contains a control character (Unicode category Cc: U+0000..U+001F and U+007F..U+009F). Checked first; such records never count toward sessionCap and are never given a receipt, so one malformed id cannot block a run.",
+    "ownApp": "Skip when the record's source package or bundle id is listed in the store's ownSourceIds.",
+    "notGymType": "Skip when the record's exercise type is missing or not listed in the store's gymExerciseTypes.",
+    "duration": "durationSeconds = floor((endMillis - startMillis) / 1000). Skip when the interval is empty, inverted or outside the supported timestamp range, or when durationSeconds is below minDurationSeconds or above maxDurationSeconds.",
+    "inProgress": "Skip when endMillis is later than the run's start time nowMillis (the session is still running or lies in the future); a session that ends exactly at nowMillis is imported. It is picked up by a later run once it has ended.",
+    "duplicateReceipt": "Skip when receipts contains receiptKeyPrefix + recordId. Receipts are kept when the imported workout is deleted so it never returns on this install. Receipts are per install and per account: a reinstall, a second device or an account switch back starts without them and may import a workout that was deleted earlier again, as long as it is still inside the window.",
+    "overlap": "Existing interval is [startMillis, startMillis + (durationSeconds ?? 0) * 1000]. Skip when existingStart - tolerance <= sessionEnd and existingEnd + tolerance >= sessionStart, tolerance being overlapToleranceSeconds * 1000. Checked against every local workout of the account.",
+    "sessionCap": "At most maxSessionsPerRun sessions that pass own-app and not-gym-type are evaluated per run, newest start first; at most maxRecordsScannedPerRun records are read. Remaining sessions are reported as truncated, not skipped with a reason.",
+    "heartRate": "Samples with startMillis <= timeMillis <= endMillis and minPlausibleBpm <= bpm <= maxPlausibleBpm. averageHeartRate = sum / count rounded half up; maximumHeartRate = max. Both absent without samples.",
+    "calories": "gymCalories = kilocalories rounded half up to an integer when finite and within 0..maxKilocalories, else 0. A value of 0 adds no kcal note segment.",
+    "workout": "workoutStartedAt = startMillis; garminCalories and endingHeartRateZone are never set; note is notePrefix, type label, then the segments below joined by noteSeparator, each present only when its value is greater than 0. Duration shows as minutes:seconds with two-digit seconds; minutes are not capped at 59.",
+    "window": "Only sessions that start within the last windowDays days are read. Runs started automatically are skipped when the last completed run is newer than minAutoImportIntervalSeconds.",
+    "accountOptIn": "Health permission belongs to the app, not to a GymApp account, so every account opts in on its own. The per-account flag enabled is off by default. Connect = request the store permissions + set enabled; disconnect = clear enabled (revoking the store permission itself stays a UI action). A run for an account whose flag is off returns status notEnabled before it reads anything from the store, for automatic and manual triggers alike. Other accounts of the same install never import on its behalf.",
+    "dataOrigin": "Heart-rate samples and kilocalories are read only from the data origin (source app) that recorded the session itself, never from any other source. A session without a source id gets no heart rate and no kilocalories. Missing data stays missing; there is no fallback to other apps.",
+    "heartRateBudget": "At most maxHeartRateSamplesPerRun heart-rate samples are read per run, summed over all sessions. A session whose samples would cross the budget, and every later session of the run, is imported without heart rate (no partial average)."
+  },
+  "noteSegments": {
+    "duration": {
+      "en": "Duration {minutes}:{seconds}",
+      "uk": "Тривалість {minutes}:{seconds}",
+      "ru": "Длительность {minutes}:{seconds}"
+    },
+    "calories": {
+      "en": "kcal {value}",
+      "uk": "ккал {value}",
+      "ru": "ккал {value}"
+    },
+    "averageHeartRate": {
+      "en": "Avg HR {value}",
+      "uk": "Сер пульс {value}",
+      "ru": "Средний пульс {value}"
+    },
+    "maximumHeartRate": {
+      "en": "Max HR {value}",
+      "uk": "Макс пульс {value}",
+      "ru": "Макс. пульс {value}"
+    }
+  },
+  "stores": {
+    "healthConnect": {
+      "receiptKeyPrefix": "health_connect:",
+      "notePrefix": "Health Connect",
+      "ownSourceIds": [
+        "com.setforge.gymapp",
+        "com.setforge.gymapp.dev"
+      ],
+      "gymExerciseTypes": [
+        "STRENGTH_TRAINING",
+        "WEIGHTLIFTING",
+        "CALISTHENICS",
+        "HIGH_INTENSITY_INTERVAL_TRAINING",
+        "GYMNASTICS",
+        "BOOT_CAMP"
+      ],
+      "typeLabels": {
+        "STRENGTH_TRAINING": {
+          "en": "Strength training",
+          "uk": "Силове тренування",
+          "ru": "Силовая тренировка"
+        },
+        "WEIGHTLIFTING": {
+          "en": "Weightlifting",
+          "uk": "Важка атлетика",
+          "ru": "Тяжёлая атлетика"
+        },
+        "CALISTHENICS": {
+          "en": "Calisthenics",
+          "uk": "Калістеніка",
+          "ru": "Калистеника"
+        },
+        "HIGH_INTENSITY_INTERVAL_TRAINING": {
+          "en": "HIIT",
+          "uk": "HIIT",
+          "ru": "HIIT"
+        },
+        "GYMNASTICS": {
+          "en": "Gymnastics",
+          "uk": "Гімнастика",
+          "ru": "Гимнастика"
+        },
+        "BOOT_CAMP": {
+          "en": "Boot camp",
+          "uk": "Буткемп",
+          "ru": "Буткемп"
+        }
+      }
+    },
+    "healthKit": {
+      "receiptKeyPrefix": "apple_health:",
+      "notePrefix": "Apple Health",
+      "ownSourceIds": [
+        "com.setforge.gymapp.ios"
+      ],
+      "gymExerciseTypes": [
+        "traditionalStrengthTraining",
+        "functionalStrengthTraining",
+        "coreTraining",
+        "highIntensityIntervalTraining",
+        "crossTraining",
+        "gymnastics"
+      ],
+      "typeLabels": {
+        "traditionalStrengthTraining": {
+          "en": "Strength training",
+          "uk": "Силове тренування",
+          "ru": "Силовая тренировка"
+        },
+        "functionalStrengthTraining": {
+          "en": "Functional strength training",
+          "uk": "Функціональне силове тренування",
+          "ru": "Функциональная силовая тренировка"
+        },
+        "coreTraining": {
+          "en": "Core training",
+          "uk": "Тренування м'язів кора",
+          "ru": "Тренировка мышц кора"
+        },
+        "highIntensityIntervalTraining": {
+          "en": "HIIT",
+          "uk": "HIIT",
+          "ru": "HIIT"
+        },
+        "crossTraining": {
+          "en": "Cross training",
+          "uk": "Крос-тренінг",
+          "ru": "Кросс-тренинг"
+        },
+        "gymnastics": {
+          "en": "Gymnastics",
+          "uk": "Гімнастика",
+          "ru": "Гимнастика"
+        }
+      }
+    }
+  },
+  "caseFormat": {
+    "session": "recordId, startMillis, endMillis, exerciseType (store-specific name or null), sourceId, kilocalories (number or null), heartRateSamples [{timeMillis, bpm}]",
+    "existingWorkouts": "Every local workout of the account: startMillis and durationSeconds (null when unknown).",
+    "receipts": "Receipt keys already stored for the account.",
+    "expected": "outcome is 'imported' (with receiptKey and the stored workout fields) or 'skipped:<reason>'.",
+    "nowMillis": "The run's start time in epoch milliseconds, used by the in-progress rule."
+  },
+  "cases": [
+    {
+      "id": "hc-strength-full-en",
+      "description": "Samples at the exact start and end count; samples outside the interval and implausible samples (20, 245) are ignored; kcal rounds to the nearest integer.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-1",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": 312.4,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1749999999000,
+            "bpm": 200
+          },
+          {
+            "timeMillis": 1750000000000,
+            "bpm": 110
+          },
+          {
+            "timeMillis": 1750000600000,
+            "bpm": 130
+          },
+          {
+            "timeMillis": 1750000900000,
+            "bpm": 20
+          },
+          {
+            "timeMillis": 1750001000000,
+            "bpm": 245
+          },
+          {
+            "timeMillis": 1750001800000,
+            "bpm": 150
+          },
+          {
+            "timeMillis": 1750003600000,
+            "bpm": 170
+          },
+          {
+            "timeMillis": 1750003601000,
+            "bpm": 220
+          }
+        ]
+      },
+      "nowMillis": 1750003660000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "health_connect:rec-1",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 3600,
+          "gymCalories": 312,
+          "averageHeartRate": 140,
+          "maximumHeartRate": 170,
+          "note": "Health Connect · Strength training · Duration 60:00 · kcal 312 · Avg HR 140 · Max HR 170"
+        }
+      }
+    },
+    {
+      "id": "hc-weightlifting-minimal-uk",
+      "description": "No calories and no heart rate: gymCalories 0 and no kcal or heart-rate segments.",
+      "store": "healthConnect",
+      "language": "uk",
+      "session": {
+        "recordId": "rec-2",
+        "startMillis": 1750010000000,
+        "endMillis": 1750011805000,
+        "exerciseType": "WEIGHTLIFTING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750011865000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "health_connect:rec-2",
+        "workout": {
+          "workoutStartedAt": 1750010000000,
+          "durationSeconds": 1805,
+          "gymCalories": 0,
+          "averageHeartRate": null,
+          "maximumHeartRate": null,
+          "note": "Health Connect · Важка атлетика · Тривалість 30:05"
+        }
+      }
+    },
+    {
+      "id": "hc-hiit-ru-rounding",
+      "description": "Average heart rate 100.33 rounds to 100; 499.5 kcal rounds half up to 500.",
+      "store": "healthConnect",
+      "language": "ru",
+      "session": {
+        "recordId": "rec-3",
+        "startMillis": 1750000000000,
+        "endMillis": 1750001200000,
+        "exerciseType": "HIGH_INTENSITY_INTERVAL_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": 499.5,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1750000001000,
+            "bpm": 100
+          },
+          {
+            "timeMillis": 1750000002000,
+            "bpm": 100
+          },
+          {
+            "timeMillis": 1750000003000,
+            "bpm": 101
+          }
+        ]
+      },
+      "nowMillis": 1750001260000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "health_connect:rec-3",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 1200,
+          "gymCalories": 500,
+          "averageHeartRate": 100,
+          "maximumHeartRate": 101,
+          "note": "Health Connect · HIIT · Длительность 20:00 · ккал 500 · Средний пульс 100 · Макс. пульс 101"
+        }
+      }
+    },
+    {
+      "id": "hc-avg-rounds-half-up",
+      "description": "Average 100.5 rounds half up to 101; zero kcal adds no kcal segment.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-4",
+        "startMillis": 1750000000000,
+        "endMillis": 1750000600000,
+        "exerciseType": "CALISTHENICS",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": 0,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1750000001000,
+            "bpm": 100
+          },
+          {
+            "timeMillis": 1750000002000,
+            "bpm": 101
+          }
+        ]
+      },
+      "nowMillis": 1750000660000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "health_connect:rec-4",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 600,
+          "gymCalories": 0,
+          "averageHeartRate": 101,
+          "maximumHeartRate": 101,
+          "note": "Health Connect · Calisthenics · Duration 10:00 · Avg HR 101 · Max HR 101"
+        }
+      }
+    },
+    {
+      "id": "hc-all-implausible-hr",
+      "description": "Samples of 24 and 241 bpm are implausible; 0.4 kcal rounds to 0 and adds no segment.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-5",
+        "startMillis": 1750000000000,
+        "endMillis": 1750000900000,
+        "exerciseType": "GYMNASTICS",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": 0.4,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1750000001000,
+            "bpm": 24
+          },
+          {
+            "timeMillis": 1750000002000,
+            "bpm": 241
+          }
+        ]
+      },
+      "nowMillis": 1750000960000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "health_connect:rec-5",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 900,
+          "gymCalories": 0,
+          "averageHeartRate": null,
+          "maximumHeartRate": null,
+          "note": "Health Connect · Gymnastics · Duration 15:00"
+        }
+      }
+    },
+    {
+      "id": "hc-plausible-bounds-inclusive",
+      "description": "25 and 240 bpm are plausible bounds.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-5b",
+        "startMillis": 1750000000000,
+        "endMillis": 1750001800000,
+        "exerciseType": "BOOT_CAMP",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1750000001000,
+            "bpm": 25
+          },
+          {
+            "timeMillis": 1750000002000,
+            "bpm": 240
+          }
+        ]
+      },
+      "nowMillis": 1750001860000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "health_connect:rec-5b",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 1800,
+          "gymCalories": 0,
+          "averageHeartRate": 133,
+          "maximumHeartRate": 240,
+          "note": "Health Connect · Boot camp · Duration 30:00 · Avg HR 133 · Max HR 240"
+        }
+      }
+    },
+    {
+      "id": "hc-duration-min-boundary",
+      "description": "Exactly 60 seconds is imported.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-6",
+        "startMillis": 1750000000000,
+        "endMillis": 1750000060000,
+        "exerciseType": "BOOT_CAMP",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750000120000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "health_connect:rec-6",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 60,
+          "gymCalories": 0,
+          "averageHeartRate": null,
+          "maximumHeartRate": null,
+          "note": "Health Connect · Boot camp · Duration 1:00"
+        }
+      }
+    },
+    {
+      "id": "hc-duration-too-short",
+      "description": "59 seconds is below the minimum.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-7",
+        "startMillis": 1750000000000,
+        "endMillis": 1750000059000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750000119000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:duration"
+      }
+    },
+    {
+      "id": "hc-duration-max-boundary",
+      "description": "Exactly 86400 seconds is imported.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-8",
+        "startMillis": 1750000000000,
+        "endMillis": 1750086400000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750086460000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "health_connect:rec-8",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 86400,
+          "gymCalories": 0,
+          "averageHeartRate": null,
+          "maximumHeartRate": null,
+          "note": "Health Connect · Strength training · Duration 1440:00"
+        }
+      }
+    },
+    {
+      "id": "hc-duration-too-long",
+      "description": "86401 seconds is above the maximum.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-9",
+        "startMillis": 1750000000000,
+        "endMillis": 1750086401000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750086461000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:duration"
+      }
+    },
+    {
+      "id": "hc-duration-zero",
+      "description": "An empty interval is skipped as a duration problem.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-10",
+        "startMillis": 1750000000000,
+        "endMillis": 1750000000000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750000060000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:duration"
+      }
+    },
+    {
+      "id": "hc-duration-negative",
+      "description": "An inverted interval is skipped as a duration problem.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-11",
+        "startMillis": 1750000000000,
+        "endMillis": 1749999400000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1749999460000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:duration"
+      }
+    },
+    {
+      "id": "hc-own-app-dev",
+      "description": "Sessions written by the development build of this app are never re-imported.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-12",
+        "startMillis": 1750000000000,
+        "endMillis": 1750000600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.setforge.gymapp.dev",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750000660000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:own-app"
+      }
+    },
+    {
+      "id": "hc-own-app-prod",
+      "description": "Sessions written by the production build of this app are never re-imported.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-13",
+        "startMillis": 1750000000000,
+        "endMillis": 1750000600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.setforge.gymapp",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750000660000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:own-app"
+      }
+    },
+    {
+      "id": "hc-own-app-first",
+      "description": "The own-app check runs before every other check.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-14",
+        "startMillis": 1750000000000,
+        "endMillis": 1750000010000,
+        "exerciseType": "WALKING",
+        "sourceId": "com.setforge.gymapp",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750000070000,
+      "existingWorkouts": [
+        {
+          "startMillis": 1750000000000,
+          "durationSeconds": 600
+        }
+      ],
+      "receipts": [
+        "health_connect:rec-14"
+      ],
+      "expected": {
+        "outcome": "skipped:own-app"
+      }
+    },
+    {
+      "id": "hc-not-gym-type",
+      "description": "Running is not a gym type.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-15",
+        "startMillis": 1750000000000,
+        "endMillis": 1750001800000,
+        "exerciseType": "RUNNING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750001860000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:not-gym-type"
+      }
+    },
+    {
+      "id": "hc-unknown-type",
+      "description": "An unmapped exercise type is not a gym type.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-16",
+        "startMillis": 1750000000000,
+        "endMillis": 1750001800000,
+        "exerciseType": null,
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750001860000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:not-gym-type"
+      }
+    },
+    {
+      "id": "hc-type-before-duration",
+      "description": "The type check runs before the duration check.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-17",
+        "startMillis": 1750000000000,
+        "endMillis": 1750000010000,
+        "exerciseType": "WALKING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750000070000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:not-gym-type"
+      }
+    },
+    {
+      "id": "hc-duplicate-receipt",
+      "description": "A receipt without any local workout means the user deleted the import; it must not return.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-18",
+        "startMillis": 1750000000000,
+        "endMillis": 1750000600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750000660000,
+      "existingWorkouts": [],
+      "receipts": [
+        "health_connect:rec-18"
+      ],
+      "expected": {
+        "outcome": "skipped:duplicate-receipt"
+      }
+    },
+    {
+      "id": "hc-other-receipt-does-not-block",
+      "description": "Receipts are matched by exact key.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-19",
+        "startMillis": 1750000000000,
+        "endMillis": 1750000600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750000660000,
+      "existingWorkouts": [],
+      "receipts": [
+        "health_connect:rec-190",
+        "apple_health:rec-19"
+      ],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "health_connect:rec-19",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 600,
+          "gymCalories": 0,
+          "averageHeartRate": null,
+          "maximumHeartRate": null,
+          "note": "Health Connect · Strength training · Duration 10:00"
+        }
+      }
+    },
+    {
+      "id": "hc-receipt-before-overlap",
+      "description": "The receipt check runs before the overlap check.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-20",
+        "startMillis": 1750000000000,
+        "endMillis": 1750000600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750000660000,
+      "existingWorkouts": [
+        {
+          "startMillis": 1750000000000,
+          "durationSeconds": 600
+        }
+      ],
+      "receipts": [
+        "health_connect:rec-20"
+      ],
+      "expected": {
+        "outcome": "skipped:duplicate-receipt"
+      }
+    },
+    {
+      "id": "hc-overlap-starts-inside",
+      "description": "An existing workout without duration that starts inside the session overlaps.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-21",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750003660000,
+      "existingWorkouts": [
+        {
+          "startMillis": 1750000030000,
+          "durationSeconds": null
+        }
+      ],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:overlap"
+      }
+    },
+    {
+      "id": "hc-overlap-after-end-tolerance-inclusive",
+      "description": "Existing start exactly 120 s after the session end still overlaps.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-22",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750003660000,
+      "existingWorkouts": [
+        {
+          "startMillis": 1750003720000,
+          "durationSeconds": null
+        }
+      ],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:overlap"
+      }
+    },
+    {
+      "id": "hc-no-overlap-after-end-beyond-tolerance",
+      "description": "Existing start 121 s after the session end does not overlap.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-23",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750003660000,
+      "existingWorkouts": [
+        {
+          "startMillis": 1750003721000,
+          "durationSeconds": null
+        }
+      ],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "health_connect:rec-23",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 3600,
+          "gymCalories": 0,
+          "averageHeartRate": null,
+          "maximumHeartRate": null,
+          "note": "Health Connect · Strength training · Duration 60:00"
+        }
+      }
+    },
+    {
+      "id": "hc-overlap-before-start-tolerance-inclusive",
+      "description": "Existing end exactly 120 s before the session start still overlaps.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-24",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750003660000,
+      "existingWorkouts": [
+        {
+          "startMillis": 1749998200000,
+          "durationSeconds": 1680
+        }
+      ],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:overlap"
+      }
+    },
+    {
+      "id": "hc-no-overlap-before-start-beyond-tolerance",
+      "description": "Existing end 121 s before the session start does not overlap.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-25",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750003660000,
+      "existingWorkouts": [
+        {
+          "startMillis": 1749998200000,
+          "durationSeconds": 1679
+        }
+      ],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "health_connect:rec-25",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 3600,
+          "gymCalories": 0,
+          "averageHeartRate": null,
+          "maximumHeartRate": null,
+          "note": "Health Connect · Strength training · Duration 60:00"
+        }
+      }
+    },
+    {
+      "id": "hc-overlap-existing-contains-session",
+      "description": "An existing workout that fully contains the session overlaps.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-26",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750003660000,
+      "existingWorkouts": [
+        {
+          "startMillis": 1749996400000,
+          "durationSeconds": 10800
+        }
+      ],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:overlap"
+      }
+    },
+    {
+      "id": "hc-overlap-point-workout-before-start",
+      "description": "An existing workout without duration 120 s before the start overlaps.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-27",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750003660000,
+      "existingWorkouts": [
+        {
+          "startMillis": 1749999880000,
+          "durationSeconds": null
+        }
+      ],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:overlap"
+      }
+    },
+    {
+      "id": "hc-no-overlap-point-workout-before-start",
+      "description": "An existing workout without duration 121 s before the start does not overlap.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-28",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750003660000,
+      "existingWorkouts": [
+        {
+          "startMillis": 1749999879000,
+          "durationSeconds": null
+        }
+      ],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "health_connect:rec-28",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 3600,
+          "gymCalories": 0,
+          "averageHeartRate": null,
+          "maximumHeartRate": null,
+          "note": "Health Connect · Strength training · Duration 60:00"
+        }
+      }
+    },
+    {
+      "id": "hc-overlap-any-of-many",
+      "description": "Any single overlapping workout is enough.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-29",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750003660000,
+      "existingWorkouts": [
+        {
+          "startMillis": 1749913600000,
+          "durationSeconds": 3600
+        },
+        {
+          "startMillis": 1750000600000,
+          "durationSeconds": 60
+        }
+      ],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:overlap"
+      }
+    },
+    {
+      "id": "hk-strength-en",
+      "description": "Apple Health traditional strength training; kcal 250.5 rounds half up to 251.",
+      "store": "healthKit",
+      "language": "en",
+      "session": {
+        "recordId": "A1B2C3D4-0000-4000-8000-000000000001",
+        "startMillis": 1750000000000,
+        "endMillis": 1750002700000,
+        "exerciseType": "traditionalStrengthTraining",
+        "sourceId": "com.apple.health.watch",
+        "kilocalories": 250.5,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1750000001000,
+            "bpm": 90
+          },
+          {
+            "timeMillis": 1750000002000,
+            "bpm": 110
+          }
+        ]
+      },
+      "nowMillis": 1750002760000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "apple_health:A1B2C3D4-0000-4000-8000-000000000001",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 2700,
+          "gymCalories": 251,
+          "averageHeartRate": 100,
+          "maximumHeartRate": 110,
+          "note": "Apple Health · Strength training · Duration 45:00 · kcal 251 · Avg HR 100 · Max HR 110"
+        }
+      }
+    },
+    {
+      "id": "hk-functional-uk",
+      "description": "Functional strength training, Ukrainian note.",
+      "store": "healthKit",
+      "language": "uk",
+      "session": {
+        "recordId": "A1B2C3D4-0000-4000-8000-000000000002",
+        "startMillis": 1750000000000,
+        "endMillis": 1750001500000,
+        "exerciseType": "functionalStrengthTraining",
+        "sourceId": "com.apple.health.watch",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750001560000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "apple_health:A1B2C3D4-0000-4000-8000-000000000002",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 1500,
+          "gymCalories": 0,
+          "averageHeartRate": null,
+          "maximumHeartRate": null,
+          "note": "Apple Health · Функціональне силове тренування · Тривалість 25:00"
+        }
+      }
+    },
+    {
+      "id": "hk-core-ru",
+      "description": "Core training, Russian note.",
+      "store": "healthKit",
+      "language": "ru",
+      "session": {
+        "recordId": "A1B2C3D4-0000-4000-8000-000000000003",
+        "startMillis": 1750000000000,
+        "endMillis": 1750000900000,
+        "exerciseType": "coreTraining",
+        "sourceId": "com.apple.health.watch",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750000960000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "apple_health:A1B2C3D4-0000-4000-8000-000000000003",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 900,
+          "gymCalories": 0,
+          "averageHeartRate": null,
+          "maximumHeartRate": null,
+          "note": "Apple Health · Тренировка мышц кора · Длительность 15:00"
+        }
+      }
+    },
+    {
+      "id": "hk-cross-training",
+      "description": "Cross training is a gym type.",
+      "store": "healthKit",
+      "language": "en",
+      "session": {
+        "recordId": "A1B2C3D4-0000-4000-8000-000000000004",
+        "startMillis": 1750000000000,
+        "endMillis": 1750001200000,
+        "exerciseType": "crossTraining",
+        "sourceId": "com.apple.health.watch",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750001260000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "apple_health:A1B2C3D4-0000-4000-8000-000000000004",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 1200,
+          "gymCalories": 0,
+          "averageHeartRate": null,
+          "maximumHeartRate": null,
+          "note": "Apple Health · Cross training · Duration 20:00"
+        }
+      }
+    },
+    {
+      "id": "hk-hiit",
+      "description": "HIIT is a gym type.",
+      "store": "healthKit",
+      "language": "en",
+      "session": {
+        "recordId": "A1B2C3D4-0000-4000-8000-000000000005",
+        "startMillis": 1750000000000,
+        "endMillis": 1750001200000,
+        "exerciseType": "highIntensityIntervalTraining",
+        "sourceId": "com.apple.health.watch",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750001260000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "apple_health:A1B2C3D4-0000-4000-8000-000000000005",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 1200,
+          "gymCalories": 0,
+          "averageHeartRate": null,
+          "maximumHeartRate": null,
+          "note": "Apple Health · HIIT · Duration 20:00"
+        }
+      }
+    },
+    {
+      "id": "hk-gymnastics",
+      "description": "Gymnastics is a gym type.",
+      "store": "healthKit",
+      "language": "en",
+      "session": {
+        "recordId": "A1B2C3D4-0000-4000-8000-000000000006",
+        "startMillis": 1750000000000,
+        "endMillis": 1750001200000,
+        "exerciseType": "gymnastics",
+        "sourceId": "com.apple.health.watch",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750001260000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "apple_health:A1B2C3D4-0000-4000-8000-000000000006",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 1200,
+          "gymCalories": 0,
+          "averageHeartRate": null,
+          "maximumHeartRate": null,
+          "note": "Apple Health · Gymnastics · Duration 20:00"
+        }
+      }
+    },
+    {
+      "id": "hk-not-gym-type",
+      "description": "Running is not a gym type.",
+      "store": "healthKit",
+      "language": "en",
+      "session": {
+        "recordId": "A1B2C3D4-0000-4000-8000-000000000007",
+        "startMillis": 1750000000000,
+        "endMillis": 1750001200000,
+        "exerciseType": "running",
+        "sourceId": "com.apple.health.watch",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750001260000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:not-gym-type"
+      }
+    },
+    {
+      "id": "hk-own-app",
+      "description": "Workouts written by the iPhone app are never re-imported.",
+      "store": "healthKit",
+      "language": "en",
+      "session": {
+        "recordId": "A1B2C3D4-0000-4000-8000-000000000008",
+        "startMillis": 1750000000000,
+        "endMillis": 1750001200000,
+        "exerciseType": "traditionalStrengthTraining",
+        "sourceId": "com.setforge.gymapp.ios",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750001260000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:own-app"
+      }
+    },
+    {
+      "id": "hk-receipt-namespaced",
+      "description": "A Health Connect receipt with the same record id does not block an Apple Health record.",
+      "store": "healthKit",
+      "language": "en",
+      "session": {
+        "recordId": "shared-id",
+        "startMillis": 1750000000000,
+        "endMillis": 1750000600000,
+        "exerciseType": "coreTraining",
+        "sourceId": "com.apple.health.watch",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750000660000,
+      "existingWorkouts": [],
+      "receipts": [
+        "health_connect:shared-id"
+      ],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "apple_health:shared-id",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 600,
+          "gymCalories": 0,
+          "averageHeartRate": null,
+          "maximumHeartRate": null,
+          "note": "Apple Health · Core training · Duration 10:00"
+        }
+      }
+    },
+    {
+      "id": "hk-duplicate-receipt",
+      "description": "Apple Health receipt blocks a deleted import.",
+      "store": "healthKit",
+      "language": "en",
+      "session": {
+        "recordId": "shared-id-2",
+        "startMillis": 1750000000000,
+        "endMillis": 1750000600000,
+        "exerciseType": "coreTraining",
+        "sourceId": "com.apple.health.watch",
+        "kilocalories": null,
+        "heartRateSamples": []
+      },
+      "nowMillis": 1750000660000,
+      "existingWorkouts": [],
+      "receipts": [
+        "apple_health:shared-id-2"
+      ],
+      "expected": {
+        "outcome": "skipped:duplicate-receipt"
+      }
+    },
+    {
+      "id": "hc-record-id-too-long",
+      "description": "recordId one unit past the 256-unit receipt key limit (15-unit prefix + 242).",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": 312.4,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1749999999000,
+            "bpm": 200
+          },
+          {
+            "timeMillis": 1750000000000,
+            "bpm": 110
+          },
+          {
+            "timeMillis": 1750000600000,
+            "bpm": 130
+          },
+          {
+            "timeMillis": 1750000900000,
+            "bpm": 20
+          },
+          {
+            "timeMillis": 1750001000000,
+            "bpm": 245
+          },
+          {
+            "timeMillis": 1750001800000,
+            "bpm": 150
+          },
+          {
+            "timeMillis": 1750003600000,
+            "bpm": 170
+          },
+          {
+            "timeMillis": 1750003601000,
+            "bpm": 220
+          }
+        ]
+      },
+      "nowMillis": 1750003660000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:invalid-record"
+      }
+    },
+    {
+      "id": "hc-record-id-max-length-imported",
+      "description": "recordId exactly at the receipt key limit (15 + 241 = 256) is valid.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": 312.4,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1749999999000,
+            "bpm": 200
+          },
+          {
+            "timeMillis": 1750000000000,
+            "bpm": 110
+          },
+          {
+            "timeMillis": 1750000600000,
+            "bpm": 130
+          },
+          {
+            "timeMillis": 1750000900000,
+            "bpm": 20
+          },
+          {
+            "timeMillis": 1750001000000,
+            "bpm": 245
+          },
+          {
+            "timeMillis": 1750001800000,
+            "bpm": 150
+          },
+          {
+            "timeMillis": 1750003600000,
+            "bpm": 170
+          },
+          {
+            "timeMillis": 1750003601000,
+            "bpm": 220
+          }
+        ]
+      },
+      "nowMillis": 1750003660000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "health_connect:rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 3600,
+          "gymCalories": 312,
+          "averageHeartRate": 140,
+          "maximumHeartRate": 170,
+          "note": "Health Connect · Strength training · Duration 60:00 · kcal 312 · Avg HR 140 · Max HR 170"
+        }
+      }
+    },
+    {
+      "id": "hc-record-id-control-char",
+      "description": "recordId with a control character (U+0007).",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "bad\u0007id",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": 312.4,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1749999999000,
+            "bpm": 200
+          },
+          {
+            "timeMillis": 1750000000000,
+            "bpm": 110
+          },
+          {
+            "timeMillis": 1750000600000,
+            "bpm": 130
+          },
+          {
+            "timeMillis": 1750000900000,
+            "bpm": 20
+          },
+          {
+            "timeMillis": 1750001000000,
+            "bpm": 245
+          },
+          {
+            "timeMillis": 1750001800000,
+            "bpm": 150
+          },
+          {
+            "timeMillis": 1750003600000,
+            "bpm": 170
+          },
+          {
+            "timeMillis": 1750003601000,
+            "bpm": 220
+          }
+        ]
+      },
+      "nowMillis": 1750003660000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:invalid-record"
+      }
+    },
+    {
+      "id": "hc-record-id-empty",
+      "description": "Empty recordId.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": 312.4,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1749999999000,
+            "bpm": 200
+          },
+          {
+            "timeMillis": 1750000000000,
+            "bpm": 110
+          },
+          {
+            "timeMillis": 1750000600000,
+            "bpm": 130
+          },
+          {
+            "timeMillis": 1750000900000,
+            "bpm": 20
+          },
+          {
+            "timeMillis": 1750001000000,
+            "bpm": 245
+          },
+          {
+            "timeMillis": 1750001800000,
+            "bpm": 150
+          },
+          {
+            "timeMillis": 1750003600000,
+            "bpm": 170
+          },
+          {
+            "timeMillis": 1750003601000,
+            "bpm": 220
+          }
+        ]
+      },
+      "nowMillis": 1750003660000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:invalid-record"
+      }
+    },
+    {
+      "id": "hc-invalid-record-before-own-app",
+      "description": "invalid-record is checked before own-app.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.setforge.gymapp",
+        "kilocalories": 312.4,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1749999999000,
+            "bpm": 200
+          },
+          {
+            "timeMillis": 1750000000000,
+            "bpm": 110
+          },
+          {
+            "timeMillis": 1750000600000,
+            "bpm": 130
+          },
+          {
+            "timeMillis": 1750000900000,
+            "bpm": 20
+          },
+          {
+            "timeMillis": 1750001000000,
+            "bpm": 245
+          },
+          {
+            "timeMillis": 1750001800000,
+            "bpm": 150
+          },
+          {
+            "timeMillis": 1750003600000,
+            "bpm": 170
+          },
+          {
+            "timeMillis": 1750003601000,
+            "bpm": 220
+          }
+        ]
+      },
+      "nowMillis": 1750003660000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:invalid-record"
+      }
+    },
+    {
+      "id": "hc-invalid-record-before-type",
+      "description": "invalid-record is checked before not-gym-type.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "badid",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "RUNNING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": 312.4,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1749999999000,
+            "bpm": 200
+          },
+          {
+            "timeMillis": 1750000000000,
+            "bpm": 110
+          },
+          {
+            "timeMillis": 1750000600000,
+            "bpm": 130
+          },
+          {
+            "timeMillis": 1750000900000,
+            "bpm": 20
+          },
+          {
+            "timeMillis": 1750001000000,
+            "bpm": 245
+          },
+          {
+            "timeMillis": 1750001800000,
+            "bpm": 150
+          },
+          {
+            "timeMillis": 1750003600000,
+            "bpm": 170
+          },
+          {
+            "timeMillis": 1750003601000,
+            "bpm": 220
+          }
+        ]
+      },
+      "nowMillis": 1750003660000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:invalid-record"
+      }
+    },
+    {
+      "id": "hk-record-id-too-long",
+      "description": "HealthKit prefix apple_health: is 13 units, so a 244-unit id is one past the limit.",
+      "store": "healthKit",
+      "language": "en",
+      "session": {
+        "recordId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+        "startMillis": 1750000000000,
+        "endMillis": 1750002700000,
+        "exerciseType": "traditionalStrengthTraining",
+        "sourceId": "com.apple.health.watch",
+        "kilocalories": 250.5,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1750000001000,
+            "bpm": 90
+          },
+          {
+            "timeMillis": 1750000002000,
+            "bpm": 110
+          }
+        ]
+      },
+      "nowMillis": 1750002760000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:invalid-record"
+      }
+    },
+    {
+      "id": "hk-record-id-max-length-imported",
+      "description": "HealthKit id of 243 units (13 + 243 = 256) is valid.",
+      "store": "healthKit",
+      "language": "en",
+      "session": {
+        "recordId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+        "startMillis": 1750000000000,
+        "endMillis": 1750002700000,
+        "exerciseType": "traditionalStrengthTraining",
+        "sourceId": "com.apple.health.watch",
+        "kilocalories": 250.5,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1750000001000,
+            "bpm": 90
+          },
+          {
+            "timeMillis": 1750000002000,
+            "bpm": 110
+          }
+        ]
+      },
+      "nowMillis": 1750002760000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "apple_health:rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 2700,
+          "gymCalories": 251,
+          "averageHeartRate": 100,
+          "maximumHeartRate": 110,
+          "note": "Apple Health · Strength training · Duration 45:00 · kcal 251 · Avg HR 100 · Max HR 110"
+        }
+      }
+    },
+    {
+      "id": "hc-in-progress-ends-after-now",
+      "description": "Session ends 1 second after nowMillis: still running.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-1",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": 312.4,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1749999999000,
+            "bpm": 200
+          },
+          {
+            "timeMillis": 1750000000000,
+            "bpm": 110
+          },
+          {
+            "timeMillis": 1750000600000,
+            "bpm": 130
+          },
+          {
+            "timeMillis": 1750000900000,
+            "bpm": 20
+          },
+          {
+            "timeMillis": 1750001000000,
+            "bpm": 245
+          },
+          {
+            "timeMillis": 1750001800000,
+            "bpm": 150
+          },
+          {
+            "timeMillis": 1750003600000,
+            "bpm": 170
+          },
+          {
+            "timeMillis": 1750003601000,
+            "bpm": 220
+          }
+        ]
+      },
+      "nowMillis": 1750003599000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:in-progress"
+      }
+    },
+    {
+      "id": "hc-ends-exactly-now-imported",
+      "description": "Session ends exactly at nowMillis: not in progress, imported.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-1",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": 312.4,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1749999999000,
+            "bpm": 200
+          },
+          {
+            "timeMillis": 1750000000000,
+            "bpm": 110
+          },
+          {
+            "timeMillis": 1750000600000,
+            "bpm": 130
+          },
+          {
+            "timeMillis": 1750000900000,
+            "bpm": 20
+          },
+          {
+            "timeMillis": 1750001000000,
+            "bpm": 245
+          },
+          {
+            "timeMillis": 1750001800000,
+            "bpm": 150
+          },
+          {
+            "timeMillis": 1750003600000,
+            "bpm": 170
+          },
+          {
+            "timeMillis": 1750003601000,
+            "bpm": 220
+          }
+        ]
+      },
+      "nowMillis": 1750003600000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "imported",
+        "receiptKey": "health_connect:rec-1",
+        "workout": {
+          "workoutStartedAt": 1750000000000,
+          "durationSeconds": 3600,
+          "gymCalories": 312,
+          "averageHeartRate": 140,
+          "maximumHeartRate": 170,
+          "note": "Health Connect · Strength training · Duration 60:00 · kcal 312 · Avg HR 140 · Max HR 170"
+        }
+      }
+    },
+    {
+      "id": "hc-in-progress-future-session",
+      "description": "Session lies completely in the future.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-1",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": 312.4,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1749999999000,
+            "bpm": 200
+          },
+          {
+            "timeMillis": 1750000000000,
+            "bpm": 110
+          },
+          {
+            "timeMillis": 1750000600000,
+            "bpm": 130
+          },
+          {
+            "timeMillis": 1750000900000,
+            "bpm": 20
+          },
+          {
+            "timeMillis": 1750001000000,
+            "bpm": 245
+          },
+          {
+            "timeMillis": 1750001800000,
+            "bpm": 150
+          },
+          {
+            "timeMillis": 1750003600000,
+            "bpm": 170
+          },
+          {
+            "timeMillis": 1750003601000,
+            "bpm": 220
+          }
+        ]
+      },
+      "nowMillis": 1749996400000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:in-progress"
+      }
+    },
+    {
+      "id": "hc-in-progress-before-duplicate-receipt",
+      "description": "in-progress is checked before duplicate-receipt.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-1",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": 312.4,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1749999999000,
+            "bpm": 200
+          },
+          {
+            "timeMillis": 1750000000000,
+            "bpm": 110
+          },
+          {
+            "timeMillis": 1750000600000,
+            "bpm": 130
+          },
+          {
+            "timeMillis": 1750000900000,
+            "bpm": 20
+          },
+          {
+            "timeMillis": 1750001000000,
+            "bpm": 245
+          },
+          {
+            "timeMillis": 1750001800000,
+            "bpm": 150
+          },
+          {
+            "timeMillis": 1750003600000,
+            "bpm": 170
+          },
+          {
+            "timeMillis": 1750003601000,
+            "bpm": 220
+          }
+        ]
+      },
+      "nowMillis": 1750003599000,
+      "existingWorkouts": [],
+      "receipts": [
+        "health_connect:rec-1"
+      ],
+      "expected": {
+        "outcome": "skipped:in-progress"
+      }
+    },
+    {
+      "id": "hc-in-progress-before-overlap",
+      "description": "in-progress is checked before overlap.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-1",
+        "startMillis": 1750000000000,
+        "endMillis": 1750003600000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": 312.4,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1749999999000,
+            "bpm": 200
+          },
+          {
+            "timeMillis": 1750000000000,
+            "bpm": 110
+          },
+          {
+            "timeMillis": 1750000600000,
+            "bpm": 130
+          },
+          {
+            "timeMillis": 1750000900000,
+            "bpm": 20
+          },
+          {
+            "timeMillis": 1750001000000,
+            "bpm": 245
+          },
+          {
+            "timeMillis": 1750001800000,
+            "bpm": 150
+          },
+          {
+            "timeMillis": 1750003600000,
+            "bpm": 170
+          },
+          {
+            "timeMillis": 1750003601000,
+            "bpm": 220
+          }
+        ]
+      },
+      "nowMillis": 1750003599000,
+      "existingWorkouts": [
+        {
+          "startMillis": 1750000000000,
+          "durationSeconds": 600
+        }
+      ],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:in-progress"
+      }
+    },
+    {
+      "id": "hc-duration-before-in-progress",
+      "description": "duration (too long) is checked before in-progress.",
+      "store": "healthConnect",
+      "language": "en",
+      "session": {
+        "recordId": "rec-1",
+        "startMillis": 1750000000000,
+        "endMillis": 1750086401000,
+        "exerciseType": "STRENGTH_TRAINING",
+        "sourceId": "com.samsung.android.wear.shealth",
+        "kilocalories": 312.4,
+        "heartRateSamples": [
+          {
+            "timeMillis": 1749999999000,
+            "bpm": 200
+          },
+          {
+            "timeMillis": 1750000000000,
+            "bpm": 110
+          },
+          {
+            "timeMillis": 1750000600000,
+            "bpm": 130
+          },
+          {
+            "timeMillis": 1750000900000,
+            "bpm": 20
+          },
+          {
+            "timeMillis": 1750001000000,
+            "bpm": 245
+          },
+          {
+            "timeMillis": 1750001800000,
+            "bpm": 150
+          },
+          {
+            "timeMillis": 1750003600000,
+            "bpm": 170
+          },
+          {
+            "timeMillis": 1750003601000,
+            "bpm": 220
+          }
+        ]
+      },
+      "nowMillis": 1750003600000,
+      "existingWorkouts": [],
+      "receipts": [],
+      "expected": {
+        "outcome": "skipped:duration"
+      }
+    }
+  ]
+}

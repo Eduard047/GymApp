@@ -53,6 +53,8 @@
 	<string>GymApp uses Bluetooth to receive your completed workout and set metrics from your selected Garmin watch.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>GymApp uses Bluetooth to exchange workout plans and completed workouts with your selected Garmin watch.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>GymApp reads your gym workouts, heart rate and calories from Apple Health to add workouts recorded by your watch.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>GymApp uses the microphone only when you tap the mic, to turn your speech into a workout plan or log a set. Audio stays on this device.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

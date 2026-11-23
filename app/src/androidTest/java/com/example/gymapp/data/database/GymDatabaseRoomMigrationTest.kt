@@ -761,6 +761,60 @@ class GymDatabaseRoomMigrationTest {
         }
     }
 
+    @Test
+    fun migrationEighteenToNineteenAddsHealthImportTablesAndKeepsWorkouts() {
+        migrationHelper.createDatabase(HEALTH_IMPORT_TEST_DATABASE, 18).apply {
+            execSQL(
+                "INSERT INTO workout_sessions(id, date, note) VALUES (3, 1750000000000, 'Keep workout')"
+            )
+            close()
+        }
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            HEALTH_IMPORT_TEST_DATABASE,
+            19,
+            true,
+            *GymDatabase.REGISTERED_MIGRATIONS
+        )
+        try {
+            migrated.query("SELECT note FROM workout_sessions WHERE id = 3").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Keep workout", cursor.getString(0))
+            }
+            migrated.query("SELECT COUNT(*) FROM health_import_receipts").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+            migrated.execSQL(
+                "INSERT INTO health_import_receipts(receiptKey, importedAt, workoutStartedAt) " +
+                    "VALUES ('health_connect:abc', 1750000001000, 1750000000000)"
+            )
+            migrated.execSQL("INSERT INTO health_import_state(id, lastImportAt) VALUES (1, 1750000002000)")
+            // The opt-in flag is off unless the account switched it on.
+            migrated.query("SELECT enabled FROM health_import_state WHERE id = 1").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+            migrated.execSQL("UPDATE health_import_state SET enabled = 1 WHERE id = 1")
+            migrated.query("SELECT enabled FROM health_import_state WHERE id = 1").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(1, cursor.getInt(0))
+            }
+            // A receipt must outlive the workout it created.
+            migrated.execSQL("DELETE FROM workout_sessions WHERE id = 3")
+            migrated.query("SELECT workoutStartedAt FROM health_import_receipts").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(1_750_000_000_000L, cursor.getLong(0))
+            }
+            migrated.query("SELECT lastImportAt FROM health_import_state WHERE id = 1").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(1_750_000_002_000L, cursor.getLong(0))
+            }
+        } finally {
+            migrated.close()
+        }
+    }
+
     private companion object {
         const val TEST_DATABASE = "room-migration-7-to-8"
         const val FAVORITE_TEST_DATABASE = "room-migration-8-to-9"
@@ -773,6 +827,7 @@ class GymDatabaseRoomMigrationTest {
         const val ACTIVITY_SIDECAR_TEST_DATABASE = "room-migration-15-to-16"
         const val ACTIVITY_BASELINE_TEST_DATABASE = "room-migration-16-to-17"
         const val GARMIN_LATIN_NAMES_TEST_DATABASE = "room-migration-17-to-18"
+        const val HEALTH_IMPORT_TEST_DATABASE = "room-migration-18-to-19"
         const val V229_TO_ACTIVE_WORKOUT_TEST_DATABASE = "room-migration-11-to-14"
     }
 }

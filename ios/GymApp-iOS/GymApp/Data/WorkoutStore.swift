@@ -1439,6 +1439,59 @@ public final class WorkoutStore: ObservableObject {
         return created
     }
 
+    /// Creates an activity-only workout together with its private metrics item (calories and
+    /// heart rate) in one commit. Used by the read-only Apple Health import: the metrics are
+    /// stored exactly as given, never parsed back from the note, and no Garmin-only field
+    /// (`garminCalories`, ending zone) is ever set. An already occupied start time is refused.
+    @discardableResult
+    func createImportedActivityWorkout(
+        date: Date,
+        note: String?,
+        durationSeconds: Int,
+        gymCalories: Int,
+        averageHeartRate: Int?,
+        maximumHeartRate: Int?
+    ) throws -> WorkoutSession {
+        let previousCloudItems = activityOnlyCloudItems
+        var created: WorkoutSession?
+        do {
+            try mutate { state in
+                let workout = try Self.makeActivityOnlyWorkout(
+                    date: date,
+                    note: note,
+                    durationSeconds: durationSeconds
+                )
+                let startedAt = workout.date.gymEpochMilliseconds
+                guard !Self.hasOtherWorkout(in: state, at: startedAt, excluding: workout.id) else {
+                    throw WorkoutStoreError.invalidWorkout(
+                        "Activity-only workout timestamp already exists."
+                    )
+                }
+                let item = try ActivityOnlyWorkoutCloudItem(
+                    workoutStartedAt: startedAt,
+                    durationSeconds: durationSeconds,
+                    gymCalories: Double(gymCalories),
+                    averageHeartRate: averageHeartRate,
+                    maximumHeartRate: maximumHeartRate,
+                    note: ActivityOnlyWorkoutCloudCodec.boundedNote(workout.note)
+                )
+                var items = activityOnlyCloudItems.filter { $0.workoutStartedAt != startedAt }
+                items.append(item)
+                items.sort { $0.workoutStartedAt < $1.workoutStartedAt }
+                activityOnlyCloudItems = items
+                state.workouts.append(workout)
+                created = workout
+            }
+        } catch {
+            activityOnlyCloudItems = previousCloudItems
+            throw error
+        }
+        guard let created else {
+            throw WorkoutStoreError.persistenceFailure("The imported workout was not stored.")
+        }
+        return created
+    }
+
     /// Atomically applies an already three-way-merged owner-private sidecar. The exact
     /// pre-merge local wire is rechecked so an intervening local edit cannot be erased.
     /// Core workouts at the same timestamp remain authoritative and are never replaced.
