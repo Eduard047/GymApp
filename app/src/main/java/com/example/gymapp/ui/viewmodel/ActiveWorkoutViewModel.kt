@@ -559,6 +559,16 @@ private data class ActiveWorkoutOperationState(
 /** Which finish the "A watch workout already covers this time" prompt resumes on "Keep both". */
 enum class ActiveWorkoutWatchOverlapFinish { Finish, RecordRemainingAndFinish }
 
+/**
+ * Whether a finish must ask about a watch overlap. Once "Keep both" was chosen for this active
+ * workout (the single draft row is identified by its `startedAt`), a retried finish skips the
+ * question, like iOS does once the draft's commit intent is set.
+ */
+internal fun activeWorkoutNeedsWatchOverlapCheck(
+    activeWorkoutStartedAt: Long,
+    keptBothStartedAt: Long?
+): Boolean = keptBothStartedAt != activeWorkoutStartedAt
+
 private data class ActiveWorkoutClockUiState(
     val workoutElapsedSeconds: Long = 0L,
     val restSecondsRemaining: Int = 0
@@ -811,6 +821,9 @@ class ActiveWorkoutViewModel(
     private val operationState = MutableStateFlow(ActiveWorkoutOperationState())
     private val batchUndoState = MutableStateFlow<ActiveWorkoutBatchUndo?>(null)
     private var batchUndoExpiryJob: Job? = null
+
+    /** `startedAt` of the active workout whose watch overlap was answered "Keep both". */
+    private var watchOverlapKeptBothStartedAt: Long? = null
 
     /**
      * Saves typed-but-unrecorded weight/reps of pending sets so they survive the screen closing
@@ -1334,9 +1347,16 @@ class ActiveWorkoutViewModel(
      * check never blocks finishing.
      */
     private fun checkWatchOverlapThen(kind: ActiveWorkoutWatchOverlapFinish, proceed: () -> Unit) {
-        if (details.value == null || activeWorkoutOperationInProgress() ||
-            operationState.value.watchOverlapFinish != null
+        val snapshot = details.value ?: return
+        if (activeWorkoutOperationInProgress() || operationState.value.watchOverlapFinish != null) {
+            return
+        }
+        if (!activeWorkoutNeedsWatchOverlapCheck(
+                snapshot.activeWorkout.startedAt,
+                watchOverlapKeptBothStartedAt
+            )
         ) {
+            proceed()
             return
         }
         operationState.update { it.copy(isFinishing = true, message = null) }
@@ -1361,6 +1381,7 @@ class ActiveWorkoutViewModel(
     /** "Keep both": finish exactly as without the prompt. */
     fun keepBothAfterWatchOverlap() {
         val kind = operationState.value.watchOverlapFinish ?: return
+        watchOverlapKeptBothStartedAt = details.value?.activeWorkout?.startedAt
         operationState.update { it.copy(watchOverlapFinish = null) }
         when (kind) {
             ActiveWorkoutWatchOverlapFinish.Finish -> finishWorkoutNow()
@@ -2486,6 +2507,7 @@ class ActiveWorkoutViewModel(
             try {
                 when (repository.discardActiveWorkout(snapshot.activeWorkout.revision)) {
                     DiscardActiveWorkoutResult.Discarded -> {
+                        watchOverlapKeptBothStartedAt = null
                         liveSync?.afterLocalWorkoutDiscarded()
                         runCatching {
                             restTimerController.clearActiveWorkoutTimer(

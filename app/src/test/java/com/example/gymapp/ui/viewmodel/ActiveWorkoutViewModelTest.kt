@@ -29,6 +29,14 @@ import org.junit.Test
 
 class ActiveWorkoutViewModelTest {
     @Test
+    fun watchOverlapIsAskedUntilKeepBothForTheSameWorkout() {
+        assertTrue(activeWorkoutNeedsWatchOverlapCheck(1_000L, keptBothStartedAt = null))
+        assertFalse(activeWorkoutNeedsWatchOverlapCheck(1_000L, keptBothStartedAt = 1_000L))
+        // A newer workout (different start) is asked again.
+        assertTrue(activeWorkoutNeedsWatchOverlapCheck(2_000L, keptBothStartedAt = 1_000L))
+    }
+
+    @Test
     fun validSetInputAcceptsBlankAsZeroExplicitZeroAndCommaDecimal() {
         assertEquals(
             ParsedActiveWorkoutSet(weight = 0.0, reps = 8),
