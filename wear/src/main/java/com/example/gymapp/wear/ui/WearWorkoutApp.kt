@@ -102,6 +102,12 @@ private const val SENDING_TIMEOUT_MS = 15_000L
 private const val SAVED_DIALOG_MS = 2_000L
 private const val MESSAGE_MS = 4_000L
 
+/** Height of the straight time line at the top of a square screen, plus a small gap. */
+private val SQUARE_CLOCK_INSET = 24.dp
+
+/** Clear space between a fixed edge button and the end of the list scrolling above it. */
+private val EDGE_BUTTON_GAP = 8.dp
+
 @Composable
 fun WearWorkoutApp(viewModel: WearWorkoutViewModel, isAmbient: Boolean) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -1241,17 +1247,24 @@ private fun SummaryScreen(state: WearWorkoutUiState, onSave: () -> Unit, onDisca
     var edgePx by remember { mutableIntStateOf(0) }
     val edgeHeight = edgeHeightDp(edgePx, if (large) 70.dp else 46.dp)
     val direction = LocalLayoutDirection.current
+    // Square screens draw the time as a straight line across the top. The list's viewport starts
+    // below it, so the title (and every row scrolled up) is clipped there instead of passing
+    // under the clock. Round screens keep the curved time over the list, as on the other screens.
+    val round = LocalConfiguration.current.isScreenRound
+    val clockInset = if (round) 0.dp else SQUARE_CLOCK_INSET
     Box(modifier = Modifier.fillMaxSize()) {
     ScreenScaffold(scrollState = listState) { padding ->
         ScalingLazyColumn(
-            // The list's own viewport ends at the top of the Save button: rows are clipped there
-            // instead of showing through beside the button, and the last row (Discard) scrolls
-            // clear of it.
-            modifier = Modifier.fillMaxSize().padding(bottom = edgeHeight),
+            // The list's own viewport ends a gap above the Save button: rows are clipped there,
+            // so no part of a row shows next to or behind the button, and the last row (Discard)
+            // scrolls fully clear of it.
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = clockInset, bottom = edgeHeight + EDGE_BUTTON_GAP),
             state = listState,
             contentPadding = PaddingValues(
                 start = padding.calculateStartPadding(direction),
-                top = maxOf(padding.calculateTopPadding(), 24.dp),
+                top = if (round) maxOf(padding.calculateTopPadding(), 24.dp) else 4.dp,
                 end = padding.calculateEndPadding(direction),
                 bottom = 8.dp
             ),
