@@ -16,7 +16,12 @@ final class PlanStore {
     /// Merges and persists an incoming context; returns the context now in effect.
     @discardableResult
     func apply(_ incoming: WatchContextMessage) -> WatchContextMessage {
-        let merged = WatchContextMerge.merge(cached: context, incoming: incoming)
+        replace(WatchContextMerge.merge(cached: context, incoming: incoming))
+    }
+
+    /// Stores an already merged context as it is.
+    @discardableResult
+    func replace(_ merged: WatchContextMessage) -> WatchContextMessage {
         context = merged
         if let data = try? WatchSyncCodec.encode(merged) {
             try? files.write(data, name: Self.name)

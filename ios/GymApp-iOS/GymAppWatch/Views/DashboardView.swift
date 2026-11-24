@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Working: exercise, weight × reps hero, set line, Log set. Resting: countdown with Undo/+15 s and Skip.
+/// Working: exercise, weight × reps hero, set line, Log set (free workout before the first pick:
+/// "Free workout" and Choose exercise). Resting: countdown with Undo/+15 s and Skip.
 struct DashboardView: View {
     @EnvironmentObject private var model: WatchAppModel
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
@@ -48,30 +49,38 @@ struct DashboardView: View {
                 .minimumScaleFactor(0.85)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityLabel(name)
+            Text(WatchText.weightReps(weight: workout.draftWeight, reps: workout.draftReps, model.language))
+                .font(WatchTheme.heroWork)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .accessibilityLabel(model.format(
+                    .a11ySetValues,
+                    WatchCrownSteps.formatWeight(workout.draftWeight, language: model.language),
+                    workout.draftReps
+                ))
+            if let position = WatchWorkoutModel.setPosition(workout) {
+                Text(WatchText.setLine(position, model.language))
+                    .font(.footnote)
+                    .foregroundStyle(WatchTheme.textSecondary)
+            }
+            Spacer(minLength: 0)
+            if !isLuminanceReduced {
+                Button(model.text(.logSet)) { showEntry = true }
+                    .buttonStyle(PrimaryButtonStyle())
+            }
         } else {
-            Text(model.text(.exercise))
+            // Free workout before the first pick: no "0 kg × 10" target the user never set.
+            Text(model.text(.freeWorkout))
                 .font(.headline)
                 .foregroundStyle(WatchTheme.textSecondary)
-        }
-        Text(WatchText.weightReps(weight: workout.draftWeight, reps: workout.draftReps, model.language))
-            .font(WatchTheme.heroWork)
-            .monospacedDigit()
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
-            .accessibilityLabel(model.format(
-                .a11ySetValues,
-                WatchCrownSteps.formatWeight(workout.draftWeight, language: model.language),
-                workout.draftReps
-            ))
-        if let position = WatchWorkoutModel.setPosition(workout) {
-            Text(WatchText.setLine(position, model.language))
-                .font(.footnote)
-                .foregroundStyle(WatchTheme.textSecondary)
-        }
-        Spacer(minLength: 0)
-        if !isLuminanceReduced {
-            Button(model.text(.logSet)) { showEntry = true }
-                .buttonStyle(PrimaryButtonStyle())
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            if !isLuminanceReduced {
+                Button(model.text(.chooseExercise)) { showEntry = true }
+                    .buttonStyle(PrimaryButtonStyle())
+            }
         }
     }
 
@@ -94,22 +103,24 @@ struct DashboardView: View {
         }
         Spacer(minLength: 0)
         if !isLuminanceReduced {
+            // Undo and Skip are icons: the words do not fit side by side in UK/RU on any size.
             HStack(spacing: 6) {
                 if canUndo {
-                    Button(model.text(.undo)) { model.undo() }
-                        .buttonStyle(TonalButtonStyle())
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
+                    Button { model.undo() } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                    }
+                    .buttonStyle(TonalButtonStyle())
+                    .accessibilityLabel(model.text(.undo))
                 } else {
                     Button(model.text(.restAdd)) { model.addRest() }
                         .buttonStyle(TonalButtonStyle())
                         .lineLimit(1)
-                        .minimumScaleFactor(0.7)
                 }
-                Button(model.text(.skip)) { model.skipRest() }
-                    .buttonStyle(TonalButtonStyle())
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
+                Button { model.skipRest() } label: {
+                    Image(systemName: "forward.end.fill")
+                }
+                .buttonStyle(TonalButtonStyle())
+                .accessibilityLabel(model.text(.skip))
             }
         }
     }

@@ -13,6 +13,12 @@ struct SummaryView: View {
                 if let workout = model.workout {
                     grid(workout)
                 }
+                if let status = model.summaryStatus {
+                    Text(status)
+                        .font(.footnote)
+                        .foregroundStyle(WatchTheme.destructive)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Button(model.text(.save)) { Task { await model.saveWorkout() } }
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(model.isSaving)
@@ -43,7 +49,12 @@ struct SummaryView: View {
 
     private func grid(_ workout: WatchActiveWorkout) -> some View {
         let seconds = WatchWorkoutModel.activeMillis(workout, nowMillis: WatchAppModel.nowMillis()) / 1_000
-        let stats = workout.heartRateEnabled ? health.statistics : WorkoutSessionManager.Statistics()
+        // A lost session still shows what was captured before the loss.
+        let stats = workout.heartRateEnabled ? health.statistics : WorkoutSessionManager.Statistics(
+            averageHeartRate: workout.lastAverageHeartRate,
+            maximumHeartRate: workout.lastMaximumHeartRate,
+            activeKilocalories: workout.lastActiveKilocalories
+        )
         let dash = "—"
         return Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 8) {
             GridRow {

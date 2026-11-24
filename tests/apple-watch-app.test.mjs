@@ -107,17 +107,31 @@ test("watch sources stay flat: no gradients, no all-caps, no emoji", async () =>
 test("watch uses the shared codec and the crash-safe finish order", async () => {
   const model = await readFile(`${iosRoot}/GymAppWatch/WatchAppModel.swift`, "utf8");
   const save = model.slice(model.indexOf("func saveWorkout()"));
-  const order = ["health.end(", "outboxStore.save(item)", "health.finishWorkout()", "activeStore.clear()", "flushOutbox()"]
+  // The message is validated before the Health session is ended, so a workout that
+  // cannot be encoded stays open on Summary with a message and a working Save.
+  const order = ["guard let preflight = encoded(", "health.end(", "outboxStore.save(item)", "health.finishWorkout()", "activeStore.clear()", "flushOutbox()"]
     .map((needle) => save.indexOf(needle));
   assert.ok(order.every((index) => index >= 0), "all finish steps present");
   assert.deepEqual([...order].sort((a, b) => a - b), order, "outbox item is written before the Health save");
-  assert.match(model, /WatchSyncCodec\.decodeContext/);
-  assert.match(model, /WatchSyncCodec\.decodeReply/);
-  assert.match(model, /WatchOutboxPolicy\.apply\(reply/);
+  const saveBody = save.slice(0, save.indexOf("func closeResult()"));
+  assert.equal(saveBody.match(/saveFailed\(\)/g)?.length, 2, "both early exits report the failure");
+  assert.doesNotMatch(saveBody, /phase = \.summary/, "no silent return to Summary");
+  assert.match(model, /private func saveFailed\(\) \{\s+phase = \.summary\s+summaryStatus = text\(\.saveFailed\)/);
+  assert.match(model, /WatchSyncCodec\.decodeContext\(bytes\)/);
+  // A context or reply of another protocol version is not dropped whole, and an
+  // unsupported-version hold follows the phone's context version.
+  assert.match(model, /WatchSyncCodec\.decodeContextHeader\(bytes\)/);
+  assert.match(model, /WatchSyncCodec\.decodeReplyTolerant\(bytes\)/);
+  assert.match(model, /WatchOutboxPolicy\.apply\(reply, to: item, nowMillis: now, contextProtocolVersion: phoneProtocolVersion\)/);
+  assert.match(model, /WatchOutboxPolicy\.applyContext\(merged, to: item, nowMillis: now, protocolVersion: header\.protocolVersion\)/);
+  // A permanent rejection is not shown as "will send later"; a lost Health session is "failed".
+  assert.match(model, /next\.status == \.failed \{\s+phase = \.result\(\.failed\)/);
+  assert.match(model, /WatchWorkoutModel\.markHealthLost\(/);
+  assert.match(model, /WatchWorkoutModel\.healthKitStatus\(current\)/);
   // The item being finished is never flushed or rewritten after a send, and a snapshot
   // of an already finished workout is not restored.
   assert.match(model, /outstanding\.insert\(savingRequestId\)/);
-  assert.match(model, /WatchOutboxPolicy\.rewriting\(live, envelope: data\)/);
+  assert.match(model, /WatchOutboxPolicy\.rewriting\(live, envelope: failed\.envelope\)/);
   assert.match(model, /WatchOutboxPolicy\.isAlreadyFinished\(requestId: restored\.requestId, outbox: outbox\)/);
   // Debug seeds never reach Release.
   const debugExtension = model.indexOf("#if DEBUG\nextension WatchAppModel {");

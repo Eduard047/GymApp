@@ -125,6 +125,89 @@ final class WatchWorkoutModelTests: XCTestCase {
         XCTAssertNoThrow(try WatchSyncCodec.encode(message, nowMillis: start + 2_000))
     }
 
+    func testFinishSurvivesAClockSetBackDuringTheWorkout() throws {
+        var workout = try planWorkout()
+        XCTAssertTrue(WatchWorkoutModel.logSet(&workout, weight: 60, reps: 8, nowMillis: start + 600_000))
+        WatchWorkoutModel.pause(&workout, nowMillis: start + 700_000)
+        // The clock went back one hour: "now" is before the start and before the set.
+        let now = start - 3_600_000 + 720_000
+        let message = try XCTUnwrap(WatchWorkoutModel.finish(
+            workout, endedAtMillis: now, healthKit: .off,
+            averageHeartRate: nil, maximumHeartRate: nil, activeKilocalories: nil))
+        XCTAssertEqual(message.endedAtMillis, now)
+        XCTAssertLessThan(message.startedAtMillis, now)
+        XCTAssertEqual(message.durationSeconds, 541)
+        XCTAssertNoThrow(try WatchSyncCodec.encode(message, nowMillis: now))
+    }
+
+    func testFinishClampsASetLoggedOutsideTheWorkoutAndCapsALongDuration() throws {
+        var early = try planWorkout()
+        // Logged while the clock was 30 minutes behind; the clock is right again at the end.
+        XCTAssertTrue(WatchWorkoutModel.logSet(&early, weight: 60, reps: 8, nowMillis: start - 1_800_000))
+        let clamped = try XCTUnwrap(WatchWorkoutModel.finish(
+            early, endedAtMillis: start + 600_000, healthKit: .off,
+            averageHeartRate: nil, maximumHeartRate: nil, activeKilocalories: nil))
+        XCTAssertEqual(clamped.sets.map(\.completedAtMillis), [start])
+        XCTAssertEqual(clamped.startedAtMillis, start)
+        XCTAssertNoThrow(try WatchSyncCodec.encode(clamped, nowMillis: start + 600_000))
+
+        var old = try planWorkout()
+        XCTAssertTrue(WatchWorkoutModel.logSet(&old, weight: 60, reps: 8, nowMillis: start + 60_000))
+        let end = start + 8 * 86_400_000
+        let capped = try XCTUnwrap(WatchWorkoutModel.finish(
+            old, endedAtMillis: end, healthKit: .off,
+            averageHeartRate: nil, maximumHeartRate: nil, activeKilocalories: nil))
+        XCTAssertEqual(capped.durationSeconds, 604_800)
+        XCTAssertNoThrow(try WatchSyncCodec.encode(capped, nowMillis: end))
+    }
+
+    func testLostHealthSessionIsReportedAsFailedAndKeepsCapturedHeartRate() throws {
+        var workout = try XCTUnwrap(WatchWorkoutModel.start(
+            mode: .plan, context: boundContext(plan: plan), requestId: requestId, nowMillis: start, heartRateEnabled: true))
+        XCTAssertEqual(WatchWorkoutModel.healthKitStatus(workout), .saved)
+        XCTAssertTrue(WatchWorkoutModel.logSet(&workout, weight: 60, reps: 8, nowMillis: start + 60_000))
+        WatchWorkoutModel.captureStatistics(&workout, averageHeartRate: 121.4, maximumHeartRate: 150.2, activeKilocalories: 42)
+        // A later reading without heart rate does not erase the captured pair.
+        WatchWorkoutModel.captureStatistics(&workout, averageHeartRate: nil, maximumHeartRate: nil, activeKilocalories: nil)
+        WatchWorkoutModel.markHealthLost(&workout, nowMillis: start + 120_000)
+        XCTAssertFalse(workout.heartRateEnabled)
+        XCTAssertTrue(WatchWorkoutModel.isPaused(workout))
+        XCTAssertEqual(WatchWorkoutModel.healthKitStatus(workout), .failed)
+        let message = try XCTUnwrap(WatchWorkoutModel.finish(
+            workout, endedAtMillis: start + 180_000, healthKit: WatchWorkoutModel.healthKitStatus(workout),
+            averageHeartRate: workout.lastAverageHeartRate, maximumHeartRate: workout.lastMaximumHeartRate,
+            activeKilocalories: workout.lastActiveKilocalories))
+        XCTAssertEqual(message.healthKit, .failed)
+        XCTAssertEqual(message.averageHeartRate, 121)
+        XCTAssertEqual(message.maximumHeartRate, 150)
+        XCTAssertEqual(message.activeKilocalories, 42)
+        XCTAssertNoThrow(try WatchSyncCodec.encode(message, nowMillis: start + 180_000))
+
+        var never = try planWorkout()
+        never.heartRateEnabled = false
+        XCTAssertEqual(WatchWorkoutModel.healthKitStatus(never), .off)
+        // A snapshot written before these fields existed still decodes.
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(workout)) as? [String: Any])
+        for key in ["healthLost", "lastAverageHeartRate", "lastMaximumHeartRate", "lastActiveKilocalories"] { legacy[key] = nil }
+        let decoded = try JSONDecoder().decode(WatchActiveWorkout.self, from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertNil(decoded.healthLost)
+        XCTAssertEqual(decoded.sets, workout.sets)
+    }
+
+    func testRestEndNeedsANotificationOnlyWithoutAWorkoutSession() throws {
+        var workout = try planWorkout()
+        XCTAssertNil(WatchWorkoutModel.restNotificationDelaySeconds(workout, sessionRunning: false, nowMillis: start))
+        XCTAssertTrue(WatchWorkoutModel.logSet(&workout, weight: 60, reps: 8, nowMillis: start))
+        XCTAssertEqual(WatchWorkoutModel.restNotificationDelaySeconds(workout, sessionRunning: false, nowMillis: start + 20_000), 100)
+        XCTAssertNil(WatchWorkoutModel.restNotificationDelaySeconds(workout, sessionRunning: true, nowMillis: start + 20_000))
+        XCTAssertNil(WatchWorkoutModel.restNotificationDelaySeconds(workout, sessionRunning: false, nowMillis: start + 120_000))
+        WatchWorkoutModel.pause(&workout, nowMillis: start + 30_000)
+        XCTAssertNil(WatchWorkoutModel.restNotificationDelaySeconds(workout, sessionRunning: false, nowMillis: start + 40_000))
+        WatchWorkoutModel.resume(&workout, nowMillis: start + 50_000)
+        WatchWorkoutModel.skipRest(&workout)
+        XCTAssertNil(WatchWorkoutModel.restNotificationDelaySeconds(workout, sessionRunning: false, nowMillis: start + 60_000))
+    }
+
     func testActiveWorkoutSnapshotRoundTripsThroughJSON() throws {
         var workout = try planWorkout()
         WatchWorkoutModel.logSet(&workout, weight: 60, reps: 8, nowMillis: start + 60_000)
@@ -253,6 +336,41 @@ final class WatchOutboxPolicyTests: XCTestCase {
         XCTAssertFalse(WatchOutboxPolicy.isAlreadyFinished(requestId: requestId, outbox: []))
     }
 
+    func testUnsupportedVersionHoldIsReleasedByAGreaterPhoneContextVersion() throws {
+        let nack = WatchReply.nack(.init(requestId: requestId, reason: .unsupportedVersion))
+        guard case .update(let held) = WatchOutboxPolicy.apply(nack, to: try item(), nowMillis: 1_000, contextProtocolVersion: 1) else {
+            return XCTFail("expected an update")
+        }
+        XCTAssertEqual(held.status, .held)
+        XCTAssertEqual(held.heldProtocolVersion, 1)
+        // The same phone version keeps the hold, also for a watch app that was updated meanwhile.
+        XCTAssertEqual(WatchOutboxPolicy.applyContext(context(account), to: held, nowMillis: 2_000, protocolVersion: 1), held)
+        let released = WatchOutboxPolicy.applyContext(context(account), to: held, nowMillis: 3_000, protocolVersion: 2)
+        XCTAssertEqual(released.status, .queued)
+        XCTAssertNil(released.heldProtocolVersion)
+        XCTAssertEqual(released.nextAttemptAtMillis, 3_000)
+        // Another account's context never releases it.
+        XCTAssertEqual(WatchOutboxPolicy.applyContext(context(otherAccount), to: held, nowMillis: 3_000, protocolVersion: 2), held)
+    }
+
+    func testReplyFromANewerPhoneStillClearsOrUpdatesTheItem() throws {
+        let ack = Data(#"{"type":"ack","protocolVersion":2,"requestId":"\#(requestId)","accountBinding":"\#(account)","status":"stored","extra":1}"#.utf8)
+        XCTAssertNil(WatchSyncCodec.decodeReply(ack))
+        let reply = try XCTUnwrap(WatchSyncCodec.decodeReplyTolerant(ack))
+        XCTAssertEqual(WatchOutboxPolicy.apply(reply, to: try item(), nowMillis: 1), .delete)
+        let foreign = Data(#"{"type":"ack","protocolVersion":2,"requestId":"\#(requestId)","accountBinding":"\#(otherAccount)","status":"committed"}"#.utf8)
+        XCTAssertEqual(WatchOutboxPolicy.apply(try XCTUnwrap(WatchSyncCodec.decodeReplyTolerant(foreign)), to: try item(), nowMillis: 1), .ignore)
+        let nack = Data(#"{"type":"nack","protocolVersion":3,"requestId":"\#(requestId)","reason":"invalid","detail":"x"}"#.utf8)
+        XCTAssertEqual(WatchSyncCodec.decodeReplyTolerant(nack), .nack(.init(requestId: requestId, reason: .invalid)))
+        // This version stays strict, and an unknown reason or a bad id is never guessed.
+        let sameVersionExtra = Data(#"{"type":"nack","protocolVersion":1,"requestId":"\#(requestId)","reason":"invalid","detail":"x"}"#.utf8)
+        XCTAssertNil(WatchSyncCodec.decodeReplyTolerant(sameVersionExtra))
+        let unknownReason = Data(#"{"type":"nack","protocolVersion":2,"requestId":"\#(requestId)","reason":"later"}"#.utf8)
+        XCTAssertNil(WatchSyncCodec.decodeReplyTolerant(unknownReason))
+        let badBinding = Data(#"{"type":"ack","protocolVersion":2,"requestId":"\#(requestId)","accountBinding":"zz","status":"committed"}"#.utf8)
+        XCTAssertNil(WatchSyncCodec.decodeReplyTolerant(badBinding))
+    }
+
     func testItemRoundTripsThroughJSON() throws {
         let original = WatchOutboxPolicy.markSent(try item(), nowMillis: now)
         let decoded = try JSONDecoder().decode(WatchOutboxItem.self, from: JSONEncoder().encode(original))
@@ -306,6 +424,49 @@ final class WatchTextAndContextTests: XCTestCase {
         XCTAssertEqual(WatchText.setLine(WatchSetPosition(index: 3, count: nil), "ru"), "Подход 3")
         XCTAssertEqual(WatchText.weightReps(weight: 57.5, reps: 7, "uk"), "57,5 кг × 7")
         XCTAssertEqual(WatchText.format(.next, "en", WatchText.weightReps(weight: 60, reps: 8, "en")), "Next: 60 kg × 8")
+    }
+
+    func testContextMergeTakesAPlanWhoseRevisionRestartedOnThePhone() {
+        let cached = WatchContextMessage(sentAtMillis: 10, bound: boundContext(plan: plan, revision: 7))
+        let newPlan = [WatchPlanExercise(name: "Присед", restSeconds: 60, sets: [.init(weight: 80, reps: 5)])]
+        // The phone's plan file was cleared: its counter restarted, the context is newer.
+        let restarted = WatchContextMessage(sentAtMillis: 20, bound: boundContext(plan: newPlan, revision: 2))
+        XCTAssertEqual(WatchContextMerge.merge(cached: cached, incoming: restarted), restarted)
+        // An older message with a lower revision still loses.
+        let stale = WatchContextMessage(sentAtMillis: 5, bound: boundContext(plan: newPlan, revision: 2))
+        XCTAssertEqual(WatchContextMerge.merge(cached: cached, incoming: stale).bound?.plan, plan)
+        XCTAssertEqual(WatchContextMerge.merge(cached: cached, incoming: stale).bound?.planRevision, 7)
+        // The phone's "no plan read yet" fallback (empty plan) never wipes the cached plan.
+        let fallback = WatchContextMessage(sentAtMillis: 30, bound: boundContext(plan: [], revision: 1))
+        XCTAssertEqual(WatchContextMerge.merge(cached: cached, incoming: fallback).bound?.plan, plan)
+    }
+
+    func testContextFromANewerPhoneIsNotDropped() throws {
+        let unbound = Data(#"{"type":"context","protocolVersion":2,"state":"unbound","sentAtMillis":5,"extra":true}"#.utf8)
+        XCTAssertNil(WatchSyncCodec.decodeContext(unbound))
+        let unboundHeader = try XCTUnwrap(WatchSyncCodec.decodeContextHeader(unbound))
+        XCTAssertEqual(unboundHeader, WatchContextHeader(protocolVersion: 2, accountBinding: nil))
+        let cached = WatchContextMessage(sentAtMillis: 1, bound: boundContext(plan: plan))
+        // Sign-out on a newer phone still removes the previous account's plan.
+        XCTAssertNil(WatchContextMerge.merge(cached: cached, header: unboundHeader, language: "ru", nowMillis: 9).bound)
+
+        let same = Data(#"{"type":"context","protocolVersion":2,"state":"bound","accountBinding":"\#(account)","plan":"new shape"}"#.utf8)
+        let sameHeader = try XCTUnwrap(WatchSyncCodec.decodeContextHeader(same))
+        XCTAssertEqual(sameHeader.protocolVersion, 2)
+        XCTAssertEqual(WatchContextMerge.merge(cached: cached, header: sameHeader, language: "ru", nowMillis: 9), cached)
+
+        let other = WatchContextHeader(protocolVersion: 2, accountBinding: otherAccount)
+        let switched = WatchContextMerge.merge(cached: cached, header: other, language: "uk", nowMillis: 9)
+        XCTAssertEqual(switched.bound?.accountBinding, otherAccount)
+        XCTAssertEqual(switched.bound?.plan, [])
+        XCTAssertEqual(switched.bound?.exercises, [])
+        XCTAssertNoThrow(try WatchSyncCodec.encode(switched))
+
+        // The current version reads the same header; garbage is still rejected.
+        let current = try WatchSyncCodec.encode(cached)
+        XCTAssertEqual(WatchSyncCodec.decodeContextHeader(current), WatchContextHeader(protocolVersion: 1, accountBinding: account))
+        XCTAssertNil(WatchSyncCodec.decodeContextHeader(Data(#"{"type":"context","protocolVersion":2,"state":"bound","accountBinding":"zz"}"#.utf8)))
+        XCTAssertNil(WatchSyncCodec.decodeContextHeader(Data(#"{"type":"workout","protocolVersion":2,"state":"unbound"}"#.utf8)))
     }
 
     func testContextMergeKeepsNewerPlanAndDropsEverythingWhenUnbound() {

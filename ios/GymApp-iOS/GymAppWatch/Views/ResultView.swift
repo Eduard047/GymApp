@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Sending… → Saved on phone (auto-closes after 2 s) | Will send when the phone is nearby (Done).
+/// Sending… → Saved on iPhone (auto-closes after 2 s) | Will send when your iPhone is nearby (Done)
+/// | iPhone did not accept this workout (Done; the item stays in Unsent).
 struct ResultView: View {
     @EnvironmentObject private var model: WatchAppModel
     let state: WatchResultState
@@ -32,6 +33,19 @@ struct ResultView: View {
                 Text(model.text(.sendLater))
                     .font(.headline)
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(model.text(.done)) { model.closeResult() }
+                    .buttonStyle(PrimaryButtonStyle())
+            case .failed:
+                // Rejected for good: not "later". The workout stays in Unsent until discarded.
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 30))
+                    .foregroundStyle(WatchTheme.destructive)
+                    .accessibilityHidden(true)
+                Text(model.text(.notAccepted))
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.8)
                     .fixedSize(horizontal: false, vertical: true)
                 Button(model.text(.done)) { model.closeResult() }
                     .buttonStyle(PrimaryButtonStyle())

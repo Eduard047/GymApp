@@ -67,11 +67,14 @@ struct StartView: View {
     private var plan: [WatchPlanExercise] { model.bound?.plan ?? [] }
 
     private var status: String? {
-        if model.bound == nil { return model.text(.openPhone) }
+        if model.bound == nil { return model.text(.openPhoneSignIn) }
+        if model.needsWatchUpdate { return model.text(.updateWatch) }
         if model.outboxIsFull { return model.text(.outboxFull) }
         if model.outbox.contains(where: { $0.status == .queued || $0.status == .sent }) {
             return client.isReachable ? model.text(.sendLater) : model.text(.phoneOff) + ". " + model.text(.sendLater)
         }
+        // Linked without a plan: the same phone line Wear OS shows in this state.
+        if plan.isEmpty { return model.text(.openPhone) }
         return nil
     }
 }

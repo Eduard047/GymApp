@@ -21,6 +21,13 @@ struct WatchActiveWorkout: Codable, Equatable, Sendable {
     var pausedAtMillis: Int64?
     var pausedTotalMillis: Int64
     var heartRateEnabled: Bool
+    /// The HealthKit session was lost (crash without a recoverable session): the workout is
+    /// reported as healthKit "failed" and keeps the statistics captured before the loss.
+    /// Optional so snapshots written by older builds still decode.
+    var healthLost: Bool? = nil
+    var lastAverageHeartRate: Double? = nil
+    var lastMaximumHeartRate: Double? = nil
+    var lastActiveKilocalories: Double? = nil
 }
 
 struct WatchSetPosition: Equatable, Sendable {
@@ -159,6 +166,25 @@ enum WatchWorkoutModel {
         return max(0, reference - workout.startedAtMillis - workout.pausedTotalMillis)
     }
 
+    /// Health status of the finished message: "saved" while a session records, "failed"
+    /// when a session was lost on the way, "off" when there never was one.
+    static func healthKitStatus(_ workout: WatchActiveWorkout) -> WatchHealthKitStatus {
+        if workout.heartRateEnabled { return .saved }
+        return workout.healthLost == true ? .failed : .off
+    }
+
+    /// Seconds until a local notification has to announce the rest end; nil when no rest is
+    /// running or a workout session keeps the app alive (the in-process timer is enough).
+    static func restNotificationDelaySeconds(
+        _ workout: WatchActiveWorkout,
+        sessionRunning: Bool,
+        nowMillis: Int64
+    ) -> Double? {
+        guard !sessionRunning, !isPaused(workout),
+              let end = workout.restEndsAtMillis, end > nowMillis else { return nil }
+        return max(1, Double(end - nowMillis) / 1_000)
+    }
+
     static func volume(_ sets: [WatchWorkoutSet]) -> Double {
         let total = sets.reduce(0.0) { $0 + $1.weight * Double($1.reps) }
         return (total * 100).rounded() / 100
@@ -231,9 +257,33 @@ enum WatchWorkoutModel {
         workout.pausedAtMillis = nil
     }
 
+    /// Keeps the latest session statistics with the snapshot, so they survive a lost session.
+    static func captureStatistics(
+        _ workout: inout WatchActiveWorkout,
+        averageHeartRate: Double?,
+        maximumHeartRate: Double?,
+        activeKilocalories: Double?
+    ) {
+        if let averageHeartRate, let maximumHeartRate {
+            workout.lastAverageHeartRate = averageHeartRate
+            workout.lastMaximumHeartRate = maximumHeartRate
+        }
+        if let activeKilocalories { workout.lastActiveKilocalories = activeKilocalories }
+    }
+
+    /// The session could not be recovered: heart rate stops, the workout is paused and
+    /// will be reported as healthKit "failed".
+    static func markHealthLost(_ workout: inout WatchActiveWorkout, nowMillis: Int64) {
+        workout.heartRateEnabled = false
+        workout.healthLost = true
+        pause(&workout, nowMillis: nowMillis)
+    }
+
     // MARK: Finish
 
     /// The finished workout message, or nil when no set was logged (such a workout can only be discarded).
+    /// Tolerant of wall-clock changes during the workout: a recorded workout always yields a
+    /// message the codec accepts (the timeline is moved or clamped instead of failing).
     static func finish(
         _ workout: WatchActiveWorkout,
         endedAtMillis: Int64,
@@ -243,10 +293,26 @@ enum WatchWorkoutModel {
         activeKilocalories: Double?
     ) -> WatchWorkoutMessage? {
         guard !workout.sets.isEmpty else { return nil }
-        let lastSet = workout.sets.map(\.completedAtMillis).max() ?? workout.startedAtMillis
-        let ended = max(endedAtMillis, workout.startedAtMillis + 1_000, lastSet - WatchSync.setTimeToleranceMillis + 1)
-        let wallSeconds = (ended - workout.startedAtMillis + 999) / 1_000
+        let tolerance = WatchSync.setTimeToleranceMillis
+        var started = workout.startedAtMillis
+        var times = workout.sets.map(\.completedAtMillis)
+        let lastSet = times.max() ?? started
+        var ended = max(endedAtMillis, started + 1_000, lastSet - tolerance + 1)
         let activeSeconds = activeMillis(workout, nowMillis: ended) / 1_000
+        // The clock was set back during the workout, so the end would lie in the future:
+        // move the whole timeline to end now. Every interval is kept.
+        let shift = ended - endedAtMillis
+        if shift > tolerance {
+            started -= shift
+            times = times.map { $0 - shift }
+            ended = endedAtMillis
+        }
+        // A set logged before a clock change can lie outside the workout: clamp it in.
+        times = times.map { $0 < started - tolerance || $0 > ended + tolerance ? min(max($0, started), ended) : $0 }
+        let sets = zip(workout.sets, times).map {
+            WatchWorkoutSet(exerciseName: $0.exerciseName, weight: $0.weight, reps: $0.reps, completedAtMillis: $1)
+        }
+        let wallSeconds = (ended - started + 999) / 1_000
         let duration = min(max(1, min(activeSeconds, wallSeconds)), WatchSync.durationSecondsRange.upperBound)
 
         var average: Int?
@@ -272,10 +338,10 @@ enum WatchWorkoutModel {
             accountBinding: workout.accountBinding,
             mode: workout.mode,
             planRevision: workout.mode == .plan ? workout.planRevision : nil,
-            startedAtMillis: workout.startedAtMillis,
+            startedAtMillis: started,
             endedAtMillis: ended,
             durationSeconds: duration,
-            sets: workout.sets,
+            sets: sets,
             healthKit: healthKit,
             averageHeartRate: average,
             maximumHeartRate: maximum,

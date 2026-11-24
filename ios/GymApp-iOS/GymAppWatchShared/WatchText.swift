@@ -10,6 +10,7 @@ enum WatchTextKey: String, CaseIterable, Sendable {
     case weightStep
     case weightKg
     case openPhone
+    case openPhoneSignIn
     case phoneOff
     case logSet
     case setKOfN
@@ -68,6 +69,8 @@ enum WatchTextKey: String, CaseIterable, Sendable {
     case notAccepted
     case sameAccount
     case close
+    case saveFailed
+    case updateWatch
 }
 
 enum WatchText {
@@ -122,9 +125,10 @@ enum WatchText {
         .setsCount: ("Sets: %d", "Підходи: %d", "Подходы: %d"),
         .weightStep: ("Weight step", "Крок ваги", "Шаг веса"),
         .weightKg: ("%@ kg", "%@ кг", "%@ кг"),
-        .openPhone: ("Open GymApp on your phone", "Відкрий GymApp на телефоні", "Открой GymApp на телефоне"),
-        .phoneOff: ("Phone not connected", "Телефон не підключено", "Телефон не подключён"),
-        .logSet: ("Log set", "Записати підхід", "Записать подход"),
+        .openPhone: ("Open GymApp on your iPhone", "Відкрийте GymApp на iPhone", "Откройте GymApp на iPhone"),
+        .openPhoneSignIn: ("Open GymApp on your iPhone and sign in", "Відкрийте GymApp на iPhone та увійдіть", "Откройте GymApp на iPhone и войдите"),
+        .phoneOff: ("iPhone not connected", "iPhone не підключено", "iPhone не подключён"),
+        .logSet: ("Log set", "Записати", "Записать"),
         .setKOfN: ("Set %d of %d", "Підхід %d з %d", "Подход %d из %d"),
         .setK: ("Set %d", "Підхід %d", "Подход %d"),
         .weightReps: ("%@ kg × %@", "%@ кг × %@", "%@ кг × %@"),
@@ -133,7 +137,7 @@ enum WatchText {
         .unitReps: ("reps", "повт.", "повт."),
         .labelWeight: ("Weight", "Вага", "Вес"),
         .labelReps: ("Reps", "Повторення", "Повторения"),
-        .saveSet: ("Save set", "Зберегти підхід", "Сохранить подход"),
+        .saveSet: ("Save set", "Зберегти", "Сохранить"),
         .setSaved: ("Set saved", "Підхід збережено", "Подход сохранён"),
         .undo: ("Undo", "Скасувати", "Отменить"),
         .rest: ("Rest", "Відпочинок", "Отдых"),
@@ -143,17 +147,17 @@ enum WatchText {
         .restDone: ("Rest timer done", "Відпочинок завершено", "Отдых завершён"),
         .sectionPlan: ("Plan", "План", "План"),
         .sectionAll: ("All exercises", "Усі вправи", "Все упражнения"),
-        .noExercises: ("No exercises yet. Open GymApp on your phone.", "Вправ ще немає. Відкрий GymApp на телефоні.", "Упражнений пока нет. Открой GymApp на телефоне."),
+        .noExercises: ("No exercises yet. Open GymApp on your iPhone.", "Вправ ще немає. Відкрий GymApp на iPhone.", "Упражнений пока нет. Открой GymApp на iPhone."),
         .paused: ("Paused", "Пауза", "Пауза"),
         .resume: ("Resume", "Продовжити", "Продолжить"),
         .finish: ("Finish", "Завершити", "Завершить"),
-        .needSet: ("Record at least one set before finishing.", "Перед завершенням запиши хоча б один підхід.", "Перед завершением запиши хотя бы один подход."),
+        .needSet: ("Log at least one set", "Запишіть хоча б один підхід", "Запишите хотя бы один подход"),
         .discard: ("Discard workout", "Відкинути тренування", "Удалить тренировку"),
         .discardTitle: ("Discard workout?", "Відкинути тренування?", "Удалить тренировку?"),
         .discardBody: ("Recorded sets will be removed.", "Записані підходи буде видалено.", "Записанные подходы будут удалены."),
         .keep: ("Keep workout", "Залишити тренування", "Оставить тренировку"),
         .summary: ("Workout summary", "Підсумок тренування", "Итог тренировки"),
-        .labelDuration: ("Duration", "Тривалість", "Длительность"),
+        .labelDuration: ("Time", "Час", "Время"),
         .labelSets: ("Sets", "Підходи", "Подходы"),
         .labelVolume: ("Volume", "Обсяг", "Объём"),
         .labelAvgHR: ("Avg HR", "Сер пульс", "Сред. пульс"),
@@ -163,8 +167,8 @@ enum WatchText {
         .calories: ("Calories", "Калорії", "Калории"),
         .save: ("Save", "Зберегти", "Сохранить"),
         .sending: ("Sending…", "Надсилання…", "Отправка…"),
-        .savedPhone: ("Saved on phone", "Збережено на телефоні", "Сохранено на телефоне"),
-        .sendLater: ("Will send when the phone is nearby", "Надішлемо, коли телефон буде поруч", "Отправим, когда телефон будет рядом"),
+        .savedPhone: ("Saved on iPhone", "Збережено на iPhone", "Сохранено на iPhone"),
+        .sendLater: ("Will send when your iPhone is nearby", "Надішлемо, коли iPhone буде поруч", "Отправим, когда iPhone будет рядом"),
         .done: ("Done", "Готово", "Готово"),
         .hrOff: ("Heart rate is off", "Пульс вимкнено", "Пульс выключен"),
         .a11yHeartRate: ("Heart rate %d beats per minute, zone %d", "Пульс %d ударів за хвилину, зона %d", "Пульс %d ударов в минуту, зона %d"),
@@ -176,10 +180,12 @@ enum WatchText {
         .chooseExercise: ("Choose exercise", "Обрати вправу", "Выбрать упражнение"),
         .queuedTitle: ("Unsent", "Не надіслано", "Не отправлено"),
         .sendNow: ("Send now", "Надіслати", "Отправить"),
-        .unsentCount: ("Unsent workouts: %d", "Невідправлені тренування: %d", "Неотправленные тренировки: %d"),
-        .outboxFull: ("Too many unsent workouts. Open GymApp on your phone.", "Забагато невідправлених тренувань. Відкрий GymApp на телефоні.", "Слишком много неотправленных тренировок. Открой GymApp на телефоне."),
-        .notAccepted: ("The phone did not accept this workout", "Телефон не прийняв це тренування", "Телефон не принял эту тренировку"),
-        .sameAccount: ("Sign in to the same account on your phone", "Увійди в той самий акаунт на телефоні", "Войди в тот же аккаунт на телефоне"),
-        .close: ("Close", "Закрити", "Закрыть")
+        .unsentCount: ("Unsent workouts: %d", "Ненадіслані тренування: %d", "Неотправленные тренировки: %d"),
+        .outboxFull: ("Too many unsent workouts. Open GymApp on your iPhone.", "Забагато ненадісланих тренувань. Відкрий GymApp на iPhone.", "Слишком много неотправленных тренировок. Открой GymApp на iPhone."),
+        .notAccepted: ("iPhone did not accept this workout", "iPhone не прийняв це тренування", "iPhone не принял эту тренировку"),
+        .sameAccount: ("Sign in to the same account on your iPhone", "Увійдіть у той самий акаунт на iPhone", "Войдите в тот же аккаунт на iPhone"),
+        .close: ("Close", "Закрити", "Закрыть"),
+        .saveFailed: ("Couldn't save. Try again.", "Не вдалося зберегти. Спробуй ще раз.", "Не удалось сохранить. Попробуй ещё раз."),
+        .updateWatch: ("Update GymApp on your Apple Watch", "Оновіть GymApp на Apple Watch", "Обновите GymApp на Apple Watch")
     ]
 }

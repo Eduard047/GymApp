@@ -51,6 +51,7 @@ struct ExercisePickerView: View {
             }
         }
         .navigationTitle(model.text(.exercise))
+        .containerBackground(WatchTheme.background, for: .navigation)
     }
 
     private var progress: [WatchPlanProgress] {

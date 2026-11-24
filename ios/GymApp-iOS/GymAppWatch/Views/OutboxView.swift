@@ -25,6 +25,7 @@ struct OutboxView: View {
             }
         }
         .navigationTitle(model.text(.queuedTitle))
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     private func dateText(_ millis: Int64) -> String {

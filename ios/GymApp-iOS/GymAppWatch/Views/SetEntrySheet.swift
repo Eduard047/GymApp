@@ -26,6 +26,7 @@ struct SetEntrySheet: View {
     var body: some View {
         NavigationStack(path: $path) {
             entry
+                .containerBackground(WatchTheme.background, for: .navigation)
                 .navigationDestination(for: EntryRoute.self) { _ in
                     ExercisePickerView { name in
                         model.selectExercise(name)
@@ -40,6 +41,7 @@ struct SetEntrySheet: View {
                     }
                 }
         }
+        .presentationBackground(WatchTheme.background)
         .onAppear {
             loadDraft()
             if model.workout?.exerciseName == nil { path = [.picker] }

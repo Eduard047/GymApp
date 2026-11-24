@@ -1,11 +1,14 @@
 import Foundation
 import SwiftUI
+import UserNotifications
 import WatchKit
 
 enum WatchResultState: Equatable {
     case sending
     case saved
     case deferred
+    /// The phone rejected the workout for good; it stays in Unsent until discarded.
+    case failed
 }
 
 enum WatchPhase: Equatable {
@@ -29,13 +32,23 @@ final class WatchAppModel: ObservableObject {
     }
     /// One-line status under Pause (for example "Record at least one set before finishing.").
     @Published var pauseStatus: String?
+    /// One-line status on Summary ("Couldn't save. Try again."); Save stays available.
+    @Published var summaryStatus: String?
     @Published private(set) var isSaving = false
+    /// Protocol version of the phone's last context (survives relaunch).
+    @Published private(set) var phoneProtocolVersion: Int {
+        didSet { UserDefaults.standard.set(phoneProtocolVersion, forKey: Self.phoneVersionKey) }
+    }
+    /// The phone speaks a newer protocol than this watch app understands in full.
+    var needsWatchUpdate: Bool { phoneProtocolVersion > WatchSync.protocolVersion }
 
     let language: String
     let health = WorkoutSessionManager()
     let client = WatchSessionClient()
 
     private static let weightStepKey = "watch.weightStep.v1"
+    private static let phoneVersionKey = "watch.phoneProtocolVersion.v1"
+    private static let restNotificationID = "watch.rest.end"
     private let planStore: PlanStore
     private let activeStore: ActiveWorkoutStore
     private let outboxStore: OutboxStore
@@ -58,6 +71,7 @@ final class WatchAppModel: ObservableObject {
         outboxStore = OutboxStore(files: files)
         let storedStep = UserDefaults.standard.double(forKey: Self.weightStepKey)
         weightStep = WatchCrownSteps.validWeightStep(storedStep)
+        phoneProtocolVersion = max(WatchSync.protocolVersion, UserDefaults.standard.integer(forKey: Self.phoneVersionKey))
         context = planStore.context
         outbox = outboxStore.loadAll()
         if let restored = activeStore.load() {
@@ -98,6 +112,10 @@ final class WatchAppModel: ObservableObject {
     func becameActive() {
         if let workout, WatchWorkoutModel.restRemainingSeconds(workout, nowMillis: Self.nowMillis()) == nil,
            workout.restEndsAtMillis != nil {
+            // The rest ended while the app was suspended (no workout session): still signal it.
+            if !health.isRunning, !WatchWorkoutModel.isPaused(workout) {
+                WKInterfaceDevice.current().play(.notification)
+            }
             mutate { WatchWorkoutModel.skipRest(&$0) }
         }
         flushOutbox()
@@ -120,11 +138,10 @@ final class WatchAppModel: ObservableObject {
             return
         }
         guard workout?.requestId == current.requestId, !health.isRunning else { return }
-        mutate {
-            $0.heartRateEnabled = false
-            WatchWorkoutModel.pause(&$0, nowMillis: Self.nowMillis())
-        }
+        // Reported as healthKit "failed"; the statistics captured before the loss are kept.
+        mutate { WatchWorkoutModel.markHealthLost(&$0, nowMillis: Self.nowMillis()) }
         pauseStatus = text(.hrOff)
+        await requestRestAlertPermission()
     }
 
     // MARK: Start
@@ -154,6 +171,13 @@ final class WatchAppModel: ObservableObject {
             let running = await health.start(requestId: started.requestId, startDate: Self.date(now))
             if !running { mutate { $0.heartRateEnabled = false } }
         }
+        if workout?.heartRateEnabled == false { await requestRestAlertPermission() }
+    }
+
+    /// Without a workout session the app is suspended with the wrist down, so the rest
+    /// end is announced by a local notification. Asked only on that path.
+    private func requestRestAlertPermission() async {
+        _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
     }
 
     func cycleWeightStep() {
@@ -212,11 +236,13 @@ final class WatchAppModel: ObservableObject {
             return
         }
         pause()
+        summaryStatus = nil
         phase = .summary
     }
 
     func backFromSummary() {
         guard workout != nil else { return }
+        summaryStatus = nil
         phase = .workout
     }
 
@@ -227,38 +253,65 @@ final class WatchAppModel: ObservableObject {
         activeStore.clear()
         workout = nil
         pauseStatus = nil
+        summaryStatus = nil
         phase = .start
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.restNotificationID])
         WKInterfaceDevice.current().play(.failure)
     }
 
-    /// Crash-safe finish order: end session and collection → read statistics → write the
-    /// outbox item → save to Health → delete the active snapshot → transferUserInfo.
+    /// Save could not be completed: back to Summary with a message; Save stays available.
+    private func saveFailed() {
+        phase = .summary
+        summaryStatus = text(.saveFailed)
+        WKInterfaceDevice.current().play(.failure)
+    }
+
+    /// Crash-safe finish order: validate the message → end session and collection → read
+    /// statistics → write the outbox item → save to Health → delete the active snapshot →
+    /// transferUserInfo. A failure before the outbox write returns to Summary with a
+    /// message and Save stays available; nothing is lost.
     func saveWorkout() async {
         guard let current = workout, !isSaving, !current.sets.isEmpty else { return }
         isSaving = true
         defer { isSaving = false }
-        phase = .result(.sending)
         let endedAt = Self.nowMillis()
-        var stats = WorkoutSessionManager.Statistics()
-        if current.heartRateEnabled {
-            stats = await health.end(at: Self.date(endedAt))
-        }
-        func message(_ status: WatchHealthKitStatus) -> WatchWorkoutMessage? {
-            WatchWorkoutModel.finish(
+        let status = WatchWorkoutModel.healthKitStatus(current)
+        // Statistics captured with the snapshot cover a session that was lost on the way.
+        var stats = WorkoutSessionManager.Statistics(
+            averageHeartRate: current.lastAverageHeartRate,
+            maximumHeartRate: current.lastMaximumHeartRate,
+            activeKilocalories: current.lastActiveKilocalories
+        )
+        func encoded(
+            _ status: WatchHealthKitStatus,
+            _ stats: WorkoutSessionManager.Statistics
+        ) -> (message: WatchWorkoutMessage, envelope: Data)? {
+            guard let message = WatchWorkoutModel.finish(
                 current,
                 endedAtMillis: endedAt,
                 healthKit: status,
                 averageHeartRate: stats.averageHeartRate,
                 maximumHeartRate: stats.maximumHeartRate,
                 activeKilocalories: stats.activeKilocalories
-            )
+            ), let envelope = try? WatchSyncCodec.encode(message, nowMillis: Self.nowMillis()) else { return nil }
+            return (message, envelope)
         }
-        let initialStatus: WatchHealthKitStatus = current.heartRateEnabled ? .saved : .off
-        guard let finished = message(initialStatus),
-              let envelope = try? WatchSyncCodec.encode(finished, nowMillis: Self.nowMillis()) else {
-            phase = .summary
+        // Checked before the Health session is ended: a workout that cannot be encoded stays open.
+        guard let preflight = encoded(status, WorkoutSessionManager.Statistics()) else {
+            saveFailed()
             return
         }
+        summaryStatus = nil
+        phase = .result(.sending)
+        if current.heartRateEnabled {
+            let final = await health.end(at: Self.date(endedAt))
+            if final.averageHeartRate != nil, final.maximumHeartRate != nil {
+                stats.averageHeartRate = final.averageHeartRate
+                stats.maximumHeartRate = final.maximumHeartRate
+            }
+            if final.activeKilocalories != nil { stats.activeKilocalories = final.activeKilocalories }
+        }
+        let (finished, envelope) = encoded(status, stats) ?? preflight
         let item = WatchOutboxPolicy.makeItem(
             message: finished,
             envelope: envelope,
@@ -270,7 +323,7 @@ final class WatchAppModel: ObservableObject {
             try outboxStore.save(item)
         } catch {
             savingRequestId = nil
-            phase = .summary
+            saveFailed()
             return
         }
         outbox.removeAll { $0.requestId == item.requestId }
@@ -282,9 +335,8 @@ final class WatchAppModel: ObservableObject {
             // same requestId would be a conflict on the phone.
             if !savedToHealth,
                let live = outbox.first(where: { $0.requestId == item.requestId }),
-               let failed = message(.failed),
-               let data = try? WatchSyncCodec.encode(failed, nowMillis: Self.nowMillis()),
-               let rewritten = WatchOutboxPolicy.rewriting(live, envelope: data) {
+               let failed = encoded(.failed, stats),
+               let rewritten = WatchOutboxPolicy.rewriting(live, envelope: failed.envelope) {
                 store(rewritten)
             }
         }
@@ -358,15 +410,27 @@ final class WatchAppModel: ObservableObject {
     }
 
     private func handleContext(_ bytes: Data) {
-        guard let incoming = WatchSyncCodec.decodeContext(bytes) else { return }
-        let merged = planStore.apply(incoming)
+        // A context of another protocol version is not dropped: what is understood is applied.
+        guard let header = WatchSyncCodec.decodeContextHeader(bytes) else { return }
+        let merged: WatchContextMessage
+        if let incoming = WatchSyncCodec.decodeContext(bytes) {
+            merged = planStore.apply(incoming)
+        } else if header.protocolVersion > WatchSync.protocolVersion {
+            merged = planStore.replace(WatchContextMerge.merge(
+                cached: context, header: header, language: language, nowMillis: Self.nowMillis()
+            ))
+        } else {
+            return
+        }
         context = merged
+        phoneProtocolVersion = max(WatchSync.protocolVersion, header.protocolVersion)
         #if DEBUG
         WatchDebugSeed.log("context bound=\(merged.bound != nil) account=\(merged.bound?.accountBinding.prefix(8) ?? "-") revision=\(merged.bound?.planRevision ?? 0) plan=\(merged.bound?.plan.count ?? 0) exercises=\(merged.bound?.exercises.count ?? 0)")
         #endif
         let now = Self.nowMillis()
         for item in outbox {
-            let next = WatchOutboxPolicy.applyContext(merged, to: item, nowMillis: now)
+            // An unsupported-version hold is released by the phone's context version.
+            let next = WatchOutboxPolicy.applyContext(merged, to: item, nowMillis: now, protocolVersion: header.protocolVersion)
             if next != item { store(next) }
         }
         #if DEBUG
@@ -376,13 +440,13 @@ final class WatchAppModel: ObservableObject {
     }
 
     private func handleReply(_ bytes: Data) {
-        guard let reply = WatchSyncCodec.decodeReply(bytes) else { return }
+        guard let reply = WatchSyncCodec.decodeReplyTolerant(bytes) else { return }
         #if DEBUG
         WatchDebugSeed.log("reply \(reply)")
         #endif
         let now = Self.nowMillis()
         for item in outbox {
-            switch WatchOutboxPolicy.apply(reply, to: item, nowMillis: now) {
+            switch WatchOutboxPolicy.apply(reply, to: item, nowMillis: now, contextProtocolVersion: phoneProtocolVersion) {
             case .delete:
                 try? outboxStore.delete(requestId: item.requestId)
                 outbox.removeAll { $0.requestId == item.requestId }
@@ -393,9 +457,15 @@ final class WatchAppModel: ObservableObject {
                 }
             case .update(let next):
                 store(next)
-                if item.requestId == resultRequestId, phase == .result(.sending) {
+                if item.requestId == resultRequestId, phase == .result(.sending) || phase == .result(.deferred) {
                     resultTask?.cancel()
-                    phase = .result(.deferred)
+                    // A deterministic nack is final; only transient and hold nacks are "later".
+                    if next.status == .failed {
+                        phase = .result(.failed)
+                        WKInterfaceDevice.current().play(.failure)
+                    } else {
+                        phase = .result(.deferred)
+                    }
                 }
             case .ignore:
                 break
@@ -424,6 +494,15 @@ final class WatchAppModel: ObservableObject {
     private func mutate(_ change: (inout WatchActiveWorkout) -> Void) {
         guard var next = workout else { return }
         change(&next)
+        if next.heartRateEnabled, health.isRunning {
+            let latest = health.statistics
+            WatchWorkoutModel.captureStatistics(
+                &next,
+                averageHeartRate: latest.averageHeartRate,
+                maximumHeartRate: latest.maximumHeartRate,
+                activeKilocalories: latest.activeKilocalories
+            )
+        }
         workout = next
         persist()
         scheduleRestEnd()
@@ -437,8 +516,23 @@ final class WatchAppModel: ObservableObject {
     /// Rest end: haptic, "Rest timer done" announcement and back to Working.
     private func scheduleRestEnd() {
         restTask?.cancel()
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [Self.restNotificationID])
         guard let workout, let end = workout.restEndsAtMillis, !WatchWorkoutModel.isPaused(workout) else { return }
-        let delay = max(0, end - Self.nowMillis())
+        let now = Self.nowMillis()
+        // Without a workout session the app is suspended with the wrist down and the timer
+        // below never fires: a local notification carries the rest-end signal instead.
+        if let seconds = WatchWorkoutModel.restNotificationDelaySeconds(workout, sessionRunning: health.isRunning, nowMillis: now) {
+            let content = UNMutableNotificationContent()
+            content.title = text(.restDone)
+            content.sound = .default
+            center.add(UNNotificationRequest(
+                identifier: Self.restNotificationID,
+                content: content,
+                trigger: UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)
+            ))
+        }
+        let delay = max(0, end - now)
         restTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000)
             guard !Task.isCancelled, let self, self.workout?.restEndsAtMillis == end else { return }
@@ -550,12 +644,35 @@ extension WatchAppModel {
             WatchWorkoutModel.pause(&seeded, nowMillis: now)
             workout = seeded
             phase = seed == "summary" ? .summary : .workout
+        case "free", "pause-noset":
+            guard var free = WatchWorkoutModel.start(
+                mode: .free, context: seedBound, requestId: WatchSync.makeRequestID(),
+                nowMillis: now - 95_000, heartRateEnabled: false
+            ) else { return }
+            if seed == "pause-noset" { WatchWorkoutModel.pause(&free, nowMillis: now) }
+            workout = free
+            phase = .workout
+        case "start-noplan":
+            context = WatchContextMessage(sentAtMillis: now, bound: WatchBoundContext(
+                accountBinding: seedBound.accountBinding, language: language,
+                planRevision: 1, plan: [], exercises: names
+            ))
+            workout = nil
+            phase = .start
         case "result-saved":
             workout = nil
             phase = .result(.saved)
         case "result-deferred":
             workout = nil
             phase = .result(.deferred)
+        case "result-failed":
+            workout = nil
+            phase = .result(.failed)
+        case "summary-failed":
+            WatchWorkoutModel.pause(&seeded, nowMillis: now)
+            workout = seeded
+            summaryStatus = text(.saveFailed)
+            phase = .summary
         case "outbox", "outbox-list":
             workout = nil
             phase = .start

@@ -44,6 +44,7 @@ extension Color {
 struct TonalButtonStyle: ButtonStyle {
     var fill: Color = WatchTheme.surfaceHigh
     var foreground: Color = WatchTheme.text
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -54,7 +55,7 @@ struct TonalButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity, minHeight: 44)
             .padding(.horizontal, 8)
             .background(fill, in: Capsule())
-            .opacity(configuration.isPressed ? 0.7 : 1)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.4)
     }
 }
 

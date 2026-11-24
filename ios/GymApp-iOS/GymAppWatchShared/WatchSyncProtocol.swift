@@ -198,6 +198,13 @@ enum WatchWorkoutDecodeResult: Equatable, Sendable {
     case malformed(requestId: String)
 }
 
+/// What the watch can read from a context of any protocol version.
+struct WatchContextHeader: Equatable, Sendable {
+    let protocolVersion: Int
+    /// nil means `unbound`.
+    let accountBinding: String?
+}
+
 /// Phone reply as seen by the watch.
 enum WatchReply: Equatable, Sendable {
     case ack(WatchAckMessage)
@@ -346,6 +353,47 @@ enum WatchSyncCodec {
                   let reason = (object["reason"] as? String).flatMap(WatchNackReason.init(rawValue:)) else {
                 return nil
             }
+            return .nack(.init(requestId: requestId, reason: reason))
+        default:
+            return nil
+        }
+    }
+
+    /// Watch-only: version, state and account of a context of any protocol version. A newer
+    /// phone must still be able to unbind the watch and release version holds.
+    static func decodeContextHeader(_ bytes: Data) -> WatchContextHeader? {
+        guard bytes.count <= WatchSync.maximumEnvelopeBytes,
+              let object = jsonObject(bytes),
+              object["type"] as? String == "context",
+              let version = int(object["protocolVersion"], in: 1 ... 1_000_000) else { return nil }
+        switch object["state"] as? String {
+        case "unbound":
+            return WatchContextHeader(protocolVersion: version, accountBinding: nil)
+        case "bound":
+            guard let binding = object["accountBinding"] as? String, WatchSync.isValidHash(binding) else { return nil }
+            return WatchContextHeader(protocolVersion: version, accountBinding: binding)
+        default:
+            return nil
+        }
+    }
+
+    /// Watch-only reply decode: strict for this protocol version; from a newer phone only
+    /// the fields every version shares are read, so an ack still clears the outbox item.
+    static func decodeReplyTolerant(_ bytes: Data) -> WatchReply? {
+        if let strict = decodeReply(bytes) { return strict }
+        guard bytes.count <= WatchSync.maximumEnvelopeBytes,
+              let object = jsonObject(bytes),
+              let version = integer(object["protocolVersion"]),
+              version > Int64(WatchSync.protocolVersion),
+              let requestId = object["requestId"] as? String,
+              WatchSync.isValidRequestID(requestId) else { return nil }
+        switch object["type"] as? String {
+        case "ack":
+            guard let binding = object["accountBinding"] as? String, WatchSync.isValidHash(binding) else { return nil }
+            let status = (object["status"] as? String).flatMap(WatchAckStatus.init(rawValue:)) ?? .committed
+            return .ack(.init(requestId: requestId, accountBinding: binding, status: status))
+        case "nack":
+            guard let reason = (object["reason"] as? String).flatMap(WatchNackReason.init(rawValue:)) else { return nil }
             return .nack(.init(requestId: requestId, reason: reason))
         default:
             return nil

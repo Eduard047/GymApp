@@ -21,7 +21,7 @@ struct WatchOutboxItem: Codable, Equatable, Sendable {
     var reason: String?
     var attempts: Int
     var nextAttemptAtMillis: Int64
-    /// Protocol version the item was held at (unsupported-version hold).
+    /// The phone's context protocol version last seen when the item was held (unsupported-version hold).
     var heldProtocolVersion: Int?
     /// Once sent, the envelope is never rewritten.
     var everSent: Bool
@@ -85,7 +85,14 @@ enum WatchOutboxPolicy {
     }
 
     /// Applies an ack or nack. An item is deleted only by an ack whose requestId and accountBinding match.
-    static func apply(_ reply: WatchReply, to item: WatchOutboxItem, nowMillis: Int64) -> ReplyOutcome {
+    /// `contextProtocolVersion` is the protocol version of the phone's last context: an
+    /// unsupported-version hold remembers it and is released by a context with a greater one.
+    static func apply(
+        _ reply: WatchReply,
+        to item: WatchOutboxItem,
+        nowMillis: Int64,
+        contextProtocolVersion: Int = WatchSync.protocolVersion
+    ) -> ReplyOutcome {
         switch reply {
         case .ack(let ack):
             guard ack.requestId == item.requestId, ack.accountBinding == item.accountBinding else { return .ignore }
@@ -101,7 +108,7 @@ enum WatchOutboxPolicy {
                 next.heldProtocolVersion = nil
             case .hold:
                 next.status = .held
-                next.heldProtocolVersion = nack.reason == .unsupportedVersion ? WatchSync.protocolVersion : nil
+                next.heldProtocolVersion = nack.reason == .unsupportedVersion ? contextProtocolVersion : nil
             case .deterministic:
                 next.status = .failed
                 next.heldProtocolVersion = nil
@@ -111,6 +118,7 @@ enum WatchOutboxPolicy {
     }
 
     /// A new context releases matching holds and makes transient items due now.
+    /// `protocolVersion` is the incoming phone context's protocol version.
     static func applyContext(
         _ context: WatchContextMessage,
         to item: WatchOutboxItem,
