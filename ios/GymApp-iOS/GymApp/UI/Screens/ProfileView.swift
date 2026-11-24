@@ -1087,6 +1087,7 @@ private struct WatchesScreen: View {
     @ObservedObject var appleWatch: WatchConnectivityService
     @ObservedObject var healthImport: HealthKitImportService
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private let garminStoreURL = URL(
         string: "https://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f"
     )!
@@ -1271,7 +1272,7 @@ private struct WatchesScreen: View {
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .overlay(alignment: .topTrailing) {
-                    if installed {
+                    if installed && !dynamicTypeSize.isAccessibilitySize {
                         Text(gymText("Paired", "Прив’язано", "Привязано", languageCode: languageCode))
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(GymTheme.primary)
@@ -1279,6 +1280,14 @@ private struct WatchesScreen: View {
                     }
                 }
                 .accessibilityElement(children: .combine)
+
+                // Accessibility sizes: the badge gets its own line under the title
+                // instead of overlapping the enlarged title text.
+                if installed && dynamicTypeSize.isAccessibilitySize {
+                    Text(gymText("Paired", "Прив’язано", "Привязано", languageCode: languageCode))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(GymTheme.primary)
+                }
 
                 if !installed {
                     GymInlineState(
@@ -1355,38 +1364,56 @@ private struct WatchesScreen: View {
         note: String? = nil,
         noteIsWarning: Bool = false
     ) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "applewatch")
-                .font(.title2)
-                .foregroundStyle(connected ? GymTheme.primary : GymTheme.textSecondary)
-                .gymScaledFrame(width: 30, relativeTo: .title2)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(name)
-                    .font(.headline)
-                    .foregroundStyle(GymTheme.textPrimary)
-                // The model line repeats nothing: hidden when it equals the device name.
-                if !detail.isEmpty && detail.trimmingCharacters(in: .whitespaces)
-                    .caseInsensitiveCompare(name.trimmingCharacters(in: .whitespaces)) != .orderedSame {
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(GymTheme.textSecondary)
-                }
-                Text(status)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(connected ? GymTheme.primary : GymTheme.textSecondary)
-                if let note {
-                    Text(note)
-                        .font(noteIsWarning ? .caption.weight(.semibold) : .caption)
-                        .foregroundStyle(noteIsWarning ? GymTheme.error : GymTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+        let showDetail = !detail.isEmpty && detail.trimmingCharacters(in: .whitespaces)
+            .caseInsensitiveCompare(name.trimmingCharacters(in: .whitespaces)) != .orderedSame
+        let icon = Image(systemName: "applewatch")
+            .font(.title2)
+            .foregroundStyle(connected ? GymTheme.primary : GymTheme.textSecondary)
+            .gymScaledFrame(width: 30, relativeTo: .title2)
+            .accessibilityHidden(true)
+        let texts = VStack(alignment: .leading, spacing: 2) {
+            Text(name)
+                .font(.headline)
+                .foregroundStyle(GymTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            // The model line repeats nothing: hidden when it equals the device name.
+            if showDetail {
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 4)
-            if paired {
-                Text(gymText("Paired", "Прив’язано", "Привязано", languageCode: languageCode))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(GymTheme.primary)
+            Text(status)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(connected ? GymTheme.primary : GymTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let note {
+                Text(note)
+                    .font(noteIsWarning ? .caption.weight(.semibold) : .caption)
+                    .foregroundStyle(noteIsWarning ? GymTheme.error : GymTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        let pairedTag = Text(gymText("Paired", "Прив’язано", "Привязано", languageCode: languageCode))
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(GymTheme.primary)
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                // Accessibility sizes: stacked at full width so the device name wraps
+                // on word boundaries instead of being squeezed into letter fragments.
+                VStack(alignment: .leading, spacing: 6) {
+                    icon
+                    texts
+                    if paired { pairedTag }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(spacing: 12) {
+                    icon
+                    texts
+                    Spacer(minLength: 4)
+                    if paired { pairedTag }
+                }
             }
         }
         // Flat inside the panel: no nested tonal card (card-in-card).
