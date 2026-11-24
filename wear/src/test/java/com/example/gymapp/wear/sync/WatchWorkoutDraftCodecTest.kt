@@ -2,7 +2,9 @@ package com.example.gymapp.wear.sync
 
 import com.example.gymapp.wear.data.WearWorkoutSetDraft
 import org.json.JSONObject
+import com.example.gymapp.wear.health.RestTimerLogic
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -103,5 +105,74 @@ class WatchWorkoutDraftCodecTest {
     fun moreSetsThanTheProtocolAllowsAreRejected() {
         val tooMany = running.copy(sets = List(SyncPaths.MAX_WORKOUT_SETS + 1) { WearWorkoutSetDraft("Row", 40.0, 10) })
         assertNull(WatchWorkoutDraftCodec.decode(WatchWorkoutDraftCodec.encode(tooMany)))
+    }
+    @Test
+    fun aRunningRestAndAPausedRestSurviveARoundTrip() {
+        val resting = running.copy(pausedAtMs = null, restEndsAtMs = 1_700_000_400_000L)
+        assertEquals(resting, WatchWorkoutDraftCodec.decode(WatchWorkoutDraftCodec.encode(resting)))
+
+        val pausedInRest = running.copy(pausedRestRemainingSeconds = 47)
+        assertEquals(pausedInRest, WatchWorkoutDraftCodec.decode(WatchWorkoutDraftCodec.encode(pausedInRest)))
+    }
+
+    @Test
+    fun aDraftWrittenBeforeRestStateExistedHasNoRest() {
+        val json = JSONObject(WatchWorkoutDraftCodec.encode(running))
+        assertFalse(json.has("restEndsAtMs"))
+        assertFalse(json.has("pausedRestRemainingSeconds"))
+        val decoded = requireNotNull(WatchWorkoutDraftCodec.decode(json.toString()))
+        assertNull(decoded.restEndsAtMs)
+        assertEquals(0, decoded.pausedRestRemainingSeconds)
+    }
+
+    @Test
+    fun badRestValuesAreDroppedWithoutLosingTheWorkout() {
+        val json = JSONObject(WatchWorkoutDraftCodec.encode(running))
+            .put("restEndsAtMs", -5L)
+            .put("pausedRestRemainingSeconds", RestTimerLogic.MAX_REST_SECONDS + 1)
+        val decoded = requireNotNull(WatchWorkoutDraftCodec.decode(json.toString()))
+        assertEquals(running.sets, decoded.sets)
+        assertNull(decoded.restEndsAtMs)
+        assertEquals(0, decoded.pausedRestRemainingSeconds)
+    }
+
+    @Test
+    fun theSourcePlanDigestSurvivesARoundTripAndABadOneIsDropped() {
+        val digest = WorkoutSourcePlan.digest("{\"plan\":\"A\"}")
+        val withPlan = running.copy(sourcePlanDigest = digest)
+        assertEquals(withPlan, WatchWorkoutDraftCodec.decode(WatchWorkoutDraftCodec.encode(withPlan)))
+        val bad = JSONObject(WatchWorkoutDraftCodec.encode(running)).put("sourcePlanDigest", "not-a-digest")
+        val decoded = WatchWorkoutDraftCodec.decode(bad.toString())
+        assertEquals(running, decoded)
+        assertNull(decoded?.sourcePlanDigest)
+    }
+
+    @Test
+    fun aRestoredPlanWorkoutKeepsThePlanItWasStartedFrom() {
+        val planA = "{\"plan\":\"A\"}"
+        val planB = "{\"plan\":\"B\"}"
+        val digestA = WorkoutSourcePlan.digest(planA)
+        // Started on A, the phone stored B meanwhile: A comes back from the snapshot.
+        assertEquals(planA, WorkoutSourcePlan.forRestore(true, digestA, planA, planB))
+        // Snapshot lost but the stored plan is still A: A.
+        assertEquals(planA, WorkoutSourcePlan.forRestore(true, digestA, null, planA))
+        // Snapshot lost and B stored: no targets rather than B's.
+        assertNull(WorkoutSourcePlan.forRestore(true, digestA, null, planB))
+        // A stale snapshot of another plan is never used.
+        assertNull(WorkoutSourcePlan.forRestore(true, digestA, planB, planB))
+        // Free workout: no plan whatever is stored.
+        assertNull(WorkoutSourcePlan.forRestore(false, null, planA, planA))
+        // A draft written before the digest existed follows the stored plan, as before.
+        assertEquals(planB, WorkoutSourcePlan.forRestore(true, null, null, planB))
+    }
+
+    @Test
+    fun saveClearsTheStoredPlanOnlyWhenItIsTheOneTheWorkoutUsed() {
+        val planA = "{\"plan\":\"A\"}"
+        val planB = "{\"plan\":\"B\"}"
+        org.junit.Assert.assertTrue(WorkoutSourcePlan.shouldClearStoredPlan(planA, planA))
+        assertFalse(WorkoutSourcePlan.shouldClearStoredPlan(planB, planA))
+        assertFalse(WorkoutSourcePlan.shouldClearStoredPlan(planB, null))
+        assertFalse(WorkoutSourcePlan.shouldClearStoredPlan(null, planA))
     }
 }

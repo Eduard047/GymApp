@@ -88,6 +88,50 @@ class WorkoutMathTest {
     }
 
     @Test
+    fun weightOptionsExtendToPlannedWeightAbove500() {
+        val options = WorkoutMath.weightOptions(2.5, 520.0)
+        assertTrue(options.contains(520.0))
+        assertEquals(520.0, options.last(), 0.0)
+        assertEquals(options.indexOf(520.0), WorkoutMath.closestIndex(options, 520.0))
+        // Off-grid above 500: grid goes up to the next step, the exact value is included.
+        val offGrid = WorkoutMath.weightOptions(5.0, 521.25)
+        assertTrue(offGrid.contains(521.25))
+        assertEquals(525.0, offGrid.last(), 0.0)
+        assertEquals(offGrid.sorted(), offGrid)
+        // Beyond the protocol maximum nothing is added; a huge plan keeps the grid bounded.
+        assertEquals(500.0, WorkoutMath.weightOptions(1.0, 2_000_000.0).last(), 0.0)
+        val huge = WorkoutMath.weightOptions(1.0, 900_000.0)
+        assertTrue(huge.size <= WorkoutMath.MAX_WEIGHT_OPTION_COUNT + 1)
+        assertTrue(huge.contains(900_000.0))
+        // A 3-decimal planned weight stays distinct from its grid neighbour.
+        assertTrue(WorkoutMath.weightOptions(2.5, 21.125).contains(21.125))
+    }
+
+    @Test
+    fun repOptionsExtendToPlannedRepsAbove100() {
+        assertEquals(WorkoutMath.repOptions, WorkoutMath.repOptions(null))
+        assertEquals(WorkoutMath.repOptions, WorkoutMath.repOptions(12))
+        val options = WorkoutMath.repOptions(120)
+        assertEquals(1, options.first())
+        assertEquals(120, options.last())
+        assertEquals(120, options[WorkoutMath.repIndex(options, 120)])
+        assertEquals(10_000, WorkoutMath.repOptions(50_000).last())
+        assertEquals(0, WorkoutMath.repIndex(options, 0))
+        assertEquals(99, WorkoutMath.repIndex(WorkoutMath.repOptions, 500))
+    }
+
+    @Test
+    fun loggedWeightKeepsThreeDecimalsAndRoundTrips() {
+        assertEquals("21.125", WorkoutMath.formatLoggedWeight(21.125))
+        assertEquals(21.125, com.example.gymapp.wear.util.parseWeightInputOrNull(WorkoutMath.formatLoggedWeight(21.125))!!, 0.0)
+        assertEquals("60", WorkoutMath.formatLoggedWeight(60.0))
+        assertEquals("62.5", WorkoutMath.formatLoggedWeight(62.5))
+        assertEquals("1.25", WorkoutMath.formatLoggedWeight(1.25))
+        assertEquals("520", WorkoutMath.formatLoggedWeight(520.0))
+        assertEquals("21,125", WorkoutMath.formatWeight(21.125, Locale.forLanguageTag("uk")))
+    }
+
+    @Test
     fun formattingUsesLocaleSeparatorAndDropsZeroDecimals() {
         val uk = Locale.forLanguageTag("uk")
         assertEquals("60", WorkoutMath.formatWeight(60.0, uk))

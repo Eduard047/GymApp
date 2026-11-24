@@ -46,6 +46,11 @@
             </intent-filter>
         </activity>
 
+        <!-- Vibrates at the end of a rest from an alarm, with the screen off or the app gone. -->
+        <receiver
+            android:name=".health.RestEndReceiver"
+            android:exported="false" />
+
         <service
             android:name=".health.WearExerciseService"
             android:exported="false"

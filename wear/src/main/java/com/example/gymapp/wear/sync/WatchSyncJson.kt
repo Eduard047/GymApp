@@ -166,12 +166,31 @@ object WatchSyncJson {
             .toString()
     }
 
-    fun parseWorkoutPlanPayload(raw: String): WatchSyncParseResult<ParsedWorkoutPlanPayload> {
+    /** A plan message just received from the phone: the envelope must be fresh (7 days). */
+    fun parseWorkoutPlanPayload(raw: String): WatchSyncParseResult<ParsedWorkoutPlanPayload> =
+        parseWorkoutPlan(raw, System.currentTimeMillis(), checkMessageAge = true)
+
+    /**
+     * A plan re-read from the watch's own storage. It was checked for freshness when it arrived;
+     * from then on only its own `expiresAt` (issued by the phone, up to 14 days) decides whether
+     * it is still usable, so an 8-day-old plan valid for 14 days is not thrown away.
+     * Clock-skew bounds are unchanged.
+     */
+    fun parseStoredWorkoutPlanPayload(
+        raw: String,
+        now: Long = System.currentTimeMillis()
+    ): WatchSyncParseResult<ParsedWorkoutPlanPayload> =
+        parseWorkoutPlan(raw, now, checkMessageAge = false)
+
+    private fun parseWorkoutPlan(
+        raw: String,
+        now: Long,
+        checkMessageAge: Boolean
+    ): WatchSyncParseResult<ParsedWorkoutPlanPayload> {
         return parseCatching {
             requirePayloadSize(raw)
-            val now = System.currentTimeMillis()
             val root = JSONObject(raw)
-            val envelope = parseEnvelope(root, now)
+            val envelope = parseEnvelope(root, now, checkMessageAge)
             val expiresAt = root.requiredLong("expiresAt")
             require(expiresAt > now && expiresAt <= envelope.sentAt + MAX_PLAN_LIFETIME_MS) {
                 "Plan is expired or has an invalid lifetime"
@@ -363,7 +382,7 @@ object WatchSyncJson {
         }
     }
 
-    private fun parseEnvelope(root: JSONObject, now: Long): WatchSyncEnvelope {
+    private fun parseEnvelope(root: JSONObject, now: Long, checkMessageAge: Boolean = true): WatchSyncEnvelope {
         require(root.requiredInt("protocolVersion") == SyncPaths.PROTOCOL_VERSION) {
             "Unsupported protocol version"
         }
@@ -377,7 +396,8 @@ object WatchSyncJson {
             accountGeneration in 1L..SyncPaths.MAX_PROTOCOL_COUNTER &&
                 revision in 1L..SyncPaths.MAX_PROTOCOL_COUNTER
         ) { "Invalid sync revision" }
-        require(sentAt in (now - MAX_MESSAGE_AGE_MS)..(now + MAX_CLOCK_SKEW_MS)) { "Stale sync message" }
+        val oldestSentAt = if (checkMessageAge) now - MAX_MESSAGE_AGE_MS else MIN_TIMESTAMP_MS
+        require(sentAt in oldestSentAt..(now + MAX_CLOCK_SKEW_MS)) { "Stale sync message" }
         return WatchSyncEnvelope(
             ownerId = ownerId,
             accountGeneration = accountGeneration,

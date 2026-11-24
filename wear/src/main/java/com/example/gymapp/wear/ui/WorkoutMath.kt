@@ -1,10 +1,12 @@
 package com.example.gymapp.wear.ui
 
 import com.example.gymapp.wear.data.WearWorkoutSetDraft
+import com.example.gymapp.wear.sync.SyncPaths
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.roundToLong
 
 /** Weight + reps pair shown as the dashboard hero and used to prefill the set pickers. */
@@ -38,6 +40,9 @@ object WorkoutMath {
     const val MAX_WEIGHT_OPTION_KG = 500.0
     const val MIN_REPS = 1
     const val MAX_REPS_OPTION = 100
+
+    /** Upper bound of the weight grid size (10 000 kg at 1 kg steps); keeps the picker light. */
+    const val MAX_WEIGHT_OPTION_COUNT = 10_001
     const val DEFAULT_REPS = 10
     val WEIGHT_STEPS_KG = listOf(1.0, 2.5, 5.0)
     const val DEFAULT_WEIGHT_STEP_KG = 2.5
@@ -126,15 +131,25 @@ object WorkoutMath {
         return planned.lastOrNull()?.let { SetTarget(it.weight, it.reps) }
     }
 
-    /** 0..500 by [stepKg], plus [extra] (an off-grid planned weight), sorted, no duplicates. */
+    /**
+     * 0..500 by [stepKg], plus [extra] (an off-grid planned weight), sorted, no duplicates. A
+     * planned weight above 500 kg extends the grid up to it (rounded up to the step, capped at
+     * the protocol maximum), so the planned value is selectable and can be stepped around.
+     * The grid never grows beyond [MAX_WEIGHT_OPTION_COUNT] entries; the planned value itself is
+     * still included then.
+     */
     fun weightOptions(stepKg: Double, extra: Double? = null): List<Double> {
         val step = normalizeWeightStep(stepKg)
-        val count = (MAX_WEIGHT_OPTION_KG / step).toInt()
+        val validExtra = extra?.takeIf { it.isFinite() && it in 0.0..SyncPaths.MAX_WEIGHT }
+        val upperKg = if (validExtra != null && validExtra > MAX_WEIGHT_OPTION_KG) {
+            (ceil(validExtra / step - 1e-9) * step).coerceAtMost(SyncPaths.MAX_WEIGHT)
+        } else {
+            MAX_WEIGHT_OPTION_KG
+        }
+        val count = (upperKg / step + 1e-9).toInt().coerceAtMost(MAX_WEIGHT_OPTION_COUNT - 1)
         val options = (0..count).map { roundKg(it * step) }.toMutableList()
-        if (extra != null && extra.isFinite() && extra in 0.0..MAX_WEIGHT_OPTION_KG &&
-            options.none { abs(it - extra) < 0.001 }
-        ) {
-            options += roundKg(extra)
+        if (validExtra != null && options.none { abs(it - validExtra) < 0.0005 }) {
+            options += roundKg(validExtra)
             options.sort()
         }
         return options
@@ -147,12 +162,36 @@ object WorkoutMath {
 
     val repOptions: List<Int> = (MIN_REPS..MAX_REPS_OPTION).toList()
 
-    fun repIndex(reps: Int): Int = (reps.coerceIn(MIN_REPS, MAX_REPS_OPTION) - MIN_REPS)
+    /** 1..100, extended up to [planned] (capped at the protocol maximum) when it is larger. */
+    fun repOptions(planned: Int?): List<Int> {
+        val upper = planned?.takeIf { it > MAX_REPS_OPTION }?.coerceAtMost(SyncPaths.MAX_REPS)
+            ?: return repOptions
+        return (MIN_REPS..upper).toList()
+    }
 
-    /** Decimals only when needed, locale separator: 60 / 62,5 / 1,25. */
+    /** Index of [reps] in [options] (from [repOptions]), clamped to the list. */
+    fun repIndex(options: List<Int>, reps: Int): Int {
+        if (options.isEmpty()) return 0
+        return (reps.coerceIn(options.first(), options.last()) - options.first())
+    }
+
+    /** Decimals only when needed (up to 3, like the stored weight), locale separator: 60 / 62,5 / 1,25. */
     fun formatWeight(weight: Double, locale: Locale): String {
-        val format = DecimalFormat("0.##", DecimalFormatSymbols.getInstance(locale))
+        val format = DecimalFormat("0.###", DecimalFormatSymbols.getInstance(locale))
         return format.format(roundKg(weight))
+    }
+
+    /**
+     * Weight as stored in a logged set and sent to the phone: plain dot decimal, up to 3
+     * decimals (the precision of [roundKg]), trailing zeros dropped: 60 / 62.5 / 21.125.
+     */
+    fun formatLoggedWeight(weight: Double): String {
+        val rounded = roundKg(weight)
+        return if (rounded % 1.0 == 0.0 && abs(rounded) < 1e15) {
+            rounded.toLong().toString()
+        } else {
+            String.format(Locale.US, "%.3f", rounded).trimEnd('0').trimEnd('.')
+        }
     }
 
     /** Volume with grouping: 5 240. */

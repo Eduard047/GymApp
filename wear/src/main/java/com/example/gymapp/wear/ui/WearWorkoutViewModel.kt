@@ -10,6 +10,7 @@ import com.example.gymapp.wear.R
 import com.example.gymapp.wear.WearGymApplication
 import com.example.gymapp.wear.data.WearWorkoutRepository
 import com.example.gymapp.wear.data.WearWorkoutSetDraft
+import com.example.gymapp.wear.health.RestEndAlarm
 import com.example.gymapp.wear.health.RestTimerLogic
 import com.example.gymapp.wear.health.RestWakeLock
 import com.example.gymapp.wear.health.WearExerciseTracker
@@ -30,6 +31,7 @@ import com.example.gymapp.wear.sync.SyncPaths
 import com.example.gymapp.wear.sync.WatchSyncParseResult
 import com.example.gymapp.wear.sync.WatchWorkoutDraft
 import com.example.gymapp.wear.sync.WatchWorkoutDraftStorage
+import com.example.gymapp.wear.sync.WorkoutSourcePlan
 import com.example.gymapp.wear.util.parseWeightInputOrNull
 import android.os.SystemClock
 import java.util.UUID
@@ -171,6 +173,12 @@ class WearWorkoutViewModel(
 ) : AndroidViewModel(application) {
     private val appContext = application.applicationContext
     private var lastAppliedWorkoutPlanRaw: String? = null
+
+    /**
+     * Digest of the plan the running workout was started from (null: free workout). Persisted
+     * with the draft so a restart restores that plan, not a newer one stored meanwhile.
+     */
+    private var workoutSourcePlanDigest: String? = null
     private var draftBinding = currentBindingIdentity()
 
     /**
@@ -189,6 +197,12 @@ class WearWorkoutViewModel(
      */
     private var finishedSnapshot: FinishedWorkoutSnapshot? = null
     private var pausedRestRemainingSeconds = 0
+
+    /**
+     * Wall-clock end (epoch ms) of the running rest; null when none runs. Persisted with the
+     * draft and used as the token of the rest-end alarm.
+     */
+    private var restEndsAtWallMs: Long? = null
 
     private var nextDraftSetId = 1L
     private var lastSetLoggedAtMs = Long.MIN_VALUE / 2
@@ -361,6 +375,10 @@ class WearWorkoutViewModel(
                 saveOutcome = null
             )
         }
+        // Snapshot of the plan this workout follows, written before the draft that names it.
+        val sourcePlan = lastAppliedWorkoutPlanRaw.takeIf { extras.value.usingPlan }
+        workoutSourcePlanDigest = sourcePlan?.let(WorkoutSourcePlan::digest)
+        runCatching { WatchWorkoutDraftStorage.saveSourcePlan(appContext, sourcePlan) }
         markWorkoutStarted()
         persistDraft(durable = true)
     }
@@ -408,8 +426,8 @@ class WearWorkoutViewModel(
         if (!commitDraftEdit(draftSets.value + set)) return false
         lastSetLoggedAtMs = tappedAt
         extras.update { it.copy(selectedExercise = name) }
+        beginRest()
         persistDraft(durable = true)
-        startRest()
         undoWindow.open(set.id, nowElapsedMs())
         extras.update { it.copy(undoSetId = set.id) }
         return true
@@ -441,6 +459,7 @@ class WearWorkoutViewModel(
         pausedRestRemainingSeconds =
             if (restTimer.isRunning) restTimer.remainingSeconds(nowElapsedMs()) else 0
         restTimer.skip()
+        disarmRestEnd()
         restWakeLock.release()
         restRemainingSeconds.value = pausedRestRemainingSeconds
         elapsedSeconds.value = activeElapsedSeconds()
@@ -455,6 +474,7 @@ class WearWorkoutViewModel(
         if (pausedRestRemainingSeconds > 0) {
             restTimer.start(nowElapsedMs(), pausedRestRemainingSeconds)
             restWakeLock.hold(pausedRestRemainingSeconds)
+            armRestEnd()
         }
         pausedRestRemainingSeconds = 0
         extras.update { it.copy(paused = false) }
@@ -530,9 +550,15 @@ class WearWorkoutViewModel(
 
     /** Starts (or restarts) the rest countdown with the default length. */
     fun startRest() {
+        beginRest()
+        persistDraft(durable = false)
+    }
+
+    private fun beginRest() {
         restTimer.start(nowElapsedMs(), restDefaultSeconds.value)
         restRemainingSeconds.value = restTimer.remainingSeconds(nowElapsedMs())
         restWakeLock.hold(restRemainingSeconds.value)
+        armRestEnd()
         ensureTicker()
     }
 
@@ -541,12 +567,34 @@ class WearWorkoutViewModel(
         restTimer.addSeconds(nowElapsedMs(), seconds)
         restRemainingSeconds.value = restTimer.remainingSeconds(nowElapsedMs())
         restWakeLock.hold(restRemainingSeconds.value)
+        armRestEnd()
+        persistDraft(durable = false)
     }
 
     fun skipRest() {
         restTimer.skip()
         restWakeLock.release()
         restRemainingSeconds.value = 0
+        disarmRestEnd()
+        persistDraft(durable = false)
+    }
+
+    /** Records the running rest's wall-clock end and (re)arms the rest-end alarm for it. */
+    private fun armRestEnd() {
+        val remainingMs = restTimer.remainingMs(nowElapsedMs())
+        val end = RestTimerLogic.wallClockEnd(System.currentTimeMillis(), remainingMs)
+        restEndsAtWallMs = end
+        if (end == null) {
+            RestEndAlarm.cancel(appContext)
+        } else {
+            RestEndAlarm.schedule(appContext, end, remainingMs)
+        }
+    }
+
+    /** No rest runs any more: nothing may vibrate for the previous one. */
+    private fun disarmRestEnd() {
+        restEndsAtWallMs = null
+        RestEndAlarm.cancel(appContext)
     }
 
     fun setRestDefaultSeconds(seconds: Int) {
@@ -656,7 +704,8 @@ class WearWorkoutViewModel(
                     return@onSuccess
                 }
                 val storedPlan = WatchPlanStorage.load(appContext)
-                val consumedStoredPlan = submittedSourcePlan != null && storedPlan == submittedSourcePlan
+                // A plan stored while this workout ran is not consumed by it (E-11).
+                val consumedStoredPlan = WorkoutSourcePlan.shouldClearStoredPlan(storedPlan, submittedSourcePlan)
                 draftSets.value = emptyList()
                 draftInstanceId = UUID.randomUUID().toString()
                 workOwnerId = null
@@ -765,7 +814,8 @@ class WearWorkoutViewModel(
             return
         }
 
-        val parsed = WatchSyncJson.parseWorkoutPlanPayload(rawPlan)
+        // Stored plan: its own expiresAt decides, not the 7-day age of the message (E-12).
+        val parsed = WatchSyncJson.parseStoredWorkoutPlanPayload(rawPlan)
         if (parsed !is WatchSyncParseResult.Valid) {
             WatchPlanStorage.clear(appContext)
             return
@@ -819,7 +869,12 @@ class WearWorkoutViewModel(
             usingPlan = extras.value.usingPlan,
             selectedExercise = extras.value.selectedExercise,
             sets = draftSets.value.mapNotNull(::parseDraftSet),
-            finished = finishedSnapshot
+            finished = finishedSnapshot,
+            // A finished workout has no rest; a running one keeps its countdown across a restart.
+            restEndsAtMs = restEndsAtWallMs.takeIf { finishedSnapshot == null },
+            pausedRestRemainingSeconds =
+                pausedRestRemainingSeconds.takeIf { finishedSnapshot == null && running.isPaused } ?: 0,
+            sourcePlanDigest = workoutSourcePlanDigest.takeIf { extras.value.usingPlan }
         )
         runCatching {
             WatchWorkoutDraftStorage.save(appContext, workOwnerId, draft, durable)
@@ -831,6 +886,7 @@ class WearWorkoutViewModel(
         workoutActive.value = false
         restTimer.skip()
         restWakeLock.release()
+        disarmRestEnd()
         restRemainingSeconds.value = 0
         undoWindow.close()
         pausedRestRemainingSeconds = 0
@@ -847,6 +903,7 @@ class WearWorkoutViewModel(
         stopLiveTracking()
         clock = null
         finishedSnapshot = null
+        workoutSourcePlanDigest = null
         elapsedSeconds.value = 0L
     }
 
@@ -860,7 +917,14 @@ class WearWorkoutViewModel(
                 val now = nowElapsedMs()
                 if (restTimer.pollFinished(now)) {
                     restRemainingSeconds.value = 0
-                    WearHaptics.restFinished(appContext)
+                    // One vibration per rest: whichever of the ticker and the alarm comes first.
+                    val token = restEndsAtWallMs
+                    restEndsAtWallMs = null
+                    if (token != null) {
+                        RestEndAlarm.deliver(appContext, token)
+                    } else {
+                        WearHaptics.restFinished(appContext)
+                    }
                     restWakeLock.release()
                 } else if (restTimer.isRunning) {
                     restRemainingSeconds.value = restTimer.remainingSeconds(now)
@@ -875,13 +939,8 @@ class WearWorkoutViewModel(
         }
     }
 
-    private fun formatWeight(weight: Double): String {
-        return if (weight % 1.0 == 0.0) {
-            weight.toInt().toString()
-        } else {
-            String.format(java.util.Locale.US, "%.2f", weight).trimEnd('0').trimEnd('.')
-        }
-    }
+    /** 3 decimals like [WorkoutMath]: an off-grid planned 21.125 kg is logged as 21.125. */
+    private fun formatWeight(weight: Double): String = WorkoutMath.formatLoggedWeight(weight)
 
     private fun commitDraftEdit(candidate: List<WearSetInputUiState>): Boolean {
         if (candidate == draftSets.value) return true
@@ -1052,13 +1111,20 @@ class WearWorkoutViewModel(
                 reps = set.reps.toString()
             )
         }
+        // The plan the workout was started from: a stored operation carries its own, a draft
+        // names its snapshot. A newer plan stored meanwhile stays deferred until after it (E-11).
         val storedPlan = WatchPlanStorage.load(appContext)
-        var usingPlan = draft.usingPlan && storedPlan != null &&
-            (pending == null || pending.sourcePlanRaw == storedPlan)
-        if (usingPlan && storedPlan != null) {
-            val parsed = WatchSyncJson.parseWorkoutPlanPayload(storedPlan)
+        val sourcePlan = if (pending != null) {
+            pending.sourcePlanRaw
+        } else {
+            runCatching { WatchWorkoutDraftStorage.sourcePlanFor(appContext, draft, storedPlan) }.getOrNull()
+        }
+        var usingPlan = draft.usingPlan && sourcePlan != null
+        if (usingPlan && sourcePlan != null) {
+            val parsed = WatchSyncJson.parseStoredWorkoutPlanPayload(sourcePlan)
             if (parsed is WatchSyncParseResult.Valid) {
-                lastAppliedWorkoutPlanRaw = storedPlan
+                lastAppliedWorkoutPlanRaw = sourcePlan
+                workoutSourcePlanDigest = WorkoutSourcePlan.digest(sourcePlan)
                 workoutPlanMeta.value = parsed.value.meta
                 extras.update { it.copy(planTargets = parsed.value.sets) }
             } else {
@@ -1079,15 +1145,45 @@ class WearWorkoutViewModel(
             // stays open until the UI resumes it) and restart heart-rate tracking.
             workoutActive.value = true
             elapsedSeconds.value = activeElapsedSeconds()
+            restoreRest(draft)
             ensureTicker()
             ensureHealthTracking()
+        } else {
+            disarmRestEnd()
         }
+    }
+
+    /**
+     * Brings back the rest countdown of a running workout: a rest frozen by Pause stays frozen;
+     * a running rest continues to its stored wall-clock end. An end that already passed gives no
+     * countdown and no vibration (its alarm, if still pending, is cancelled).
+     */
+    private fun restoreRest(draft: WatchWorkoutDraft) {
+        if (draft.pausedAtMs != null) {
+            disarmRestEnd()
+            pausedRestRemainingSeconds = RestTimerLogic.restoredPausedSeconds(draft.pausedRestRemainingSeconds)
+            restRemainingSeconds.value = pausedRestRemainingSeconds
+            return
+        }
+        val remainingMs = RestTimerLogic.restoredRemainingMs(draft.restEndsAtMs, System.currentTimeMillis())
+        val end = draft.restEndsAtMs
+        if (remainingMs <= 0L || end == null) {
+            disarmRestEnd()
+            return
+        }
+        restTimer.startRemaining(nowElapsedMs(), remainingMs)
+        restRemainingSeconds.value = restTimer.remainingSeconds(nowElapsedMs())
+        restWakeLock.hold(restRemainingSeconds.value)
+        // Same token as before the restart, so the alarm and the ticker still vibrate only once.
+        restEndsAtWallMs = end
+        RestEndAlarm.schedule(appContext, end, remainingMs)
     }
 
     override fun onCleared() {
         // The exercise itself outlives the ViewModel (process-wide tracker + foreground service).
         tickerJob?.cancel()
-        // Nothing is left to vibrate at the end of the rest; do not keep the CPU awake for it.
+        // The ticker is gone: the rest-end alarm (left armed on purpose) vibrates instead, so the
+        // CPU need not be kept awake for it.
         restWakeLock.release()
         super.onCleared()
     }

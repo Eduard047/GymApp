@@ -130,6 +130,35 @@ class WatchSyncJsonTest {
     }
 
     @Test
+    fun storedPlanUsesItsOwnExpiryInsteadOfTheSevenDayMessageAge() {
+        val now = System.currentTimeMillis()
+        val day = 24L * 60 * 60 * 1_000
+        fun plan(sentAt: Long, expiresAt: Long) = envelope(sentAt = sentAt)
+            .put("expiresAt", expiresAt)
+            .put(
+                "sets",
+                JSONArray().put(
+                    JSONObject().put("exerciseName", "Squat").put("weight", 100.0).put("reps", 5)
+                )
+            )
+            .toString()
+
+        // Sent 8 days ago, issued for 14: still usable from storage, stale as a new message.
+        val eightDaysOld = plan(sentAt = now - 8 * day, expiresAt = now + 6 * day)
+        assertTrue(WatchSyncJson.parseStoredWorkoutPlanPayload(eightDaysOld, now) is WatchSyncParseResult.Valid)
+        assertTrue(WatchSyncJson.parseWorkoutPlanPayload(eightDaysOld) is WatchSyncParseResult.Invalid)
+        // Its own expiry still applies to a stored plan.
+        val expired = plan(sentAt = now - 15 * day, expiresAt = now - day)
+        assertTrue(WatchSyncJson.parseStoredWorkoutPlanPayload(expired, now) is WatchSyncParseResult.Invalid)
+        // The 30-day lifetime cap is kept.
+        val overLong = plan(sentAt = now - 8 * day, expiresAt = now + 25 * day)
+        assertTrue(WatchSyncJson.parseStoredWorkoutPlanPayload(overLong, now) is WatchSyncParseResult.Invalid)
+        // Clock-skew bound unchanged: a sentAt in the future is still rejected.
+        val future = plan(sentAt = now + 10 * 60 * 1_000L, expiresAt = now + 6 * day)
+        assertTrue(WatchSyncJson.parseStoredWorkoutPlanPayload(future, now) is WatchSyncParseResult.Invalid)
+    }
+
+    @Test
     fun mutationAcknowledgementRequiresBoundedCorrelationFields() {
         val valid = JSONObject()
             .put("protocolVersion", SyncPaths.PROTOCOL_VERSION)

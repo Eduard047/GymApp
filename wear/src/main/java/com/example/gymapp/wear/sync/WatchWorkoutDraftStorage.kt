@@ -2,6 +2,7 @@ package com.example.gymapp.wear.sync
 
 import android.content.Context
 import com.example.gymapp.wear.data.WearWorkoutSetDraft
+import com.example.gymapp.wear.health.RestTimerLogic
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -25,8 +26,53 @@ data class WatchWorkoutDraft(
     val selectedExercise: String?,
     val sets: List<WearWorkoutSetDraft>,
     /** Null while the workout is running; set once the user pressed Save. */
-    val finished: FinishedWorkoutSnapshot?
+    val finished: FinishedWorkoutSnapshot?,
+    /** Wall-clock end (epoch ms) of the running rest countdown; null when no rest runs. */
+    val restEndsAtMs: Long? = null,
+    /** Rest left when the workout was paused during a rest (0 = none). */
+    val pausedRestRemainingSeconds: Int = 0,
+    /**
+     * SHA-256 (hex) of the plan the workout was started from; null for a free workout and for
+     * drafts written before it existed. The plan itself is kept by [WatchWorkoutDraftStorage].
+     */
+    val sourcePlanDigest: String? = null
 )
+
+/**
+ * Which plan a workout follows. A plan workout keeps the plan it was started from, even when the
+ * phone has stored a newer one in the meantime (applied only after this workout).
+ */
+object WorkoutSourcePlan {
+    private val digestPattern = Regex("^[0-9a-f]{64}$")
+
+    fun digest(raw: String): String =
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest(raw.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+    fun isDigest(value: String?): Boolean = value != null && digestPattern.matches(value)
+
+    /**
+     * The raw plan a restored draft follows (a stored operation carries its own plan instead).
+     * The draft names its plan by digest and finds it in its own snapshot, or in the stored plan
+     * if that is still the same one. A draft written before the digest existed falls back to the
+     * stored plan, as before. Null: free workout, or the plan it used is gone.
+     */
+    fun forRestore(
+        draftUsingPlan: Boolean,
+        draftDigest: String?,
+        snapshotRaw: String?,
+        storedPlanRaw: String?
+    ): String? {
+        if (!draftUsingPlan) return null
+        if (draftDigest == null) return storedPlanRaw
+        return listOfNotNull(snapshotRaw, storedPlanRaw).firstOrNull { digest(it) == draftDigest }
+    }
+
+    /** After a delivered save: drop the stored plan only when it is the one this workout used. */
+    fun shouldClearStoredPlan(storedPlanRaw: String?, sourcePlanRaw: String?): Boolean =
+        sourcePlanRaw != null && storedPlanRaw == sourcePlanRaw
+}
 
 /** JSON form of [WatchWorkoutDraft]. Decoding validates every bound and returns null otherwise. */
 object WatchWorkoutDraftCodec {
@@ -52,6 +98,11 @@ object WatchWorkoutDraftCodec {
             .put("sets", sets)
         draft.pausedAtMs?.let { root.put("pausedAtMs", it) }
         draft.selectedExercise?.let { root.put("selectedExercise", it) }
+        draft.restEndsAtMs?.let { root.put("restEndsAtMs", it) }
+        if (draft.pausedRestRemainingSeconds > 0) {
+            root.put("pausedRestRemainingSeconds", draft.pausedRestRemainingSeconds)
+        }
+        draft.sourcePlanDigest?.takeIf(WorkoutSourcePlan::isDigest)?.let { root.put("sourcePlanDigest", it) }
         draft.finished?.let { finished ->
             val item = JSONObject()
             finished.durationSeconds?.let { item.put("durationSeconds", it) }
@@ -107,7 +158,14 @@ object WatchWorkoutDraftCodec {
             usingPlan = root.optBoolean("usingPlan", false),
             selectedExercise = selectedExercise,
             sets = sets,
-            finished = finished
+            finished = finished,
+            // Rest state is optional: a bad value drops the countdown, never the workout.
+            restEndsAtMs = root.optLong("restEndsAtMs", 0L).takeIf { it > 0L },
+            pausedRestRemainingSeconds = root.optInt("pausedRestRemainingSeconds", 0)
+                .takeIf { it in 0..RestTimerLogic.MAX_REST_SECONDS } ?: 0,
+            // Optional too: an unreadable digest only loses the plan targets, never the workout.
+            sourcePlanDigest = root.optString("sourcePlanDigest", "")
+                .takeIf(WorkoutSourcePlan::isDigest)
         )
     }.getOrNull()
 
@@ -145,6 +203,13 @@ object WatchWorkoutDraftStorage {
     private const val KEY_DRAFT = "draft"
     private const val KEY_OWNER_ID = "owner_id"
 
+    /**
+     * The plan a running plan workout was started from. A file of its own: it is written once
+     * at Start, not with every set, and the draft names it by [WatchWorkoutDraft.sourcePlanDigest].
+     */
+    private const val SOURCE_PLAN_PREFS_NAME = "watch_workout_source_plan"
+    private const val KEY_SOURCE_PLAN = "plan_json"
+
     /** [durable] waits for the write (set and finish changes); otherwise it is queued. */
     fun save(context: Context, ownerId: String?, draft: WatchWorkoutDraft, durable: Boolean): Boolean {
         val editor = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -176,8 +241,33 @@ object WatchWorkoutDraftStorage {
         return prefs.getString(KEY_OWNER_ID, null)
     }
 
+    /** Keeps [rawPlan] as the plan of the workout being started (null: free workout). */
+    fun saveSourcePlan(context: Context, rawPlan: String?): Boolean {
+        val prefs = context.getSharedPreferences(SOURCE_PLAN_PREFS_NAME, Context.MODE_PRIVATE)
+        if (rawPlan == null && !prefs.contains(KEY_SOURCE_PLAN)) return true
+        val editor = prefs.edit()
+        if (rawPlan == null) editor.remove(KEY_SOURCE_PLAN) else editor.putString(KEY_SOURCE_PLAN, rawPlan)
+        return editor.commit()
+    }
+
+    fun loadSourcePlan(context: Context): String? =
+        context.getSharedPreferences(SOURCE_PLAN_PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_SOURCE_PLAN, null)
+            ?.takeIf { it.isNotBlank() }
+
+    /** The plan [draft] follows (see [WorkoutSourcePlan.forRestore]); null for a free workout. */
+    fun sourcePlanFor(context: Context, draft: WatchWorkoutDraft, storedPlanRaw: String?): String? =
+        WorkoutSourcePlan.forRestore(
+            draftUsingPlan = draft.usingPlan,
+            draftDigest = draft.sourcePlanDigest,
+            snapshotRaw = if (draft.usingPlan && draft.sourcePlanDigest != null) loadSourcePlan(context) else null,
+            storedPlanRaw = storedPlanRaw
+        )
+
     /** True when no draft is stored any more (the removal reached the disk). */
     fun clear(context: Context): Boolean {
+        // The plan snapshot goes with the draft; a leftover one is harmless (named by digest).
+        runCatching { saveSourcePlan(context, null) }
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return prefs.all.isEmpty() || prefs.edit().clear().commit()
     }

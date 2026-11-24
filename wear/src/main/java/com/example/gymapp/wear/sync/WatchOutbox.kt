@@ -76,7 +76,10 @@ class WatchOutbox(
                 startedAt = stored.draft.startedAt,
                 note = null,
                 sets = stored.draft.sets,
-                sourcePlanRaw = if (stored.draft.usingPlan) WatchPlanStorage.load(appContext) else null,
+                // The plan the workout was started from, not a newer one stored since (E-11).
+                sourcePlanRaw = WatchWorkoutDraftStorage.sourcePlanFor(
+                    appContext, stored.draft, WatchPlanStorage.load(appContext)
+                ),
                 durationSeconds = stored.draft.finished.durationSeconds,
                 averageHeartRate = stored.draft.finished.averageHeartRate,
                 maxHeartRate = stored.draft.finished.maxHeartRate
@@ -87,7 +90,7 @@ class WatchOutbox(
         // The phone accepted it. Draft first, operation id last (a crash in between resends the
         // same id, which the phone recognises).
         deliveredDraftIds += sent.draftId
-        if (sent.sourcePlanRaw != null && WatchPlanStorage.load(appContext) == sent.sourcePlanRaw) {
+        if (WorkoutSourcePlan.shouldClearStoredPlan(WatchPlanStorage.load(appContext), sent.sourcePlanRaw)) {
             runCatching { WatchPlanStorage.clear(appContext) }
         }
         val draftGone = runCatching {

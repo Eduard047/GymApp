@@ -825,9 +825,10 @@ private fun SetEntryScreen(
         initiallySelectedIndex = WorkoutMath.closestIndex(weightOptions, target.weight),
         shouldRepeatOptions = false
     )
+    val repOptions = remember(target.reps) { WorkoutMath.repOptions(target.reps) }
     val repsState = rememberPickerState(
-        initialNumberOfOptions = WorkoutMath.repOptions.size,
-        initiallySelectedIndex = WorkoutMath.repIndex(target.reps),
+        initialNumberOfOptions = repOptions.size,
+        initiallySelectedIndex = WorkoutMath.repIndex(repOptions, target.reps),
         shouldRepeatOptions = false
     )
     var selectedColumn by remember { mutableIntStateOf(0) }
@@ -916,11 +917,11 @@ private fun SetEntryScreen(
                         onSelected = { selectedColumn = 1 },
                         modifier = Modifier.width(repsWidth).height(rowHeight * 3),
                         contentDescription = {
-                            "$repsLabel, ${WorkoutMath.repOptions[repsState.selectedOptionIndex]}"
+                            "$repsLabel, ${repOptions[repsState.selectedOptionIndex]}"
                         },
                         option = { index, columnSelected ->
                             PickerValue(
-                                text = WorkoutMath.repOptions[index].toString(),
+                                text = repOptions[index].toString(),
                                 current = index == repsState.selectedOptionIndex,
                                 columnSelected = columnSelected,
                                 rowHeight = rowHeight
@@ -937,7 +938,7 @@ private fun SetEntryScreen(
                     onSave(
                         exercise,
                         weightOptions[weightState.selectedOptionIndex],
-                        WorkoutMath.repOptions[repsState.selectedOptionIndex]
+                        repOptions[repsState.selectedOptionIndex]
                     )
                 }
             },
