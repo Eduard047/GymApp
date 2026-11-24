@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
@@ -72,7 +73,8 @@ internal fun WearWatchCard(
                     val tagUnderStatus = state.linkConfirmed &&
                         watchRowIsNarrow(maxWidth, LocalDensity.current.fontScale)
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        // Name, status and the "Paired" tag are one TalkBack stop, as on Garmin and iOS.
+                        modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {

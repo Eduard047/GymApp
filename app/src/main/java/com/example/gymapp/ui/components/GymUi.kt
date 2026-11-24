@@ -465,7 +465,9 @@ fun MetricTile(
     emphasized: Boolean = false,
     onHero: Boolean = false,
     utilityValue: Boolean = false,
-    compactValue: Boolean = false
+    compactValue: Boolean = false,
+    // Spoken form of [value] for TalkBack ("1 hour 5 minutes" for "1 h 5 min"); null reads [value].
+    valueDescription: String? = null
 ) {
     val shape = GymCompactShape
     val tileContainerColor = if (onHero) {
@@ -499,6 +501,14 @@ fun MetricTile(
             .heightIn(min = 78.dp)
             .clip(shape)
             .background(tileContainerColor, shape)
+            // One TalkBack stop per tile (label, then value), like iOS GymMetricTile.
+            .then(
+                if (valueDescription != null) {
+                    Modifier.clearAndSetSemantics { contentDescription = "$label, $valueDescription" }
+                } else {
+                    Modifier.semantics(mergeDescendants = true) {}
+                }
+            )
             .padding(MetricTilesLayout.TilePaddingDp.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {

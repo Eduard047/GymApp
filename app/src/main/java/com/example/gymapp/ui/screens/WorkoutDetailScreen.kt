@@ -836,6 +836,21 @@ internal fun formatWorkoutDuration(totalSeconds: Long): String {
     return workoutDurationText(totalSeconds, locale)
 }
 
+/** Spoken form of [formatWorkoutDuration] for TalkBack: "1 hour 5 minutes" instead of "1 h 5 min". */
+@Composable
+internal fun workoutDurationSpoken(totalSeconds: Long): String {
+    val seconds = totalSeconds.coerceAtLeast(60L)
+    val hours = (seconds / 3600).toInt()
+    val minutes = (seconds % 3600 / 60).toInt()
+    val hoursText = formattedPluralStringResource(R.plurals.metric_duration_hours_cd, hours, hours)
+    val minutesText = formattedPluralStringResource(R.plurals.metric_duration_minutes_cd, minutes, minutes)
+    return when {
+        hours == 0 -> minutesText
+        minutes == 0 -> hoursText
+        else -> formattedStringResource(R.string.metric_duration_hours_minutes_cd, hoursText, minutesText)
+    }
+}
+
 /** Pure core of [formatWorkoutDuration]: compact duration, never shorter than a minute. */
 internal fun workoutDurationText(totalSeconds: Long, locale: java.util.Locale): String =
     DateTimeUtils.formatCompactDuration(totalSeconds.coerceAtLeast(60L), locale)
@@ -1032,26 +1047,39 @@ private fun ImportedActivityHeaderCard(
     onToggleEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val tiles = mutableListOf<Pair<String, String>>()
+    // Label, shown value, spoken value (full words: TalkBack reads "bpm" or "1 h 5 min" letter by letter).
+    val tiles = mutableListOf<Triple<String, String, String>>()
     val duration = (durationSeconds ?: presentation.durationSeconds)?.takeIf { it > 0L }
     if (duration != null) {
-        tiles += stringResource(R.string.garmin_metric_duration) to
-            keepNumberWithUnit(formatWorkoutDuration(duration))
+        tiles += Triple(
+            stringResource(R.string.garmin_metric_duration),
+            keepNumberWithUnit(formatWorkoutDuration(duration)),
+            workoutDurationSpoken(duration)
+        )
     }
     val kilocalories = presentation.kilocalories
     if (kilocalories != null) {
-        tiles += stringResource(R.string.activity_metric_calories) to
-            keepNumberWithUnit(formattedStringResource(R.string.activity_metric_kcal_value, kilocalories))
+        tiles += Triple(
+            stringResource(R.string.activity_metric_calories),
+            keepNumberWithUnit(formattedStringResource(R.string.activity_metric_kcal_value, kilocalories)),
+            formattedPluralStringResource(R.plurals.metric_kcal_cd, kilocalories, kilocalories)
+        )
     }
     val averageHeartRate = presentation.averageHeartRate
     if (averageHeartRate != null) {
-        tiles += stringResource(R.string.garmin_metric_avg_hr) to
-            keepNumberWithUnit(formattedStringResource(R.string.garmin_metric_bpm_value, averageHeartRate))
+        tiles += Triple(
+            stringResource(R.string.garmin_metric_avg_hr),
+            keepNumberWithUnit(formattedStringResource(R.string.garmin_metric_bpm_value, averageHeartRate)),
+            formattedPluralStringResource(R.plurals.metric_bpm_cd, averageHeartRate, averageHeartRate)
+        )
     }
     val maximumHeartRate = presentation.maximumHeartRate
     if (maximumHeartRate != null) {
-        tiles += stringResource(R.string.garmin_metric_max_hr) to
-            keepNumberWithUnit(formattedStringResource(R.string.garmin_metric_bpm_value, maximumHeartRate))
+        tiles += Triple(
+            stringResource(R.string.garmin_metric_max_hr),
+            keepNumberWithUnit(formattedStringResource(R.string.garmin_metric_bpm_value, maximumHeartRate)),
+            formattedPluralStringResource(R.plurals.metric_bpm_cd, maximumHeartRate, maximumHeartRate)
+        )
     }
     HeroPanel(
         modifier = Modifier.fillMaxWidth(),
@@ -1097,12 +1125,13 @@ private fun ImportedActivityHeaderCard(
                     modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    rowTiles.forEach { (label, value) ->
+                    rowTiles.forEach { (label, value, spokenValue) ->
                         MetricTile(
                             label = label,
                             value = value,
                             modifier = Modifier.weight(1f),
-                            onHero = true
+                            onHero = true,
+                            valueDescription = spokenValue
                         )
                     }
                     if (rowTiles.size == 1 && tiles.size > 1) {

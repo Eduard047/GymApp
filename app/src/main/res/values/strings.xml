@@ -1236,6 +1236,24 @@
     <string name="garmin_metric_avg_hr">Avg HR</string>
     <string name="garmin_metric_max_hr">Max HR</string>
     <string name="garmin_metric_bpm_value">%1$d bpm</string>
+    <!-- Spoken metric values for TalkBack (full words instead of "bpm", "kcal", "1 h 5 min"). -->
+    <plurals name="metric_bpm_cd">
+        <item quantity="one">%1$d beat per minute</item>
+        <item quantity="other">%1$d beats per minute</item>
+    </plurals>
+    <plurals name="metric_kcal_cd">
+        <item quantity="one">%1$d kilocalorie</item>
+        <item quantity="other">%1$d kilocalories</item>
+    </plurals>
+    <plurals name="metric_duration_hours_cd">
+        <item quantity="one">%1$d hour</item>
+        <item quantity="other">%1$d hours</item>
+    </plurals>
+    <plurals name="metric_duration_minutes_cd">
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
+    </plurals>
+    <string name="metric_duration_hours_minutes_cd">%1$s %2$s</string>
     <string name="garmin_metric_bpm_unit">bpm</string>
     <string name="garmin_metric_duration_value">duration %1$s</string>
     <string name="garmin_metric_heart_rate">heart rate</string>
@@ -1867,6 +1885,7 @@
     <string name="health_data_last_import">Last import %1$s</string>
     <string name="health_data_import_now">Import now</string>
     <string name="health_data_disconnect">Disconnect</string>
+    <string name="health_data_disconnect_a11y">Disconnect Health data</string>
     <string name="health_data_importing">Importing…</string>
     <string name="health_data_empty">No new gym workouts found. If you expected some, allow GymApp to read workouts in Health Connect.</string>
     <string name="health_data_failed">Couldn’t import. Try again.</string>

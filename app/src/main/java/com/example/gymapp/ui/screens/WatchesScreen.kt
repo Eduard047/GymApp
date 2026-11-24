@@ -47,6 +47,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -183,12 +187,21 @@ internal fun WatchCardDestructiveTextButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    // Spoken label when [text] alone does not name what the action affects ("Disconnect Health data").
+    contentDescription: String? = null
 ) {
     TextButton(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier
+            .then(
+                if (contentDescription != null) {
+                    Modifier.semantics { this.contentDescription = contentDescription }
+                } else {
+                    Modifier
+                }
+            )
             .offset(x = -DestructiveTextButtonInset)
             .trimVerticalTouchSlack(10.dp)
             .heightIn(min = 48.dp),
@@ -229,6 +242,8 @@ internal fun WatchCardNotice(
         modifier = modifier
             .fillMaxWidth()
             .background(tint.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
+            // Errors and import results appear without focus moving: TalkBack announces them.
+            .semantics { liveRegion = LiveRegionMode.Polite }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -328,7 +343,7 @@ private fun GarminDeviceCard(
                                 text = stringResource(R.string.garmin_connecting),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = actionModifier
+                                modifier = actionModifier.semantics { liveRegion = LiveRegionMode.Polite }
                             )
                         }
                         offersConnect -> { actionModifier ->
@@ -360,7 +375,9 @@ private fun GarminDeviceCard(
                         val tagUnderStatus = !connecting && !offersConnect && action != null && narrow
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                // Name, status and the "Paired" tag are one TalkBack stop (like iOS);
+                                // the Connect button inside keeps its own focus and action.
+                                modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {

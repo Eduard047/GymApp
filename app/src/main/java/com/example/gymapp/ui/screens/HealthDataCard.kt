@@ -168,7 +168,8 @@ internal fun HealthDataCard(
                     WatchCardDestructiveTextButton(
                         text = stringResource(R.string.health_data_disconnect),
                         onClick = onDisconnect,
-                        enabled = !importing
+                        enabled = !importing,
+                        contentDescription = stringResource(R.string.health_data_disconnect_a11y)
                     )
                 }
             }

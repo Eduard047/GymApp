@@ -1278,6 +1278,32 @@
     <string name="garmin_metric_avg_hr">Сер. пульс</string>
     <string name="garmin_metric_max_hr">Макс. пульс</string>
     <string name="garmin_metric_bpm_value">%1$d уд/хв</string>
+    <!-- Spoken metric values for TalkBack (full words instead of "bpm", "kcal", "1 h 5 min"). -->
+    <plurals name="metric_bpm_cd">
+        <item quantity="one">%1$d удар на хвилину</item>
+        <item quantity="few">%1$d удари на хвилину</item>
+        <item quantity="many">%1$d ударів на хвилину</item>
+        <item quantity="other">%1$d удару на хвилину</item>
+    </plurals>
+    <plurals name="metric_kcal_cd">
+        <item quantity="one">%1$d кілокалорія</item>
+        <item quantity="few">%1$d кілокалорії</item>
+        <item quantity="many">%1$d кілокалорій</item>
+        <item quantity="other">%1$d кілокалорії</item>
+    </plurals>
+    <plurals name="metric_duration_hours_cd">
+        <item quantity="one">%1$d година</item>
+        <item quantity="few">%1$d години</item>
+        <item quantity="many">%1$d годин</item>
+        <item quantity="other">%1$d години</item>
+    </plurals>
+    <plurals name="metric_duration_minutes_cd">
+        <item quantity="one">%1$d хвилина</item>
+        <item quantity="few">%1$d хвилини</item>
+        <item quantity="many">%1$d хвилин</item>
+        <item quantity="other">%1$d хвилини</item>
+    </plurals>
+    <string name="metric_duration_hours_minutes_cd">%1$s %2$s</string>
     <string name="garmin_metric_bpm_unit">уд/хв</string>
     <string name="garmin_metric_duration_value">тривалість %1$s</string>
     <string name="garmin_metric_heart_rate">пульс</string>
@@ -1925,6 +1951,7 @@
     <string name="health_data_last_import">Останній імпорт %1$s</string>
     <string name="health_data_import_now">Імпортувати зараз</string>
     <string name="health_data_disconnect">Відключити</string>
+    <string name="health_data_disconnect_a11y">Відключити дані про здоров’я</string>
     <string name="health_data_importing">Імпорт…</string>
     <string name="health_data_empty">Нових тренувань у залі не знайдено. Якщо очікували їх, дозвольте GymApp читати тренування в Health Connect.</string>
     <string name="health_data_failed">Не вдалося імпортувати. Спробуйте ще раз.</string>
