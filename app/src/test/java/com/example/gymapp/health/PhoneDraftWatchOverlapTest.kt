@@ -13,21 +13,29 @@ class PhoneDraftWatchOverlapTest {
         startMillis: Long,
         durationSeconds: Long? = 45 * 60L,
         fromGarmin: Boolean = false,
-        fromHealthImport: Boolean = false,
-        latestWearCreateReceiptAt: Long? = null
+        fromHealthImport: Boolean = false
     ) = StoredWorkoutOverlapCandidate(
         startMillis = startMillis,
         durationSeconds = durationSeconds,
         fromGarmin = fromGarmin,
-        fromHealthImport = fromHealthImport,
-        latestWearCreateReceiptAt = latestWearCreateReceiptAt
+        fromHealthImport = fromHealthImport
     )
+
+    private val minute = 60 * 1_000L
+    private val hour = 60 * minute
 
     @Test
     fun wearWorkoutInsideTheDraftWindowOverlaps() {
         val start = draftStart + 5 * 60 * 1_000L
-        val wear = candidate(start, latestWearCreateReceiptAt = start + 46 * 60 * 1_000L)
-        assertTrue(PhoneDraftWatchOverlap.watchWorkoutCovers(draftStart, draftEnd, listOf(wear)))
+        val wear = candidate(start)
+        assertTrue(
+            PhoneDraftWatchOverlap.watchWorkoutCovers(
+                draftStart,
+                draftEnd,
+                listOf(wear),
+                wearCreateReceiptTimes = listOf(start + 46 * minute)
+            )
+        )
     }
 
     @Test
@@ -61,10 +69,49 @@ class PhoneDraftWatchOverlapTest {
 
     @Test
     fun wearReceiptOlderThanTheWorkoutDoesNotMarkIt() {
-        val start = draftStart + 5 * 60 * 1_000L
-        val phone = candidate(start, latestWearCreateReceiptAt = start - 1L)
-        assertFalse(PhoneDraftWatchOverlap.isFromWatchOrImport(phone))
-        assertFalse(PhoneDraftWatchOverlap.watchWorkoutCovers(draftStart, draftEnd, listOf(phone)))
+        val start = draftStart + 5 * minute
+        val phone = candidate(start)
+        val receipts = listOf(start - 1L)
+        assertFalse(PhoneDraftWatchOverlap.isFromWatchOrImport(phone, listOf(phone), receipts))
+        assertFalse(PhoneDraftWatchOverlap.watchWorkoutCovers(draftStart, draftEnd, listOf(phone), receipts))
+    }
+
+    @Test
+    fun wearReceiptAfterTheWindowDoesNotMarkIt() {
+        val start = draftStart + 5 * minute
+        val phone = candidate(start, durationSeconds = 45 * 60L)
+        val windowEnd = start + 45 * minute + PhoneDraftWatchOverlap.WEAR_RECEIPT_WINDOW_MILLIS
+        assertTrue(PhoneDraftWatchOverlap.isFromWear(phone, listOf(phone), listOf(windowEnd)))
+        assertFalse(PhoneDraftWatchOverlap.isFromWear(phone, listOf(phone), listOf(windowEnd + 1L)))
+    }
+
+    @Test
+    fun laterWearWorkoutReceiptDoesNotMarkAnEarlierPhoneWorkout() {
+        // Phone workout A 10:00-11:00 is saved; a Wear workout W 11:05-11:30 syncs at 11:31;
+        // phone workout B starts at 11:01. A ended just inside the tolerance of B but is not a
+        // watch workout, so finishing B must not prompt.
+        val phoneA = candidate(draftStart - 61 * minute, durationSeconds = 60 * 60L)
+        val wearW = candidate(draftStart + 4 * minute, durationSeconds = 25 * 60L)
+        val receipts = listOf(draftStart + 30 * minute)
+        val all = listOf(phoneA, wearW)
+        assertFalse(PhoneDraftWatchOverlap.isFromWear(phoneA, all, receipts))
+        assertTrue(PhoneDraftWatchOverlap.isFromWear(wearW, all, receipts))
+        // B overlaps only A (B ends more than the tolerance before W starts): no prompt.
+        assertFalse(
+            PhoneDraftWatchOverlap.watchWorkoutCovers(draftStart, draftStart + minute, all, receipts)
+        )
+        // B that also covers W still prompts.
+        assertTrue(PhoneDraftWatchOverlap.watchWorkoutCovers(draftStart, draftEnd, all, receipts))
+    }
+
+    @Test
+    fun wearReceiptHoursAfterAnUnrelatedPhoneWorkoutDoesNotMarkIt() {
+        // The old global "newest receipt" marked every earlier workout; a receipt 7 h after A ends does not.
+        val phoneA = candidate(draftStart - 61 * minute, durationSeconds = 60 * 60L)
+        val receipts = listOf(draftStart - minute + 7 * hour)
+        assertFalse(
+            PhoneDraftWatchOverlap.watchWorkoutCovers(draftStart, draftStart + 2 * minute, listOf(phoneA), receipts)
+        )
     }
 
     @Test

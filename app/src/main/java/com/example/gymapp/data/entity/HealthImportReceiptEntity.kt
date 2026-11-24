@@ -44,6 +44,5 @@ data class WorkoutOverlapCandidateRow(
     val startMillis: Long,
     val durationSeconds: Long?,
     val fromGarmin: Boolean,
-    val fromHealthImport: Boolean,
-    val latestWearCreateReceiptAt: Long?
+    val fromHealthImport: Boolean
 )

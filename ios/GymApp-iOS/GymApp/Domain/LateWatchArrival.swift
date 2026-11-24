@@ -24,12 +24,16 @@ struct LateWatchArrivalStoredWorkout: Equatable, Sendable {
 }
 
 enum LateWatchArrivalRule {
-    /// - Activity-only arrival (no sets) overlapping a stored workout with sets: `.skip`.
-    ///   Only the arrival's watch metrics are not kept; the stored workout keeps its own.
+    /// - Activity-only arrival (no sets): `.skip` only when a stored workout with sets and a
+    ///   positive duration really covers it: their actual time intersection (no tolerance) is at
+    ///   least half the arrival's duration (a zero-length arrival must lie inside it). A separate
+    ///   back-to-back session (phone 10:00-11:00, watch run 11:01-11:31) is stored, and a stored
+    ///   workout without a duration never causes this skip. Only the arrival's watch metrics are
+    ///   not kept; the stored workout keeps its own.
     /// - Arrival with sets overlapping a stored workout with exactly the same sets (names
-    ///   trimmed and case-folded, weight, reps, order within each exercise): `.skip`.
+    ///   trimmed and case-folded, weight, reps, order within each exercise): `.skip`. Overlap here
+    ///   is the Health import rule (`HealthImportRules.overlaps`, 120 s tolerance).
     /// - Anything else, including an overlapping workout with different sets: `.store`.
-    /// Overlap is the Health import rule (`HealthImportRules.overlaps`, 120 s tolerance).
     static func decide(
         startMillis: Int64,
         endMillis: Int64,
@@ -37,6 +41,12 @@ enum LateWatchArrivalRule {
         stored: [LateWatchArrivalStoredWorkout]
     ) -> LateWatchArrivalDecision {
         let end = max(endMillis, startMillis)
+        if sets.isEmpty {
+            let covered = stored.contains { workout in
+                !workout.sets.isEmpty && coversActivity(startMillis: startMillis, endMillis: end, workout: workout)
+            }
+            return covered ? .skip : .store
+        }
         let arrivalSets = canonical(sets)
         let covered = stored.contains { workout in
             guard !workout.sets.isEmpty,
@@ -50,9 +60,32 @@ enum LateWatchArrivalRule {
                   ) else {
                 return false
             }
-            return sets.isEmpty || canonical(workout.sets) == arrivalSets
+            return canonical(workout.sets) == arrivalSets
         }
         return covered ? .skip : .store
+    }
+
+    /// Whether `workout` really holds an activity-only arrival: the actual intersection of the
+    /// two intervals (no tolerance) is at least half the arrival's duration. A zero-length
+    /// arrival must lie inside the stored workout. A stored workout without a positive duration
+    /// never covers anything.
+    private static func coversActivity(
+        startMillis: Int64,
+        endMillis: Int64,
+        workout: LateWatchArrivalStoredWorkout
+    ) -> Bool {
+        guard let seconds = workout.durationSeconds, seconds > 0 else { return false }
+        let storedStart = workout.startMillis
+        let (length, lengthOverflow) = Int64(seconds).multipliedReportingOverflow(by: 1_000)
+        let (sum, sumOverflow) = storedStart.addingReportingOverflow(length)
+        let storedEnd = (lengthOverflow || sumOverflow) ? Int64.max : sum
+        let (arrivalLength, arrivalOverflow) = endMillis.subtractingReportingOverflow(startMillis)
+        if arrivalOverflow { return false }
+        if arrivalLength <= 0 { return startMillis >= storedStart && startMillis <= storedEnd }
+        let (intersection, intersectionOverflow) = min(endMillis, storedEnd)
+            .subtractingReportingOverflow(max(startMillis, storedStart))
+        if intersectionOverflow || intersection <= 0 { return false }
+        return intersection >= arrivalLength - arrivalLength / 2
     }
 
     /// The store's workouts in the rule's shape; set names are resolved through the store's

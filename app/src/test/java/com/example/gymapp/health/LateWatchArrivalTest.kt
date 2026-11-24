@@ -134,20 +134,20 @@ class LateWatchArrivalTest {
     }
 
     @Test
-    fun toleranceEdgeAfterStoredEnd() {
+    fun identicalSetsToleranceEdgeAfterStoredEnd() {
         val storedEnd = start + 45 * minute
         assertEquals(
             LateWatchArrivalDecision.Skip,
-            decide(arrivalStart = storedEnd + tolerance, candidates = listOf(stored()))
+            decide(arrivalStart = storedEnd + tolerance, arrivalSets = phoneSets, candidates = listOf(stored()))
         )
         assertEquals(
             LateWatchArrivalDecision.Store,
-            decide(arrivalStart = storedEnd + tolerance + 1, candidates = listOf(stored()))
+            decide(arrivalStart = storedEnd + tolerance + 1, arrivalSets = phoneSets, candidates = listOf(stored()))
         )
     }
 
     @Test
-    fun toleranceEdgeBeforeStoredStart() {
+    fun identicalSetsToleranceEdgeBeforeStoredStart() {
         // Arrival ends exactly tolerance before the stored start: still overlapping; 1 ms earlier: not.
         val duration = 30 * 60L
         val arrivalEndAtEdge = start - tolerance
@@ -156,6 +156,7 @@ class LateWatchArrivalTest {
             decide(
                 arrivalStart = arrivalEndAtEdge - duration * 1_000L,
                 arrivalDurationSeconds = duration,
+                arrivalSets = phoneSets,
                 candidates = listOf(stored())
             )
         )
@@ -164,22 +165,115 @@ class LateWatchArrivalTest {
             decide(
                 arrivalStart = arrivalEndAtEdge - duration * 1_000L - 1,
                 arrivalDurationSeconds = duration,
+                arrivalSets = phoneSets,
                 candidates = listOf(stored())
             )
         )
     }
 
     @Test
-    fun storedWorkoutWithoutDurationUsesItsStartOnly() {
+    fun identicalSetsAgainstStoredWorkoutWithoutDurationUseItsStartOnly() {
         val candidate = stored(durationSeconds = null)
         assertEquals(
             LateWatchArrivalDecision.Skip,
-            decide(arrivalStart = start + tolerance, arrivalDurationSeconds = null, candidates = listOf(candidate))
+            decide(
+                arrivalStart = start + tolerance,
+                arrivalDurationSeconds = null,
+                arrivalSets = phoneSets,
+                candidates = listOf(candidate)
+            )
         )
         assertEquals(
             LateWatchArrivalDecision.Store,
-            decide(arrivalStart = start + tolerance + 1, arrivalDurationSeconds = null, candidates = listOf(candidate))
+            decide(
+                arrivalStart = start + tolerance + 1,
+                arrivalDurationSeconds = null,
+                arrivalSets = phoneSets,
+                candidates = listOf(candidate)
+            )
         )
+    }
+
+    @Test
+    fun backToBackActivityOnlyArrivalIsStored() {
+        // Phone strength 10:00-11:00, watch run 11:01-11:31: a separate session, inside the tolerance.
+        val phone = stored(durationSeconds = 60 * 60L)
+        assertEquals(
+            LateWatchArrivalDecision.Store,
+            decide(
+                arrivalStart = start + 61 * minute,
+                arrivalDurationSeconds = 30 * 60L,
+                candidates = listOf(phone)
+            )
+        )
+        // Touching end to start (no gap) is still a separate session.
+        assertEquals(
+            LateWatchArrivalDecision.Store,
+            decide(
+                arrivalStart = start + 60 * minute,
+                arrivalDurationSeconds = 30 * 60L,
+                candidates = listOf(phone)
+            )
+        )
+    }
+
+    @Test
+    fun activityOnlyArrivalCoveredByHalfIsSkipped() {
+        // Arrival 30 min; stored 45 min ends 15 min into it -> exactly 50 % covered: skip.
+        val phone = stored(durationSeconds = 45 * 60L)
+        assertEquals(
+            LateWatchArrivalDecision.Skip,
+            decide(
+                arrivalStart = start + 30 * minute,
+                arrivalDurationSeconds = 30 * 60L,
+                candidates = listOf(phone)
+            )
+        )
+        // One millisecond less than half covered: store.
+        assertEquals(
+            LateWatchArrivalDecision.Store,
+            decide(
+                arrivalStart = start + 30 * minute + 1,
+                arrivalDurationSeconds = 30 * 60L,
+                candidates = listOf(phone)
+            )
+        )
+    }
+
+    @Test
+    fun activityOnlyArrivalNestedInStoredWorkoutIsSkipped() {
+        assertEquals(
+            LateWatchArrivalDecision.Skip,
+            decide(
+                arrivalStart = start + 10 * minute,
+                arrivalDurationSeconds = 20 * 60L,
+                candidates = listOf(stored(durationSeconds = 60 * 60L))
+            )
+        )
+        // A zero-length arrival inside the stored workout is covered too.
+        assertEquals(
+            LateWatchArrivalDecision.Skip,
+            decide(
+                arrivalStart = start + 10 * minute,
+                arrivalDurationSeconds = null,
+                candidates = listOf(stored(durationSeconds = 60 * 60L))
+            )
+        )
+    }
+
+    @Test
+    fun activityOnlyArrivalAgainstStoredWorkoutWithoutDurationIsStored() {
+        listOf<Long?>(null, 0L).forEach { storedDuration ->
+            val candidate = stored(durationSeconds = storedDuration)
+            assertEquals(
+                LateWatchArrivalDecision.Store,
+                decide(arrivalStart = start - 10 * minute, candidates = listOf(candidate))
+            )
+            assertEquals(
+                LateWatchArrivalDecision.Store,
+                decide(arrivalStart = start, arrivalDurationSeconds = null, candidates = listOf(candidate))
+            )
+        }
     }
 
     @Test

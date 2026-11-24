@@ -3259,21 +3259,24 @@ class GymRepository(
             ?: return@withContext false
         val now = currentTimeMillis()
         if (!WorkoutDataLimits.isValidTimestamp(startedAt) || now < startedAt) return@withContext false
+        val fromMillis = startedAt - HealthImportRules.OVERLAP_TOLERANCE_MILLIS -
+            WorkoutDataLimits.MAX_WORKOUT_DURATION_SECONDS * 1_000L
         val candidates = healthImportDao.workoutOverlapCandidates(
-            fromMillis = startedAt - HealthImportRules.OVERLAP_TOLERANCE_MILLIS -
-                WorkoutDataLimits.MAX_WORKOUT_DURATION_SECONDS * 1_000L,
-            toMillis = now + HealthImportRules.OVERLAP_TOLERANCE_MILLIS,
-            wearCreateMutationType = WEAR_MUTATION_CREATE
+            fromMillis = fromMillis,
+            toMillis = now + HealthImportRules.OVERLAP_TOLERANCE_MILLIS
         ).map { row ->
             StoredWorkoutOverlapCandidate(
                 startMillis = row.startMillis,
                 durationSeconds = row.durationSeconds,
                 fromGarmin = row.fromGarmin,
-                fromHealthImport = row.fromHealthImport,
-                latestWearCreateReceiptAt = row.latestWearCreateReceiptAt
+                fromHealthImport = row.fromHealthImport
             )
         }
-        PhoneDraftWatchOverlap.watchWorkoutCovers(startedAt, now, candidates)
+        val wearCreateReceiptTimes = healthImportDao.wearCreateReceiptTimesFrom(
+            fromMillis = fromMillis,
+            wearCreateMutationType = WEAR_MUTATION_CREATE
+        )
+        PhoneDraftWatchOverlap.watchWorkoutCovers(startedAt, now, candidates, wearCreateReceiptTimes)
     }
 
     suspend fun finishActiveWorkout(

@@ -41,23 +41,35 @@ final class LateWatchArrivalTests: XCTestCase {
         XCTAssertEqual(decide(start: phoneStart, end: phoneEnd, stored: [activity]), .store)
     }
 
-    func testToleranceEdgesAfterTheStoredWorkout() {
-        // Starts exactly 120 s after the stored end: inside the tolerance.
-        XCTAssertEqual(decide(start: phoneEnd + 120_000, end: phoneEnd + 1_800_000), .skip)
-        // One millisecond more: outside.
-        XCTAssertEqual(decide(start: phoneEnd + 120_001, end: phoneEnd + 1_800_000), .store)
+    func testBackToBackActivityOnlyArrivalIsStored() {
+        // Phone strength 10:00-11:00, watch run 11:01-11:31: a separate session, inside the tolerance.
+        XCTAssertEqual(decide(start: phoneEnd + 60_000, end: phoneEnd + 1_860_000), .store)
+        // Touching end to start (no gap), or ending right before the phone start: still separate.
+        XCTAssertEqual(decide(start: phoneEnd, end: phoneEnd + 1_800_000), .store)
+        XCTAssertEqual(decide(start: phoneStart - 1_800_000, end: phoneStart - 60_000), .store)
     }
 
-    func testToleranceEdgesBeforeTheStoredWorkout() {
-        // Ends exactly 120 s before the stored start: inside the tolerance.
-        XCTAssertEqual(decide(start: phoneStart - 1_800_000, end: phoneStart - 120_000), .skip)
-        XCTAssertEqual(decide(start: phoneStart - 1_800_000, end: phoneStart - 120_001), .store)
+    func testActivityOnlyArrivalCoveredByHalfIsSkipped() {
+        // 30-minute arrival starting 15 minutes before the phone end: exactly 50 % covered.
+        XCTAssertEqual(decide(start: phoneEnd - 900_000, end: phoneEnd + 900_000), .skip)
+        // One millisecond less than half covered: stored.
+        XCTAssertEqual(decide(start: phoneEnd - 899_999, end: phoneEnd + 900_001), .store)
+        // Same boundary on the start side.
+        XCTAssertEqual(decide(start: phoneStart - 900_000, end: phoneStart + 900_000), .skip)
+        XCTAssertEqual(decide(start: phoneStart - 900_001, end: phoneStart + 899_999), .store)
     }
 
-    func testStoredWorkoutWithoutDurationOverlapsByItsStartOnly() {
-        let noDuration = LateWatchArrivalStoredWorkout(startMillis: phoneStart, durationSeconds: nil, sets: phoneSets)
-        XCTAssertEqual(decide(start: phoneStart + 120_000, end: phoneStart + 600_000, stored: [noDuration]), .skip)
-        XCTAssertEqual(decide(start: phoneStart + 120_001, end: phoneStart + 600_000, stored: [noDuration]), .store)
+    func testActivityOnlyArrivalNestedInTheStoredWorkoutIsSkipped() {
+        XCTAssertEqual(decide(start: phoneStart + 600_000, end: phoneStart + 1_800_000), .skip)
+        XCTAssertEqual(decide(start: phoneStart, end: phoneEnd), .skip)
+    }
+
+    func testStoredWorkoutWithoutDurationNeverSkipsAnActivityOnlyArrival() {
+        for duration in [nil, 0] as [Int?] {
+            let noDuration = LateWatchArrivalStoredWorkout(startMillis: phoneStart, durationSeconds: duration, sets: phoneSets)
+            XCTAssertEqual(decide(start: phoneStart - 600_000, end: phoneStart + 600_000, stored: [noDuration]), .store)
+            XCTAssertEqual(decide(start: phoneStart, end: phoneStart, stored: [noDuration]), .store)
+        }
     }
 
     func testEndBeforeStartIsTreatedAsAnInstant() {
@@ -108,6 +120,17 @@ final class LateWatchArrivalTests: XCTestCase {
 
     func testIdenticalSetsAtTheToleranceEdgeAreSkipped() {
         XCTAssertEqual(decide(start: phoneEnd + 120_000, end: phoneEnd + 3_600_000, sets: phoneSets), .skip)
+    }
+
+    func testIdenticalSetsBeforeTheStoredWorkoutKeepTheTolerance() {
+        XCTAssertEqual(decide(start: phoneStart - 1_800_000, end: phoneStart - 120_000, sets: phoneSets), .skip)
+        XCTAssertEqual(decide(start: phoneStart - 1_800_000, end: phoneStart - 120_001, sets: phoneSets), .store)
+    }
+
+    func testIdenticalSetsAgainstAStoredWorkoutWithoutDurationUseItsStartOnly() {
+        let noDuration = LateWatchArrivalStoredWorkout(startMillis: phoneStart, durationSeconds: nil, sets: phoneSets)
+        XCTAssertEqual(decide(start: phoneStart + 120_000, end: phoneStart + 600_000, sets: phoneSets, stored: [noDuration]), .skip)
+        XCTAssertEqual(decide(start: phoneStart + 120_001, end: phoneStart + 600_000, sets: phoneSets, stored: [noDuration]), .store)
     }
 
     func testArrivalWithSetsOverlappingAnActivityOnlyWorkoutIsStored() {

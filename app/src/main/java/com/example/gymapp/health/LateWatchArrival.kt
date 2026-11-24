@@ -27,11 +27,14 @@ internal enum class LateWatchArrivalDecision {
 
 /**
  * Pure rule for a watch workout (Wear OS, Garmin) that reaches the phone after a workout for the
- * same time was already saved. Overlap uses [HealthImportRules.overlaps]
- * (OVERLAP_TOLERANCE_SECONDS on both ends).
+ * same time was already saved. The identical-sets check uses [HealthImportRules.overlaps]
+ * (OVERLAP_TOLERANCE_SECONDS on both ends); the activity-only check uses the real intersection.
  *
- * - An arrival with no sets (Garmin free activity) that overlaps a stored workout with sets is
- *   skipped: the stored workout already records the session.
+ * - An arrival with no sets (Garmin free activity) is skipped only when a stored workout with
+ *   sets and a positive duration really covers it: their actual time intersection (no tolerance)
+ *   is at least half the arrival's duration (a zero-length arrival must lie inside it). A
+ *   separate back-to-back session (phone 10:00-11:00, watch run 11:01-11:31) is stored, and a
+ *   stored workout without a duration never causes this skip.
  * - An arrival with sets is skipped only when an overlapping stored workout has exactly the same
  *   sets (same exercise names after trim and case folding, same weights, reps and order). Any
  *   difference stores the arrival, so no differing workout is ever dropped.
@@ -51,6 +54,13 @@ internal object LateWatchArrivalRule {
             ?.coerceAtMost(WorkoutDataLimits.MAX_WORKOUT_DURATION_SECONDS)
             ?: 0L
         val arrivalEndMillis = arrivalStartMillis + durationSeconds * 1_000L
+        if (arrivalSets.isEmpty()) {
+            val covered = candidates.any { candidate ->
+                candidate.sets.isNotEmpty() &&
+                    coversActivity(arrivalStartMillis, arrivalEndMillis, candidate)
+            }
+            return if (covered) LateWatchArrivalDecision.Skip else LateWatchArrivalDecision.Store
+        }
         val overlapping = candidates.filter { candidate ->
             candidate.sets.isNotEmpty() &&
                 HealthImportRules.overlaps(
@@ -60,13 +70,35 @@ internal object LateWatchArrivalRule {
                 )
         }
         if (overlapping.isEmpty()) return LateWatchArrivalDecision.Store
-        if (arrivalSets.isEmpty()) return LateWatchArrivalDecision.Skip
         val arrival = canonical(arrivalSets)
         return if (overlapping.any { canonical(it.sets) == arrival }) {
             LateWatchArrivalDecision.Skip
         } else {
             LateWatchArrivalDecision.Store
         }
+    }
+
+    /**
+     * Whether [candidate] really holds an activity-only arrival: the actual intersection of the
+     * two intervals (no tolerance) is at least half the arrival's duration. A zero-length arrival
+     * must lie inside the stored workout. A stored workout without a positive duration never
+     * covers anything.
+     */
+    private fun coversActivity(
+        arrivalStartMillis: Long,
+        arrivalEndMillis: Long,
+        candidate: LateWatchStoredWorkout
+    ): Boolean {
+        val storedDurationSeconds = candidate.durationSeconds
+            ?.takeIf { it > 0L }
+            ?.coerceAtMost(WorkoutDataLimits.MAX_WORKOUT_DURATION_SECONDS)
+            ?: return false
+        val storedStart = candidate.startMillis
+        val storedEnd = storedStart + storedDurationSeconds * 1_000L
+        val arrivalLength = arrivalEndMillis - arrivalStartMillis
+        if (arrivalLength <= 0L) return arrivalStartMillis in storedStart..storedEnd
+        val intersection = minOf(arrivalEndMillis, storedEnd) - maxOf(arrivalStartMillis, storedStart)
+        return intersection > 0L && intersection * 2L >= arrivalLength
     }
 
     /**
