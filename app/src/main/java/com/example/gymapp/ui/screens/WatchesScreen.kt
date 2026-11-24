@@ -2,6 +2,14 @@ package com.example.gymapp.ui.screens
 
 import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.ContextWrapper
+import androidx.activity.ComponentActivity
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.gymapp.ui.viewmodel.GarminConnectUiState
+import com.example.gymapp.ui.viewmodel.GarminConnectViewModel
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -32,7 +40,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -58,8 +65,6 @@ import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.theme.TintedButton
 import com.example.gymapp.ui.viewmodel.HealthDataUiState
 import com.example.gymapp.ui.viewmodel.WearWatchUiState
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
 
 private const val GARMIN_CONNECT_PACKAGE = "com.garmin.android.apps.connectmobile"
 
@@ -85,10 +90,13 @@ internal fun WatchesScreen(
     val context = LocalContext.current
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     var showGarminResetConfirmation by rememberSaveable { mutableStateOf(false) }
-    // Outcome of the last reset started here: null until one finishes, then shown on the Garmin card.
-    var garminResetSucceeded by rememberSaveable { mutableStateOf<Boolean?>(null) }
-    var garminResetRunning by remember { mutableStateOf(false) }
-    val resetScope = rememberCoroutineScope()
+    // Connect and reset run in an activity-scoped ViewModel: rotation, leaving the screen or Back never
+    // cancels a pairing after the watch was pinned, and the connecting/failed state is kept there.
+    val garminConnectViewModel: GarminConnectViewModel = viewModel(
+        viewModelStoreOwner = garminConnectViewModelOwner(),
+        key = "garmin-connect"
+    )
+    val garminConnectState by garminConnectViewModel.state.collectAsStateWithLifecycle()
     // Opening the screen refreshes every source so the cards never show a stale connection.
     LaunchedEffect(Unit) { onOpened() }
 
@@ -104,10 +112,10 @@ internal fun WatchesScreen(
         item {
             GarminDeviceCard(
                 state = garminDeviceState,
-                resetSucceeded = garminResetSucceeded,
+                connectState = garminConnectState,
                 onOpenGarminApp = { openGymWorkoutTrackerInGarminStore(context) },
                 onResetGarminPairing = { showGarminResetConfirmation = true },
-                onPairGarminDevice = onPairGarminDevice
+                onConnect = { deviceId -> garminConnectViewModel.connect(deviceId, onPairGarminDevice) }
             )
         }
         // Wear OS, between Garmin and Health data; the card hides itself without the Wearable API.
@@ -142,24 +150,9 @@ internal fun WatchesScreen(
                 GymAlertDialogButton(
                     onClick = {
                         showGarminResetConfirmation = false
-                        if (!garminResetRunning) {
-                            garminResetRunning = true
-                            garminResetSucceeded = null
-                            resetScope.launch {
-                                try {
-                                    // The reset needs the trusted watch; its result is shown on the card.
-                                    garminResetSucceeded = try {
-                                        onResetGarminPairing()
-                                    } catch (error: CancellationException) {
-                                        throw error
-                                    } catch (_: Exception) {
-                                        false
-                                    }
-                                } finally {
-                                    garminResetRunning = false
-                                }
-                            }
-                        }
+                        // Without the old watch (or before it acknowledged) the reset releases only this
+                        // phone's pin; the result is shown on the card.
+                        garminConnectViewModel.reset(onResetGarminPairing)
                     },
                     role = GymAlertDialogButtonRole.Destructive
                 ) {
@@ -246,6 +239,15 @@ internal fun WatchCardNotice(
     }
 }
 
+/** The activity's ViewModel store (survives rotation and leaving the screen), else the local owner. */
+@Composable
+private fun garminConnectViewModelOwner(): ViewModelStoreOwner {
+    var context: Context? = LocalContext.current
+    while (context is ContextWrapper && context !is ComponentActivity) context = context.baseContext
+    return (context as? ComponentActivity)
+        ?: checkNotNull(LocalViewModelStoreOwner.current) { "No ViewModelStoreOwner" }
+}
+
 private fun isGarminConnectInstalled(context: Context): Boolean = try {
     context.packageManager.getPackageInfo(GARMIN_CONNECT_PACKAGE, 0)
     true
@@ -273,15 +275,13 @@ private fun openGarminConnectInstallPage(context: Context) {
 @Composable
 private fun GarminDeviceCard(
     state: GarminDeviceUiState,
-    resetSucceeded: Boolean?,
+    connectState: GarminConnectUiState,
     onOpenGarminApp: () -> Unit,
     onResetGarminPairing: () -> Unit,
-    onPairGarminDevice: suspend (deviceId: Long) -> Boolean
+    onConnect: (deviceId: Long) -> Unit
 ) {
     val context = LocalContext.current
-    val pairingScope = rememberCoroutineScope()
-    var connectingDeviceId by remember { mutableStateOf<Long?>(null) }
-    var failedDeviceId by remember { mutableStateOf<Long?>(null) }
+    val resetSucceeded = connectState.resetSucceeded
     // Without the SDK the usual reason is a missing Garmin Connect app; that state gets a way forward.
     val garminConnectMissing = !state.sdkReady && remember(state.sdkReady) { !isGarminConnectInstalled(context) }
     AppPanel(modifier = Modifier.fillMaxWidth()) {
@@ -308,12 +308,12 @@ private fun GarminDeviceCard(
                 )
             } else {
                 state.devices.forEach { device ->
-                    val connecting = connectingDeviceId == device.deviceId
-                    val failed = failedDeviceId == device.deviceId && !connecting
-                    // A failed attempt keeps the watch pinned (the pin precedes the first sync),
-                    // so a retry stays available after the tag already reads "Paired".
-                    val offersConnect = garminDeviceOffersConnect(state, device) ||
-                        (failed && state.canPair && !state.pairingResetPending && device.connected)
+                    val connecting = connectState.connectingDeviceId == device.deviceId
+                    val failed = connectState.failedDeviceId == device.deviceId && !connecting &&
+                        !device.trustedForActiveAccount
+                    // "Paired" needs the watch's acknowledgement; until then (failed, interrupted or
+                    // never acknowledged) the pinned watch keeps offering Connect as a retry.
+                    val offersConnect = garminDeviceOffersConnect(state, device)
                     val action: (@Composable (Modifier) -> Unit)? = when {
                         connecting -> { actionModifier ->
                             Text(
@@ -325,24 +325,7 @@ private fun GarminDeviceCard(
                         }
                         offersConnect -> { actionModifier ->
                             Button(
-                                onClick = {
-                                    if (connectingDeviceId == null) {
-                                        val deviceId = device.deviceId
-                                        connectingDeviceId = deviceId
-                                        failedDeviceId = null
-                                        pairingScope.launch {
-                                            val paired = try {
-                                                onPairGarminDevice(deviceId)
-                                            } catch (error: CancellationException) {
-                                                throw error
-                                            } catch (_: Exception) {
-                                                false
-                                            }
-                                            failedDeviceId = if (paired) null else deviceId
-                                            connectingDeviceId = null
-                                        }
-                                    }
-                                },
+                                onClick = { onConnect(device.deviceId) },
                                 modifier = actionModifier.heightIn(min = 48.dp),
                                 elevation = null
                             ) {
@@ -423,7 +406,10 @@ private fun GarminDeviceCard(
             }
             when (resetSucceeded) {
                 true -> WatchCardNotice(
-                    text = stringResource(R.string.garmin_reset_pairing_done),
+                    text = stringResource(
+                        if (state.pairingReleasedWithoutWatch) R.string.garmin_reset_pairing_released_offline
+                        else R.string.garmin_reset_pairing_done
+                    ),
                     isError = false
                 )
                 false -> WatchCardNotice(
@@ -454,7 +440,8 @@ private fun GarminDeviceCard(
             // Shown only when there is something to reset: a watch paired for this account, a reset
             // left pending by an account change, or a reset that just failed and can be retried.
             // Rare and destructive, so it is a low-emphasis text button (the app's destructive text style).
-            val hasPairing = state.devices.any { it.trustedForActiveAccount }
+            // A pin counts even when it was never acknowledged or the watch is gone (replacement watch).
+            val hasPairing = state.hasPinnedWatch || state.devices.any { it.trustedForActiveAccount }
             if (hasPairing || state.pairingResetPending || resetSucceeded == false) {
                 WatchCardDestructiveTextButton(
                     text = stringResource(R.string.garmin_reset_pairing_action),

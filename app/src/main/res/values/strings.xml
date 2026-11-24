@@ -1485,6 +1485,7 @@
     <string name="garmin_install_connect">Install Garmin Connect</string>
     <string name="garmin_reset_pairing_failed">Couldn’t reset. Connect the watch, open GymApp on it and try again.</string>
     <string name="garmin_reset_pairing_done">Garmin pairing was reset.</string>
+    <string name="garmin_reset_pairing_released_offline">Pairing was removed on this phone only. The old watch wasn’t reached, so nothing on it was cleared. You can now connect another watch.</string>
     <string name="exercise_media_title">Exercise preview</string>
     <string name="exercise_media_add">Add image</string>
     <string name="exercise_media_no_preview">No preview</string>

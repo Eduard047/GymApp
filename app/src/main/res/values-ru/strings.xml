@@ -1535,6 +1535,7 @@
     <string name="garmin_install_connect">Установить Garmin Connect</string>
     <string name="garmin_reset_pairing_failed">Не удалось сбросить. Подключите часы, откройте на них GymApp и повторите.</string>
     <string name="garmin_reset_pairing_done">Привязка Garmin сброшена.</string>
+    <string name="garmin_reset_pairing_released_offline">Привязка удалена только на этом телефоне. Старые часы были недоступны, поэтому на них ничего не очищено. Теперь вы можете подключить другие часы.</string>
     <string name="exercise_media_title">Демонстрация упражнения</string>
     <string name="exercise_media_add">Добавить фото</string>
     <string name="exercise_media_no_preview">Нет демонстрации</string>

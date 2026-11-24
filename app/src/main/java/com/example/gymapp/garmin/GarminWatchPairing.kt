@@ -90,7 +90,9 @@ internal fun decideGarminWatchPairing(
 
 /**
  * Whether Profile shows a Connect button for [device]: the watch is connected now, no watch is
- * paired for the active account yet, and pairing is currently allowed.
+ * paired (pinned and acknowledged) for the active account yet, pairing is currently allowed, and
+ * no other watch holds the phone's pin. A watch that is pinned but never acknowledged the pairing
+ * keeps offering Connect, so a failed or interrupted first Connect can always be retried.
  */
 internal fun garminDeviceOffersConnect(
     state: GarminDeviceUiState,
@@ -100,4 +102,40 @@ internal fun garminDeviceOffersConnect(
     !state.pairingResetPending &&
     device.connected &&
     !device.trustedForActiveAccount &&
-    state.devices.none { it.trustedForActiveAccount }
+    state.devices.none { it.trustedForActiveAccount } &&
+    (!state.hasPinnedWatch || device.pinned)
+
+/**
+ * "Paired" means the watch acknowledged the pairing for this account, not only that the phone
+ * pinned it (mirrors iPhone's `isBindingConfirmed`). [storedAcknowledgedBinding] is the binding the
+ * watch acknowledged for the account. Pins saved before the flag existed count as acknowledged when
+ * [legacyAcknowledgementEvidence] shows an earlier bound exchange with that watch (the generation
+ * capability is stored only after a confirmed sync or a bound watch workout); otherwise Connect is
+ * offered again, which re-pairs the same pinned watch without locking the user out.
+ */
+internal fun garminPairingAcknowledged(
+    pinnedBinding: String?,
+    storedAcknowledgedBinding: String?,
+    legacyAcknowledgementEvidence: Boolean
+): Boolean = pinnedBinding != null &&
+    (storedAcknowledgedBinding == pinnedBinding || legacyAcknowledgementEvidence)
+
+/**
+ * After a Connect attempt: a pin created by this attempt is released again unless the watch
+ * acknowledged the pairing. A pin that existed before the attempt (a retry) is kept.
+ */
+internal fun garminPairingRollbackNeeded(
+    pinnedBeforeAttempt: Boolean,
+    paired: Boolean,
+    acknowledged: Boolean
+): Boolean = !pinnedBeforeAttempt && !paired && !acknowledged
+
+/**
+ * The secure pairing reset releases only the phone's local pin (no destructive message to the
+ * watch) when the pinned watch never acknowledged the pairing or is not connected. The watch keeps
+ * its own account binding and still refuses any other account, so this cannot expose its data.
+ */
+internal fun garminResetReleasesLocalPinOnly(
+    pinnedWatchConnected: Boolean,
+    acknowledged: Boolean
+): Boolean = !pinnedWatchConnected || !acknowledged

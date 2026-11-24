@@ -203,4 +203,71 @@ class GarminWatchPairingTest {
         assertFalse(garminDeviceOffersConnect(state(a, canPair = false), a))
         assertFalse(garminDeviceOffersConnect(state(a, sdkReady = false), a))
     }
+
+    // A first Connect whose pairing message failed: the phone pinned the watch before sending,
+    // the watch never acknowledged. The pin is rolled back and the row offers Connect again.
+    @Test
+    fun failedFirstPairingIsRolledBackAndNotPaired() {
+        assertTrue(
+            garminPairingRollbackNeeded(pinnedBeforeAttempt = false, paired = false, acknowledged = false)
+        )
+        assertFalse(garminPairingAcknowledged(pinnedBinding = null, storedAcknowledgedBinding = null, legacyAcknowledgementEvidence = false))
+        val unpaired = watch(1)
+        assertTrue(garminDeviceOffersConnect(state(unpaired), unpaired))
+        assertTrue(connectedWatchSourcesOf(state(unpaired)).isEmpty())
+    }
+
+    // A cancelled attempt (rotation before the fix, Back, process work cancelled) ends in the same
+    // finally: the result is "not paired", so a pin created by it is released, and a pin that existed
+    // before (a retry) or that the watch acknowledged meanwhile is kept.
+    @Test
+    fun cancelledOrRetriedAttemptLeavesAConsistentPin() {
+        assertTrue(garminPairingRollbackNeeded(pinnedBeforeAttempt = false, paired = false, acknowledged = false))
+        assertFalse(garminPairingRollbackNeeded(pinnedBeforeAttempt = true, paired = false, acknowledged = false))
+        assertFalse(garminPairingRollbackNeeded(pinnedBeforeAttempt = false, paired = false, acknowledged = true))
+        assertFalse(garminPairingRollbackNeeded(pinnedBeforeAttempt = false, paired = true, acknowledged = true))
+    }
+
+    @Test
+    fun pinnedButUnacknowledgedWatchKeepsOfferingConnectAndIsNotConnected() {
+        val pinned = watch(1).copy(pinned = true)
+        val other = watch(2)
+        val s = state(pinned, other).copy(hasPinnedWatch = true)
+        assertTrue(garminDeviceOffersConnect(s, pinned))
+        // Another watch cannot take the pin by a Connect tap; the reset releases it first.
+        assertFalse(garminDeviceOffersConnect(s, other))
+        assertTrue(connectedWatchSourcesOf(s).isEmpty())
+    }
+
+    @Test
+    fun acknowledgedPinIsPaired() {
+        assertTrue(garminPairingAcknowledged(pinnedBinding = tapped, storedAcknowledgedBinding = tapped, legacyAcknowledgementEvidence = false))
+        assertFalse(garminPairingAcknowledged(pinnedBinding = tapped, storedAcknowledgedBinding = other, legacyAcknowledgementEvidence = false))
+        val paired = watch(1, trusted = true)
+        val s = state(paired).copy(hasPinnedWatch = true)
+        assertFalse(garminDeviceOffersConnect(s, paired))
+        assertEquals(listOf(com.example.gymapp.ui.viewmodel.WatchSource.GARMIN), connectedWatchSourcesOf(s))
+    }
+
+    @Test
+    fun legacyPinWithAnEarlierBoundSyncIsPairedAndWithoutOneOffersConnect() {
+        assertTrue(garminPairingAcknowledged(pinnedBinding = tapped, storedAcknowledgedBinding = null, legacyAcknowledgementEvidence = true))
+        assertFalse(garminPairingAcknowledged(pinnedBinding = tapped, storedAcknowledgedBinding = null, legacyAcknowledgementEvidence = false))
+        assertFalse(garminPairingAcknowledged(pinnedBinding = null, storedAcknowledgedBinding = tapped, legacyAcknowledgementEvidence = true))
+    }
+
+    @Test
+    fun resetWithoutTheOldWatchReleasesOnlyThePhonePin() {
+        assertTrue(garminResetReleasesLocalPinOnly(pinnedWatchConnected = false, acknowledged = true))
+        assertTrue(garminResetReleasesLocalPinOnly(pinnedWatchConnected = true, acknowledged = false))
+        assertTrue(garminResetReleasesLocalPinOnly(pinnedWatchConnected = false, acknowledged = false))
+        // The acknowledged, connected watch still gets the destructive secure reset.
+        assertFalse(garminResetReleasesLocalPinOnly(pinnedWatchConnected = true, acknowledged = true))
+        // After the release nothing is pinned, so a replacement watch offers Connect.
+        val replacement = watch(3)
+        assertTrue(garminDeviceOffersConnect(state(replacement), replacement))
+    }
+
+    private fun connectedWatchSourcesOf(s: GarminDeviceUiState) =
+        com.example.gymapp.ui.viewmodel.connectedWatchSources(garmin = s, health = null)
 }

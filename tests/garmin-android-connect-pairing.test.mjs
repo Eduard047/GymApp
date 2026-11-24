@@ -24,7 +24,9 @@ test("Android Watches screen Garmin card offers a one-tap Connect that pairs exa
   const card = screen.slice(screen.indexOf("private fun GarminDeviceCard("));
   assert.ok(card.length > 100, "Missing GarminDeviceCard");
   assert.match(card, /garminDeviceOffersConnect\(state, device\)/);
-  assert.match(card, /onPairGarminDevice\(deviceId\)/);
+  assert.match(card, /onClick = \{ onConnect\(device\.deviceId\) \}/);
+  assert.match(screen, /garminConnectViewModel\.connect\(deviceId, onPairGarminDevice\)/);
+  assert.doesNotMatch(card, /remember \{ mutableStateOf<Long\?>/);
   for (const id of ["garmin_connect_action", "garmin_connecting", "garmin_connect_failed", "garmin_connect_reset_pending"]) {
     assert.equal(card.includes(`R.string.${id}`), true, id);
   }
@@ -58,4 +60,20 @@ test("Android Garmin Connect strings exist in every locale", async () => {
       assert.match(xml, new RegExp(`<string name="${id}">[^<]+</string>`), `${dir}/${id}`);
     }
   }
+});
+
+test("Android Garmin: Paired means acknowledged; a failed first Connect releases its pin; reset works without the old watch", async () => {
+  const [manager, pairing, watchesState] = await Promise.all([
+    read("app/src/main/java/com/example/gymapp/garmin/GarminSyncManager.kt"),
+    read("app/src/main/java/com/example/gymapp/garmin/GarminWatchPairing.kt"),
+    read("app/src/main/java/com/example/gymapp/ui/viewmodel/WatchesState.kt")
+  ]);
+  assert.match(manager, /trustedForActiveAccount = acknowledged &&\s*trustedBinding == deviceBinding\(device\)/);
+  assert.match(manager, /\} finally \{\s*if \(\s*garminPairingRollbackNeeded\(/);
+  assert.match(manager, /if \(\(applied \|\| planTooLarge\) && pending\.account != null\) \{\s*markPairingAcknowledged\(/);
+  assert.match(manager, /garminResetReleasesLocalPinOnly\(\s*pinnedWatchConnected = connectedPinned != null/);
+  // The acknowledgement key must never be scanned as a legacy pin.
+  assert.match(manager, /PAIRING_ACK_KEY_PREFIX = "garmin_pairing_ack_v1"/);
+  assert.match(pairing, /\(!state\.hasPinnedWatch \|\| device\.pinned\)/);
+  assert.match(watchesState, /garmin\.devices\.any \{ it\.trustedForActiveAccount \}/);
 });

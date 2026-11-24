@@ -1535,6 +1535,7 @@
     <string name="garmin_install_connect">Встановити Garmin Connect</string>
     <string name="garmin_reset_pairing_failed">Не вдалося скинути. Підключіть годинник, відкрийте на ньому GymApp і повторіть.</string>
     <string name="garmin_reset_pairing_done">Прив’язку Garmin скинуто.</string>
+    <string name="garmin_reset_pairing_released_offline">Прив’язку видалено лише на цьому телефоні. Старий годинник був недоступний, тому на ньому нічого не очищено. Тепер ви можете підключити інший годинник.</string>
     <string name="exercise_media_title">Демонстрація вправи</string>
     <string name="exercise_media_add">Додати фото</string>
     <string name="exercise_media_no_preview">Немає демонстрації</string>

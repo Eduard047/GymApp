@@ -70,14 +70,17 @@ test("every Garmin and Health flow stays wired from the Watches screen", () => {
   for (const callback of [
     "onOpenGarminApp = { openGymWorkoutTrackerInGarminStore(context) }",
     "onResetGarminPairing = { showGarminResetConfirmation = true }",
-    "onPairGarminDevice = onPairGarminDevice",
+    "onConnect = { deviceId -> garminConnectViewModel.connect(deviceId, onPairGarminDevice) }",
     "onPermissionRequestFinished = onHealthPermissionRequestFinished",
     "onImportNow = onHealthImportNow",
     "onDisconnect = onHealthDisconnect"
   ]) {
     assert.equal(watches.includes(callback), true, callback);
   }
-  assert.match(watches, /onResetGarminPairing\(\)[\s\S]*garmin_reset_pairing_confirm/);
+  assert.match(watches, /garminConnectViewModel\.reset\(onResetGarminPairing\)[\s\S]*garmin_reset_pairing_confirm/);
+  // Connect and reset run in an activity-scoped ViewModel, never in the composition scope.
+  assert.match(watches, /viewModelStoreOwner = garminConnectViewModelOwner\(\)/);
+  assert.doesNotMatch(watches, /rememberCoroutineScope/);
   assert.match(watches, /LaunchedEffect\(Unit\) \{ onOpened\(\) \}/);
   assert.match(
     profile,
@@ -115,7 +118,10 @@ test("Garmin card: reset only with something to reset, its result is shown, miss
     watches,
     /if \(hasPairing \|\| state\.pairingResetPending \|\| resetSucceeded == false\) \{\s*WatchCardDestructiveTextButton\(\s*text = stringResource\(R\.string\.garmin_reset_pairing_action\)/
   );
-  assert.match(watches, /garminResetSucceeded = try \{\s*onResetGarminPairing\(\)/);
+  assert.match(watches, /val resetSucceeded = connectState\.resetSucceeded/);
+  // A reset that could only release the phone's pin says the old watch was not reached.
+  assert.match(watches, /state\.pairingReleasedWithoutWatch\) R\.string\.garmin_reset_pairing_released_offline/);
+  assert.match(watches, /val hasPairing = state\.hasPinnedWatch \|\| state\.devices\.any \{ it\.trustedForActiveAccount \}/);
   assert.match(watches, /R\.string\.garmin_reset_pairing_failed/);
   assert.match(watches, /R\.string\.garmin_reset_pairing_done/);
   assert.match(

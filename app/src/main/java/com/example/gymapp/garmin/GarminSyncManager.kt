@@ -49,6 +49,9 @@ private const val ACCOUNT_BINDING_KEY_PREFIX = "account_binding"
 private const val PLAN_KEY_PREFIX = "cached_plan"
 private const val TRUSTED_DEVICE_KEY_PREFIX = "trusted_device"
 private const val GLOBAL_TRUSTED_DEVICE_KEY = "trusted_physical_device_v2"
+// Per account: the pinned watch binding that acknowledged the pairing. Deliberately not prefixed
+// with TRUSTED_DEVICE_KEY_PREFIX, whose keys are scanned as legacy pins.
+private const val PAIRING_ACK_KEY_PREFIX = "garmin_pairing_ack_v1"
 private const val PAIRING_GENERATION_KEY_PREFIX = "pairing_generation_v1"
 private const val PENDING_PAIRING_GENERATION_KEY_PREFIX = "pairing_generation_pending_v1"
 private const val PAIRING_GENERATION_CAPABILITY_KEY_PREFIX = "pairing_generation_capable_v1"
@@ -119,6 +122,7 @@ internal fun garminCloudAccountLocalCleanupPlan(
         existingPreferences[LAST_READY_AUTH_TRANSITION_KEY] == authTarget.key
     if (lastReadyBelongsToDeletedOwner) keys += LAST_READY_AUTH_TRANSITION_KEY
 
+    keys += garminStorageKey(PAIRING_ACK_KEY_PREFIX, accountBinding)
     val deviceBindings = linkedSetOf<String>()
     ownerTrustedDevice?.let(deviceBindings::add)
     if (lastReadyBelongsToDeletedOwner || deletedTransitionIsPending) {
@@ -152,11 +156,14 @@ internal fun garminCloudAccountLocalCleanupPlan(
 data class GarminDeviceSummary(
     val name: String,
     val connected: Boolean,
+    /** Paired: pinned to this phone AND the watch acknowledged the pairing for the active account. */
     val trustedForActiveAccount: Boolean,
     /** Free-workout-only watch (96 KiB tier): it never receives or shows plans. */
     val liteMode: Boolean = false,
     /** Connect IQ device identifier, used only to pair exactly the watch the user tapped. */
-    val deviceId: Long = 0L
+    val deviceId: Long = 0L,
+    /** Pinned to this phone, acknowledged or not; an unacknowledged pin still offers Connect. */
+    val pinned: Boolean = trustedForActiveAccount
 )
 
 data class GarminDeviceUiState(
@@ -165,7 +172,11 @@ data class GarminDeviceUiState(
     /** An account is signed in and ready, so an explicit Connect tap may pair a watch. */
     val canPair: Boolean = false,
     /** An auth-transition reset is pending: the existing reset flow must finish before pairing. */
-    val pairingResetPending: Boolean = false
+    val pairingResetPending: Boolean = false,
+    /** The phone holds a watch pin for the active account (the watch may be absent from [devices]). */
+    val hasPinnedWatch: Boolean = false,
+    /** The last pairing reset released only the phone's pin because the watch was not reached. */
+    val pairingReleasedWithoutWatch: Boolean = false
 ) {
     /** True when the watch paired to the active account is a free-workout-only watch. */
     val trustedWatchIsLite: Boolean
@@ -721,14 +732,30 @@ class GarminSyncManager(
                 lastPlanSyncStatus = resolution.failedStatus
                 return@outbound false
             }
-            val device = resolution.connected
+            val connectedPinned = resolution.connected
                 .filter { deviceBinding(it) == trustedBinding }
                 .distinctBy { it.deviceIdentifier }
                 .singleOrNull()
-                ?: run {
-                    lastPlanSyncStatus = "Reconnect the trusted Garmin watch before pairing reset"
+            if (
+                garminResetReleasesLocalPinOnly(
+                    pinnedWatchConnected = connectedPinned != null,
+                    acknowledged = pairingAcknowledged(account, trustedBinding)
+                )
+            ) {
+                // Replacement watch or a pairing the watch never acknowledged: release only this
+                // phone's pin. The destructive reset cannot reach the old watch; it keeps its own
+                // account binding and still refuses any other account, and inbound messages are
+                // accepted only from a pinned watch, so nothing becomes readable or writable.
+                if (!releaseLocalPin(trustedBinding)) {
+                    lastPlanSyncStatus = "Cannot release the Garmin watch pin"
                     return@outbound false
                 }
+                pairingReleasedWithoutWatch = true
+                lastPlanSyncStatus = "Garmin pin released on this phone; the old watch was not reached"
+                refreshDeviceUiState()
+                return@outbound true
+            }
+            val device = connectedPinned ?: return@outbound false
             registerAppEvents(device)
 
             if (!pairingGenerationSupported(account, trustedBinding)) {
@@ -801,6 +828,8 @@ class GarminSyncManager(
                 return@outbound false
             }
             lastPlanSyncStatus = "Secure Garmin pairing reset"
+            pairingReleasedWithoutWatch = false
+            refreshDeviceUiState()
             true
             }
         }
@@ -878,6 +907,33 @@ class GarminSyncManager(
         if (account == null || tapped == null) return false
         registerAppEvents(tapped)
         val language = application.languageManager.currentLanguage()
+        // Paired means acknowledged: a pin created by this attempt is released again when the
+        // pairing is not acknowledged, also when the attempt is cancelled (finally runs then too).
+        val pinnedBeforeAttempt = trusted.state == GarminTrustedDeviceState.Pinned
+        var paired = false
+        try {
+            paired = pairTappedWatch(account, tapped, pair, language)
+            if (paired) markPairingAcknowledged(account, pair.deviceBinding)
+            return paired
+        } finally {
+            if (
+                garminPairingRollbackNeeded(
+                    pinnedBeforeAttempt = pinnedBeforeAttempt,
+                    paired = paired,
+                    acknowledged = pairingAcknowledged(account, pair.deviceBinding)
+                )
+            ) {
+                releaseLocalPin(pair.deviceBinding)
+            }
+        }
+    }
+
+    private suspend fun pairTappedWatch(
+        account: GarminAccountContext,
+        tapped: IQDevice,
+        pair: GarminWatchPairingDecision.Pair,
+        language: AppLanguage
+    ): Boolean {
         return when (pair.mode) {
             GarminPairingSyncMode.BindingOnly ->
                 sendBindingOnlyPairing(account, tapped, language)
@@ -1177,6 +1233,11 @@ class GarminSyncManager(
             refreshDeviceUiState()
         }
         if (pendingSyncAcks.remove(syncId, pending)) {
+            // A bound applied (or plan-too-large) acknowledgement proves the watch took the
+            // pairing for this account: from now on the pinned watch counts as paired.
+            if ((applied || planTooLarge) && pending.account != null) {
+                markPairingAcknowledged(pending.account, pending.binding.device)
+            }
             if (planTooLarge) {
                 // The watch answered that the plan does not fit; resending cannot change that.
                 // Pairing fields in the sync were still applied by the watch.
@@ -2209,6 +2270,8 @@ class GarminSyncManager(
         }
         val account = rawActiveAccountContext()
         val trustedBinding = account?.let(::trustedDeviceBinding)
+        val acknowledged = account != null && trustedBinding != null &&
+            pairingAcknowledged(account, trustedBinding)
         // Device callbacks already carry the new status. Do not call getDeviceStatus
         // from inside that callback: some Garmin Connect versions synchronously
         // dispatch another status callback and can recurse until the process dies.
@@ -2231,13 +2294,17 @@ class GarminSyncManager(
                         name = name,
                         connected = latestDeviceStatuses[device.deviceIdentifier] ==
                             IQDevice.IQDeviceStatus.CONNECTED,
-                        trustedForActiveAccount = trustedBinding == deviceBinding(device),
+                        trustedForActiveAccount = acknowledged &&
+                            trustedBinding == deviceBinding(device),
                         liteMode = liteWatches.isLite(deviceBinding(device)),
-                        deviceId = device.deviceIdentifier
+                        deviceId = device.deviceIdentifier,
+                        pinned = trustedBinding == deviceBinding(device)
                     )
                 },
             canPair = account != null && isStillActive(account),
-            pairingResetPending = pendingAuthTransition() != null
+            pairingResetPending = pendingAuthTransition() != null,
+            hasPinnedWatch = trustedBinding != null,
+            pairingReleasedWithoutWatch = pairingReleasedWithoutWatch
         )
     }
 
@@ -2875,6 +2942,74 @@ class GarminSyncManager(
                 retainedTargetKey = account.authTransitionKey,
                 retainedDeviceBinding = deviceBinding
             )
+            return editor.commit()
+        }
+    }
+
+    @Volatile
+    private var pairingReleasedWithoutWatch = false
+
+    /** Whether the pinned [deviceBinding] acknowledged the pairing for [account] (see the helper). */
+    private fun pairingAcknowledged(account: GarminAccountContext, deviceBinding: String): Boolean {
+        if (!isStillActive(account) || !isValidGarminTransportDeviceBinding(deviceBinding)) {
+            return false
+        }
+        val key = garminStorageKey(PAIRING_ACK_KEY_PREFIX, account.binding)
+        synchronized(accountBindingLock) {
+            val preferences = preferences()
+            val pinned = trustedDeviceResolutionLocked(preferences, migrateLegacy = false)
+                .takeIf { it.state == GarminTrustedDeviceState.Pinned }
+                ?.binding
+                ?.takeIf { it == deviceBinding }
+            val stored = preferences.getStringSafely(key)
+            if (stored == pinned && pinned != null) return true
+            // Migration for pins saved before this flag: the generation capability is stored only
+            // after a confirmed sync or a bound watch workout for this account and watch.
+            val acknowledged = garminPairingAcknowledged(
+                pinnedBinding = pinned,
+                storedAcknowledgedBinding = stored,
+                legacyAcknowledgementEvidence = pinned != null && pairingGenerationSupported(
+                    GarminAuthTransitionTarget(account.authTransitionKey, account.binding),
+                    deviceBinding
+                )
+            )
+            if (acknowledged) preferences.edit().putString(key, deviceBinding).commit()
+            return acknowledged
+        }
+    }
+
+    private fun markPairingAcknowledged(account: GarminAccountContext, deviceBinding: String) {
+        if (trustedDeviceBinding(account) != deviceBinding) return
+        val key = garminStorageKey(PAIRING_ACK_KEY_PREFIX, account.binding)
+        synchronized(accountBindingLock) {
+            if (preferences().getStringSafely(key) != deviceBinding) {
+                preferences().edit().putString(key, deviceBinding).commit()
+            }
+        }
+        pairingReleasedWithoutWatch = false
+        refreshDeviceUiState()
+    }
+
+    /**
+     * Releases this phone's pin on [deviceBinding]: the global pin, every account's (legacy) pin
+     * entry for it, and every acknowledgement of it. Pairing generations are kept, so re-pairing the
+     * same watch later reuses the generation the watch already holds. Inbound messages need a pin,
+     * so releasing one only narrows what is accepted.
+     */
+    private fun releaseLocalPin(deviceBinding: String): Boolean {
+        synchronized(accountBindingLock) {
+            val preferences = preferences()
+            val resolution = trustedDeviceResolutionLocked(preferences, migrateLegacy = false)
+            if (resolution.state == GarminTrustedDeviceState.Pinned && resolution.binding != deviceBinding) {
+                return false
+            }
+            val editor = preferences.edit()
+            preferences.all.forEach { (key, value) ->
+                val pinOrAck = key == GLOBAL_TRUSTED_DEVICE_KEY ||
+                    key.startsWith("${TRUSTED_DEVICE_KEY_PREFIX}_") ||
+                    key.startsWith("${PAIRING_ACK_KEY_PREFIX}_")
+                if (pinOrAck && value == deviceBinding) editor.remove(key)
+            }
             return editor.commit()
         }
     }
