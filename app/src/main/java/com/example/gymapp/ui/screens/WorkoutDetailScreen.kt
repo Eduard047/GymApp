@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import com.example.gymapp.ui.components.GymIcons
+import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.components.ShareUp
 import com.example.gymapp.ui.theme.Button
 import com.example.gymapp.ui.theme.accentMarkColor
@@ -466,13 +467,15 @@ internal fun WorkoutDetailScreen(
                     null
                 }
             }
+            // Cap the detail to the shared max content width and centre it in landscape / on tablets.
+            val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize().imePadding(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    start = GymSpacing.ScreenHorizontal,
+                    start = screenHorizontalPadding,
                     top = GymSpacing.ScreenTop,
-                    end = GymSpacing.ScreenHorizontal,
+                    end = screenHorizontalPadding,
                     bottom = GymSpacing.ScreenBottom + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
                 ),
                 verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)

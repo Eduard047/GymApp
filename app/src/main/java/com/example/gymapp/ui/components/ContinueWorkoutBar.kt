@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,10 +50,15 @@ fun ContinueWorkoutBar(
     onContinue: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // 16 dp inset on phones; in landscape / on tablets the bar is capped to the shared max content width and centred.
+    val horizontalInset = adaptiveHorizontalPadding(
+        windowWidth = LocalConfiguration.current.screenWidthDp.dp,
+        minimumPadding = 16.dp
+    )
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .padding(horizontal = horizontalInset, vertical = 6.dp),
         color = HeroTone.surface,
         shape = RoundedCornerShape(12.dp)
     ) {
