@@ -846,6 +846,11 @@ struct ActiveWorkoutView: View {
             ) {
                 discard()
             }
+            // Like Android's back / outside tap: close the question and stay in the workout.
+            Button(
+                ActiveWorkoutFinishCopy.cancelButton(languageCode: gymCurrentLanguageCode()),
+                role: .cancel
+            ) {}
         } message: {
             Text(ActiveWorkoutFinishCopy.watchOverlapMessage(languageCode: gymCurrentLanguageCode()))
         }
@@ -903,7 +908,8 @@ struct ActiveWorkoutView: View {
     private func presentUIAuditRouteIfRequested() {
         let routes: [UIAuditRoute] = [
             .workoutAdaptation, .finishExerciseDialog, .finishWorkoutDialog,
-            .discardActiveWorkoutDialog, .removeExerciseDialog, .deleteSetDialog
+            .discardActiveWorkoutDialog, .removeExerciseDialog, .deleteSetDialog,
+            .watchOverlapDialog, .finishWorkoutOverlap
         ]
         guard let route = UIAuditRouter.shared.consume(anyOf: routes) else { return }
         Task { @MainActor in
@@ -924,9 +930,50 @@ struct ActiveWorkoutView: View {
                 pendingRemoveExerciseID = draft.exercises.first?.id
             case .deleteSetDialog:
                 pendingDeleteRecordedSetID = draft.exercises.first?.sets.first?.id
+            case .watchOverlapDialog:
+                seedUIAuditOverlappingImport(draft)
+                finish(draft)
+            case .finishWorkoutOverlap:
+                seedUIAuditOverlappingImport(draft)
+                showingFinishConfirmation = true
+                try? await Task.sleep(for: .seconds(3))
+                // Same order as the alert's Finish button: the alert closes and its action runs.
+                guard showingFinishConfirmation, let settled = currentDraft else { return }
+                showingFinishConfirmation = false
+                finish(settled)
             default:
                 break
             }
+        }
+    }
+
+    /// UI-audit: adds one Apple Health workout covering the draft's start, so finishing asks
+    /// about the overlap. Reused when it already exists; never confirms anything.
+    private func seedUIAuditOverlappingImport(_ draft: ActiveWorkoutDraft) {
+        let note = HealthImportRules.buildNote(
+            type: "traditionalStrengthTraining",
+            durationSeconds: 3_600,
+            gymCalories: 300,
+            averageHeartRate: 120,
+            maximumHeartRate: 150,
+            languageCode: gymCurrentLanguageCode()
+        )
+        guard ActiveWorkoutWatchOverlap.coveringWorkout(
+            draftStartedAt: draft.startedAt,
+            finishedAt: max(Date(), draft.lastModifiedAt),
+            workouts: workoutStore.workouts
+        ) == nil else { return }
+        do {
+            _ = try workoutStore.createImportedActivityWorkout(
+                date: draft.startedAt,
+                note: note,
+                durationSeconds: 3_600,
+                gymCalories: 300,
+                averageHeartRate: 120,
+                maximumHeartRate: 150
+            )
+        } catch {
+            UIAuditLaunch.log("overlap seed failed: \(gymErrorMessage(error))")
         }
     }
 #endif
@@ -4541,7 +4588,10 @@ struct ActiveWorkoutView: View {
                finishedAt: max(Date(), draft.lastModifiedAt),
                workouts: workoutStore.workouts
            ) != nil {
-            showingWatchOverlapConfirmation = true
+            // finish() can run from the "Finish workout?" alert's button. Raise the overlap
+            // alert on the next runloop, after that alert has started closing, so it is never
+            // presented while another alert is still on screen.
+            DispatchQueue.main.async { showingWatchOverlapConfirmation = true }
             return
         }
         do {

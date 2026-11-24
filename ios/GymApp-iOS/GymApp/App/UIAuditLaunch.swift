@@ -35,6 +35,12 @@ enum UIAuditRoute: String, CaseIterable {
     case plateCalculator = "plate-calculator"
     case finishExerciseDialog = "finish-exercise-dialog"
     case finishWorkoutDialog = "finish-workout-dialog"
+    // Seed an Apple Health workout overlapping the active draft (local audit profile only).
+    // watch-overlap-dialog: shows the overlap question directly. finish-workout-overlap: shows
+    // "Finish workout?", then runs its Finish action the way the alert button does, so the
+    // overlap question opens from inside that alert's action.
+    case watchOverlapDialog = "watch-overlap-dialog"
+    case finishWorkoutOverlap = "finish-workout-overlap"
     case discardActiveWorkoutDialog = "discard-active-workout-dialog"
     case removeExerciseDialog = "remove-exercise-dialog"
     case deleteSetDialog = "delete-set-dialog"

@@ -1009,7 +1009,8 @@ private struct MainTabShell: View {
             UIAuditRouter.shared.pendingPresentation = route
             showsAddWorkout = true
         case .workoutActive, .workoutAdaptation, .plateCalculator, .finishExerciseDialog,
-             .finishWorkoutDialog, .discardActiveWorkoutDialog, .removeExerciseDialog, .deleteSetDialog:
+             .finishWorkoutDialog, .discardActiveWorkoutDialog, .removeExerciseDialog, .deleteSetDialog,
+             .watchOverlapDialog, .finishWorkoutOverlap:
             selectedTab = .workouts
             guard startUIAuditDraftIfNeeded(route) else { return }
             if route != .workoutActive { UIAuditRouter.shared.pendingPresentation = route }

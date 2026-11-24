@@ -1259,35 +1259,38 @@ private struct WatchesScreen: View {
         let installed = appleWatchLinked(appleWatch)
         return GymPanel {
             VStack(alignment: .leading, spacing: 12) {
-                // The badge sits on the title line only, so the capability line keeps
-                // the full card width (it wrapped beside the badge in UK).
-                GymSectionTitle(
-                    title: "Apple Watch",
-                    supporting: gymText(
-                        "Plan on the watch, sets and heart rate",
-                        "План на годиннику, підходи й пульс",
-                        "План на часах, подходы и пульс",
-                        languageCode: languageCode
+                // Header and Paired tag form one VoiceOver stop at every size (Android merges them too).
+                VStack(alignment: .leading, spacing: 12) {
+                    // The badge sits on the title line only, so the capability line keeps
+                    // the full card width (it wrapped beside the badge in UK).
+                    GymSectionTitle(
+                        title: "Apple Watch",
+                        supporting: gymText(
+                            "Plan on the watch, sets and heart rate",
+                            "План на годиннику, підходи й пульс",
+                            "План на часах, подходы и пульс",
+                            languageCode: languageCode
+                        )
                     )
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .overlay(alignment: .topTrailing) {
-                    if installed && !dynamicTypeSize.isAccessibilitySize {
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .overlay(alignment: .topTrailing) {
+                        if installed && !dynamicTypeSize.isAccessibilitySize {
+                            Text(gymText("Paired", "Прив’язано", "Привязано", languageCode: languageCode))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(GymTheme.primary)
+                                .padding(.top, 4)
+                        }
+                    }
+
+                    // Accessibility sizes: the badge gets its own line under the title
+                    // instead of overlapping the enlarged title text.
+                    if installed && dynamicTypeSize.isAccessibilitySize {
                         Text(gymText("Paired", "Прив’язано", "Привязано", languageCode: languageCode))
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(GymTheme.primary)
-                            .padding(.top, 4)
                     }
                 }
                 .accessibilityElement(children: .combine)
-
-                // Accessibility sizes: the badge gets its own line under the title
-                // instead of overlapping the enlarged title text.
-                if installed && dynamicTypeSize.isAccessibilitySize {
-                    Text(gymText("Paired", "Прив’язано", "Привязано", languageCode: languageCode))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(GymTheme.primary)
-                }
 
                 if !installed {
                     GymInlineState(
