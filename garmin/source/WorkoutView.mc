@@ -1654,7 +1654,7 @@ class WorkoutView extends Ui.View {
     (:fullLegacyState)
     function drawReady(dc, w, h) {
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        drawCentered(dc, 24, Gfx.FONT_TINY, "GYMAPP");
+        drawCentered(dc, 24, Gfx.FONT_TINY, "GymApp");
 
         dc.setColor(GymStore.hasAccountBinding() ? Gfx.COLOR_GREEN :
             Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
@@ -1680,8 +1680,15 @@ class WorkoutView extends Ui.View {
     (:compactWorkoutMode96)
     function drawReady(dc, w, h) {
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 0.18, Gfx.FONT_XTINY,
-            fitText(readyStatusText(), 20), Gfx.TEXT_JUSTIFY_CENTER);
+        var cx = headerCenterX(w);
+        dc.drawText(cx, h * 0.04, Gfx.FONT_XTINY, "GymApp", Gfx.TEXT_JUSTIFY_CENTER);
+        var status = fitText(readyStatusText(), 20);
+        // Next to the sub-window the line is narrower: trim by pixels.
+        while (cx < w / 2 && status.length() > 4 &&
+            dc.getTextWidthInPixels(status, Gfx.FONT_XTINY) > cx * 2 - 4) {
+            status = status.substring(0, status.length() - 4) + "...";
+        }
+        dc.drawText(cx, h * 0.18, Gfx.FONT_XTINY, status, Gfx.TEXT_JUSTIFY_CENTER);
         var count = readyActionCount();
         for (var i = 0; i < count; i += 1) {
             drawMinimalLine(dc, w, h * (0.40 + i * 0.16),
@@ -1689,12 +1696,27 @@ class WorkoutView extends Ui.View {
         }
     }
 
+    // Instinct-class displays have a round sub-window in the top-right
+    // corner. Header text is centered in the area left of it so nothing is
+    // drawn underneath; other displays use the screen center.
+    (:compactLegacyState)
+    function headerCenterX(w) {
+        if (Ui has :getSubscreen) {
+            var sub = Ui.getSubscreen();
+            if (sub != null && sub.x > w / 2) {
+                return sub.x / 2;
+            }
+        }
+        return w / 2;
+    }
+
     (:compactLegacyState, :richWorkoutMode)
     function drawCompactReady(dc, w, h) {
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
         dc.clear();
         var font = Gfx.FONT_XTINY;
-        dc.drawText(w / 2, h * 0.09, Gfx.FONT_SMALL,
+        var cx = headerCenterX(w);
+        dc.drawText(cx, h * 0.09, Gfx.FONT_SMALL,
             "GymApp", Gfx.TEXT_JUSTIFY_CENTER);
         var detail;
         if (hasWorkoutToResume() && (GymStore.status == GymStatus.READY)) {
@@ -1706,8 +1728,8 @@ class WorkoutView extends Ui.View {
         }
         else { detail = readyStatusText(); }
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 0.22, font,
-            fitTextWidth(dc, detail, font, w * 0.76), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(cx, h * 0.22, font,
+            fitTextWidth(dc, detail, font, cx < w / 2 ? cx * 2 - 6 : w * 0.76), Gfx.TEXT_JUSTIFY_CENTER);
         detail = null;
         var count = readyActionCount();
         var top = h * (count == 4 ? 0.32 : 0.40);
@@ -1715,7 +1737,9 @@ class WorkoutView extends Ui.View {
         var width = w * (count == 4 ? 0.70 : 0.72);
         for (var i = 0; i < count; i += 1) {
             var y = top + i * h * (count == 4 ? 0.135 : 0.155);
-            var color = i == 0 ? Gfx.COLOR_GREEN : Gfx.COLOR_WHITE;
+            // Sub-window (Instinct) displays are monochrome: green fill
+            // renders dark there and hid the selected first row.
+            var color = (i == 0 && cx >= w / 2) ? Gfx.COLOR_GREEN : Gfx.COLOR_WHITE;
             dc.setColor(color, Gfx.COLOR_TRANSPARENT);
             if (i == selected) {
                 dc.fillRoundedRectangle((w - width) / 2, y, width, rowHeight, 7);
