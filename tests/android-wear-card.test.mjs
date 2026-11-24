@@ -115,6 +115,9 @@ test("unlink is destructive and behind a confirmation dialog", () => {
   assert.match(syncManager, /suspend fun unlinkWatch\(\): Boolean/);
   assert.match(syncManager, /buildBindingState\(binding, unlinked = true\)/);
   assert.match(binding, /KEY_UNLINKED_NODE_ID, null\) == sourceNodeId && !linkIntent\) return false/);
+  // Every released pin (this phone's Unlink or the watch's own notice) re-reads an open card.
+  assert.match(syncManager, /val pinReleases: StateFlow<Long>/);
+  assert.match(viewModel, /phoneWearSyncManager\.pinReleases\.drop\(1\)\.collect \{ refresh\(\) \}/);
 });
 
 test("the card is hidden when the Wearable API is unavailable and lookups stay off the UI thread", () => {

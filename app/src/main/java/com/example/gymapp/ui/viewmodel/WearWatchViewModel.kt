@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -36,6 +37,13 @@ internal class WearWatchViewModel(
 
     // Serializes lookups and the unlink so a slow lookup cannot resurrect a just-unlinked watch.
     private val mutex = Mutex()
+
+    init {
+        // An unlink from either side (this phone or the watch's own notice) re-reads an open card.
+        viewModelScope.launch {
+            application.phoneWearSyncManager.pinReleases.drop(1).collect { refresh() }
+        }
+    }
 
     /** Re-reads the link and the watch connection (Watches screen or Profile opened). */
     fun refresh() {
