@@ -20,6 +20,8 @@
             <action android:name="android.speech.RecognitionService" />
         </intent>
         <package android:name="com.google.android.apps.healthdata" />
+        <!-- Watches screen: offers "Install Garmin Connect" only when the app is missing. -->
+        <package android:name="com.garmin.android.apps.connectmobile" />
     </queries>
 
     <application

@@ -1,4 +1,4 @@
-﻿<resources>
+﻿<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">Трекер тренувань</string>
 
     <string name="tab_workouts">Сьогодні</string>
@@ -1029,13 +1029,13 @@
     <string name="today_all_history">Уся історія</string>
     <string name="today_history_collapse">Згорнути</string>
     <string name="today_stat_volume_label">обсяг</string>
-    <plurals name="today_stat_workouts_label">
+    <plurals name="today_stat_workouts_label" tools:ignore="ImpliedQuantity">
         <item quantity="one">тренування</item>
         <item quantity="few">тренування</item>
         <item quantity="many">тренувань</item>
         <item quantity="other">тренування</item>
     </plurals>
-    <plurals name="today_stat_minutes_label">
+    <plurals name="today_stat_minutes_label" tools:ignore="ImpliedQuantity">
         <item quantity="one">хвилина</item>
         <item quantity="few">хвилини</item>
         <item quantity="many">хвилин</item>
@@ -1483,10 +1483,10 @@
     <string name="exercise_sort_least_frequent">Найрідші</string>
     <string name="exercise_card_built_in">Вбудована</string>
     <string name="garmin_open_app">Відкрити Gym Workout Tracker у Garmin</string>
-    <string name="garmin_reset_pairing_action">Скинути захищене прив’язування Garmin</string>
-    <string name="garmin_reset_pairing_title">Скинути захищене прив’язування Garmin?</string>
-    <string name="garmin_reset_pairing_description">Черга тренувань на довіреному годиннику буде очищена, після чого почнеться новий захищений період для квитанцій. Не від’єднуй годинник.</string>
-    <string name="garmin_reset_pairing_confirm">Скинути прив’язування</string>
+    <string name="garmin_reset_pairing_action">Скинути захищену прив’язку Garmin</string>
+    <string name="garmin_reset_pairing_title">Скинути захищену прив’язку Garmin?</string>
+    <string name="garmin_reset_pairing_description">Черга тренувань на довіреному годиннику буде очищена, після чого почнеться новий захищений період для квитанцій. Не від’єднуйте годинник.</string>
+    <string name="garmin_reset_pairing_confirm">Скинути</string>
     <string name="profile_group_our_apps">Наші застосунки</string>
     <string name="health_app_row_title">HealthApp</string>
     <string name="health_app_row_subtitle">Сон, HRV і відновлення з вашого годинника — від того ж розробника</string>
@@ -1515,21 +1515,26 @@
     <string name="garmin_profile_offline">Зараз не підключено</string>
     <string name="garmin_profile_paired">Прив’язано</string>
     <string name="watches_wear_title">Wear OS</string>
-    <string name="watches_wear_caption">Samsung Galaxy Watch, Pixel Watch та інші годинники Wear OS</string>
-    <string name="watches_wear_not_linked">Встановіть GymApp на годинник і відкрийте його — він автоматично зв’яжеться з цим телефоном.</string>
-    <string name="watches_wear_default_name">Годинник Wear OS</string>
-    <string name="watches_wear_linked">Зв’язано</string>
+    <string name="watches_wear_caption">Samsung Galaxy Watch, Pixel Watch та інші годинники Wear\u00A0OS</string>
+    <string name="watches_wear_not_linked">Встановіть GymApp на годинник і відкрийте його поруч із телефоном — годинник прив’яжеться автоматично. Після відв’язування натисніть на годиннику «Прив’язати до телефона».</string>
+    <string name="watches_wear_default_name">Годинник Wear\u00A0OS</string>
+    <string name="watches_wear_linked">Прив’язано</string>
+    <string name="watches_wear_link_pending">Відкрийте GymApp на годиннику, щоб завершити прив’язування.</string>
     <string name="watches_wear_unlink_action">Відв’язати годинник</string>
     <string name="watches_wear_unlink_title">Відв’язати цей годинник?</string>
-    <string name="watches_wear_unlink_body">Тренування, ще не надіслані з годинника, залишаться на ньому.</string>
+    <string name="watches_wear_unlink_body">Тренування, ще не надіслані з годинника, залишаться на ньому. Щоб прив’язати знову, натисніть на годиннику «Прив’язати до телефона».</string>
     <string name="watches_wear_unlink_confirm">Відв’язати</string>
     <string name="garmin_connect_action">Підключити</string>
     <string name="garmin_connecting">Підключення…</string>
     <string name="garmin_connect_failed">Не вдалося підключити. Відкрийте застосунок на годиннику й повторіть.</string>
-    <string name="garmin_connect_reset_pending">Завершіть скидання Garmin-прив’язки нижче, перш ніж підключати годинник.</string>
+    <string name="garmin_connect_reset_pending">Завершіть скидання прив’язки Garmin нижче, перш ніж підключати годинник.</string>
     <string name="garmin_lite_free_only_notice">Цей годинник підтримує лише вільні тренування. Плани залишаються на телефоні.</string>
-    <string name="garmin_profile_no_devices">У Garmin Connect немає сполученого годинника.</string>
+    <string name="garmin_profile_no_devices">У Garmin Connect немає прив’язаного годинника.</string>
     <string name="garmin_profile_unavailable">Garmin Connect недоступний на цьому пристрої.</string>
+    <string name="garmin_profile_not_installed">Встановіть Garmin Connect, щоб підключити годинник Garmin.</string>
+    <string name="garmin_install_connect">Встановити Garmin Connect</string>
+    <string name="garmin_reset_pairing_failed">Не вдалося скинути. Підключіть годинник, відкрийте на ньому GymApp і повторіть.</string>
+    <string name="garmin_reset_pairing_done">Прив’язку Garmin скинуто.</string>
     <string name="exercise_media_title">Демонстрація вправи</string>
     <string name="exercise_media_add">Додати фото</string>
     <string name="exercise_media_no_preview">Немає демонстрації</string>
@@ -1905,23 +1910,26 @@
     <string name="exercise_equipment_bodyweight">Власна вага</string>
 
     <!-- Health Connect import card (Profile) and permission rationale -->
-    <string name="health_data_title">Дані здоров’я</string>
+    <string name="health_data_title">Дані про здоров’я</string>
     <string name="health_data_unavailable">Health Connect недоступний на цьому телефоні.</string>
+    <string name="health_data_update_required">Встановіть або оновіть Health Connect, щоб імпортувати тренування.</string>
     <string name="health_data_install">Встановити Health Connect</string>
     <string name="health_data_connect">Підключити Health Connect</string>
     <plurals name="health_data_summary">
-        <item quantity="one">Імпортовано %1$d тренування · останній імпорт %2$s</item>
-        <item quantity="few">Імпортовано %1$d тренування · останній імпорт %2$s</item>
-        <item quantity="many">Імпортовано %1$d тренувань · останній імпорт %2$s</item>
-        <item quantity="other">Імпортовано %1$d тренування · останній імпорт %2$s</item>
+        <item quantity="one">Імпортовано %1$d тренування\u00A0· останній імпорт %2$s</item>
+        <item quantity="few">Імпортовано %1$d тренування\u00A0· останній імпорт %2$s</item>
+        <item quantity="many">Імпортовано %1$d тренувань\u00A0· останній імпорт %2$s</item>
+        <item quantity="other">Імпортовано %1$d тренування\u00A0· останній імпорт %2$s</item>
     </plurals>
     <string name="health_data_last_import">Останній імпорт %1$s</string>
     <string name="health_data_import_now">Імпортувати зараз</string>
     <string name="health_data_disconnect">Відключити</string>
     <string name="health_data_importing">Імпорт…</string>
-    <string name="health_data_empty">Нових тренувань у залі не знайдено.</string>
+    <string name="health_data_empty">Нових тренувань у залі не знайдено. Якщо очікували їх, дозвольте GymApp читати тренування в Health Connect.</string>
     <string name="health_data_failed">Не вдалося імпортувати. Спробуйте ще раз.</string>
+    <string name="health_data_access_denied">GymApp не має доступу до тренувань. Дозвольте його в Health Connect.</string>
+    <string name="health_data_open_settings">Відкрити Health Connect</string>
     <string name="health_data_caption">Samsung, Xiaomi, Huawei, Amazfit, Polar, Fitbit та інші годинники — через Health Connect.</string>
-    <string name="health_import_rationale_title">Як GymApp використовує дані здоров’я</string>
+    <string name="health_import_rationale_title">Як GymApp використовує дані про здоров’я</string>
     <string name="health_import_rationale_body">GymApp читає ваші тренування в залі, пульс і калорії з Health Connect лише після того, як ви його підключите, щоб додати тренування, записані вашим годинником. Він ніколи не записує дані в Health Connect і не використовує їх для реклами.</string>
 </resources>

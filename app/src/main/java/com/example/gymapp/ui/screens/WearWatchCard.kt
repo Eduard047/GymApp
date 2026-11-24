@@ -2,18 +2,14 @@ package com.example.gymapp.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Watch
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,7 +33,8 @@ import com.example.gymapp.ui.viewmodel.wearWatchDisplayName
 /**
  * Wear OS card on the Watches screen, between Garmin and Health data. Hidden entirely when the
  * Google Play services Wearable API is unavailable. The watch links itself (the phone pins the
- * first watch that asks for a full sync); the card shows that link and offers "Unlink watch".
+ * first watch that asks for a full sync); the card shows that link and offers "Unpair watch".
+ * After an unpair the watch links again only from its own "Link to phone" action.
  */
 @Composable
 internal fun WearWatchCard(
@@ -102,24 +99,28 @@ internal fun WearWatchCard(
                             }
                         )
                     }
-                    // The same tag style as Garmin's "Paired".
+                    // The same tag and word as Garmin's "Paired", shown once the watch has proved
+                    // that it follows this phone; until then the line below says what is missing.
+                    if (state.linkConfirmed) {
+                        Text(
+                            text = stringResource(R.string.watches_wear_linked),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                if (!state.linkConfirmed) {
                     Text(
-                        text = stringResource(R.string.watches_wear_linked),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        text = stringResource(R.string.watches_wear_link_pending),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 // Rare and destructive: the app's low-emphasis destructive text style, as on Garmin.
-                TextButton(
-                    onClick = { showUnlinkConfirmation = true },
-                    modifier = Modifier.heightIn(min = 48.dp),
-                    contentPadding = PaddingValues(horizontal = 0.dp),
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text(stringResource(R.string.watches_wear_unlink_action))
-                }
+                WatchCardDestructiveTextButton(
+                    text = stringResource(R.string.watches_wear_unlink_action),
+                    onClick = { showUnlinkConfirmation = true }
+                )
             }
             Text(
                 text = stringResource(R.string.watches_wear_caption),

@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">Трекер тренировок</string>
 
     <string name="tab_workouts">Сегодня</string>
@@ -1029,13 +1029,13 @@
     <string name="today_all_history">Вся история</string>
     <string name="today_history_collapse">Свернуть</string>
     <string name="today_stat_volume_label">объём</string>
-    <plurals name="today_stat_workouts_label">
+    <plurals name="today_stat_workouts_label" tools:ignore="ImpliedQuantity">
         <item quantity="one">тренировка</item>
         <item quantity="few">тренировки</item>
         <item quantity="many">тренировок</item>
         <item quantity="other">тренировки</item>
     </plurals>
-    <plurals name="today_stat_minutes_label">
+    <plurals name="today_stat_minutes_label" tools:ignore="ImpliedQuantity">
         <item quantity="one">минута</item>
         <item quantity="few">минуты</item>
         <item quantity="many">минут</item>
@@ -1485,8 +1485,8 @@
     <string name="garmin_open_app">Открыть Gym Workout Tracker в Garmin</string>
     <string name="garmin_reset_pairing_action">Сбросить защищённую привязку Garmin</string>
     <string name="garmin_reset_pairing_title">Сбросить защищённую привязку Garmin?</string>
-    <string name="garmin_reset_pairing_description">Очередь тренировок на доверенных часах будет очищена, после чего начнётся новый защищённый период для квитанций. Не отключай часы.</string>
-    <string name="garmin_reset_pairing_confirm">Сбросить привязку</string>
+    <string name="garmin_reset_pairing_description">Очередь тренировок на доверенных часах будет очищена, после чего начнётся новый защищённый период для квитанций. Не отключайте часы.</string>
+    <string name="garmin_reset_pairing_confirm">Сбросить</string>
     <string name="profile_group_our_apps">Наши приложения</string>
     <string name="health_app_row_title">HealthApp</string>
     <string name="health_app_row_subtitle">Сон, HRV и восстановление с ваших часов — от того же разработчика</string>
@@ -1515,21 +1515,26 @@
     <string name="garmin_profile_offline">Сейчас не подключено</string>
     <string name="garmin_profile_paired">Привязано</string>
     <string name="watches_wear_title">Wear OS</string>
-    <string name="watches_wear_caption">Samsung Galaxy Watch, Pixel Watch и другие часы Wear OS</string>
-    <string name="watches_wear_not_linked">Установите GymApp на часы и откройте его — оно автоматически свяжется с этим телефоном.</string>
-    <string name="watches_wear_default_name">Часы Wear OS</string>
-    <string name="watches_wear_linked">Связаны</string>
+    <string name="watches_wear_caption">Samsung Galaxy Watch, Pixel Watch и другие часы Wear\u00A0OS</string>
+    <string name="watches_wear_not_linked">Установите GymApp на часы и откройте его рядом с телефоном — часы привяжутся автоматически. После отвязки нажмите на часах «Привязать к телефону».</string>
+    <string name="watches_wear_default_name">Часы Wear\u00A0OS</string>
+    <string name="watches_wear_linked">Привязано</string>
+    <string name="watches_wear_link_pending">Откройте GymApp на часах, чтобы завершить привязку.</string>
     <string name="watches_wear_unlink_action">Отвязать часы</string>
     <string name="watches_wear_unlink_title">Отвязать эти часы?</string>
-    <string name="watches_wear_unlink_body">Тренировки, ещё не отправленные с часов, останутся на них.</string>
+    <string name="watches_wear_unlink_body">Тренировки, ещё не отправленные с часов, останутся на них. Чтобы привязать снова, нажмите на часах «Привязать к телефону».</string>
     <string name="watches_wear_unlink_confirm">Отвязать</string>
     <string name="garmin_connect_action">Подключить</string>
     <string name="garmin_connecting">Подключение…</string>
     <string name="garmin_connect_failed">Не удалось подключить. Откройте приложение на часах и повторите.</string>
     <string name="garmin_connect_reset_pending">Завершите сброс привязки Garmin ниже, прежде чем подключать часы.</string>
     <string name="garmin_lite_free_only_notice">Эти часы поддерживают только свободные тренировки. Планы остаются на телефоне.</string>
-    <string name="garmin_profile_no_devices">В Garmin Connect нет сопряжённых часов.</string>
+    <string name="garmin_profile_no_devices">В Garmin Connect нет привязанных часов.</string>
     <string name="garmin_profile_unavailable">Garmin Connect недоступен на этом устройстве.</string>
+    <string name="garmin_profile_not_installed">Установите Garmin Connect, чтобы подключить часы Garmin.</string>
+    <string name="garmin_install_connect">Установить Garmin Connect</string>
+    <string name="garmin_reset_pairing_failed">Не удалось сбросить. Подключите часы, откройте на них GymApp и повторите.</string>
+    <string name="garmin_reset_pairing_done">Привязка Garmin сброшена.</string>
     <string name="exercise_media_title">Демонстрация упражнения</string>
     <string name="exercise_media_add">Добавить фото</string>
     <string name="exercise_media_no_preview">Нет демонстрации</string>
@@ -1905,23 +1910,26 @@
     <string name="exercise_equipment_bodyweight">Свой вес</string>
 
     <!-- Health Connect import card (Profile) and permission rationale -->
-    <string name="health_data_title">Данные здоровья</string>
+    <string name="health_data_title">Данные о здоровье</string>
     <string name="health_data_unavailable">Health Connect недоступен на этом телефоне.</string>
+    <string name="health_data_update_required">Установите или обновите Health Connect, чтобы импортировать тренировки.</string>
     <string name="health_data_install">Установить Health Connect</string>
     <string name="health_data_connect">Подключить Health Connect</string>
     <plurals name="health_data_summary">
-        <item quantity="one">Импортирована %1$d тренировка · последний импорт %2$s</item>
-        <item quantity="few">Импортировано %1$d тренировки · последний импорт %2$s</item>
-        <item quantity="many">Импортировано %1$d тренировок · последний импорт %2$s</item>
-        <item quantity="other">Импортировано %1$d тренировки · последний импорт %2$s</item>
+        <item quantity="one">Импортирована %1$d тренировка\u00A0· последний импорт %2$s</item>
+        <item quantity="few">Импортировано %1$d тренировки\u00A0· последний импорт %2$s</item>
+        <item quantity="many">Импортировано %1$d тренировок\u00A0· последний импорт %2$s</item>
+        <item quantity="other">Импортировано %1$d тренировки\u00A0· последний импорт %2$s</item>
     </plurals>
     <string name="health_data_last_import">Последний импорт %1$s</string>
     <string name="health_data_import_now">Импортировать сейчас</string>
     <string name="health_data_disconnect">Отключить</string>
     <string name="health_data_importing">Импорт…</string>
-    <string name="health_data_empty">Новых тренировок в зале не найдено.</string>
+    <string name="health_data_empty">Новых тренировок в зале не найдено. Если ожидали их, разрешите GymApp читать тренировки в Health Connect.</string>
     <string name="health_data_failed">Не удалось импортировать. Попробуйте ещё раз.</string>
+    <string name="health_data_access_denied">У GymApp нет доступа к тренировкам. Разрешите его в Health Connect.</string>
+    <string name="health_data_open_settings">Открыть Health Connect</string>
     <string name="health_data_caption">Samsung, Xiaomi, Huawei, Amazfit, Polar, Fitbit и другие часы — через Health Connect.</string>
-    <string name="health_import_rationale_title">Как GymApp использует данные здоровья</string>
+    <string name="health_import_rationale_title">Как GymApp использует данные о здоровье</string>
     <string name="health_import_rationale_body">GymApp читает ваши тренировки в зале, пульс и калории из Health Connect только после того, как вы его подключите, чтобы добавить тренировки, записанные вашими часами. Он никогда не записывает данные в Health Connect и не использует их для рекламы.</string>
 </resources>

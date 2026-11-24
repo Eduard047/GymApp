@@ -219,8 +219,10 @@ internal fun ProfileScreen(
     onDeleteLocalProfile: () -> Unit,
     garminDeviceState: GarminDeviceUiState,
     onRefreshGarminDevices: () -> Unit,
-    onResetGarminPairing: () -> Unit,
+    onResetGarminPairing: suspend () -> Boolean,
     onPairGarminDevice: suspend (deviceId: Long) -> Boolean,
+    /** True while a pushed Profile screen (Friends, Watches, Support) shows its own back row and title. */
+    onSubScreenOpenChanged: (Boolean) -> Unit = {},
     selectedLanguage: AppLanguage,
     onLanguageSelected: (AppLanguage) -> Unit,
     healthDataState: HealthDataUiState? = null,
@@ -327,6 +329,10 @@ internal fun ProfileScreen(
     BackHandler(enabled = visibleDestination != ProfileDestination.Root) {
         destination = ProfileDestination.Root
     }
+    // The tab's large "Profile" title is hidden while a pushed screen shows its own inline title.
+    val subScreenOpen = visibleDestination != ProfileDestination.Root
+    LaunchedEffect(subScreenOpen) { onSubScreenOpenChanged(subScreenOpen) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { onSubScreenOpenChanged(false) } }
 
     val pendingAttentionCount = (friendsState.dashboard?.incoming?.size ?: 0) +
         (friendsState.workoutInbox?.pendingIncomingCount ?: 0) +
@@ -804,13 +810,15 @@ private fun LazyListScope.profileRootContent(
         )
         val watchesStatus = watchesStatusLine(
             sources = connectedWatchSources(garminDeviceState, healthDataState, wearWatchState),
-            label = { sourceLabels.getValue(it) },
+            // A source name never breaks inside ("Wear OS", "Health data"); lines break at the dots.
+            label = { sourceLabels.getValue(it).replace(' ', '\u00A0') },
             none = stringResource(R.string.watches_status_none)
         )
         GroupedSection(header = stringResource(R.string.profile_group_devices)) {
             row(
                 title = watchesTitle,
-                value = watchesStatus,
+                // Under the title, as on iPhone: three sources do not fit a right-aligned value.
+                subtitle = watchesStatus,
                 chevron = true,
                 onClick = onOpenWatches
             )

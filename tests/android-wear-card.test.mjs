@@ -23,25 +23,33 @@ const strings = Object.fromEntries(
 const expected = {
   watches_wear_title: { en: "Wear OS", uk: "Wear OS", ru: "Wear OS" },
   watches_wear_caption: {
-    en: "Samsung Galaxy Watch, Pixel Watch and other Wear OS watches",
-    uk: "Samsung Galaxy Watch, Pixel Watch та інші годинники Wear OS",
-    ru: "Samsung Galaxy Watch, Pixel Watch и другие часы Wear OS"
+    // "Wear OS" never breaks across lines: the resource carries a no-break space escape.
+    en: "Samsung Galaxy Watch, Pixel Watch and other Wear\\u00A0OS watches",
+    uk: "Samsung Galaxy Watch, Pixel Watch та інші годинники Wear\\u00A0OS",
+    ru: "Samsung Galaxy Watch, Pixel Watch и другие часы Wear\\u00A0OS"
   },
   watches_wear_not_linked: {
-    en: "Install GymApp on your watch and open it — it links to this phone automatically.",
-    uk: "Встановіть GymApp на годинник і відкрийте його — він автоматично зв’яжеться з цим телефоном.",
-    ru: "Установите GymApp на часы и откройте его — оно автоматически свяжется с этим телефоном."
+    // First link is automatic; after an unpair the watch links only from its own action.
+    en: "Install GymApp on your watch and open it near this phone — it pairs automatically. After unpairing, tap “Link to phone” on the watch.",
+    uk: "Встановіть GymApp на годинник і відкрийте його поруч із телефоном — годинник прив’яжеться автоматично. Після відв’язування натисніть на годиннику «Прив’язати до телефона».",
+    ru: "Установите GymApp на часы и откройте его рядом с телефоном — часы привяжутся автоматически. После отвязки нажмите на часах «Привязать к телефону»."
   },
-  watches_wear_default_name: { en: "Wear OS watch", uk: "Годинник Wear OS", ru: "Часы Wear OS" },
-  watches_wear_linked: { en: "Linked", uk: "Зв’язано", ru: "Связаны" },
-  watches_wear_unlink_action: { en: "Unlink watch", uk: "Відв’язати годинник", ru: "Отвязать часы" },
-  watches_wear_unlink_title: { en: "Unlink this watch?", uk: "Відв’язати цей годинник?", ru: "Отвязать эти часы?" },
+  watches_wear_default_name: { en: "Wear\\u00A0OS watch", uk: "Годинник Wear\\u00A0OS", ru: "Часы Wear\\u00A0OS" },
+  // One pairing word on the whole Watches screen: the same tag as the Garmin card.
+  watches_wear_linked: { en: "Paired", uk: "Прив’язано", ru: "Привязано" },
+  watches_wear_link_pending: {
+    en: "Open GymApp on the watch to finish pairing.",
+    uk: "Відкрийте GymApp на годиннику, щоб завершити прив’язування.",
+    ru: "Откройте GymApp на часах, чтобы завершить привязку."
+  },
+  watches_wear_unlink_action: { en: "Unpair watch", uk: "Відв’язати годинник", ru: "Отвязать часы" },
+  watches_wear_unlink_title: { en: "Unpair this watch?", uk: "Відв’язати цей годинник?", ru: "Отвязать эти часы?" },
   watches_wear_unlink_body: {
-    en: "Workouts not yet sent from the watch stay on the watch.",
-    uk: "Тренування, ще не надіслані з годинника, залишаться на ньому.",
-    ru: "Тренировки, ещё не отправленные с часов, останутся на них."
+    en: "Workouts not yet sent from the watch stay on the watch. To pair again, tap “Link to phone” on the watch.",
+    uk: "Тренування, ще не надіслані з годинника, залишаться на ньому. Щоб прив’язати знову, натисніть на годиннику «Прив’язати до телефона».",
+    ru: "Тренировки, ещё не отправленные с часов, останутся на них. Чтобы привязать снова, нажмите на часах «Привязать к телефону»."
   },
-  watches_wear_unlink_confirm: { en: "Unlink", uk: "Відв’язати", ru: "Отвязать" }
+  watches_wear_unlink_confirm: { en: "Unpair", uk: "Відв’язати", ru: "Отвязать" }
 };
 
 test("the Wear OS card sits between the Garmin and Health data cards", () => {
@@ -72,6 +80,12 @@ test("the card reuses the Garmin capability line, connection strings and flat st
   assert.match(card, /R\.string\.garmin_profile_offline/);
   assert.match(card, /R\.string\.watches_wear_caption/);
   assert.match(card, /R\.string\.watches_wear_not_linked/);
+  // The "Paired" tag needs the watch's proof; a pinned but unconfirmed watch gets the hint instead.
+  assert.match(card, /if \(state\.linkConfirmed\) \{\s*Text\(\s*text = stringResource\(R\.string\.watches_wear_linked\)/);
+  assert.match(card, /if \(!state\.linkConfirmed\) \{\s*Text\(\s*text = stringResource\(R\.string\.watches_wear_link_pending\)/);
+  for (const lang of Object.keys(locales)) {
+    assert.equal(strings[lang].includes('<string name="garmin_profile_paired">' + expected.watches_wear_linked[lang] + "</string>"), true, lang);
+  }
   assert.match(card, /AppPanel\(/);
   assert.match(card, /SectionTitle\(/);
   assert.doesNotMatch(card, /Brush\.(linear|radial|vertical|horizontal)Gradient/);

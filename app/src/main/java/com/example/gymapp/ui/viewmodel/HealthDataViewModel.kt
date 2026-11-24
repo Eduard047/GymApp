@@ -56,6 +56,9 @@ class HealthDataViewModel(
             // The per-account opt-in lives in the importer; auto-import runs only once it is set.
             if (granted) attempt { importer.setEnabled(true) }
             refreshNow()
+            // Declined, or Health Connect no longer shows its screen (after two declines it returns at
+            // once): say so and let the card offer the Health Connect settings.
+            if (!granted) _state.update { it.copy(notice = HealthImportNotice.ACCESS_DENIED) }
             if (granted) runImport(HealthImportTrigger.MANUAL)
         }
     }
@@ -79,7 +82,10 @@ class HealthDataViewModel(
         _state.update { it.copy(connected = false, notice = HealthImportNotice.NONE) }
         viewModelScope.launch {
             attempt { importer.setEnabled(false) }
-            if (_state.value.availability == HealthConnectAvailability.AVAILABLE) {
+            // Health Connect exists from API 26; below it there is nothing to revoke.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                _state.value.availability == HealthConnectAvailability.AVAILABLE
+            ) {
                 attempt { revokeAllPermissions() }
             }
             refreshNow()
@@ -103,6 +109,11 @@ class HealthDataViewModel(
             it.copy(
                 availability = availability,
                 connected = connected,
+                notice = if (connected && it.notice == HealthImportNotice.ACCESS_DENIED) {
+                    HealthImportNotice.NONE
+                } else {
+                    it.notice
+                },
                 lastImportAtMillis = last,
                 importedTotal = total
             )

@@ -1086,7 +1086,10 @@ internal fun GymAppRoot(
         currentRoute == AppDestination.Exercises.route
     // Only a root tab with a bar title (Progress, Profile) still uses the collapsing M3 bar; pushed screens
     // get the fixed AppleNavigationBar, which has no scroll offset to coordinate.
-    val hasCollapsingTopAppBar = isBottomTabRoute && !hasInContentRootHeader
+    // A pushed Profile screen (Watches, Friends, Support) has its own inline title: no large tab title above it.
+    var profileSubScreenOpen by remember { mutableStateOf(false) }
+    val showsProfileSubScreen = currentRoute == AppDestination.Profile.route && profileSubScreenOpen
+    val hasCollapsingTopAppBar = isBottomTabRoute && !hasInContentRootHeader && !showsProfileSubScreen
     val cloudSession = (authState.session as? AccountSession.Cloud)
         ?.takeUnless { authState.needsPasswordUpdate }
     val rootGraphRoute = remember(uiIsolationKey) { "gym-root-$uiIsolationKey" }
@@ -2835,7 +2838,7 @@ internal fun GymAppRoot(
                     AppTopBar(
                         titleRes = titleRes,
                         isRootDestination = isBottomTabRoute,
-                        showRootTitle = !hasInContentRootHeader,
+                        showRootTitle = !hasInContentRootHeader && !showsProfileSubScreen,
                         interactionsEnabled = currentRoute?.startsWith(
                             AppDestination.AddWorkout.route
                         ) != true || !addWorkoutEditorInteractionLocked,
@@ -4806,12 +4809,12 @@ internal fun GymAppRoot(
                                     applicationContext.gymApplication.garminSyncManager
                                         .refreshGarminDevices()
                                 },
+                                // The result goes back to the Watches screen, which shows it on the card.
                                 onResetGarminPairing = {
-                                    coroutineScope.launch {
-                                        applicationContext.gymApplication.garminSyncManager
-                                            .resetSecureGarminPairing()
-                                    }
+                                    applicationContext.gymApplication.garminSyncManager
+                                        .resetSecureGarminPairing()
                                 },
+                                onSubScreenOpenChanged = { profileSubScreenOpen = it },
                                 onPairGarminDevice = { deviceId ->
                                     applicationContext.gymApplication.garminSyncManager
                                         .pairWatch(deviceId)

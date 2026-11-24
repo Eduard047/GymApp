@@ -19,7 +19,7 @@ enum class HealthDataCardMode {
 }
 
 /** Message shown under the card's status line after a manual import. */
-enum class HealthImportNotice { NONE, EMPTY, FAILED }
+enum class HealthImportNotice { NONE, EMPTY, FAILED, ACCESS_DENIED }
 
 data class HealthDataUiState(
     val availability: HealthConnectAvailability = HealthConnectAvailability.UNAVAILABLE,

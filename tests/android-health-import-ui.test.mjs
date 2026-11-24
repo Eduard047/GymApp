@@ -20,6 +20,7 @@ const plainKeys = [
   "health_data_title", "health_data_unavailable", "health_data_install", "health_data_connect",
   "health_data_last_import", "health_data_import_now", "health_data_disconnect", "health_data_importing",
   "health_data_empty", "health_data_failed", "health_data_caption",
+  "health_data_update_required", "health_data_access_denied", "health_data_open_settings",
   "health_import_rationale_title", "health_import_rationale_body"
 ];
 
@@ -46,8 +47,10 @@ test("the summary plural carries a count and a time in every locale and category
 
 test("the shared copy matches the agreed wording", () => {
   assert.match(strings.en, />Health data</);
-  assert.match(strings.uk, />Дані здоров’я</);
-  assert.match(strings.ru, />Данные здоровья</);
+  assert.match(strings.uk, />Дані про здоров’я</);
+  assert.match(strings.ru, />Данные о здоровье</);
+  assert.doesNotMatch(strings.uk, /дані здоров’я/i);
+  assert.doesNotMatch(strings.ru, /данные здоровья/i);
   assert.match(strings.en, />Connect Health Connect</);
   assert.match(strings.uk, />Підключити Health Connect</);
   assert.match(strings.ru, />Подключить Health Connect</);
@@ -99,6 +102,42 @@ test("the Install button opens the Play Store page with a web fallback", () => {
   assert.match(card, /com\.google\.android\.apps\.healthdata/);
   assert.match(card, /market:\/\/details\?id=/);
   assert.match(card, /https:\/\/play\.google\.com\/store\/apps\/details\?id=/);
+});
+
+test("importing keeps the connected layout and notices sit between the summary and the actions", () => {
+  assert.match(card, /HealthDataCardMode\.IMPORTING, HealthDataCardMode\.CONNECTED -> \{/);
+  const connected = card.slice(card.indexOf("HealthDataCardMode.IMPORTING, HealthDataCardMode.CONNECTED -> {"));
+  assert.ok(connected.indexOf("connectedSummary(state)") < connected.indexOf("ImportNotice(state.notice)"));
+  assert.ok(connected.indexOf("ImportNotice(state.notice)") < connected.indexOf("onClick = onImportNow"));
+  assert.match(connected, /onClick = onImportNow,\s*enabled = !importing/);
+  assert.match(connected, /CircularProgressIndicator\([\s\S]*?R\.string\.health_data_importing/);
+  assert.match(connected, /onClick = onDisconnect,\s*enabled = !importing/);
+  assert.match(card, /HealthImportNotice\.FAILED -> WatchCardNotice\(/);
+  assert.match(card, /FontWeight\.SemiBold/);
+  assert.doesNotMatch(card, /FORMAT_ABBREV_RELATIVE/);
+  assert.match(card, /replaceFirstChar \{ it\.lowercase\(/);
+  assert.match(card, /INSTALL_REQUIRED -> \{\s*BodyText\(R\.string\.health_data_update_required\)/);
+});
+
+test("a declined permission request explains itself and offers the Health Connect settings", () => {
+  assert.match(viewModel, /if \(!granted\) _state\.update \{ it\.copy\(notice = HealthImportNotice\.ACCESS_DENIED\) \}/);
+  assert.match(card, /HealthImportNotice\.ACCESS_DENIED -> WatchCardNotice\(\s*text = stringResource\(R\.string\.health_data_access_denied\)/);
+  assert.match(
+    card,
+    /if \(state\.notice == HealthImportNotice\.ACCESS_DENIED\) \{\s*TintedButton\(\s*onClick = \{ openHealthConnectSettings\(context\) \}/
+  );
+  assert.match(card, /android\.health\.connect\.action\.MANAGE_HEALTH_PERMISSIONS/);
+});
+
+test("the rationale screen scrolls, uses the app theme and language, and has a way back", () => {
+  assert.match(rationale, /: ComponentActivity\(\)/);
+  assert.match(rationale, /super\.attachBaseContext\(newBase\.withAppLanguage\(\)\)/);
+  assert.match(rationale, /enableEdgeToEdge\(\)/);
+  assert.match(rationale, /GymAppTheme \{/);
+  assert.match(rationale, /\.verticalScroll\(rememberScrollState\(\)\)/);
+  assert.match(rationale, /AppleBackButton\(\s*onClick = \{ finish\(\) \}/);
+  // Static text only: nothing is read from the incoming intent.
+  assert.doesNotMatch(rationale, /getIntent\(|\bintent\.(get|extras|data|action)|\bintent\?\./);
 });
 
 test("the card is flat: no gradients", () => {

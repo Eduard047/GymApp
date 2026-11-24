@@ -32,7 +32,7 @@ const expected = {
   },
   watches_status_none: { en: "Not connected", uk: "Не підключено", ru: "Не подключено" },
   watches_source_garmin: { en: "Garmin", uk: "Garmin", ru: "Garmin" },
-  health_data_title: { en: "Health data", uk: "Дані здоров’я", ru: "Данные здоровья" }
+  health_data_title: { en: "Health data", uk: "Дані про здоров’я", ru: "Данные о здоровье" }
 };
 
 test("Watches is a pushed Profile screen and Profile has the single Watches row", () => {
@@ -100,6 +100,45 @@ test("Watches strings exist in en, uk and ru with the agreed copy", () => {
       assert.match(strings[lang], new RegExp(`<string name="${key}">${copy[lang]}</string>`), `${lang}/${key}`);
     }
   }
+});
+
+test("the pushed screen has one inline title and the Profile row shows the status under its title", () => {
+  assert.match(profile, /LaunchedEffect\(subScreenOpen\) \{ onSubScreenOpenChanged\(subScreenOpen\) \}/);
+  assert.match(graph, /onSubScreenOpenChanged = \{ profileSubScreenOpen = it \}/);
+  assert.match(graph, /showRootTitle = !hasInContentRootHeader && !showsProfileSubScreen/);
+  assert.match(profile, /title = watchesTitle,[^)]*subtitle = watchesStatus,/);
+  assert.doesNotMatch(profile, /value = watchesStatus/);
+});
+
+test("Garmin card: reset only with something to reset, its result is shown, missing Garmin Connect gets an install link", () => {
+  assert.match(
+    watches,
+    /if \(hasPairing \|\| state\.pairingResetPending \|\| resetSucceeded == false\) \{\s*WatchCardDestructiveTextButton\(\s*text = stringResource\(R\.string\.garmin_reset_pairing_action\)/
+  );
+  assert.match(watches, /garminResetSucceeded = try \{\s*onResetGarminPairing\(\)/);
+  assert.match(watches, /R\.string\.garmin_reset_pairing_failed/);
+  assert.match(watches, /R\.string\.garmin_reset_pairing_done/);
+  assert.match(
+    graph,
+    /onResetGarminPairing = \{\s*applicationContext\.gymApplication\.garminSyncManager\s*\.resetSecureGarminPairing\(\)\s*\}/
+  );
+  assert.match(watches, /com\.garmin\.android\.apps\.connectmobile/);
+  assert.match(watches, /market:\/\/details\?id=\$GARMIN_CONNECT_PACKAGE/);
+  assert.match(watches, /https:\/\/play\.google\.com\/store\/apps\/details\?id=\$GARMIN_CONNECT_PACKAGE/);
+  assert.match(watches, /catch \(_: ActivityNotFoundException\)/);
+  assert.match(watches, /R\.string\.garmin_install_connect/);
+  // 48dp buttons, and the destructive text button no longer clips a wrapped label.
+  assert.match(watches, /onClick = onOpenGarminApp,\s*modifier = Modifier\s*\.fillMaxWidth\(\)\s*\.heightIn\(min = 48\.dp\)/);
+  assert.doesNotMatch(watches, /PaddingValues\(horizontal = 0\.dp\)/);
+  for (const lang of Object.keys(locales)) {
+    for (const key of ["garmin_install_connect", "garmin_profile_not_installed", "garmin_reset_pairing_failed", "garmin_reset_pairing_done"]) {
+      assert.match(strings[lang], new RegExp(`<string name="${key}">[^<]+</string>`), `${lang}/${key}`);
+    }
+  }
+  assert.match(strings.ru, /<string name="garmin_reset_pairing_confirm">Сбросить<\/string>/);
+  assert.match(strings.uk, /<string name="garmin_reset_pairing_action">Скинути захищену прив’язку Garmin<\/string>/);
+  assert.doesNotMatch(strings.ru, /Не отключай часы|сопряжённых часов/);
+  assert.doesNotMatch(strings.uk, /Не від’єднуй годинник|сполученого годинника|прив’язування Garmin/);
 });
 
 test("flat style: no gradients on the Watches screen", () => {

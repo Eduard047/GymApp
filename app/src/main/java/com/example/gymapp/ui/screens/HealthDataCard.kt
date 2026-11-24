@@ -4,23 +4,27 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.health.HealthConnectAvailability
@@ -35,6 +39,7 @@ import com.example.gymapp.ui.viewmodel.HealthImportNotice
 import com.example.gymapp.ui.viewmodel.healthDataCardMode
 import com.example.gymapp.util.formattedPluralStringResource
 import com.example.gymapp.util.formattedStringResource
+import java.util.Locale
 
 private const val HEALTH_CONNECT_PACKAGE = "com.google.android.apps.healthdata"
 
@@ -78,7 +83,7 @@ internal fun HealthDataCard(
             when (mode) {
                 HealthDataCardMode.UNAVAILABLE -> BodyText(R.string.health_data_unavailable)
                 HealthDataCardMode.INSTALL_REQUIRED -> {
-                    BodyText(R.string.health_data_unavailable)
+                    BodyText(R.string.health_data_update_required)
                     TintedButton(
                         onClick = { openHealthConnectInstallPage(context) },
                         modifier = Modifier
@@ -89,6 +94,7 @@ internal fun HealthDataCard(
                     }
                 }
                 HealthDataCardMode.NOT_CONNECTED -> {
+                    ImportNotice(state.notice)
                     Button(
                         onClick = {
                             permissionLauncher?.launch(HealthConnectImporter.REQUIRED_PERMISSIONS)
@@ -100,44 +106,59 @@ internal fun HealthDataCard(
                     ) {
                         Text(stringResource(R.string.health_data_connect))
                     }
+                    // Health Connect stops showing its permission screen after two declines, so the
+                    // way forward is its own settings.
+                    if (state.notice == HealthImportNotice.ACCESS_DENIED) {
+                        TintedButton(
+                            onClick = { openHealthConnectSettings(context) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                        ) {
+                            Text(stringResource(R.string.health_data_open_settings))
+                        }
+                    }
                 }
-                HealthDataCardMode.IMPORTING -> BodyText(R.string.health_data_importing)
-                HealthDataCardMode.CONNECTED -> {
+                // Importing keeps the connected layout (as on iPhone): the summary stays, both
+                // actions are disabled and the progress sits inside "Import now".
+                HealthDataCardMode.IMPORTING, HealthDataCardMode.CONNECTED -> {
+                    val importing = mode == HealthDataCardMode.IMPORTING
                     val summary = connectedSummary(state)
                     if (summary.isNotEmpty()) {
                         Text(
                             text = summary,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
+                    // Right under the summary and above the actions, so a failure never reads as
+                    // the description of "Disconnect".
+                    if (!importing) ImportNotice(state.notice)
                     TintedButton(
                         onClick = onImportNow,
+                        enabled = !importing,
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 48.dp)
                     ) {
-                        Text(stringResource(R.string.health_data_import_now))
+                        if (importing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = LocalContentColor.current,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(R.string.health_data_importing))
+                        } else {
+                            Text(stringResource(R.string.health_data_import_now))
+                        }
                     }
-                    TextButton(
+                    WatchCardDestructiveTextButton(
+                        text = stringResource(R.string.health_data_disconnect),
                         onClick = onDisconnect,
-                        modifier = Modifier.heightIn(min = 48.dp),
-                        contentPadding = PaddingValues(horizontal = 0.dp),
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Text(stringResource(R.string.health_data_disconnect))
-                    }
+                        enabled = !importing
+                    )
                 }
-            }
-            when (state.notice) {
-                HealthImportNotice.EMPTY -> BodyText(R.string.health_data_empty)
-                HealthImportNotice.FAILED -> BodyText(
-                    R.string.health_data_failed,
-                    color = MaterialTheme.colorScheme.error
-                )
-                HealthImportNotice.NONE -> Unit
             }
             Text(
                 text = stringResource(R.string.health_data_caption),
@@ -160,6 +181,26 @@ private fun BodyText(
     )
 }
 
+/** The result of the last manual import or permission request, as the cards' inline notice. */
+@Composable
+private fun ImportNotice(notice: HealthImportNotice) {
+    when (notice) {
+        HealthImportNotice.EMPTY -> WatchCardNotice(
+            text = stringResource(R.string.health_data_empty),
+            isError = false
+        )
+        HealthImportNotice.FAILED -> WatchCardNotice(
+            text = stringResource(R.string.health_data_failed),
+            isError = true
+        )
+        HealthImportNotice.ACCESS_DENIED -> WatchCardNotice(
+            text = stringResource(R.string.health_data_access_denied),
+            isError = false
+        )
+        HealthImportNotice.NONE -> Unit
+    }
+}
+
 /** "Imported N workouts · last import 5 minutes ago"; without a count (or time) a shorter line. */
 @Composable
 private fun connectedSummary(state: HealthDataUiState): String {
@@ -174,6 +215,7 @@ private fun connectedSummary(state: HealthDataUiState): String {
     }
 }
 
+/** In-sentence relative time: full words ("5 minutes ago"), day words in lower case ("yesterday"). */
 @Composable
 private fun relativeImportTime(millis: Long): String {
     val now = System.currentTimeMillis()
@@ -182,8 +224,8 @@ private fun relativeImportTime(millis: Long): String {
             millis.coerceAtMost(now),
             now,
             DateUtils.MINUTE_IN_MILLIS,
-            DateUtils.FORMAT_ABBREV_RELATIVE
-        ).toString()
+            0
+        ).toString().replaceFirstChar { it.lowercase(Locale.getDefault()) }
     }
 }
 
@@ -199,6 +241,33 @@ internal fun openHealthConnectInstallPage(context: Context) {
             context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             return
         } catch (_: ActivityNotFoundException) {
+            // Try the next target.
+        }
+    }
+}
+
+/**
+ * Opens the Health Connect permission settings: this app's page on Android 14+, otherwise the
+ * Health Connect home screen. Nothing is granted from here; the user decides there.
+ */
+internal fun openHealthConnectSettings(context: Context) {
+    val intents = buildList {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            add(
+                Intent("android.health.connect.action.MANAGE_HEALTH_PERMISSIONS")
+                    .putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
+            )
+            add(Intent("android.health.connect.action.HEALTH_HOME_SETTINGS"))
+        }
+        add(Intent("androidx.health.ACTION_HEALTH_CONNECT_SETTINGS"))
+    }
+    for (intent in intents) {
+        try {
+            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            return
+        } catch (_: ActivityNotFoundException) {
+            // Try the next target.
+        } catch (_: SecurityException) {
             // Try the next target.
         }
     }

@@ -496,7 +496,7 @@ object UiAuditHooks {
                         watch("Venu Sq 2 Music", connected = false, trusted = false, lite = true, id = 3)
                     )
                 )
-                wear = com.example.gymapp.ui.viewmodel.WearWatchUiState(true, true, "Galaxy Watch7 Ultra (X9KD)", true)
+                wear = com.example.gymapp.ui.viewmodel.WearWatchUiState(true, true, "Galaxy Watch7 Ultra (X9KD)", true, linkConfirmed = true)
                 health = com.example.gymapp.ui.viewmodel.HealthDataUiState(
                     availability = available, connected = true, lastImportAtMillis = now - 5 * 60_000L, importedTotal = 21
                 )

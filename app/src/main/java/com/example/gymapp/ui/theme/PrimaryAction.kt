@@ -117,16 +117,22 @@ fun TintedButton(
     interactionSource: MutableInteractionSource? = null,
     content: @Composable RowScope.() -> Unit
 ) {
-    androidx.compose.material3.Button(
-        onClick = onClick,
-        modifier = modifier,
-        enabled = enabled,
-        shape = shape,
-        colors = colors,
-        elevation = null,
-        border = border,
-        contentPadding = contentPadding,
-        interactionSource = interactionSource,
-        content = content
-    )
+    // A label that wraps to two lines stays centred (the button merges its own style into this one).
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.material3.LocalTextStyle provides androidx.compose.material3.LocalTextStyle.current
+            .copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    ) {
+        androidx.compose.material3.Button(
+            onClick = onClick,
+            modifier = modifier,
+            enabled = enabled,
+            shape = shape,
+            colors = colors,
+            elevation = null,
+            border = border,
+            contentPadding = contentPadding,
+            interactionSource = interactionSource,
+            content = content
+        )
+    }
 }

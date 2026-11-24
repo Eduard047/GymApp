@@ -74,6 +74,11 @@ class HealthConnectImporter(
                 return HealthImportSummary(HealthImportStatus.PROVIDER_UPDATE_REQUIRED)
             HealthConnectAvailability.AVAILABLE -> Unit
         }
+        // availability() already answers UNSUPPORTED_OS below API 26; this check repeats it where
+        // the API-26 call is made.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return HealthImportSummary(HealthImportStatus.UNSUPPORTED_OS)
+        }
         return runAvailable(trigger)
     }
 
@@ -139,6 +144,7 @@ class HealthConnectImporter(
         /** True when the required exercise permission is granted; false when unavailable. */
         suspend fun hasExercisePermission(context: Context): Boolean {
             if (availability(context) != HealthConnectAvailability.AVAILABLE) return false
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
             return grantedPermissions(context).contains(EXERCISE_PERMISSION)
         }
 

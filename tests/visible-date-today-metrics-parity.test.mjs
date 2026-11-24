@@ -245,8 +245,9 @@ test("Today completion and unified training history have one local-calendar cont
   }
   for (const source of [androidEnglish, androidUkrainian, androidRussian]) {
     assert.doesNotMatch(source, /name="today_workout_completed_supporting"/);
-    assert.match(source, /<plurals name="today_stat_workouts_label">/);
-    assert.match(source, /<plurals name="today_stat_minutes_label">/);
+    // Label-only plurals (the number is drawn separately); RU/UK carry the lint marker for that.
+    assert.match(source, /<plurals name="today_stat_workouts_label"(?: tools:ignore="ImpliedQuantity")?>/);
+    assert.match(source, /<plurals name="today_stat_minutes_label"(?: tools:ignore="ImpliedQuantity")?>/);
     assert.match(source, /<string-array name="weekday_short_labels">/);
   }
   assert.match(androidToday, /R\.plurals\.today_stat_workouts_label/);
