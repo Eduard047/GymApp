@@ -1,6 +1,7 @@
 package com.example.gymapp.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,6 +18,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
@@ -64,49 +66,50 @@ internal fun WearWatchCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Watch,
-                        contentDescription = null,
-                        tint = if (state.connected) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = wearWatchDisplayName(
-                                state,
-                                stringResource(R.string.watches_wear_default_name)
-                            ),
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            text = stringResource(
-                                if (state.connected) R.string.garmin_profile_connected
-                                else R.string.garmin_profile_offline
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (state.connected) {
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    // Narrow card or large text: the "Paired" tag becomes a line under the status, as on
+                    // Garmin, instead of squeezing the name and status into a few characters per line.
+                    val tagUnderStatus = state.linkConfirmed &&
+                        watchRowIsNarrow(maxWidth, LocalDensity.current.fontScale)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Watch,
+                            contentDescription = null,
+                            tint = if (state.connected) {
                                 MaterialTheme.colorScheme.primary
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             }
                         )
-                    }
-                    // The same tag and word as Garmin's "Paired", shown once the watch has proved
-                    // that it follows this phone; until then the line below says what is missing.
-                    if (state.linkConfirmed) {
-                        Text(
-                            text = stringResource(R.string.watches_wear_linked),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = wearWatchDisplayName(
+                                    state,
+                                    stringResource(R.string.watches_wear_default_name)
+                                ),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = stringResource(
+                                    if (state.connected) R.string.garmin_profile_connected
+                                    else R.string.garmin_profile_offline
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (state.connected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                            if (tagUnderStatus) WearLinkedTag(Modifier.padding(top = 2.dp))
+                        }
+                        // The same tag and word as Garmin's "Paired", shown once the watch has proved
+                        // that it follows this phone; until then the line below says what is missing.
+                        if (state.linkConfirmed && !tagUnderStatus) WearLinkedTag()
                     }
                 }
                 if (!state.linkConfirmed) {
@@ -156,4 +159,15 @@ internal fun WearWatchCard(
             }
         )
     }
+}
+
+/** The "Paired" tag of a linked Wear OS watch (the same tag and word as Garmin's). */
+@Composable
+private fun WearLinkedTag(modifier: Modifier = Modifier) {
+    Text(
+        text = stringResource(R.string.watches_wear_linked),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = modifier
+    )
 }

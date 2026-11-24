@@ -81,7 +81,12 @@ test("the card reuses the Garmin capability line, connection strings and flat st
   assert.match(card, /R\.string\.watches_wear_caption/);
   assert.match(card, /R\.string\.watches_wear_not_linked/);
   // The "Paired" tag needs the watch's proof; a pinned but unconfirmed watch gets the hint instead.
-  assert.match(card, /if \(state\.linkConfirmed\) \{\s*Text\(\s*text = stringResource\(R\.string\.watches_wear_linked\)/);
+  // Narrow rows move the tag under the status line; both places stay gated on linkConfirmed.
+  assert.match(card, /val tagUnderStatus = state\.linkConfirmed &&\s*watchRowIsNarrow\(/);
+  assert.match(card, /if \(tagUnderStatus\) WearLinkedTag\(/);
+  assert.match(card, /if \(state\.linkConfirmed && !tagUnderStatus\) WearLinkedTag\(\)/);
+  assert.equal((card.match(/WearLinkedTag\(/g) || []).length, 3);
+  assert.match(card, /fun WearLinkedTag\([^)]*\) \{\s*Text\(\s*text = stringResource\(R\.string\.watches_wear_linked\)/);
   assert.match(card, /if \(!state\.linkConfirmed\) \{\s*Text\(\s*text = stringResource\(R\.string\.watches_wear_link_pending\)/);
   for (const lang of Object.keys(locales)) {
     assert.equal(strings[lang].includes('<string name="garmin_profile_paired">' + expected.watches_wear_linked[lang] + "</string>"), true, lang);

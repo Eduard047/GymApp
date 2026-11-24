@@ -211,6 +211,12 @@ private fun Modifier.trimVerticalTouchSlack(slack: Dp): Modifier = layout { meas
     layout(placeable.width, placeable.height - trim * 2) { placeable.place(0, -trim) }
 }
 
+/**
+ * A watch row (Garmin, Wear OS) is too narrow for a trailing action or tag beside the name and
+ * status: a narrow card or large text. The action then moves under the name and status.
+ */
+internal fun watchRowIsNarrow(rowWidth: Dp, fontScale: Float): Boolean = rowWidth < 300.dp * fontScale
+
 /** Inline status inside a watch card: a flat tinted row with an icon, for errors and hints. */
 @Composable
 internal fun WatchCardNotice(
@@ -345,10 +351,13 @@ private fun GarminDeviceCard(
                         else -> null
                     }
                     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                        // Narrow card or large text: the Connect button goes under the name instead of
-                        // squeezing the name and status into a few characters per line.
-                        val stackAction = (connecting || offersConnect) &&
-                            maxWidth < 300.dp * LocalDensity.current.fontScale
+                        // Narrow card or large text: the trailing action leaves the row instead of
+                        // squeezing the name and status into a few characters per line. The Connect
+                        // button (or "Connecting") goes full-width under the row, the "Paired" tag
+                        // becomes a line under the status.
+                        val narrow = watchRowIsNarrow(maxWidth, LocalDensity.current.fontScale)
+                        val stackAction = (connecting || offersConnect) && narrow
+                        val tagUnderStatus = !connecting && !offersConnect && action != null && narrow
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -378,8 +387,9 @@ private fun GarminDeviceCard(
                                             MaterialTheme.colorScheme.onSurfaceVariant
                                         }
                                     )
+                                    if (tagUnderStatus) action?.invoke(Modifier.padding(top = 2.dp))
                                 }
-                                if (!stackAction) action?.invoke(Modifier)
+                                if (!stackAction && !tagUnderStatus) action?.invoke(Modifier)
                             }
                             if (stackAction) action?.invoke(Modifier.fillMaxWidth())
                         }

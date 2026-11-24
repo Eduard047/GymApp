@@ -542,9 +542,44 @@ object UiAuditHooks {
                     availability = com.example.gymapp.health.HealthConnectAvailability.PROVIDER_UPDATE_REQUIRED
                 )
             }
+            // Pinned on the phone but never acknowledged by the watch: Connect stays offered as a retry,
+            // and the pin makes the reset action visible.
+            "g" -> {
+                garmin = com.example.gymapp.garmin.GarminDeviceUiState(
+                    sdkReady = true, canPair = true, hasPinnedWatch = true,
+                    devices = listOf(
+                        com.example.gymapp.garmin.GarminDeviceSummary(
+                            "Forerunner 965", connected = true, trustedForActiveAccount = false,
+                            deviceId = 1, pinned = true
+                        )
+                    )
+                )
+                wear = com.example.gymapp.ui.viewmodel.WearWatchUiState(apiAvailable = true)
+                health = com.example.gymapp.ui.viewmodel.HealthDataUiState(availability = available, connected = true)
+            }
+            // A successful reset that released only the phone's pin (the watch was not reached).
+            "h" -> {
+                garmin = com.example.gymapp.garmin.GarminDeviceUiState(
+                    sdkReady = true, canPair = true, pairingReleasedWithoutWatch = true,
+                    devices = listOf(watch("Forerunner 965", connected = false, trusted = false, id = 1))
+                )
+                wear = com.example.gymapp.ui.viewmodel.WearWatchUiState(apiAvailable = true)
+                health = com.example.gymapp.ui.viewmodel.HealthDataUiState(availability = available, connected = true)
+            }
             else -> return
         }
         setFlow(app.garminSyncManager, "_deviceUiState", garmin)
+        // The card's Connect/reset outcome lives in the activity-scoped ViewModel ("garmin-connect", as the
+        // screen requests it): only preset h shows a finished reset, every other preset starts clean.
+        (activityRef?.get() as? androidx.lifecycle.ViewModelStoreOwner)?.let { owner ->
+            setFlow(
+                androidx.lifecycle.ViewModelProvider(owner)[
+                    "garmin-connect", com.example.gymapp.ui.viewmodel.GarminConnectViewModel::class.java
+                ],
+                "_state",
+                com.example.gymapp.ui.viewmodel.GarminConnectUiState(resetSucceeded = if (preset == "h") true else null)
+            )
+        }
         val rootRoute = generateSequence(nav.currentBackStackEntry?.destination?.parent) { it.parent }
             .mapNotNull { it.route }.firstOrNull { it.startsWith("gym-root-") } ?: return
         val provider = androidx.lifecycle.ViewModelProvider(nav.getBackStackEntry(rootRoute))
