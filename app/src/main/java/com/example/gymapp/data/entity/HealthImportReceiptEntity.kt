@@ -35,3 +35,15 @@ data class HealthWorkoutIntervalRow(
     val startMillis: Long,
     val durationSeconds: Long?
 )
+
+/**
+ * A local workout near a phone workout being finished, with its source markers
+ * (see com.example.gymapp.health.PhoneDraftWatchOverlap).
+ */
+data class WorkoutOverlapCandidateRow(
+    val startMillis: Long,
+    val durationSeconds: Long?,
+    val fromGarmin: Boolean,
+    val fromHealthImport: Boolean,
+    val latestWearCreateReceiptAt: Long?
+)

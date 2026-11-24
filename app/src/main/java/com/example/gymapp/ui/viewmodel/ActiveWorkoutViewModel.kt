@@ -170,6 +170,8 @@ data class ActiveWorkoutUiState(
     val messageSetId: String? = null,
     val finishedSessionId: Long? = null,
     val wasDiscarded: Boolean = false,
+    /** Non-null: ask "Keep both" / "Discard phone workout" before finishing (watch overlap, P2-1). */
+    val watchOverlapFinish: ActiveWorkoutWatchOverlapFinish? = null,
     val liveSelfName: String? = null,
     val livePeerName: String? = null,
     val livePeerCompletedSetCount: Int = 0,
@@ -549,8 +551,13 @@ private data class ActiveWorkoutOperationState(
     val messageSetId: String? = null,
     val finishedSessionId: Long? = null,
     val wasDiscarded: Boolean = false,
-    val adaptation: ActiveWorkoutAdaptationRequest? = null
+    val adaptation: ActiveWorkoutAdaptationRequest? = null,
+    /** Finish was held because a watch/imported workout covers this time (audit P2-1). */
+    val watchOverlapFinish: ActiveWorkoutWatchOverlapFinish? = null
 )
+
+/** Which finish the "A watch workout already covers this time" prompt resumes on "Keep both". */
+enum class ActiveWorkoutWatchOverlapFinish { Finish, RecordRemainingAndFinish }
 
 private data class ActiveWorkoutClockUiState(
     val workoutElapsedSeconds: Long = 0L,
@@ -1072,6 +1079,7 @@ class ActiveWorkoutViewModel(
             messageSetId = operation.messageSetId,
             finishedSessionId = operation.finishedSessionId,
             wasDiscarded = operation.wasDiscarded,
+            watchOverlapFinish = operation.watchOverlapFinish,
             liveSelfName = live.selfDisplayName,
             livePeerName = live.peerProgress?.displayName,
             livePeerCompletedSetCount = live.peerProgress?.completedSetCount ?: 0,
@@ -1314,7 +1322,62 @@ class ActiveWorkoutViewModel(
      * the workout stays open with the recording error message.
      */
     fun recordRemainingAndFinish() {
-        launchRecordAllPendingSets(finishAfter = true)
+        checkWatchOverlapThen(ActiveWorkoutWatchOverlapFinish.RecordRemainingAndFinish) {
+            launchRecordAllPendingSets(finishAfter = true)
+        }
+    }
+
+    /**
+     * Before a finish stores the phone workout: when a workout from a watch (Wear OS, Garmin) or a
+     * Health import already covers this time, hold the finish and let the screen ask "Keep both" /
+     * "Discard phone workout" instead of silently storing a duplicate (audit P2-1). A failed
+     * check never blocks finishing.
+     */
+    private fun checkWatchOverlapThen(kind: ActiveWorkoutWatchOverlapFinish, proceed: () -> Unit) {
+        if (details.value == null || activeWorkoutOperationInProgress() ||
+            operationState.value.watchOverlapFinish != null
+        ) {
+            return
+        }
+        operationState.update { it.copy(isFinishing = true, message = null) }
+        viewModelScope.launch {
+            val overlaps = try {
+                repository.activeWorkoutOverlapsWatchWorkout()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                false
+            }
+            operationState.update {
+                it.copy(
+                    isFinishing = false,
+                    watchOverlapFinish = if (overlaps) kind else null
+                )
+            }
+            if (!overlaps) proceed()
+        }
+    }
+
+    /** "Keep both": finish exactly as without the prompt. */
+    fun keepBothAfterWatchOverlap() {
+        val kind = operationState.value.watchOverlapFinish ?: return
+        operationState.update { it.copy(watchOverlapFinish = null) }
+        when (kind) {
+            ActiveWorkoutWatchOverlapFinish.Finish -> finishWorkoutNow()
+            ActiveWorkoutWatchOverlapFinish.RecordRemainingAndFinish ->
+                launchRecordAllPendingSets(finishAfter = true)
+        }
+    }
+
+    /** "Discard phone workout": the same discard (and live-room end) as the toolbar's Discard. */
+    fun discardAfterWatchOverlap() {
+        if (operationState.value.watchOverlapFinish == null) return
+        operationState.update { it.copy(watchOverlapFinish = null) }
+        discardWorkout()
+    }
+
+    fun dismissWatchOverlapPrompt() {
+        operationState.update { it.copy(watchOverlapFinish = null) }
     }
 
     private fun launchRecordAllPendingSets(finishAfter: Boolean) {
@@ -2308,6 +2371,10 @@ class ActiveWorkoutViewModel(
     }
 
     fun finishWorkout() {
+        checkWatchOverlapThen(ActiveWorkoutWatchOverlapFinish.Finish) { finishWorkoutNow() }
+    }
+
+    private fun finishWorkoutNow() {
         val snapshot = details.value ?: return
         if (recordGate.inFlight.value.isNotEmpty() || operationState.value.isRecordingAll ||
             operationState.value.isFinishing ||

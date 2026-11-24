@@ -31,6 +31,8 @@ import com.example.gymapp.health.HealthImportPersistResult
 import com.example.gymapp.health.HealthImportRules
 import com.example.gymapp.health.HealthImportSidecarGuard
 import com.example.gymapp.health.HealthImportStore
+import com.example.gymapp.health.PhoneDraftWatchOverlap
+import com.example.gymapp.health.StoredWorkoutOverlapCandidate
 import com.example.gymapp.data.entity.GarminWorkoutProvenanceEntity
 import com.example.gymapp.data.entity.HealthImportReceiptEntity
 import com.example.gymapp.data.entity.HealthImportStateEntity
@@ -3241,6 +3243,34 @@ class GymRepository(
 
     /** Saved workouts in this account's database; used only to recognise a user's very first workout. */
     suspend fun savedWorkoutCount(): Int = withContext(Dispatchers.IO) { workoutDao.getSessionCount() }
+
+    /**
+     * Whether a workout that came from a watch (Wear OS, Garmin) or a Health import already covers
+     * the active workout's time window (its start until now). Finishing it would then store the
+     * same session twice, so the screen asks first (audit P2-1). Read-only; false when there is no
+     * active workout or nothing overlaps.
+     */
+    suspend fun activeWorkoutOverlapsWatchWorkout(): Boolean = withContext(Dispatchers.IO) {
+        val startedAt = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)?.activeWorkout?.startedAt
+            ?: return@withContext false
+        val now = currentTimeMillis()
+        if (!WorkoutDataLimits.isValidTimestamp(startedAt) || now < startedAt) return@withContext false
+        val candidates = healthImportDao.workoutOverlapCandidates(
+            fromMillis = startedAt - HealthImportRules.OVERLAP_TOLERANCE_MILLIS -
+                WorkoutDataLimits.MAX_WORKOUT_DURATION_SECONDS * 1_000L,
+            toMillis = now + HealthImportRules.OVERLAP_TOLERANCE_MILLIS,
+            wearCreateMutationType = WEAR_MUTATION_CREATE
+        ).map { row ->
+            StoredWorkoutOverlapCandidate(
+                startMillis = row.startMillis,
+                durationSeconds = row.durationSeconds,
+                fromGarmin = row.fromGarmin,
+                fromHealthImport = row.fromHealthImport,
+                latestWearCreateReceiptAt = row.latestWearCreateReceiptAt
+            )
+        }
+        PhoneDraftWatchOverlap.watchWorkoutCovers(startedAt, now, candidates)
+    }
 
     suspend fun finishActiveWorkout(
         expectedRevision: Long

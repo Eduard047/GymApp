@@ -7,6 +7,7 @@ import androidx.room.Query
 import com.example.gymapp.data.entity.HealthImportReceiptEntity
 import com.example.gymapp.data.entity.HealthImportStateEntity
 import com.example.gymapp.data.entity.HealthWorkoutIntervalRow
+import com.example.gymapp.data.entity.WorkoutOverlapCandidateRow
 
 @Dao
 interface HealthImportDao {
@@ -24,6 +25,27 @@ interface HealthImportDao {
             "FROM workout_sessions WHERE date >= :fromMillis ORDER BY date ASC"
     )
     suspend fun workoutIntervalsFrom(fromMillis: Long): List<HealthWorkoutIntervalRow>
+
+    /**
+     * Workouts starting in [fromMillis, toMillis] with their source markers: a Garmin provenance
+     * row, a Health import receipt for the same start, and the newest Wear OS create receipt.
+     */
+    @Query(
+        "SELECT s.date AS startMillis, s.durationSeconds AS durationSeconds, " +
+            "EXISTS (SELECT 1 FROM garmin_workout_provenance p WHERE p.workoutSessionId = s.id) " +
+            "AS fromGarmin, " +
+            "EXISTS (SELECT 1 FROM health_import_receipts r WHERE r.workoutStartedAt = s.date) " +
+            "AS fromHealthImport, " +
+            "(SELECT MAX(w.createdAt) FROM wear_mutation_receipts w " +
+            "WHERE w.mutationType = :wearCreateMutationType) AS latestWearCreateReceiptAt " +
+            "FROM workout_sessions s WHERE s.date BETWEEN :fromMillis AND :toMillis " +
+            "ORDER BY s.date ASC LIMIT 200"
+    )
+    suspend fun workoutOverlapCandidates(
+        fromMillis: Long,
+        toMillis: Long,
+        wearCreateMutationType: String
+    ): List<WorkoutOverlapCandidateRow>
 
     /**
      * Counts workouts whose interval [date, date + duration] touches [windowStart, windowEnd].

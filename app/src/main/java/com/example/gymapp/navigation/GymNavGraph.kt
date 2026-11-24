@@ -3980,6 +3980,9 @@ internal fun GymAppRoot(
                                 onRecordRemainingAndFinish = viewModel::recordRemainingAndFinish,
                                 onDiscardWorkout = viewModel::discardWorkout,
                                 onDismissMessage = viewModel::dismissMessage,
+                                onKeepBothAfterWatchOverlap = viewModel::keepBothAfterWatchOverlap,
+                                onDiscardAfterWatchOverlap = viewModel::discardAfterWatchOverlap,
+                                onDismissWatchOverlapPrompt = viewModel::dismissWatchOverlapPrompt,
                                 friendGhosts = friendGhosts,
                                 toolbarState = activeWorkoutToolbarState,
                                 modifier = Modifier.fillMaxSize()

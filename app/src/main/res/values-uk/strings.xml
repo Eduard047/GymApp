@@ -530,6 +530,10 @@
     <string name="active_workout_discard_message">Записані й заплановані підходи буде видалено; збережена історія не зміниться.</string>
     <string name="active_workout_discard_confirm">Відкинути тренування</string>
     <string name="active_workout_discard_keep">Залишити тренування</string>
+    <string name="active_workout_watch_overlap_title">На цей час уже є тренування з годинника</string>
+    <string name="active_workout_watch_overlap_message">Зберегти й тренування з телефона чи видалити його?</string>
+    <string name="active_workout_watch_overlap_keep_both">Залишити обидва</string>
+    <string name="active_workout_watch_overlap_discard">Видалити тренування з телефона</string>
     <string name="active_workout_back_hint">Можна безпечно повернутися назад. Тренування залишиться на пристрої, доки ви його не завершите або не скасуєте.</string>
     <string name="active_workout_exercise_completed_collapsed">Усі підходи записано. Розгорни блок, щоб перевірити їх або скасувати останній підхід.</string>
     <string name="active_workout_missing_title">Немає активного тренування</string>

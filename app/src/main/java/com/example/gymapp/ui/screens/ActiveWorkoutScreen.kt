@@ -295,6 +295,9 @@ fun ActiveWorkoutScreen(
     onRecordRemainingAndFinish: () -> Unit,
     onDiscardWorkout: () -> Unit,
     onDismissMessage: () -> Unit,
+    onKeepBothAfterWatchOverlap: () -> Unit = {},
+    onDiscardAfterWatchOverlap: () -> Unit = {},
+    onDismissWatchOverlapPrompt: () -> Unit = {},
     onPreviewAdaptation: (String, Int, Long?) -> Unit = { _, _, _ -> },
     onApplyAdaptation: () -> Unit = {},
     onDismissAdaptation: () -> Unit = {},
@@ -1096,6 +1099,36 @@ fun ActiveWorkoutScreen(
                 }
             },
             onDismiss = { showNoteEditor = false }
+        )
+    }
+    if (uiState.watchOverlapFinish != null) {
+        // A watch or Health-imported workout already covers this time (audit P2-1): keeping both is
+        // the safe default and comes first; discarding the phone workout is the destructive choice.
+        GymAlertDialog(
+            onDismissRequest = onDismissWatchOverlapPrompt,
+            title = stringResource(R.string.active_workout_watch_overlap_title),
+            text = { Text(text = stringResource(R.string.active_workout_watch_overlap_message)) },
+            stackButtons = true,
+            confirmButton = {
+                GymAlertDialogButton(
+                    onClick = onKeepBothAfterWatchOverlap,
+                    enabled = !operationInProgress
+                ) {
+                    Text(text = stringResource(R.string.active_workout_watch_overlap_keep_both))
+                }
+            },
+            dismissButton = {
+                GymAlertDialogButton(
+                    onClick = {
+                        gymHaptics.perform(GymHapticEvent.DestructiveConfirm)
+                        onDiscardAfterWatchOverlap()
+                    },
+                    enabled = !operationInProgress,
+                    role = GymAlertDialogButtonRole.Destructive
+                ) {
+                    Text(text = stringResource(R.string.active_workout_watch_overlap_discard))
+                }
+            }
         )
     }
     if (showDiscardConfirmation) {

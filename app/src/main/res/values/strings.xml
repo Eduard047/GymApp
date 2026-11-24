@@ -524,6 +524,10 @@
     <string name="active_workout_discard_message">The recorded and planned sets will be removed; saved workout history is not affected.</string>
     <string name="active_workout_discard_confirm">Discard workout</string>
     <string name="active_workout_discard_keep">Keep workout</string>
+    <string name="active_workout_watch_overlap_title">A watch workout already covers this time</string>
+    <string name="active_workout_watch_overlap_message">Save the phone workout too, or discard it?</string>
+    <string name="active_workout_watch_overlap_keep_both">Keep both</string>
+    <string name="active_workout_watch_overlap_discard">Discard phone workout</string>
     <string name="active_workout_back_hint">You can go back safely. This active workout will remain on this device until you finish or discard it.</string>
     <string name="active_workout_exercise_completed_collapsed">All sets recorded. Tap expand to review them or undo the latest set.</string>
     <string name="active_workout_missing_title">No active workout</string>
