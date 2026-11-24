@@ -35,6 +35,8 @@ internal object PhoneWearPaths {
     const val FULL_SYNC_PAYLOAD = "/gym/sync/full_payload"
     /** Phone -> watch: signed out ("unbound") or unlinked by the user ("unlinked"). No owner id. */
     const val BINDING_STATE = "/gym/sync/binding_state"
+    /** Optional binding-state reason: the owner's profile/account was deleted. */
+    const val BINDING_REASON_ACCOUNT_DELETED = "account_deleted"
     /**
      * Watch -> phone: the user tapped "Unlink from phone" on the watch. Builds that predate it drop
      * the path (it is not in their [inboundPaths]), so adding it changes nothing for them.
@@ -286,15 +288,20 @@ internal object PhoneWearProtocol {
      * out; the watch drops plan, history and catalog and keeps its own unsent work on hold.
      * "unlinked": the user unlinked the watch; it also forgets this phone. The message carries no
      * owner id on purpose: a signed-out phone has no account to name.
+     * [accountDeleted] (only with [unlinked]) adds `"reason":"account_deleted"`: the owner's
+     * profile or account is gone, so the watch also drops its held work for that owner. Watches
+     * built before this field reject the message, so the caller sends a plain unlink after it.
      */
     fun buildBindingState(
         binding: PhoneWearAccountBinding,
         unlinked: Boolean,
         now: Long = System.currentTimeMillis(),
-        messageId: String = UUID.randomUUID().toString()
+        messageId: String = UUID.randomUUID().toString(),
+        accountDeleted: Boolean = false
     ): ByteArray {
         requireValidBinding(binding)
         requireValidOperationId(messageId)
+        require(!accountDeleted || unlinked) { "Account deletion is an unlink" }
         val root = JSONObject()
             .put("protocolVersion", PhoneWearPaths.PROTOCOL_VERSION)
             .put("state", if (unlinked) "unlinked" else "unbound")
@@ -302,6 +309,7 @@ internal object PhoneWearProtocol {
             .put("accountGeneration", binding.accountGeneration)
             .put("messageId", messageId)
             .put("sentAt", now)
+        if (accountDeleted) root.put("reason", PhoneWearPaths.BINDING_REASON_ACCOUNT_DELETED)
         return encodeBounded(root)
     }
 

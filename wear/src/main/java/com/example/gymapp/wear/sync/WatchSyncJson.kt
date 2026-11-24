@@ -47,7 +47,9 @@ data class ParsedBindingState(
     val authorityEpoch: String,
     val accountGeneration: Long,
     val messageId: String,
-    val sentAt: Long
+    val sentAt: Long,
+    /** Unlinked because the owner's profile/account was deleted: held work for it goes too. */
+    val accountDeleted: Boolean = false
 )
 
 data class ParsedFullSyncPayload(
@@ -354,11 +356,11 @@ object WatchSyncJson {
             requirePayloadSize(raw)
             val now = System.currentTimeMillis()
             val root = JSONObject(raw)
-            require(
-                root.keys().asSequence().toSet() == setOf(
-                    "protocolVersion", "state", "authorityEpoch", "accountGeneration", "messageId", "sentAt"
-                )
-            ) { "Unexpected binding state field" }
+            val baseKeys = setOf(
+                "protocolVersion", "state", "authorityEpoch", "accountGeneration", "messageId", "sentAt"
+            )
+            val keys = root.keys().asSequence().toSet()
+            require(keys == baseKeys || keys == baseKeys + "reason") { "Unexpected binding state field" }
             require(root.requiredInt("protocolVersion") == SyncPaths.PROTOCOL_VERSION)
             val kind = when (root.requiredString("state", 16)) {
                 "unbound" -> BindingStateKind.Unbound
@@ -370,12 +372,16 @@ object WatchSyncJson {
             val sentAt = root.requiredLong("sentAt")
             require(accountGeneration in 1L..SyncPaths.MAX_PROTOCOL_COUNTER && messageId.isNotEmpty())
             require(sentAt in (now - MAX_MESSAGE_AGE_MS)..(now + MAX_CLOCK_SKEW_MS)) { "Stale sync message" }
+            // Optional and forward-compatible: an unknown reason is ignored, not rejected.
+            val reason = if (root.has("reason")) root.requiredString("reason", 64) else null
             ParsedBindingState(
                 kind = kind,
                 authorityEpoch = root.requiredAuthorityEpoch(),
                 accountGeneration = accountGeneration,
                 messageId = messageId,
-                sentAt = sentAt
+                sentAt = sentAt,
+                accountDeleted = kind == BindingStateKind.Unlinked &&
+                    reason == SyncPaths.BINDING_REASON_ACCOUNT_DELETED
             )
         }
     }

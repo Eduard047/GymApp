@@ -246,6 +246,21 @@ class WatchBindingRulesTest {
             BindingStateKind.Unlinked,
             (WatchSyncJson.parseBindingState(state("unlinked").toString()) as WatchSyncParseResult.Valid).value.kind
         )
+        // Optional deletion reason: absent -> false; "account_deleted" on an unlink -> true; an
+        // unknown reason, or the reason on an unbind, is ignored; a non-string reason is invalid.
+        fun reasonOf(raw: JSONObject) =
+            (WatchSyncJson.parseBindingState(raw.toString()) as WatchSyncParseResult.Valid).value.accountDeleted
+        assertFalse(reasonOf(state("unlinked")))
+        assertTrue(reasonOf(state("unlinked").put("reason", "account_deleted")))
+        assertFalse(reasonOf(state("unlinked").put("reason", "something_new")))
+        assertFalse(reasonOf(state().put("reason", "account_deleted")))
+        assertTrue(
+            WatchSyncJson.parseBindingState(state("unlinked").put("reason", 1).toString()) is WatchSyncParseResult.Invalid
+        )
+        assertTrue(
+            WatchSyncJson.parseBindingState(state("unlinked").put("reason", "account_deleted").put("extra", 1).toString())
+                is WatchSyncParseResult.Invalid
+        )
         // A binding state never names an account (Apple Watch contract: "unbound" has no binding).
         assertTrue(WatchSyncJson.parseBindingState(state().put("ownerId", ownerA).toString()) is WatchSyncParseResult.Invalid)
         assertTrue(WatchSyncJson.parseBindingState(state("bound").toString()) is WatchSyncParseResult.Invalid)

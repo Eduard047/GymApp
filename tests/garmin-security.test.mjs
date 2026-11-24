@@ -48,9 +48,15 @@ test("Wear sync rejects malformed payloads before destructive replacement", asyn
   assert.match(listener, /SyncPaths\.BINDING_STATE -> handleBindingState/);
   assert.match(parser, /"protocolVersion", "state", "authorityEpoch", "accountGeneration", "messageId", "sentAt"/);
   assert.match(rules, /fun decideBindingState[\s\S]{0,400}binding\.sourceNodeId != sourceNodeId\) return BindingStateDecision\.Reject/);
-  // Work kept on the watch is never deleted by a binding change: only Discard or a delivered send.
+  // Work kept on the watch is never deleted by a binding change: only Discard, a delivered send,
+  // or an unlink whose reason is that this very owner was deleted on the phone.
   assert.doesNotMatch(bindingStorage, /WatchPendingWorkoutStorage|WatchWorkoutDraftStorage/);
-  assert.doesNotMatch(listener, /WatchPendingWorkoutStorage\.clear|WatchWorkoutDraftStorage\.clear/);
+  const deletedOwnerDrop =
+    /if \(state\.accountDeleted && binding\.ownerId != null && heldWorkOwnerId\(\) == binding\.ownerId\) \{[^}]*\}/;
+  assert.match(listener, deletedOwnerDrop);
+  assert.match(listener.match(deletedOwnerDrop)[0], /WatchWorkoutDraftStorage\.clear[\s\S]*WatchPendingWorkoutStorage\.clear/);
+  assert.doesNotMatch(listener.replace(deletedOwnerDrop, ""), /WatchPendingWorkoutStorage\.clear|WatchWorkoutDraftStorage\.clear/);
+  assert.match(parser, /accountDeleted = kind == BindingStateKind\.Unlinked &&/);
   assert.doesNotMatch(viewModel, /fun resetAccountScopedEditor\(\) \{[\s\S]{0,200}Storage\.clear/);
   assert.match(draftStorage, /Only an unreadable draft is dropped/);
   assert.match(viewModel, /it\.ownerId == workOwnerId/);

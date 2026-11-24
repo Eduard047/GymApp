@@ -28,6 +28,8 @@ object SyncPaths {
     const val FULL_SYNC_PAYLOAD = "/gym/sync/full_payload"
     /** Phone -> watch: the phone signed out ("unbound") or the user unlinked this watch ("unlinked"). */
     const val BINDING_STATE = "/gym/sync/binding_state"
+    /** Optional binding-state reason (mirror of the phone's): the owner was deleted there. */
+    const val BINDING_REASON_ACCOUNT_DELETED = "account_deleted"
     /**
      * Watch -> phone: the user tapped "Unlink from phone" on this watch. Best effort; a phone
      * build that predates it drops the unknown path (it is not in its inbound path set).

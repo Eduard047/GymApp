@@ -1,6 +1,7 @@
 package com.example.gymapp.wear.sync
 
 import com.example.gymapp.wear.WearGymApplication
+import com.example.gymapp.wear.health.RestEndAlarm
 import com.google.android.gms.wearable.CapabilityInfo
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Node
@@ -217,6 +218,13 @@ class WatchSyncListenerService : WearableListenerService() {
                 )
             }
             BindingStateDecision.Unlink -> {
+                // The owner was deleted on the phone: its held work has nowhere to go. Only this
+                // owner's work is dropped; work held for another owner stays.
+                if (state.accountDeleted && binding.ownerId != null && heldWorkOwnerId() == binding.ownerId) {
+                    RestEndAlarm.cancel(applicationContext)
+                    WatchWorkoutDraftStorage.clear(applicationContext)
+                    WatchPendingWorkoutStorage.clear(applicationContext)
+                }
                 clearAccountData(app)
                 WatchRelinkCandidate.clear()
                 // The phone already knows: do not echo an unlink back to it.

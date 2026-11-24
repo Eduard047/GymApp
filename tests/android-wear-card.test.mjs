@@ -113,7 +113,7 @@ test("unlink is destructive and behind a confirmation dialog", () => {
   assert.doesNotMatch(clear, /\.clear\(\)|KEY_ACTIVE_GENERATION|KEY_LAST_GENERATION|KEY_FULL_SYNC_REVISION|KEY_AUTHORITY_EPOCH/);
   // The watch is told (binding state "unlinked") and is not pinned again without its explicit link request.
   assert.match(syncManager, /suspend fun unlinkWatch\(\): Boolean/);
-  assert.match(syncManager, /buildBindingState\(binding, unlinked = true\)/);
+  assert.match(syncManager, /buildBindingState\(binding, unlinked = true[,)]/);
   assert.match(binding, /KEY_UNLINKED_NODE_ID, null\) == sourceNodeId && !linkIntent\) return false/);
   // Every released pin (this phone's Unlink or the watch's own notice) re-reads an open card.
   assert.match(syncManager, /val pinReleases: StateFlow<Long>/);

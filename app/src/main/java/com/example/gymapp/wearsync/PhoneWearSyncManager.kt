@@ -202,7 +202,13 @@ internal class PhoneWearSyncManager(
         val nodeId = result.releasedNodeId ?: return result.committed
         lastFullSyncCompletedAt.clear()
         _pinReleases.update { it + 1 }
-        scope.launch { sendUnlinked(nodeId) }
+        scope.launch {
+            // With the reason first, so a current watch drops that owner's held work too; then a
+            // plain unlink for watches that predate the reason (a current one is unbound by then
+            // and ignores it).
+            sendUnlinked(nodeId, accountDeleted = true)
+            sendUnlinked(nodeId)
+        }
         return result.committed
     }
 
@@ -219,13 +225,13 @@ internal class PhoneWearSyncManager(
         return true
     }
 
-    private suspend fun sendUnlinked(nodeId: String) {
+    private suspend fun sendUnlinked(nodeId: String, accountDeleted: Boolean = false) {
         try {
             val (_, binding) = currentSessionAndBinding()
             sendMessage(
                 nodeId,
                 PhoneWearPaths.BINDING_STATE,
-                PhoneWearProtocol.buildBindingState(binding, unlinked = true)
+                PhoneWearProtocol.buildBindingState(binding, unlinked = true, accountDeleted = accountDeleted)
             )
         } catch (error: CancellationException) {
             throw error

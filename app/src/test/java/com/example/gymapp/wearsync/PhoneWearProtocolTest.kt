@@ -350,6 +350,18 @@ class PhoneWearProtocolTest {
         )
         assertEquals(keys, unlinked.keys().asSequence().toSet())
         assertEquals("unlinked", unlinked.getString("state"))
+        // The deletion reason is added only when asked, and only to an unlink.
+        val deleted = org.json.JSONObject(
+            String(
+                PhoneWearProtocol.buildBindingState(
+                    signedOut, unlinked = true, now = now, messageId = operationId, accountDeleted = true
+                )
+            )
+        )
+        assertEquals(keys + "reason", deleted.keys().asSequence().toSet())
+        assertEquals("unlinked", deleted.getString("state"))
+        assertEquals("account_deleted", deleted.getString("reason"))
+        assertThrows { PhoneWearProtocol.buildBindingState(signedOut, unlinked = false, accountDeleted = true) }
         assertThrows {
             PhoneWearProtocol.buildBindingState(signedOut.copy(authorityEpoch = "not-an-epoch"), unlinked = false)
         }
