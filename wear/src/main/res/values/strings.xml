@@ -76,6 +76,27 @@
     </plurals>
     <string name="a11y_rest">Rest, %1$d min %2$d s</string>
     <string name="a11y_change_exercise">Change exercise</string>
+    <string name="a11y_no_data">No data</string>
+    <string name="a11y_avg_hr">Average heart rate</string>
+    <string name="a11y_max_hr">Maximum heart rate</string>
+    <string name="a11y_kilograms">%s kilograms</string>
+    <string name="a11y_dismiss">Dismiss</string>
+    <plurals name="a11y_kcal">
+        <item quantity="one">%d kilocalorie</item>
+        <item quantity="other">%d kilocalories</item>
+    </plurals>
+    <plurals name="a11y_hours">
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
+    </plurals>
+    <plurals name="a11y_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+    <plurals name="a11y_seconds">
+        <item quantity="one">%d second</item>
+        <item quantity="other">%d seconds</item>
+    </plurals>
     <string name="choose_exercise">Choose exercise</string>
     <string name="choose_short">Choose</string>
     <string name="queued_title">Unsent</string>

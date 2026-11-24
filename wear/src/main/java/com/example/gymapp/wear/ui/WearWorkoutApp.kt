@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -76,6 +77,8 @@ import androidx.wear.compose.material3.SuccessConfirmationDialog
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TextButton
 import androidx.wear.compose.material3.TextButtonDefaults
+import androidx.wear.compose.material3.minimumInteractiveComponentSize
+import androidx.wear.compose.material3.ripple
 import androidx.wear.compose.material3.curvedText
 import androidx.wear.compose.material3.rememberPickerState
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
@@ -270,6 +273,8 @@ private fun MessageBanner(text: String, onDone: () -> Unit) {
         delay(MESSAGE_MS)
         onDone()
     }
+    val interaction = remember { MutableInteractionSource() }
+    val dismissLabel = stringResource(R.string.a11y_dismiss)
     Box(
         modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
         contentAlignment = Alignment.Center
@@ -281,10 +286,20 @@ private fun MessageBanner(text: String, onDone: () -> Unit) {
             textAlign = TextAlign.Center,
             maxLines = 5,
             overflow = TextOverflow.Ellipsis,
+            // The click and its semantics sit on a 48dp minimum target; the pill, its ripple and
+            // the text keep their own size inside it, so the banner looks the same on small screens.
             modifier = Modifier
+                .clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    role = Role.Button,
+                    onClickLabel = dismissLabel,
+                    onClick = onDone
+                )
+                .minimumInteractiveComponentSize()
                 .clip(RoundedCornerShape(16.dp))
                 .background(WatchColors.SurfaceHigh)
-                .clickable(onClick = onDone)
+                .indication(interaction, ripple())
                 .padding(horizontal = 12.dp, vertical = 8.dp)
                 .semantics { liveRegion = LiveRegionMode.Polite }
         )
@@ -366,6 +381,21 @@ private fun EdgeLabel(text: String, singleLine: Boolean = false) {
 @Composable
 private fun edgeHeightDp(measuredPx: Int, fallback: Dp): Dp =
     if (measuredPx > 0) with(LocalDensity.current) { measuredPx.toDp() } else fallback
+
+/** A duration in words for TalkBack ("1 hour 5 minutes 3 seconds"); zero parts are skipped. */
+@Composable
+private fun spokenDuration(totalSeconds: Long): String {
+    val seconds = totalSeconds.coerceAtLeast(0L)
+    val h = (seconds / 3600).toInt()
+    val m = ((seconds % 3600) / 60).toInt()
+    val s = (seconds % 60).toInt()
+    val parts = buildList {
+        if (h > 0) add(pluralStringResource(R.plurals.a11y_hours, h, h))
+        if (m > 0) add(pluralStringResource(R.plurals.a11y_minutes, m, m))
+        if (s > 0 || (h == 0 && m == 0)) add(pluralStringResource(R.plurals.a11y_seconds, s, s))
+    }
+    return parts.joinToString(" ")
+}
 
 /** Always-on elapsed time: minutes only, no seconds (spec §4.2). */
 private fun ambientElapsed(elapsedSeconds: Long): String {
@@ -1243,6 +1273,7 @@ private fun SummaryScreen(state: WearWorkoutUiState, onSave: () -> Unit, onDisca
     var confirmDiscard by remember { mutableStateOf(false) }
     val summary = state.summary
     val none = "—"
+    val noData = stringResource(R.string.a11y_no_data)
     val large = isLargeScreen()
     var edgePx by remember { mutableIntStateOf(0) }
     val edgeHeight = edgeHeightDp(edgePx, if (large) 70.dp else 46.dp)
@@ -1275,24 +1306,43 @@ private fun SummaryScreen(state: WearWorkoutUiState, onSave: () -> Unit, onDisca
             item { ListHeader { Text(stringResource(R.string.summary), textAlign = TextAlign.Center) } }
             item {
                 MetricRow(
-                    WorkoutMath.formatDuration(summary.durationSeconds) to stringResource(R.string.label_duration),
-                    summary.setCount.toString() to stringResource(R.string.label_sets)
+                    SummaryCell(
+                        WorkoutMath.formatDuration(summary.durationSeconds),
+                        stringResource(R.string.label_duration),
+                        spokenDuration(summary.durationSeconds)
+                    ),
+                    SummaryCell(summary.setCount.toString(), stringResource(R.string.label_sets), summary.setCount.toString())
                 )
             }
             item {
+                val volume = WorkoutMath.formatVolume(summary.volumeKg, loc)
                 MetricRow(
-                    stringResource(R.string.weight_kg, WorkoutMath.formatVolume(summary.volumeKg, loc)) to
+                    SummaryCell(
+                        stringResource(R.string.weight_kg, volume),
                         stringResource(R.string.label_volume),
-                    (summary.caloriesKcal?.let { stringResource(R.string.value_kcal, it) } ?: none) to
-                        stringResource(R.string.calories)
+                        stringResource(R.string.a11y_kilograms, volume)
+                    ),
+                    SummaryCell(
+                        summary.caloriesKcal?.let { stringResource(R.string.value_kcal, it) } ?: none,
+                        stringResource(R.string.calories),
+                        summary.caloriesKcal?.let { pluralStringResource(R.plurals.a11y_kcal, it, it) } ?: noData
+                    )
                 )
             }
             item {
                 MetricRow(
-                    (summary.averageHeartRate?.let { stringResource(R.string.value_bpm, it) } ?: none) to
+                    SummaryCell(
+                        summary.averageHeartRate?.let { stringResource(R.string.value_bpm, it) } ?: none,
                         stringResource(R.string.label_avg_hr),
-                    (summary.maxHeartRate?.let { stringResource(R.string.value_bpm, it) } ?: none) to
-                        stringResource(R.string.label_max_hr)
+                        summary.averageHeartRate?.let { pluralStringResource(R.plurals.a11y_beats, it, it) } ?: noData,
+                        stringResource(R.string.a11y_avg_hr)
+                    ),
+                    SummaryCell(
+                        summary.maxHeartRate?.let { stringResource(R.string.value_bpm, it) } ?: none,
+                        stringResource(R.string.label_max_hr),
+                        summary.maxHeartRate?.let { pluralStringResource(R.plurals.a11y_beats, it, it) } ?: noData,
+                        stringResource(R.string.a11y_max_hr)
+                    )
                 )
             }
             item {
@@ -1327,19 +1377,32 @@ private fun SummaryScreen(state: WearWorkoutUiState, onSave: () -> Unit, onDisca
     })
 }
 
+/** A summary cell: what it shows, and what TalkBack reads (label first, then the value). */
+private data class SummaryCell(
+    val value: String,
+    val label: String,
+    val spokenValue: String,
+    val spokenLabel: String = label
+)
+
 @Composable
-private fun MetricRow(left: Pair<String, String>, right: Pair<String, String>) {
+private fun MetricRow(left: SummaryCell, right: SummaryCell) {
     // A fixed gap keeps two long labels ("Сред. пульс" / "Макс. пульс") apart on narrow screens.
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Metric(left.first, left.second, Modifier.weight(1f))
-        Metric(right.first, right.second, Modifier.weight(1f))
+        Metric(left, Modifier.weight(1f))
+        Metric(right, Modifier.weight(1f))
     }
 }
 
+/**
+ * A summary cell reads label first, then a spoken value: "no data" instead of the dash, and a
+ * duration in words instead of "12:34", which TalkBack would read as a clock time.
+ */
 @Composable
-private fun Metric(value: String, label: String, modifier: Modifier) {
+private fun Metric(cell: SummaryCell, modifier: Modifier) {
+    val (value, label, spokenValue, spokenLabel) = cell
     Column(
-        modifier = modifier.semantics(mergeDescendants = true) { },
+        modifier = modifier.clearAndSetSemantics { contentDescription = "$spokenLabel, $spokenValue" },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(value, style = MaterialTheme.typography.titleLarge.tabular(), maxLines = 1)

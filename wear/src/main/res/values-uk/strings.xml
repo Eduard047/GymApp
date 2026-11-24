@@ -80,6 +80,35 @@
     </plurals>
     <string name="a11y_rest">Відпочинок, %1$d хв %2$d с</string>
     <string name="a11y_change_exercise">Змінити вправу</string>
+    <string name="a11y_no_data">Немає даних</string>
+    <string name="a11y_avg_hr">Середній пульс</string>
+    <string name="a11y_max_hr">Максимальний пульс</string>
+    <string name="a11y_kilograms">%s кг</string>
+    <string name="a11y_dismiss">Закрити</string>
+    <plurals name="a11y_kcal">
+        <item quantity="one">%d кілокалорія</item>
+        <item quantity="few">%d кілокалорії</item>
+        <item quantity="many">%d кілокалорій</item>
+        <item quantity="other">%d кілокалорії</item>
+    </plurals>
+    <plurals name="a11y_hours">
+        <item quantity="one">%d година</item>
+        <item quantity="few">%d години</item>
+        <item quantity="many">%d годин</item>
+        <item quantity="other">%d години</item>
+    </plurals>
+    <plurals name="a11y_minutes">
+        <item quantity="one">%d хвилина</item>
+        <item quantity="few">%d хвилини</item>
+        <item quantity="many">%d хвилин</item>
+        <item quantity="other">%d хвилини</item>
+    </plurals>
+    <plurals name="a11y_seconds">
+        <item quantity="one">%d секунда</item>
+        <item quantity="few">%d секунди</item>
+        <item quantity="many">%d секунд</item>
+        <item quantity="other">%d секунди</item>
+    </plurals>
     <string name="choose_exercise">Обрати вправу</string>
     <string name="choose_short">Обрати</string>
     <string name="queued_title">Не надіслано</string>
