@@ -181,6 +181,15 @@
                     android:pathPrefix="/gym/sync/"
                     android:scheme="wear" />
             </intent-filter>
+            <!-- The watch app (capability in the wear module res/values/wear.xml) became reachable: resend what waits for it. -->
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.CAPABILITY_CHANGED" />
+
+                <data
+                    android:host="*"
+                    android:path="/gymapp_watch_sync"
+                    android:scheme="wear" />
+            </intent-filter>
         </service>
 
         <provider

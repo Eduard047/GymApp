@@ -62,6 +62,15 @@
                     android:pathPrefix="/gym/sync/"
                     android:scheme="wear" />
             </intent-filter>
+            <!-- The phone app (capability in the app module res/values/wear.xml) became reachable: send the workout that waits. -->
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.CAPABILITY_CHANGED" />
+
+                <data
+                    android:host="*"
+                    android:path="/gymapp_phone_sync"
+                    android:scheme="wear" />
+            </intent-filter>
         </service>
     </application>
 

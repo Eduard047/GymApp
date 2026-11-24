@@ -4,6 +4,7 @@ import android.os.SystemClock
 import com.example.gymapp.GymApplication
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
 import com.example.gymapp.data.repository.WearMutationApplyResult
+import com.google.android.gms.wearable.CapabilityInfo
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Node
 import com.google.android.gms.wearable.WearableListenerService
@@ -33,6 +34,34 @@ internal suspend fun runPhoneWearConsumerItem(block: suspend () -> Unit) {
         // A transient transport/database failure rejects only this message. The fixed consumer
         // must remain alive for retries; no payload or account data is logged.
     }
+}
+
+internal enum class PhoneWearInboundGate { ReplyUnlinked, Drop, Authorize }
+
+/**
+ * What to do with a valid command before any authorization. A node the user unlinked is answered
+ * with "unlinked" for everything except its own explicit link request; a mutation of a node that
+ * is not pinned is dropped (it can never establish the pin).
+ */
+internal fun phoneWearInboundGate(
+    isRequestFull: Boolean,
+    linkIntent: Boolean,
+    unlinkedNode: Boolean,
+    pinnedNode: Boolean
+): PhoneWearInboundGate = when {
+    unlinkedNode && !(isRequestFull && linkIntent) -> PhoneWearInboundGate.ReplyUnlinked
+    !isRequestFull && !pinnedNode -> PhoneWearInboundGate.Drop
+    else -> PhoneWearInboundGate.Authorize
+}
+
+/** The pinned watch node when a watch-capability event says it is reachable; otherwise null. */
+internal fun phoneWearReconnectTarget(
+    capabilityName: String,
+    reachableNodeIds: Set<String>,
+    pinnedNodeId: String?
+): String? {
+    if (capabilityName != PhoneWearPaths.WATCH_CAPABILITY) return null
+    return pinnedNodeId?.takeIf { it in reachableNodeIds }
 }
 
 class PhoneWearSyncListenerService : WearableListenerService() {
@@ -116,16 +145,37 @@ class PhoneWearSyncListenerService : WearableListenerService() {
         // Parse first: a node is pinned only after a valid command arrives from it (never on junk).
         val parsed = PhoneWearProtocol.parse(path, payload)
         if (parsed !is PhoneWearParseResult.Valid) return
-        if (parsed.command !is PhoneWearCommand.RequestFull && !syncManager.isPinnedNode(sourceNodeId)) {
+        val requestFull = parsed.command as? PhoneWearCommand.RequestFull
+        val linkIntent = requestFull?.linkIntent == true
+        when (
+            phoneWearInboundGate(
+                isRequestFull = requestFull != null,
+                linkIntent = linkIntent,
+                unlinkedNode = syncManager.isUnlinkedNode(sourceNodeId),
+                pinnedNode = syncManager.isPinnedNode(sourceNodeId)
+            )
+        ) {
+            // A watch the user unlinked on this phone is told so again, whatever it sent (a queued
+            // workout included), and is not pinned; only its own explicit link request
+            // ("Link to phone" on the watch) may link it again.
+            PhoneWearInboundGate.ReplyUnlinked -> {
+                syncManager.replyUnlinkedIfBlocked(sourceNodeId)
+                return
+            }
             // Mutations are never allowed to establish the pin; only a valid full-sync request does.
-            return
+            PhoneWearInboundGate.Drop -> return
+            PhoneWearInboundGate.Authorize -> Unit
         }
-        if (!syncManager.authorizeSource(sourceNodeId)) return
+        if (!syncManager.authorizeSource(sourceNodeId, linkIntent)) return
+        // Display hint only: the pinned watch follows this phone's current owner and generation.
+        syncManager.recordLinkProofIfCurrent(sourceNodeId, parsed.command.envelope)
 
         when (val command = parsed.command) {
             is PhoneWearCommand.RequestFull -> {
                 if (!acceptFullSyncRequest(sourceNodeId, command.envelope.operationId)) return
                 syncManager.sendCurrentFullSync(sourceNodeId)
+                // A plan that could not be delivered earlier goes out with the watch's next sync.
+                syncManager.resendPendingPlan(sourceNodeId)
             }
             is PhoneWearCommand.CreateWorkout,
             is PhoneWearCommand.UpdateSet,
@@ -249,6 +299,22 @@ class PhoneWearSyncListenerService : WearableListenerService() {
     override fun onPeerConnected(peer: Node) {
         super.onPeerConnected(peer)
         reconnectQueue.trySend(peer.id)
+    }
+
+    /**
+     * The watch app became reachable (capability declared in the watch app's res/values/wear.xml).
+     * Unlike onPeerConnected this is delivered through a manifest filter. The push runs in the
+     * application scope: this service may be destroyed as soon as the callback returns.
+     */
+    override fun onCapabilityChanged(capabilityInfo: CapabilityInfo) {
+        super.onCapabilityChanged(capabilityInfo)
+        val syncManager = (applicationContext as GymApplication).phoneWearSyncManager
+        val target = phoneWearReconnectTarget(
+            capabilityName = capabilityInfo.name,
+            reachableNodeIds = capabilityInfo.nodes.mapTo(HashSet()) { it.id },
+            pinnedNodeId = syncManager.pinnedWatchNodeId()
+        ) ?: return
+        syncManager.pushReconnectedAsync(target)
     }
 
     private fun acceptFullSyncRequest(sourceNodeId: String, operationId: String): Boolean {

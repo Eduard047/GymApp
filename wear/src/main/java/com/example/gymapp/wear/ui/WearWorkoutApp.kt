@@ -136,6 +136,8 @@ fun WearWorkoutApp(viewModel: WearWorkoutViewModel, isAmbient: Boolean) {
                             nav.goToDashboard()
                         },
                         onCycleStep = viewModel::cycleWeightStep,
+                        onLink = viewModel::linkToPhone,
+                        onUnlink = viewModel::unlinkFromPhone,
                         onRetry = {
                             viewModel.retryQueuedWorkout()
                             nav.goToRoot(Routes.RESULT)
@@ -279,16 +281,20 @@ private fun StartScreen(
     state: WearWorkoutUiState,
     onStart: (usePlan: Boolean) -> Unit,
     onCycleStep: () -> Unit,
+    onLink: () -> Unit,
+    onUnlink: () -> Unit,
     onRetry: () -> Unit,
     onDiscardQueued: () -> Unit
 ) {
     val listState = rememberScalingLazyListState()
     val hasPlan = state.planTargets.isNotEmpty()
     val queued = state.hasQueuedWorkout
-    val canStart = state.isLinked && !queued && !state.isSaving
+    // Held work (its account is not the one bound now) blocks Start like a queued workout.
+    val canStart = state.isLinked && !queued && !state.isSaving && !state.workoutOnHold
     var confirmDiscard by remember { mutableStateOf(false) }
     val status = when {
         queued && state.isSaving -> stringResource(R.string.sending)
+        state.unlinked -> stringResource(R.string.link_unlinked)
         !state.isLinked -> stringResource(R.string.open_phone)
         // The queued block below says why starting is blocked and what to do about it.
         queued -> stringResource(R.string.send_later)
@@ -369,7 +375,9 @@ private fun StartScreen(
                             color = WatchColors.TextSecondary
                         )
                         Text(
-                            text = stringResource(R.string.queued_body),
+                            text = stringResource(
+                                if (state.workoutOnHold) R.string.queued_hold_body else R.string.queued_body
+                            ),
                             style = MaterialTheme.typography.labelSmall,
                             color = WatchColors.TextSecondary,
                             textAlign = TextAlign.Center,
@@ -377,7 +385,7 @@ private fun StartScreen(
                         )
                     }
                 }
-                if (state.isLinked && !state.isSaving) {
+                if (state.isLinked && !state.isSaving && !state.workoutOnHold) {
                     item {
                         Button(
                             onClick = onRetry,
@@ -407,6 +415,25 @@ private fun StartScreen(
                         )
                     }
                 )
+            }
+            // Minimal link controls (visual polish is a separate pass). Unlinking keeps the
+            // workout stored on the watch; it only forgets the phone and what it synced.
+            if (state.unlinked) {
+                item {
+                    Button(
+                        onClick = onLink,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.link_phone), maxLines = 2) }
+                    )
+                }
+            } else if (state.isLinked && !state.isSaving) {
+                item {
+                    FilledTonalButton(
+                        onClick = onUnlink,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.unlink_phone), maxLines = 2) }
+                    )
+                }
             }
             if (status != null) {
                 item {

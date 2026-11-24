@@ -130,43 +130,55 @@ object WatchWorkoutDraftCodec {
     }
 }
 
+/** A stored draft with the owner it was recorded for (null only for data without a stamp). */
+data class StoredWatchDraft(val draft: WatchWorkoutDraft, val ownerId: String?)
+
 /**
  * Persists the workout in progress after every change, so a process death (low memory, a crash,
- * a revoked permission) loses neither the logged sets nor the start and pause times. Scoped to
- * the phone and account the watch was linked to when it was written.
+ * a revoked permission) loses neither the logged sets nor the start and pause times. The draft is
+ * stamped with the owner it was recorded for and survives sign-out, account switches and
+ * relinking: it is on hold until that owner is bound again, and only the user's Discard (or a
+ * delivered send) removes it.
  */
 object WatchWorkoutDraftStorage {
     private const val PREFS_NAME = "watch_workout_draft"
     private const val KEY_DRAFT = "draft"
     private const val KEY_OWNER_ID = "owner_id"
-    private const val KEY_SOURCE_NODE_ID = "source_node_id"
 
     /** [durable] waits for the write (set and finish changes); otherwise it is queued. */
-    fun save(context: Context, binding: WatchSyncBinding?, draft: WatchWorkoutDraft, durable: Boolean): Boolean {
+    fun save(context: Context, ownerId: String?, draft: WatchWorkoutDraft, durable: Boolean): Boolean {
         val editor = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .clear()
             .putString(KEY_DRAFT, WatchWorkoutDraftCodec.encode(draft))
-        binding?.ownerId?.let { editor.putString(KEY_OWNER_ID, it) }
-        binding?.sourceNodeId?.let { editor.putString(KEY_SOURCE_NODE_ID, it) }
+        ownerId?.let { editor.putString(KEY_OWNER_ID, it) }
         if (durable) return editor.commit()
         editor.apply()
         return true
     }
 
-    fun load(context: Context, binding: WatchSyncBinding?): WatchWorkoutDraft? {
+    fun load(context: Context): StoredWatchDraft? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val raw = prefs.getString(KEY_DRAFT, null) ?: return null
-        val sameAccount = prefs.getString(KEY_OWNER_ID, null) == binding?.ownerId &&
-            prefs.getString(KEY_SOURCE_NODE_ID, null) == binding?.sourceNodeId
-        val draft = if (sameAccount) WatchWorkoutDraftCodec.decode(raw) else null
-        // Another account's or an unreadable draft must not linger on the watch.
-        if (draft == null) clear(context)
-        return draft
+        val draft = WatchWorkoutDraftCodec.decode(raw)
+        // Only an unreadable draft is dropped; another owner's draft stays on hold.
+        if (draft == null) {
+            clear(context)
+            return null
+        }
+        return StoredWatchDraft(draft, prefs.getString(KEY_OWNER_ID, null))
     }
 
-    fun clear(context: Context) {
+    /** Owner of the stored draft; null when there is no draft. */
+    fun heldOwnerId(context: Context): String? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        if (prefs.all.isNotEmpty()) prefs.edit().clear().commit()
+        if (!prefs.contains(KEY_DRAFT)) return null
+        return prefs.getString(KEY_OWNER_ID, null)
+    }
+
+    /** True when no draft is stored any more (the removal reached the disk). */
+    fun clear(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.all.isEmpty() || prefs.edit().clear().commit()
     }
 }

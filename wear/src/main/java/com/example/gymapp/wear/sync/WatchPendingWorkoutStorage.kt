@@ -1,6 +1,7 @@
 package com.example.gymapp.wear.sync
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.example.gymapp.wear.data.WearWorkoutSetDraft
 import java.security.MessageDigest
 import java.util.UUID
@@ -41,8 +42,8 @@ object WatchPendingWorkoutStorage {
     private const val MAX_IDENTIFIER_LENGTH = 128
     private const val MAX_NOTE_LENGTH = 2_000
 
-    fun getOrCreate(
-        context: Context,
+    internal fun getOrCreate(
+        prefs: SharedPreferences,
         binding: WatchSyncBinding,
         draftId: String,
         startedAt: Long,
@@ -60,8 +61,17 @@ object WatchPendingWorkoutStorage {
         require(draftId.isNotBlank() && draftId.length <= MAX_IDENTIFIER_LENGTH)
         require(sourcePlanRaw == null || sourcePlanRaw.toByteArray(Charsets.UTF_8).size <= SyncPaths.MAX_MESSAGE_BYTES)
         val fingerprint = fingerprint(binding, draftId, note, sets, sourcePlanRaw)
-        val existing = load(context, binding)
-        if (existing?.draftId == draftId && existing.fingerprint == fingerprint) {
+        val existing = load(prefs, binding)
+        // The operation id belongs to the workout (draft id, note, sets), not to the plan that
+        // happened to be stored when it was first sent. A sign-out clears the plan and a newer
+        // one can arrive between retries; the retry must still reuse the stored operation, or a
+        // send whose acknowledgement was lost would be repeated under a new id (a second workout).
+        if (
+            existing != null &&
+            existing.draftId == draftId &&
+            (existing.fingerprint == fingerprint ||
+                existing.fingerprint == this.fingerprint(binding, draftId, note, sets, existing.sourcePlanRaw))
+        ) {
             return existing
         }
 
@@ -83,7 +93,7 @@ object WatchPendingWorkoutStorage {
         val draftJson = serializeDraft(note, sets)
         check(draftJson.toByteArray(Charsets.UTF_8).size <= SyncPaths.MAX_MESSAGE_BYTES)
         check(
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs
                 .edit()
                 .putString(KEY_OPERATION_ID, pending.operationId)
                 .putString(KEY_DRAFT_ID, pending.draftId)
@@ -111,9 +121,8 @@ object WatchPendingWorkoutStorage {
         return pending
     }
 
-    fun load(context: Context, binding: WatchSyncBinding?): PendingWorkoutMutation? {
+    internal fun load(prefs: SharedPreferences, binding: WatchSyncBinding?): PendingWorkoutMutation? {
         if (binding?.ownerId == null || binding.accountGeneration <= 0L) return null
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val operationId = prefs.getString(KEY_OPERATION_ID, null)
             ?.takeIf { it.isNotBlank() && it.length <= MAX_IDENTIFIER_LENGTH }
             ?: return null
@@ -166,8 +175,7 @@ object WatchPendingWorkoutStorage {
             null
         }
 
-    fun clearIfMatches(context: Context, pending: PendingWorkoutMutation) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    internal fun clearIfMatches(prefs: SharedPreferences, pending: PendingWorkoutMutation) {
         if (
             prefs.getString(KEY_OPERATION_ID, null) == pending.operationId &&
             prefs.getString(KEY_DRAFT_ID, null) == pending.draftId &&
@@ -177,11 +185,46 @@ object WatchPendingWorkoutStorage {
         }
     }
 
-    fun clear(context: Context) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    internal fun clear(prefs: SharedPreferences) {
         if (prefs.all.isNotEmpty()) {
             check(prefs.edit().clear().commit()) { "Could not clear pending workout mutation" }
         }
+    }
+
+    private fun prefs(context: Context): SharedPreferences =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    fun getOrCreate(
+        context: Context,
+        binding: WatchSyncBinding,
+        draftId: String,
+        startedAt: Long,
+        note: String?,
+        sets: List<WearWorkoutSetDraft>,
+        sourcePlanRaw: String?,
+        durationSeconds: Long? = null,
+        averageHeartRate: Int? = null,
+        maxHeartRate: Int? = null
+    ): PendingWorkoutMutation = getOrCreate(
+        prefs(context), binding, draftId, startedAt, note, sets, sourcePlanRaw,
+        durationSeconds, averageHeartRate, maxHeartRate
+    )
+
+    fun load(context: Context, binding: WatchSyncBinding?): PendingWorkoutMutation? =
+        load(prefs(context), binding)
+
+    fun clearIfMatches(context: Context, pending: PendingWorkoutMutation) =
+        clearIfMatches(prefs(context), pending)
+
+    /** Only the user's Discard (or a delivered/rejected send) removes the stored operation. */
+    fun clear(context: Context) = clear(prefs(context))
+
+    /** Owner the stored operation was created for; null when nothing is stored. */
+    fun heldOwnerId(context: Context): String? = heldOwnerId(prefs(context))
+
+    internal fun heldOwnerId(prefs: SharedPreferences): String? {
+        if (!prefs.contains(KEY_OPERATION_ID)) return null
+        return prefs.getString(KEY_OWNER_ID, null)
     }
 
     private fun serializeDraft(note: String?, sets: List<WearWorkoutSetDraft>): String {

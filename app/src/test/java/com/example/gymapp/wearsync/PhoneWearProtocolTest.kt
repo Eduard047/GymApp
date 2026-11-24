@@ -87,8 +87,15 @@ class PhoneWearProtocolTest {
 
     @Test
     fun rejectsUnexpectedDuplicateAndPathConfusedFields() {
+        // An unknown key is ignored (it grants nothing), not a reason to drop the message.
         val extra = requestJson().dropLast(1) + ",\"admin\":true}"
-        assertInvalid(PhoneWearPaths.REQUEST_FULL_SYNC, extra)
+        val parsedExtra = PhoneWearProtocol.parse(PhoneWearPaths.REQUEST_FULL_SYNC, extra.toByteArray(), now)
+        assertTrue(parsedExtra is PhoneWearParseResult.Valid)
+        assertEquals(
+            (PhoneWearProtocol.parse(PhoneWearPaths.REQUEST_FULL_SYNC, requestJson().toByteArray(), now)
+                as PhoneWearParseResult.Valid).command,
+            (parsedExtra as PhoneWearParseResult.Valid).command
+        )
 
         val duplicate = requestJson().replace(
             "\"protocolVersion\":1",
@@ -145,7 +152,7 @@ class PhoneWearProtocolTest {
 
     @Test
     fun boundedFullSyncNeverTruncatesInvalidSessionFields() {
-        val binding = PhoneWearAccountBinding(ownerId, 3L, signedOut = false)
+        val binding = PhoneWearAccountBinding(ownerId, 3L, signedOut = false, authorityEpoch = TEST_EPOCH)
         val valid = PhoneWearOutboundSession(
             id = 1L,
             startedAt = now,
@@ -179,7 +186,7 @@ class PhoneWearProtocolTest {
         assertTrue(root.getJSONArray("exerciseCatalog").length() <= PhoneWearPaths.MAX_EXERCISE_CATALOG)
         assertEquals(
             setOf(
-                "protocolVersion", "ownerId", "accountGeneration", "revision",
+                "protocolVersion", "ownerId", "accountGeneration", "authorityEpoch", "revision",
                 "messageId", "sentAt", "sessions", "exerciseCatalog"
             ),
             root.keys().asSequence().toSet()
@@ -189,7 +196,7 @@ class PhoneWearProtocolTest {
     @Test
     fun ackContainsOnlyCurrentBindingAndExactStatus() {
         val payload = PhoneWearProtocol.buildMutationAck(
-            binding = PhoneWearAccountBinding(ownerId, 12L, signedOut = false),
+            binding = PhoneWearAccountBinding(ownerId, 12L, signedOut = false, authorityEpoch = TEST_EPOCH),
             operationId = operationId,
             accepted = false,
             now = now
@@ -201,7 +208,7 @@ class PhoneWearProtocolTest {
         assertEquals("rejected", root.getString("status"))
         assertFalse(root.has("messageId"))
         assertEquals(
-            setOf("protocolVersion", "ownerId", "accountGeneration", "operationId", "status", "sentAt"),
+            setOf("protocolVersion", "ownerId", "accountGeneration", "authorityEpoch", "operationId", "status", "sentAt"),
             root.keys().asSequence().toSet()
         )
     }
@@ -209,7 +216,7 @@ class PhoneWearProtocolTest {
     @Test
     fun accountHistoryFollowsThePinnedNodeAndTheActiveAccount() {
         val session = AccountSession.Local("Second account")
-        val secondBinding = PhoneWearAccountBinding("b".repeat(64), 3L, signedOut = false)
+        val secondBinding = PhoneWearAccountBinding("b".repeat(64), 3L, signedOut = false, authorityEpoch = TEST_EPOCH)
         val watch = PhoneWearTrustedSource("watch-a", "a".repeat(64))
 
         assertTrue(mayExposePhoneWearAccountData(session, secondBinding, watch, "watch-a"))
@@ -287,6 +294,81 @@ class PhoneWearProtocolTest {
         assertTrue(note.codePointCount(0, note.length) <= 512 && note.toByteArray().size <= 2048)
     }
 
+    @Test
+    fun unknownOptionalKeysAreIgnoredButBoundedAndNeverChangeTheDigest() {
+        fun json(extra: String, setExtra: String = "") =
+            """{"type":"create_workout","protocolVersion":1,"operationId":"$operationId","sentAt":$now,"ownerId":"$ownerId","accountGeneration":7,"startedAt":$now$extra,"sets":[{"exerciseName":"Squat","weight":100.0,"reps":5$setExtra}]}"""
+        fun parse(raw: String) = PhoneWearProtocol.parse(PhoneWearPaths.CREATE_WORKOUT, raw.toByteArray(), now)
+
+        val plain = parse(json("")) as PhoneWearParseResult.Valid
+        val withUnknown = parse(
+            json(",\"activeCalories\":321,\"future\":{\"a\":[1,2]}", setExtra = ",\"rpe\":8")
+        ) as PhoneWearParseResult.Valid
+        // The workout is applied exactly as without the unknown keys, under the same digest, so a
+        // retry from an older or newer watch build is still recognised as the same operation.
+        assertEquals(plain.command, withUnknown.command)
+        assertEquals(plain.canonicalPayloadDigest, withUnknown.canonicalPayloadDigest)
+
+        // The payload is still untrusted: required keys, known value types and bounds hold.
+        assertInvalid(PhoneWearPaths.CREATE_WORKOUT, json("").replace("\"startedAt\":$now,", ""))
+        assertInvalid(PhoneWearPaths.CREATE_WORKOUT, json(",\"durationSeconds\":\"60\""))
+        assertInvalid(PhoneWearPaths.CREATE_WORKOUT, json("", setExtra = ",\"reps\":6"))
+        val tooManyKeys = (1..40).joinToString("") { ",\"k$it\":1" }
+        assertInvalid(PhoneWearPaths.CREATE_WORKOUT, json(tooManyKeys))
+        assertInvalid(PhoneWearPaths.CREATE_WORKOUT, json("", setExtra = tooManyKeys))
+        assertInvalid(PhoneWearPaths.CREATE_WORKOUT, json(",\"${"k".repeat(65)}\":1"))
+        // An unknown key cannot smuggle another owner in: the claim is still the envelope's.
+        val claimed = parse(json(",\"owner\":\"${"b".repeat(64)}\"")) as PhoneWearParseResult.Valid
+        assertEquals(ownerId, claimed.command.envelope.ownerId)
+    }
+
+    @Test
+    fun linkIntentIsAnExplicitBooleanOfTheFullSyncRequest() {
+        fun parse(raw: String) = PhoneWearProtocol.parse(PhoneWearPaths.REQUEST_FULL_SYNC, raw.toByteArray(), now)
+        val plain = (parse(requestJson()) as PhoneWearParseResult.Valid).command as PhoneWearCommand.RequestFull
+        assertFalse(plain.linkIntent)
+        val link = (parse(requestJson().dropLast(1) + ",\"link\":true}") as PhoneWearParseResult.Valid)
+            .command as PhoneWearCommand.RequestFull
+        assertTrue(link.linkIntent)
+        assertInvalid(PhoneWearPaths.REQUEST_FULL_SYNC, requestJson().dropLast(1) + ",\"link\":\"yes\"}")
+        assertInvalid(PhoneWearPaths.REQUEST_FULL_SYNC, requestJson().dropLast(1) + ",\"link\":1}")
+    }
+
+    @Test
+    fun bindingStateCarriesEpochAndGenerationButNeverAnOwner() {
+        val signedOut = PhoneWearAccountBinding("c".repeat(64), 9L, signedOut = true, authorityEpoch = TEST_EPOCH)
+        val keys = setOf("protocolVersion", "state", "authorityEpoch", "accountGeneration", "messageId", "sentAt")
+        val unbound = org.json.JSONObject(
+            String(PhoneWearProtocol.buildBindingState(signedOut, unlinked = false, now = now, messageId = operationId))
+        )
+        assertEquals(keys, unbound.keys().asSequence().toSet())
+        assertEquals("unbound", unbound.getString("state"))
+        assertEquals(TEST_EPOCH, unbound.getString("authorityEpoch"))
+        assertEquals(9L, unbound.getLong("accountGeneration"))
+        val unlinked = org.json.JSONObject(
+            String(PhoneWearProtocol.buildBindingState(signedOut, unlinked = true, now = now, messageId = operationId))
+        )
+        assertEquals(keys, unlinked.keys().asSequence().toSet())
+        assertEquals("unlinked", unlinked.getString("state"))
+        assertThrows {
+            PhoneWearProtocol.buildBindingState(signedOut.copy(authorityEpoch = "not-an-epoch"), unlinked = false)
+        }
+    }
+
+    @Test
+    fun everyPhoneEnvelopeCarriesTheAuthorityEpoch() {
+        val binding = PhoneWearAccountBinding(ownerId, 4L, signedOut = false, authorityEpoch = TEST_EPOCH)
+        val ack = org.json.JSONObject(String(PhoneWearProtocol.buildMutationAck(binding, operationId, accepted = true, now = now)))
+        val fullSync = org.json.JSONObject(
+            String(PhoneWearProtocol.buildBoundedFullSync(binding, 1L, emptyList(), emptyList(), now = now, messageId = operationId))
+        )
+        assertEquals(TEST_EPOCH, ack.getString("authorityEpoch"))
+        assertEquals(TEST_EPOCH, fullSync.getString("authorityEpoch"))
+        assertThrows {
+            PhoneWearProtocol.buildBoundedFullSync(binding.copy(authorityEpoch = ""), 1L, emptyList(), emptyList())
+        }
+    }
+
     private fun requestJson(sentAt: Long = now): String {
         return """{"type":"request_full_sync","protocolVersion":1,"operationId":"$operationId","sentAt":$sentAt}"""
     }
@@ -299,7 +381,7 @@ class PhoneWearProtocolTest {
 
     @Test
     fun workoutPlanKeepsUnicodeNamesAndUsesBoundedWatchEnvelope() {
-        val binding = PhoneWearAccountBinding(ownerId = ownerId, accountGeneration = 4L, signedOut = false)
+        val binding = PhoneWearAccountBinding(ownerId = ownerId, accountGeneration = 4L, signedOut = false, authorityEpoch = TEST_EPOCH)
         val payload = PhoneWearProtocol.buildWorkoutPlan(
             binding = binding,
             revision = 9L,
@@ -330,7 +412,7 @@ class PhoneWearProtocolTest {
 
     @Test
     fun workoutPlanRejectsSignedOutEmptyOversizedAndInvalidPlans() {
-        val binding = PhoneWearAccountBinding(ownerId = ownerId, accountGeneration = 4L, signedOut = false)
+        val binding = PhoneWearAccountBinding(ownerId = ownerId, accountGeneration = 4L, signedOut = false, authorityEpoch = TEST_EPOCH)
         fun build(
             sets: List<NamedWorkoutSetDraft>,
             account: PhoneWearAccountBinding = binding
@@ -363,3 +445,5 @@ class PhoneWearProtocolTest {
         assertTrue(failed)
     }
 }
+
+private const val TEST_EPOCH = "11111111-2222-4333-8444-555555555555"

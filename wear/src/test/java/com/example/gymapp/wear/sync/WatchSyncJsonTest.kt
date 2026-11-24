@@ -137,6 +137,7 @@ class WatchSyncJsonTest {
             .put("accountGeneration", 1L)
             .put("operationId", "operation-1")
             .put("status", "accepted")
+            .put("authorityEpoch", "11111111-2222-4333-8444-555555555555")
             .put("sentAt", System.currentTimeMillis())
         val missingOperation = JSONObject(valid.toString()).apply { remove("operationId") }
 
@@ -187,5 +188,6 @@ class WatchSyncJsonTest {
         .put("accountGeneration", 1L)
         .put("revision", revision)
         .put("messageId", "message-$revision")
+        .put("authorityEpoch", "11111111-2222-4333-8444-555555555555")
         .put("sentAt", sentAt)
 }

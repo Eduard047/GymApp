@@ -68,4 +68,8 @@
     <string name="queued_title">Unsent</string>
     <string name="queued_body">Send it to your phone before starting a new one.</string>
     <string name="send_now">Send now</string>
+    <string name="link_phone">Link to phone</string>
+    <string name="unlink_phone">Unlink from phone</string>
+    <string name="link_unlinked">Not linked to a phone</string>
+    <string name="queued_hold_body">Waiting for your account on the phone. It is sent after you sign in there.</string>
 </resources>

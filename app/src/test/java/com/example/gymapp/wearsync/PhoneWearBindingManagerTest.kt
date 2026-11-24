@@ -2,7 +2,9 @@ package com.example.gymapp.wearsync
 
 import android.content.SharedPreferences
 import org.junit.Assert.assertEquals
+import com.example.gymapp.data.repository.NamedWorkoutSetDraft
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -13,7 +15,7 @@ class PhoneWearBindingManagerTest {
         val prefs = InMemoryPreferences()
         val manager = PhoneWearBindingManager(prefs)
         // A signed-out phone never pins; use a bound (non-signed-out) binding.
-        val binding = PhoneWearAccountBinding(ownerId = "a".repeat(64), accountGeneration = 1, signedOut = false)
+        val binding = binding()
         prefs.edit().putLong("active_generation", 7L).putLong("full_sync_revision", 3L)
             .putString("receipt_marker", "kept").commit()
 
@@ -43,6 +45,145 @@ class PhoneWearBindingManagerTest {
         assertTrue(manager.clearPinnedSource())
         assertNull(manager.pinnedSourceNodeId())
     }
+
+    @Test
+    fun unlinkedWatchIsNotPinnedAgainWithoutAnExplicitLinkRequest() {
+        val manager = PhoneWearBindingManager(InMemoryPreferences())
+        assertTrue(manager.authorizeSource("watch-1", setOf("watch-1"), binding()))
+        assertTrue(manager.clearPinnedSource())
+        assertTrue(manager.isUnlinkedNode("watch-1"))
+        // Opening the watch app (a plain sync request) must not relink silently.
+        assertFalse(manager.authorizeSource("watch-1", setOf("watch-1"), binding()))
+        assertNull(manager.pinnedSourceNodeId())
+        // The explicit link request is the normal first-link path again.
+        assertTrue(manager.authorizeSource("watch-1", setOf("watch-1"), binding(), linkIntent = true))
+        assertEquals("watch-1", manager.pinnedSourceNodeId())
+        assertFalse(manager.isUnlinkedNode("watch-1"))
+    }
+
+    @Test
+    fun linkIntentNeverWeakensThePinRules() {
+        val manager = PhoneWearBindingManager(InMemoryPreferences())
+        // Signed out: nothing is pinned, with or without a link request.
+        assertFalse(
+            manager.authorizeSource("watch-1", setOf("watch-1"), binding().copy(signedOut = true), linkIntent = true)
+        )
+        // More than one connected node: no pin.
+        assertFalse(manager.authorizeSource("watch-1", setOf("watch-1", "watch-2"), binding(), linkIntent = true))
+        assertTrue(manager.authorizeSource("watch-1", setOf("watch-1"), binding()))
+        // Another watch cannot take over an existing pin by asking to link.
+        assertFalse(manager.authorizeSource("watch-2", setOf("watch-2"), binding(), linkIntent = true))
+        assertEquals("watch-1", manager.pinnedSourceNodeId())
+    }
+
+    @Test
+    fun aReinstalledPhoneRestartsCountersButPresentsANewAuthorityEpoch() {
+        val firstInstall = PhoneWearBindingManager(InMemoryPreferences())
+        val reinstalled = PhoneWearBindingManager(InMemoryPreferences())
+        val first = firstInstall.synchronizeSession(null)
+        val again = firstInstall.synchronizeSession(null)
+        val fresh = reinstalled.synchronizeSession(null)
+        // Stable within one install, so replay protection by generation/revision keeps working.
+        assertEquals(first, again)
+        // The counters restart after a reinstall; the epoch is what tells the installs apart.
+        assertEquals(first.accountGeneration, fresh.accountGeneration)
+        assertNotEquals(first.authorityEpoch, fresh.authorityEpoch)
+        assertEquals(1L, firstInstall.nextFullSyncRevision(first))
+        assertEquals(1L, reinstalled.nextFullSyncRevision(fresh))
+    }
+
+    @Test
+    fun watchNameAndLinkProofArePersistedWithThePinAndClearedOnUnlink() {
+        val manager = PhoneWearBindingManager(InMemoryPreferences())
+        val binding = binding()
+        // Nothing is stored for a watch that is not pinned.
+        assertFalse(manager.rememberWatchName("watch-1", "Pixel Watch"))
+        assertFalse(manager.recordLinkProof("watch-1", binding, 1_000L))
+        assertTrue(manager.authorizeSource("watch-1", setOf("watch-1"), binding))
+        assertNull(manager.pinnedWatchName())
+        assertNull(manager.linkProofAt(binding))
+
+        assertFalse(manager.rememberWatchName("watch-2", "Other"))
+        assertTrue(manager.rememberWatchName("watch-1", " Pixel\u0007 Watch "))
+        assertEquals("Pixel Watch", manager.pinnedWatchName())
+        assertFalse(manager.recordLinkProof("watch-2", binding, 2_000L))
+        assertTrue(manager.recordLinkProof("watch-1", binding, 1_000L))
+        assertEquals(1_000L, manager.linkProofAt(binding))
+        // A proof for one account/generation is not a proof for another one.
+        assertNull(manager.linkProofAt(binding.copy(accountGeneration = 2L)))
+        assertNull(manager.linkProofAt(binding.copy(ownerId = "b".repeat(64))))
+        assertNull(manager.linkProofAt(binding.copy(signedOut = true)))
+
+        assertTrue(manager.clearPinnedSource())
+        assertNull(manager.pinnedWatchName())
+        assertNull(manager.linkProofAt(binding))
+    }
+
+    @Test
+    fun lastPlanIsCachedPerOwnerForThePinnedWatchUntilDeliveredOrUnlinked() {
+        val manager = PhoneWearBindingManager(InMemoryPreferences())
+        val ownerA = "a".repeat(64)
+        val ownerB = "b".repeat(64)
+        val plan = PhoneWearCachedPlan(
+            planId = "plan-1",
+            createdAt = 1_000L,
+            sets = listOf(NamedWorkoutSetDraft(exerciseName = "Присед", weight = 100.0, reps = 5)),
+            exerciseCatalog = listOf("Присед"),
+            profile = PhoneWearPlanProfile("FULL_BODY", 3, "STRENGTH", "MAINTAIN"),
+            planSource = "smart_coach"
+        )
+        // No pinned watch: nothing is kept.
+        assertFalse(manager.cachePlan(ownerA, plan))
+        assertTrue(manager.authorizeSource("watch-1", setOf("watch-1"), binding()))
+        assertTrue(manager.cachePlan(ownerA, plan))
+
+        val cached = manager.cachedPlan(ownerA, now = 2_000L)
+        assertEquals("plan-1", cached?.planId)
+        assertEquals("Присед", cached?.sets?.single()?.exerciseName)
+        assertEquals(5, cached?.sets?.single()?.reps)
+        assertEquals(3, cached?.profile?.workoutsPerWeek)
+        // Another account on this phone never gets it.
+        assertNull(manager.cachedPlan(ownerB, now = 2_000L))
+        // The delivery report of an older plan does not remove a newer one.
+        assertFalse(manager.removeCachedPlan(ownerA, "older-plan"))
+        assertEquals("plan-1", manager.cachedPlan(ownerA, now = 2_000L)?.planId)
+        // Delivered: not sent again.
+        assertTrue(manager.removeCachedPlan(ownerA, "plan-1"))
+        assertNull(manager.cachedPlan(ownerA, now = 2_000L))
+
+        // Too old to resend.
+        assertTrue(manager.cachePlan(ownerA, plan))
+        assertNull(manager.cachedPlan(ownerA, now = 1_000L + PhoneWearPlanCacheCodec.MAX_AGE_MS + 1L))
+        // Unlink removes every cached plan.
+        assertTrue(manager.cachePlan(ownerA, plan))
+        assertTrue(manager.clearPinnedSource())
+        assertNull(manager.cachedPlan(ownerA, now = 2_000L))
+    }
+
+    @Test
+    fun invalidOrOversizedCachedPlansAreNotStored() {
+        val manager = PhoneWearBindingManager(InMemoryPreferences())
+        assertTrue(manager.authorizeSource("watch-1", setOf("watch-1"), binding()))
+        fun plan(reps: Int, sets: Int = 1) = PhoneWearCachedPlan(
+            planId = "plan-1",
+            createdAt = 1_000L,
+            sets = List(sets) { NamedWorkoutSetDraft(exerciseName = "Squat", weight = 100.0, reps = reps) },
+            exerciseCatalog = emptyList(),
+            profile = null,
+            planSource = "smart_coach"
+        )
+        assertFalse(manager.cachePlan("a".repeat(64), plan(reps = 0)))
+        assertFalse(manager.cachePlan("a".repeat(64), plan(reps = 5, sets = PhoneWearPaths.MAX_PLAN_SETS + 1)))
+        assertFalse(manager.cachePlan("not-an-owner", plan(reps = 5)))
+        assertNull(PhoneWearPlanCacheCodec.decode("{\"planId\":\"x\"}", now = 2_000L))
+    }
+
+    private fun binding() = PhoneWearAccountBinding(
+        ownerId = "a".repeat(64),
+        accountGeneration = 1,
+        signedOut = false,
+        authorityEpoch = "11111111-2222-4333-8444-555555555555"
+    )
 
     /** Minimal in-memory SharedPreferences for JVM tests. */
     private class InMemoryPreferences : SharedPreferences {

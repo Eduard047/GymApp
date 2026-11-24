@@ -34,6 +34,19 @@ data class WatchSyncEnvelope(
     val accountGeneration: Long,
     val revision: Long,
     val messageId: String,
+    val sentAt: Long,
+    /** Install id of the phone authority that sent this message. */
+    val authorityEpoch: String
+)
+
+enum class BindingStateKind { Unbound, Unlinked }
+
+/** Phone -> watch binding state. Carries no owner: a signed-out phone has none to give. */
+data class ParsedBindingState(
+    val kind: BindingStateKind,
+    val authorityEpoch: String,
+    val accountGeneration: Long,
+    val messageId: String,
     val sentAt: Long
 )
 
@@ -56,7 +69,8 @@ data class ParsedMutationAck(
     val accountGeneration: Long,
     val operationId: String,
     val accepted: Boolean,
-    val sentAt: Long
+    val sentAt: Long,
+    val authorityEpoch: String
 )
 
 sealed interface WatchSyncParseResult<out T> {
@@ -76,8 +90,12 @@ object WatchSyncJson {
 
     fun buildFullSyncRequestPayload(
         operationId: String,
-        binding: WatchSyncBinding?
-    ): String = commandEnvelope("request_full_sync", operationId, binding).toString()
+        binding: WatchSyncBinding?,
+        linkIntent: Boolean = false
+    ): String = commandEnvelope("request_full_sync", operationId, binding)
+        // Present only for the user's explicit "Link to phone" on the watch.
+        .apply { if (linkIntent) put("link", true) }
+        .toString()
 
     fun buildCreateWorkoutPayload(
         operationId: String,
@@ -295,8 +313,53 @@ object WatchSyncJson {
                 accountGeneration = accountGeneration,
                 operationId = operationId,
                 accepted = status == "accepted",
+                sentAt = sentAt,
+                authorityEpoch = root.requiredAuthorityEpoch()
+            )
+        }
+    }
+
+    /**
+     * Parses the phone's binding state. The key set is exact: a message that carries an owner
+     * (or anything else) is not a binding state and is rejected.
+     */
+    fun parseBindingState(raw: String): WatchSyncParseResult<ParsedBindingState> {
+        return parseCatching {
+            requirePayloadSize(raw)
+            val now = System.currentTimeMillis()
+            val root = JSONObject(raw)
+            require(
+                root.keys().asSequence().toSet() == setOf(
+                    "protocolVersion", "state", "authorityEpoch", "accountGeneration", "messageId", "sentAt"
+                )
+            ) { "Unexpected binding state field" }
+            require(root.requiredInt("protocolVersion") == SyncPaths.PROTOCOL_VERSION)
+            val kind = when (root.requiredString("state", 16)) {
+                "unbound" -> BindingStateKind.Unbound
+                "unlinked" -> BindingStateKind.Unlinked
+                else -> throw IllegalArgumentException("Unknown binding state")
+            }
+            val accountGeneration = root.requiredLong("accountGeneration")
+            val messageId = root.requiredString("messageId", MAX_IDENTIFIER_LENGTH).trim()
+            val sentAt = root.requiredLong("sentAt")
+            require(accountGeneration in 1L..SyncPaths.MAX_PROTOCOL_COUNTER && messageId.isNotEmpty())
+            require(sentAt in (now - MAX_MESSAGE_AGE_MS)..(now + MAX_CLOCK_SKEW_MS)) { "Stale sync message" }
+            ParsedBindingState(
+                kind = kind,
+                authorityEpoch = root.requiredAuthorityEpoch(),
+                accountGeneration = accountGeneration,
+                messageId = messageId,
                 sentAt = sentAt
             )
+        }
+    }
+
+    private val authorityEpochPattern =
+        Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+    private fun JSONObject.requiredAuthorityEpoch(): String {
+        return requiredString("authorityEpoch", 36).also {
+            require(authorityEpochPattern.matches(it)) { "Invalid authority epoch" }
         }
     }
 
@@ -315,7 +378,14 @@ object WatchSyncJson {
                 revision in 1L..SyncPaths.MAX_PROTOCOL_COUNTER
         ) { "Invalid sync revision" }
         require(sentAt in (now - MAX_MESSAGE_AGE_MS)..(now + MAX_CLOCK_SKEW_MS)) { "Stale sync message" }
-        return WatchSyncEnvelope(ownerId, accountGeneration, revision, messageId, sentAt)
+        return WatchSyncEnvelope(
+            ownerId = ownerId,
+            accountGeneration = accountGeneration,
+            revision = revision,
+            messageId = messageId,
+            sentAt = sentAt,
+            authorityEpoch = root.requiredAuthorityEpoch()
+        )
     }
 
     private fun parseExerciseCatalog(root: JSONObject): List<String> {

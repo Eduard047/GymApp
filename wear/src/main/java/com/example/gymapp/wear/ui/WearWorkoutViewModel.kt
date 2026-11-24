@@ -83,6 +83,10 @@ data class WearWorkoutUiState(
     val hasQueuedWorkout: Boolean = false,
     /** The watch is linked to a signed-in phone account. */
     val isLinked: Boolean = false,
+    /** Work kept on the watch belongs to an account that is not bound right now: not sent. */
+    val workoutOnHold: Boolean = false,
+    /** Explicitly unlinked (phone or watch): linking again needs the "Link to phone" action. */
+    val unlinked: Boolean = false,
     val isSaving: Boolean = false,
     val message: String? = null,
     val syncStatus: WearSyncStatus = WearSyncStatus.Idle,
@@ -144,7 +148,9 @@ private data class SessionExtras(
     val weightStepKg: Double = WorkoutMath.DEFAULT_WEIGHT_STEP_KG,
     val saveOutcome: SaveOutcome? = null,
     val hasQueuedWorkout: Boolean = false,
-    val isLinked: Boolean = false
+    val isLinked: Boolean = false,
+    val workoutOnHold: Boolean = false,
+    val unlinked: Boolean = false
 )
 
 class WearWorkoutViewModel(
@@ -152,11 +158,18 @@ class WearWorkoutViewModel(
     private val repository: WearWorkoutRepository,
     private val syncClient: WearSyncClient,
     private val exerciseTracker: WearExerciseTracker,
+    private val outbox: com.example.gymapp.wear.sync.WatchOutbox,
     private val nowElapsedMs: () -> Long = { SystemClock.elapsedRealtime() }
 ) : AndroidViewModel(application) {
     private val appContext = application.applicationContext
     private var lastAppliedWorkoutPlanRaw: String? = null
     private var draftBinding = currentBindingIdentity()
+
+    /**
+     * Owner the workout in memory was recorded for. It never follows the binding: after a
+     * sign-out or an account switch the workout stays on hold until this owner is bound again.
+     */
+    private var workOwnerId: String? = null
     private var draftInstanceId = UUID.randomUUID().toString()
 
     /** Start time and pauses of the workout; null before it starts. Persisted with the draft. */
@@ -253,6 +266,8 @@ class WearWorkoutViewModel(
             saveOutcome = extra.saveOutcome,
             hasQueuedWorkout = extra.hasQueuedWorkout,
             isLinked = extra.isLinked,
+            workoutOnHold = extra.workoutOnHold,
+            unlinked = extra.unlinked,
             isSaving = saving,
             message = currentMessage,
             syncStatus = currentSyncStatus,
@@ -289,19 +304,45 @@ class WearWorkoutViewModel(
                 val nextBinding = bindingIdentity(binding)
                 if (nextBinding != draftBinding) {
                     draftBinding = nextBinding
-                    resetAccountScopedEditor()
+                    onBindingIdentityChanged()
+                }
+                val wasOnHold = extras.value.workoutOnHold
+                refreshHoldState(binding)
+                // The owner of the waiting workout is bound again: send it without a tap.
+                if (wasOnHold && !extras.value.workoutOnHold && extras.value.hasQueuedWorkout) {
+                    saveWorkout()
                 }
             }
         }
+        viewModelScope.launch {
+            WatchSyncBindingStorage.observeUnlinked(appContext).collect { unlinked ->
+                extras.update { it.copy(unlinked = unlinked) }
+            }
+        }
+        viewModelScope.launch {
+            // The application-scope outbox delivered this draft while no send ran here.
+            outbox.delivered.collect { draftId ->
+                if (draftId == draftInstanceId && !isSaving.value) completeDeliveredWorkout()
+            }
+        }
+        refreshHoldState()
         requestRemoteSync(showError = false)
-        // A workout that could not be sent earlier is retried as soon as the app opens.
-        if (extras.value.hasQueuedWorkout && extras.value.isLinked) saveWorkout()
+        // A workout that could not be sent earlier is retried as soon as the app opens, but only
+        // when the account it was recorded for is the one bound right now.
+        if (extras.value.hasQueuedWorkout && extras.value.isLinked && !extras.value.workoutOnHold) {
+            saveWorkout()
+        }
     }
 
     /** Start plan (usePlan = true, needs plan targets) or Free workout. Clock + HR start now. */
     fun startWorkout(usePlan: Boolean = extras.value.planTargets.isNotEmpty()) {
         if (isSaving.value || !ensureDraftBindingCurrent()) return
         if (extras.value.hasQueuedWorkout) return
+        // Unbound (phone signed out) or not linked: Start is disabled. A workout is always
+        // recorded for exactly one owner, the one bound when it starts.
+        val owner = WatchSyncBindingStorage.load(appContext)?.ownerId ?: return
+        if (hasWorkInMemory() && workOwnerId != owner) return
+        workOwnerId = owner
         extras.update {
             it.copy(
                 usingPlan = usePlan && it.planTargets.isNotEmpty(),
@@ -424,8 +465,46 @@ class WearWorkoutViewModel(
         draftInstanceId = UUID.randomUUID().toString()
         endWorkoutLiveState()
         draftSets.value = emptyList()
+        workOwnerId = null
         extras.update {
-            it.copy(selectedExercise = null, usingPlan = false, hasQueuedWorkout = false, saveOutcome = null)
+            it.copy(
+                selectedExercise = null,
+                usingPlan = false,
+                hasQueuedWorkout = false,
+                workoutOnHold = false,
+                saveOutcome = null
+            )
+        }
+    }
+
+    /**
+     * The watch's own "Unlink from phone": forgets the phone and the account data it sent (plan,
+     * history, catalog). The workout kept on the watch is not touched; it stays on hold for its
+     * owner. Linking again needs [linkToPhone].
+     */
+    fun unlinkFromPhone() {
+        if (isSaving.value) return
+        viewModelScope.launch {
+            runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    repository.replaceSessionsFromSync(emptyList())
+                    WatchPlanStorage.clear(appContext)
+                    WatchExerciseCatalogStorage.save(appContext, emptyList())
+                    com.example.gymapp.wear.sync.WatchSyncStageStorage.clearPlan(appContext)
+                    com.example.gymapp.wear.sync.WatchRelinkCandidate.clear()
+                    WatchSyncBindingStorage.clearForUnlink(appContext)
+                }
+            }
+        }
+    }
+
+    /** The explicit "Link to phone" after an unlink: the normal first-link request. */
+    fun linkToPhone() {
+        viewModelScope.launch {
+            syncStatus.value = WearSyncStatus.WaitingPhone
+            runCatching { syncClient.requestFullSync(linkIntent = true) }
+                .onSuccess { syncStatus.value = WearSyncStatus.Sent }
+                .onFailure { syncStatus.value = WearSyncStatus.Failed }
         }
     }
 
@@ -510,7 +589,9 @@ class WearWorkoutViewModel(
         // On disk as "finished" before anything is sent, so no outcome below can lose it.
         persistDraft(durable = true)
         if (submittedFullBinding == null) {
-            // Not linked to an account right now: keep the workout queued, like a failed send.
+            // The owner of this workout is not bound right now (signed out, another account,
+            // not linked): keep the workout queued and on hold, like a failed send.
+            refreshHoldState()
             stopLiveTracking()
             extras.update { it.copy(hasQueuedWorkout = true, paused = false, saveOutcome = SaveOutcome.Deferred) }
             syncStatus.value = WearSyncStatus.Failed
@@ -534,6 +615,10 @@ class WearWorkoutViewModel(
         extras.update { it.copy(saveOutcome = SaveOutcome.Sending) }
         viewModelScope.launch {
             runCatching {
+                outbox.exclusive<com.example.gymapp.wear.sync.PendingWorkoutMutation?> {
+                    // A background flush may have delivered this draft while this send waited;
+                    // sending it again would create a second operation id.
+                    if (outbox.wasDelivered(submittedDraftId)) return@exclusive null
                 syncClient.createWorkout(
                     binding = submittedFullBinding,
                     draftId = submittedDraftId,
@@ -544,7 +629,8 @@ class WearWorkoutViewModel(
                     durationSeconds = snapshot.durationSeconds,
                     averageHeartRate = snapshot.averageHeartRate,
                     maxHeartRate = snapshot.maxHeartRate
-                )
+                ).also { outbox.markDelivered(submittedDraftId) }
+                }
             }.onSuccess { pendingMutation ->
                 if (currentBindingIdentity() != submittedBinding || draftSets.value != submittedDraft) {
                     return@onSuccess
@@ -553,12 +639,14 @@ class WearWorkoutViewModel(
                 val consumedStoredPlan = submittedSourcePlan != null && storedPlan == submittedSourcePlan
                 draftSets.value = emptyList()
                 draftInstanceId = UUID.randomUUID().toString()
+                workOwnerId = null
                 endWorkoutLiveState()
                 extras.update {
                     it.copy(
                         selectedExercise = null,
                         usingPlan = false,
                         hasQueuedWorkout = false,
+                        workoutOnHold = false,
                         saveOutcome = SaveOutcome.Saved
                     )
                 }
@@ -575,10 +663,14 @@ class WearWorkoutViewModel(
                 // The draft goes first and the operation id last: a crash in between restores
                 // the workout from the stored operation and resends it under the same id, which
                 // the phone recognises. The other order could resend it under a new id.
-                runCatching { WatchWorkoutDraftStorage.clear(appContext) }
+                val draftGone = runCatching { WatchWorkoutDraftStorage.clear(appContext) }
+                    .getOrDefault(false)
                 // This is deliberately last: until the plan/editor transition is complete,
-                // retain the stable operation id so a crash retry remains idempotent.
-                WatchPendingWorkoutStorage.clearIfMatches(appContext, pendingMutation)
+                // retain the stable operation id so a crash retry remains idempotent. A draft
+                // that could not be removed keeps the id too, so it is never resent under a new one.
+                if (draftGone) {
+                    pendingMutation?.let { WatchPendingWorkoutStorage.clearIfMatches(appContext, it) }
+                }
                 requestRemoteSync(showError = false)
             }.onFailure {
                 if (currentBindingIdentity() != submittedBinding) return@onFailure
@@ -700,7 +792,7 @@ class WearWorkoutViewModel(
             finished = finishedSnapshot
         )
         runCatching {
-            WatchWorkoutDraftStorage.save(appContext, WatchSyncBindingStorage.load(appContext), draft, durable)
+            WatchWorkoutDraftStorage.save(appContext, workOwnerId, draft, durable)
         }
     }
 
@@ -781,15 +873,67 @@ class WearWorkoutViewModel(
 
     private fun currentAccountBinding(): WatchSyncBinding? {
         val snapshot = WatchSyncBindingStorage.load(appContext) ?: return null
-        val identity = bindingIdentity(snapshot)
-        if (identity != draftBinding) {
-            draftBinding = identity
-            resetAccountScopedEditor()
-            return null
-        }
+        // Only the owner the workout was recorded for may receive it; anything else is a hold.
         return snapshot.takeIf {
-            it.ownerId != null && it.accountGeneration in 1L..SyncPaths.MAX_PROTOCOL_COUNTER
+            it.ownerId != null &&
+                it.ownerId == workOwnerId &&
+                it.accountGeneration in 1L..SyncPaths.MAX_PROTOCOL_COUNTER
         }
+    }
+
+    private fun hasWorkInMemory(): Boolean = workoutActive.value || draftSets.value.isNotEmpty()
+
+    private fun refreshHoldState(binding: WatchSyncBinding? = WatchSyncBindingStorage.load(appContext)) {
+        val held = com.example.gymapp.wear.sync.WatchBindingRules.heldWorkState(
+            bindingOwnerId = binding?.ownerId,
+            workOwnerId = workOwnerId,
+            hasWork = hasWorkInMemory()
+        )
+        extras.update {
+            it.copy(
+                workoutOnHold = held == com.example.gymapp.wear.sync.HeldWorkState.HeldUnbound ||
+                    held == com.example.gymapp.wear.sync.HeldWorkState.HeldForeign
+            )
+        }
+    }
+
+    /**
+     * The phone, the account or the link changed. The workout on the watch is never deleted here
+     * (only Discard does that); what belongs to the previous account's view is dropped.
+     */
+    private fun onBindingIdentityChanged() {
+        if (!hasWorkInMemory()) {
+            resetAccountScopedEditor()
+            return
+        }
+        if (!(workoutActive.value && extras.value.usingPlan)) {
+            lastAppliedWorkoutPlanRaw = null
+            workoutPlanMeta.value = null
+            extras.update { it.copy(planTargets = emptyList()) }
+        }
+        isSaving.value = false
+        message.value = null
+        syncStatus.value = WearSyncStatus.Idle
+    }
+
+    /** In-memory end of a workout the outbox delivered in the background (storage is done). */
+    private fun completeDeliveredWorkout() {
+        draftSets.value = emptyList()
+        draftInstanceId = UUID.randomUUID().toString()
+        workOwnerId = null
+        endWorkoutLiveState()
+        extras.update {
+            it.copy(
+                selectedExercise = null,
+                usingPlan = false,
+                hasQueuedWorkout = false,
+                workoutOnHold = false,
+                saveOutcome = null
+            )
+        }
+        lastAppliedWorkoutPlanRaw = null
+        applyPendingWorkoutPlanFromSync(WatchPlanStorage.load(appContext))
+        syncStatus.value = WearSyncStatus.Sent
     }
 
     private fun bindingIdentity(binding: WatchSyncBinding?): DraftBindingIdentity =
@@ -801,9 +945,9 @@ class WearWorkoutViewModel(
             accountGeneration = 0L
         )
 
+    /** Called only when no workout is in memory; storage is never cleared on a binding change. */
     private fun resetAccountScopedEditor() {
-        runCatching { WatchPendingWorkoutStorage.clear(appContext) }
-        runCatching { WatchWorkoutDraftStorage.clear(appContext) }
+        workOwnerId = null
         draftInstanceId = UUID.randomUUID().toString()
         endWorkoutLiveState()
         draftSets.value = emptyList()
@@ -815,6 +959,7 @@ class WearWorkoutViewModel(
                 usingPlan = false,
                 selectedExercise = null,
                 hasQueuedWorkout = false,
+                workoutOnHold = false,
                 saveOutcome = null
             )
         }
@@ -823,12 +968,15 @@ class WearWorkoutViewModel(
         syncStatus.value = WearSyncStatus.Idle
     }
 
+    /** Syncs the in-memory view with the binding. Never blocks and never deletes a workout. */
     private fun ensureDraftBindingCurrent(): Boolean {
         val current = currentBindingIdentity()
-        if (current == draftBinding) return true
-        draftBinding = current
-        resetAccountScopedEditor()
-        return false
+        if (current != draftBinding) {
+            draftBinding = current
+            onBindingIdentityChanged()
+        }
+        refreshHoldState()
+        return true
     }
 
     /**
@@ -839,7 +987,9 @@ class WearWorkoutViewModel(
     private fun restoreWorkout() {
         val binding = WatchSyncBindingStorage.load(appContext)
         val pending = WatchPendingWorkoutStorage.load(context = appContext, binding = binding)
-        val stored = runCatching { WatchWorkoutDraftStorage.load(appContext, binding) }.getOrNull()
+        // The draft is loaded whatever account is bound: another owner's work is shown as held.
+        val storedDraft = runCatching { WatchWorkoutDraftStorage.load(appContext) }.getOrNull()
+        val stored = storedDraft?.draft
         val draft = when {
             pending == null -> stored
             else -> WatchWorkoutDraft(
@@ -857,6 +1007,8 @@ class WearWorkoutViewModel(
                 )
             )
         } ?: return
+        // A stored operation is returned only for the bound owner; a draft carries its own stamp.
+        workOwnerId = if (pending != null) binding?.ownerId else storedDraft?.ownerId
         draftInstanceId = draft.draftId
         clock = WorkoutClock(draft.startedAt, draft.pausedTotalMs, draft.pausedAtMs)
         finishedSnapshot = draft.finished
@@ -915,8 +1067,9 @@ class WearWorkoutViewModel(
                 WearWorkoutViewModel(
                     application = application,
                     repository = app.repository,
-                    syncClient = WearSyncClient(application),
-                    exerciseTracker = app.exerciseTracker
+                    syncClient = app.syncClient,
+                    exerciseTracker = app.exerciseTracker,
+                    outbox = app.outbox
                 )
             }
         }

@@ -68,4 +68,8 @@
     <string name="queued_title">Не надіслано</string>
     <string name="queued_body">Надішли його на телефон, щоб почати нове.</string>
     <string name="send_now">Надіслати</string>
+    <string name="link_phone">Під’єднати до телефона</string>
+    <string name="unlink_phone">Від’єднати від телефона</string>
+    <string name="link_unlinked">Не під’єднано до телефона</string>
+    <string name="queued_hold_body">Чекає на ваш акаунт у телефоні. Надішлеться після входу.</string>
 </resources>

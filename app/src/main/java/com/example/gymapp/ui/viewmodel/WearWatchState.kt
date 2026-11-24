@@ -7,9 +7,16 @@ package com.example.gymapp.ui.viewmodel
 data class WearWatchUiState(
     val apiAvailable: Boolean = false,
     val linked: Boolean = false,
-    /** The Data Layer display name of the linked watch while it is connected; null otherwise. */
+    /** The Data Layer name of the linked watch: live while connected, else the last one seen. */
     val displayName: String? = null,
-    val connected: Boolean = false
+    val connected: Boolean = false,
+    /**
+     * True when the watch has proved (a sync request or a workout stamped with this phone's
+     * current account) that it follows this phone. [linked] alone only means "pinned here".
+     */
+    val linkConfirmed: Boolean = false,
+    /** When that proof was last seen, in epoch milliseconds; null when never. */
+    val lastSeenAtMillis: Long? = null
 )
 
 enum class WearWatchCardMode { HIDDEN, NOT_LINKED, LINKED }
@@ -27,7 +34,9 @@ fun wearWatchCardMode(state: WearWatchUiState?): WearWatchCardMode = when {
 fun wearWatchUiState(
     apiAvailable: Boolean,
     pinnedNodeId: String?,
-    connectedNodes: Map<String, String?>
+    connectedNodes: Map<String, String?>,
+    storedName: String? = null,
+    linkProofAtMillis: Long? = null
 ): WearWatchUiState {
     if (!apiAvailable) return WearWatchUiState()
     if (pinnedNodeId.isNullOrBlank()) return WearWatchUiState(apiAvailable = true)
@@ -35,8 +44,11 @@ fun wearWatchUiState(
     return WearWatchUiState(
         apiAvailable = true,
         linked = true,
-        displayName = if (connected) sanitizeWearWatchName(connectedNodes[pinnedNodeId]) else null,
-        connected = connected
+        displayName = (if (connected) sanitizeWearWatchName(connectedNodes[pinnedNodeId]) else null)
+            ?: sanitizeWearWatchName(storedName),
+        connected = connected,
+        linkConfirmed = linkProofAtMillis != null,
+        lastSeenAtMillis = linkProofAtMillis
     )
 }
 

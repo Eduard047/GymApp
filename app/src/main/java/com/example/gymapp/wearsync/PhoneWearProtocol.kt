@@ -33,6 +33,14 @@ internal object PhoneWearPaths {
     const val MAX_PLAN_SETS = 60
     const val PLAN_LIFETIME_MS = 14L * 24 * 60 * 60 * 1_000
     const val FULL_SYNC_PAYLOAD = "/gym/sync/full_payload"
+    /** Phone -> watch: signed out ("unbound") or unlinked by the user ("unlinked"). No owner id. */
+    const val BINDING_STATE = "/gym/sync/binding_state"
+
+    /**
+     * Capability the watch app declares (its res/values/wear.xml). The manifest filter of
+     * PhoneWearSyncListenerService names the same value; a change resends what waits for the watch.
+     */
+    const val WATCH_CAPABILITY = "gymapp_watch_sync"
 
     val inboundPaths = setOf(REQUEST_FULL_SYNC, CREATE_WORKOUT, UPDATE_SET, DELETE_SET)
 }
@@ -48,7 +56,9 @@ internal sealed interface PhoneWearCommand {
     val envelope: PhoneWearCommandEnvelope
 
     data class RequestFull(
-        override val envelope: PhoneWearCommandEnvelope
+        override val envelope: PhoneWearCommandEnvelope,
+        /** The watch user tapped "Link to phone": may pin a watch that was unlinked here. */
+        val linkIntent: Boolean = false
     ) : PhoneWearCommand
 
     data class CreateWorkout(
@@ -216,6 +226,7 @@ internal object PhoneWearProtocol {
                 .put("protocolVersion", PhoneWearPaths.PROTOCOL_VERSION)
                 .put("ownerId", binding.ownerId)
                 .put("accountGeneration", binding.accountGeneration)
+                .put("authorityEpoch", binding.authorityEpoch)
                 .put("revision", revision)
                 .put("messageId", messageId)
                 .put("sentAt", now)
@@ -249,8 +260,33 @@ internal object PhoneWearProtocol {
             .put("protocolVersion", PhoneWearPaths.PROTOCOL_VERSION)
             .put("ownerId", binding.ownerId)
             .put("accountGeneration", binding.accountGeneration)
+            .put("authorityEpoch", binding.authorityEpoch)
             .put("operationId", operationId)
             .put("status", if (accepted) "accepted" else "rejected")
+            .put("sentAt", now)
+        return encodeBounded(root)
+    }
+
+    /**
+     * Tells the pinned watch that this phone has no account for it right now. "unbound": signed
+     * out; the watch drops plan, history and catalog and keeps its own unsent work on hold.
+     * "unlinked": the user unlinked the watch; it also forgets this phone. The message carries no
+     * owner id on purpose: a signed-out phone has no account to name.
+     */
+    fun buildBindingState(
+        binding: PhoneWearAccountBinding,
+        unlinked: Boolean,
+        now: Long = System.currentTimeMillis(),
+        messageId: String = UUID.randomUUID().toString()
+    ): ByteArray {
+        requireValidBinding(binding)
+        requireValidOperationId(messageId)
+        val root = JSONObject()
+            .put("protocolVersion", PhoneWearPaths.PROTOCOL_VERSION)
+            .put("state", if (unlinked) "unlinked" else "unbound")
+            .put("authorityEpoch", binding.authorityEpoch)
+            .put("accountGeneration", binding.accountGeneration)
+            .put("messageId", messageId)
             .put("sentAt", now)
         return encodeBounded(root)
     }
@@ -301,6 +337,7 @@ internal object PhoneWearProtocol {
                 .put("protocolVersion", PhoneWearPaths.PROTOCOL_VERSION)
                 .put("ownerId", binding.ownerId)
                 .put("accountGeneration", binding.accountGeneration)
+                .put("authorityEpoch", binding.authorityEpoch)
                 .put("revision", revision)
                 .put("messageId", messageId)
                 .put("sentAt", now)
@@ -331,8 +368,8 @@ internal object PhoneWearProtocol {
 
     private fun parseFullSyncRequest(root: JSONObject, now: Long): PhoneWearCommand.RequestFull {
         val required = setOf("type", "protocolVersion", "operationId", "sentAt")
-        val optional = setOf("ownerId", "accountGeneration")
-        root.requireExactKeys(required, optional)
+        val optional = setOf("ownerId", "accountGeneration", "link")
+        root.requireKnownKeys(required, optional)
         require(root.requiredString("type", 32) == "request_full_sync")
         requireProtocolVersion(root)
         val ownerPresent = root.has("ownerId")
@@ -346,7 +383,14 @@ internal object PhoneWearProtocol {
                 sentAt = root.requiredFreshTimestamp("sentAt", now),
                 ownerId = ownerId,
                 accountGeneration = generation
-            )
+            ),
+            linkIntent = if (root.has("link")) {
+                val value = root.get("link")
+                require(value is Boolean) { "link must be a boolean" }
+                value
+            } else {
+                false
+            }
         )
     }
 
@@ -355,7 +399,7 @@ internal object PhoneWearProtocol {
             "type", "protocolVersion", "operationId", "sentAt", "ownerId",
             "accountGeneration", "startedAt", "sets"
         )
-        root.requireExactKeys(required, optional = setOf("note", "durationSeconds", "avgHeartRate", "maxHeartRate"))
+        root.requireKnownKeys(required, optional = setOf("note", "durationSeconds", "avgHeartRate", "maxHeartRate"))
         require(root.requiredString("type", 32) == "create_workout")
         val envelope = root.requiredBoundMutationEnvelope(now)
         val startedAt = root.requiredLong("startedAt")
@@ -381,7 +425,7 @@ internal object PhoneWearProtocol {
         val sets = buildList(array.length()) {
             for (index in 0 until array.length()) {
                 val item = array.requiredObject(index)
-                item.requireExactKeys(setOf("exerciseName", "weight", "reps"))
+                item.requireKnownKeys(setOf("exerciseName", "weight", "reps"))
                 val name = item.requiredString(
                     "exerciseName",
                     PhoneWearPaths.MAX_EXERCISE_NAME_LENGTH
@@ -398,7 +442,7 @@ internal object PhoneWearProtocol {
     }
 
     private fun parseUpdateSet(root: JSONObject, now: Long): PhoneWearCommand.UpdateSet {
-        root.requireExactKeys(
+        root.requireKnownKeys(
             setOf(
                 "type", "protocolVersion", "operationId", "sentAt", "ownerId",
                 "accountGeneration", "setId", "weight", "reps"
@@ -413,7 +457,7 @@ internal object PhoneWearProtocol {
     }
 
     private fun parseDeleteSet(root: JSONObject, now: Long): PhoneWearCommand.DeleteSet {
-        root.requireExactKeys(
+        root.requireKnownKeys(
             setOf(
                 "type", "protocolVersion", "operationId", "sentAt", "ownerId",
                 "accountGeneration", "setId"
@@ -495,7 +539,13 @@ internal object PhoneWearProtocol {
     private fun requireValidBinding(binding: PhoneWearAccountBinding) {
         require(ownerIdPattern.matches(binding.ownerId))
         require(binding.accountGeneration in 1L..PhoneWearPaths.MAX_PROTOCOL_COUNTER)
+        require(authorityEpochPattern.matches(binding.authorityEpoch)) { "Invalid authority epoch" }
     }
+
+    private val authorityEpochPattern =
+        Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+    private const val MAX_OBJECT_KEYS = 32
+    private const val MAX_KEY_LENGTH = 64
 
     private fun requireValidOperationId(value: String) {
         require(value.length <= MAX_IDENTIFIER_LENGTH && operationIdPattern.matches(value)) {
@@ -570,14 +620,21 @@ internal object PhoneWearProtocol {
         }
     }
 
-    private fun JSONObject.requireExactKeys(
+    private fun JSONObject.requireKnownKeys(
         required: Set<String>,
         optional: Set<String> = emptySet()
     ) {
+        // Unknown keys are ignored, not rejected: a watch build that adds an optional field must
+        // not have its workout silently dropped. The payload stays untrusted input: the object is
+        // bounded in key count and key length (bytes, depth and strings are bounded before this),
+        // every required key must be present, and only keys named in [required]/[optional] are
+        // ever read. The command digest is computed from the parsed values, never the raw text.
         val actual = keys().asSequence().toSet()
-        require(actual.containsAll(required) && actual.all { it in required || it in optional }) {
-            "Unexpected or missing JSON field"
+        require(actual.size <= maxOf(MAX_OBJECT_KEYS, required.size + optional.size)) {
+            "Too many JSON fields"
         }
+        require(actual.all { it.length <= MAX_KEY_LENGTH }) { "JSON field name is too long" }
+        require(actual.containsAll(required)) { "Missing JSON field" }
     }
 
     private fun JSONObject.requiredArray(key: String): JSONArray {

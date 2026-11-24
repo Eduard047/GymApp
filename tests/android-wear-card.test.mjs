@@ -83,12 +83,19 @@ test("unlink is destructive and behind a confirmation dialog", () => {
     card,
     /GymAlertDialog\([\s\S]*watches_wear_unlink_title[\s\S]*watches_wear_unlink_body[\s\S]*onUnlink\(\)[\s\S]*GymAlertDialogButtonRole\.Destructive[\s\S]*watches_wear_unlink_confirm[\s\S]*GymAlertDialogButtonRole\.Cancel[\s\S]*R\.string\.action_cancel/
   );
-  // Unlink forgets only the pin; nothing else in the preference file is removed.
-  const clear = binding.slice(binding.indexOf("fun clearPinnedSource"), binding.indexOf("fun pinnedSourceNodeId"));
+  // Unlink forgets the pin and what is stored for that watch (name, link proof, cached plans) and
+  // remembers the node as unlinked; account generations and sync revisions are never removed.
+  const clear = binding.slice(binding.indexOf("fun clearPinnedSource"), binding.indexOf("fun isUnlinkedNode"));
   assert.match(clear, /remove\(KEY_SOURCE_NODE_ID\)/);
   assert.match(clear, /remove\(KEY_SOURCE_OWNER_ID\)/);
-  assert.doesNotMatch(clear, /clear\(\)|GENERATION|REVISION/);
-  assert.match(syncManager, /fun unlinkWatch\(\): Boolean/);
+  assert.match(clear, /remove\(KEY_WATCH_NAME\)/);
+  assert.match(clear, /KEY_PLAN_CACHE_PREFIX/);
+  assert.match(clear, /putString\(KEY_UNLINKED_NODE_ID, pinned\)/);
+  assert.doesNotMatch(clear, /\.clear\(\)|KEY_ACTIVE_GENERATION|KEY_LAST_GENERATION|KEY_FULL_SYNC_REVISION|KEY_AUTHORITY_EPOCH/);
+  // The watch is told (binding state "unlinked") and is not pinned again without its explicit link request.
+  assert.match(syncManager, /suspend fun unlinkWatch\(\): Boolean/);
+  assert.match(syncManager, /buildBindingState\(binding, unlinked = true\)/);
+  assert.match(binding, /KEY_UNLINKED_NODE_ID, null\) == sourceNodeId && !linkIntent\) return false/);
 });
 
 test("the card is hidden when the Wearable API is unavailable and lookups stay off the UI thread", () => {

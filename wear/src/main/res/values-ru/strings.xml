@@ -68,4 +68,8 @@
     <string name="queued_title">Не отправлено</string>
     <string name="queued_body">Отправь её на телефон, чтобы начать новую.</string>
     <string name="send_now">Отправить</string>
+    <string name="link_phone">Привязать к телефону</string>
+    <string name="unlink_phone">Отвязать от телефона</string>
+    <string name="link_unlinked">Не привязаны к телефону</string>
+    <string name="queued_hold_body">Ждёт ваш аккаунт на телефоне. Отправится после входа.</string>
 </resources>

@@ -16,7 +16,7 @@ test("Android release keeps Garmin broadcast Parcelable class names", async () =
 });
 
 test("Wear sync rejects malformed payloads before destructive replacement", async () => {
-  const [parser, listener, client, bindingStorage, catalogStorage, planStorage, pendingStorage, stageStorage, viewModel, paths] = await Promise.all([
+  const [parser, listener, client, bindingStorage, catalogStorage, planStorage, pendingStorage, stageStorage, viewModel, paths, rules, draftStorage] = await Promise.all([
     read("wear/src/main/java/com/example/gymapp/wear/sync/WatchSyncJson.kt"),
     read("wear/src/main/java/com/example/gymapp/wear/sync/WatchSyncListenerService.kt"),
     read("wear/src/main/java/com/example/gymapp/wear/sync/WearSyncClient.kt"),
@@ -26,7 +26,9 @@ test("Wear sync rejects malformed payloads before destructive replacement", asyn
     read("wear/src/main/java/com/example/gymapp/wear/sync/WatchPendingWorkoutStorage.kt"),
     read("wear/src/main/java/com/example/gymapp/wear/sync/WatchSyncStageStorage.kt"),
     read("wear/src/main/java/com/example/gymapp/wear/ui/WearWorkoutViewModel.kt"),
-    read("wear/src/main/java/com/example/gymapp/wear/sync/SyncPaths.kt")
+    read("wear/src/main/java/com/example/gymapp/wear/sync/SyncPaths.kt"),
+    read("wear/src/main/java/com/example/gymapp/wear/sync/WatchBindingRules.kt"),
+    read("wear/src/main/java/com/example/gymapp/wear/sync/WatchWorkoutDraftStorage.kt")
   ]);
 
   assert.match(parser, /sealed interface WatchSyncParseResult/);
@@ -34,7 +36,24 @@ test("Wear sync rejects malformed payloads before destructive replacement", asyn
   assert.match(parser, /MAX_JSON_NESTING = 32/);
   assert.doesNotMatch(parser, /parseFullSyncPayload[\s\S]{0,4000}getOrElse\s*\{\s*emptyList/);
   assert.match(listener, /parsed !is WatchSyncParseResult\.Valid/);
-  assert.match(listener, /envelope\.revision < previousRevision/);
+  // Accept/reject decisions live in the pure WatchBindingRules (JVM-tested); the listener applies them.
+  assert.match(listener, /WatchBindingRules\.decideFullSync\(/);
+  assert.match(rules, /envelope\.revision < previousRevision/);
+  // A new phone install (authority epoch) is accepted only when it is not older than the last accepted message.
+  assert.match(rules, /binding\.authorityEpoch != envelope\.authorityEpoch[\s\S]{0,400}envelope\.sentAt < binding\.lastAcceptedSentAt\) return FullSyncDecision\.Reject/);
+  // Another phone node is heard only as a relink candidate and never over work held for another owner.
+  assert.match(rules, /relinkCandidateNodeId != sourceNodeId[\s\S]{0,200}FullSyncDecision\.Reject/);
+  assert.match(rules, /heldOwnerId == null \|\| heldOwnerId == envelope\.ownerId/);
+  // Sign-out and unlink arrive as a binding state without an owner; only the pinned phone may send it.
+  assert.match(listener, /SyncPaths\.BINDING_STATE -> handleBindingState/);
+  assert.match(parser, /"protocolVersion", "state", "authorityEpoch", "accountGeneration", "messageId", "sentAt"/);
+  assert.match(rules, /fun decideBindingState[\s\S]{0,400}binding\.sourceNodeId != sourceNodeId\) return BindingStateDecision\.Reject/);
+  // Work kept on the watch is never deleted by a binding change: only Discard or a delivered send.
+  assert.doesNotMatch(bindingStorage, /WatchPendingWorkoutStorage|WatchWorkoutDraftStorage/);
+  assert.doesNotMatch(listener, /WatchPendingWorkoutStorage\.clear|WatchWorkoutDraftStorage\.clear/);
+  assert.doesNotMatch(viewModel, /fun resetAccountScopedEditor\(\) \{[\s\S]{0,200}Storage\.clear/);
+  assert.match(draftStorage, /Only an unreadable draft is dropped/);
+  assert.match(viewModel, /it\.ownerId == workOwnerId/);
   assert.match(listener, /binding\.sourceNodeId != sourceNodeId/);
   assert.match(listener, /WatchSyncAckRegistry\.complete/);
   assert.match(listener, /Channel<QueuedMessage>\(capacity = MAX_PENDING_MESSAGES\)/);
@@ -63,9 +82,14 @@ test("Wear sync rejects malformed payloads before destructive replacement", asyn
   assert.match(pendingStorage, /KEY_SOURCE_PLAN_RAW/);
   assert.match(client, /return pending/);
   assert.match(client, /sendMutation\(SyncPaths\.CREATE_WORKOUT[\s\S]*return pending[\s\S]*catch \(rejected: MutationRejectedException\)[\s\S]*clearIfMatches/);
-  assert.match(viewModel, /WatchPendingWorkoutStorage\.clearIfMatches\(appContext, pendingMutation\)/);
+  assert.match(viewModel, /pendingMutation\?\.let \{ WatchPendingWorkoutStorage\.clearIfMatches\(appContext, it\) \}/);
   assert.match(viewModel, /currentAccountBinding\(\)/);
-  assert.match(client, /WatchSyncBindingStorage\.load\(appContext\) == expectedBinding/);
+  // A send is bound to node, owner and generation (not to sync revisions that may move meanwhile).
+  assert.match(client, /WatchBindingRules\.sameSendIdentity\(\s*expectedBinding,\s*WatchSyncBindingStorage\.load\(appContext\)/);
+  assert.match(rules, /current\.sourceNodeId == expected\.sourceNodeId &&\s*current\.ownerId == expected\.ownerId &&\s*current\.accountGeneration == expected\.accountGeneration/);
+  // A workout is never sent to a relink candidate: only the sync request may go there.
+  assert.match(client, /path = SyncPaths\.REQUEST_FULL_SYNC,[\s\S]{0,200}allowRelinkCandidate = true/);
+  assert.equal((client.match(/allowRelinkCandidate = true/g) || []).length, 1);
 });
 
 test("Wear private state is excluded from backup and device transfer", async () => {

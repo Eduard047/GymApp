@@ -44,7 +44,15 @@ internal class WearWatchViewModel(
 
     /** Forgets the linked watch. Workouts not yet sent from the watch stay on the watch. */
     fun unlink() {
-        _state.update { it.copy(linked = false, connected = false, displayName = null) }
+        _state.update {
+            it.copy(
+                linked = false,
+                connected = false,
+                displayName = null,
+                linkConfirmed = false,
+                lastSeenAtMillis = null
+            )
+        }
         viewModelScope.launch {
             mutex.withLock {
                 withContext(Dispatchers.IO) {
@@ -71,7 +79,18 @@ internal class WearWatchViewModel(
                 nodeClient.connectedNodes.await().associate { node -> node.id to node.displayName }
             } ?: emptyMap()
         }
-        wearWatchUiState(apiAvailable = true, pinnedNodeId = pinned, connectedNodes = nodes)
+        val manager = application.phoneWearSyncManager
+        // The name is stored with the pin while the watch is connected and shown while it is not.
+        if (pinned != null && pinned in nodes) {
+            attempt { manager.rememberWatchName(pinned, nodes[pinned]) }
+        }
+        wearWatchUiState(
+            apiAvailable = true,
+            pinnedNodeId = pinned,
+            connectedNodes = nodes,
+            storedName = if (pinned != null) attempt { manager.pinnedWatchName() } else null,
+            linkProofAtMillis = if (pinned != null) attempt { manager.linkProofAtMillis() } else null
+        )
     }
 
     private suspend fun <T> attempt(block: suspend () -> T): T? = try {

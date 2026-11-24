@@ -10,7 +10,13 @@ import java.util.UUID
 internal data class PhoneWearAccountBinding(
     val ownerId: String,
     val accountGeneration: Long,
-    val signedOut: Boolean
+    val signedOut: Boolean,
+    /**
+     * Random id of this phone install, carried in every phone-to-watch envelope. Generations and
+     * revisions restart after a reinstall or "Clear storage"; a new epoch tells the watch that the
+     * counters belong to a new authority instead of being a replay of the old one.
+     */
+    val authorityEpoch: String
 )
 
 internal data class PhoneWearTrustedSource(
@@ -61,7 +67,8 @@ internal class PhoneWearBindingManager(private val prefs: SharedPreferences) {
         PhoneWearAccountBinding(
             ownerId = ownerId,
             accountGeneration = generation,
-            signedOut = session == null
+            signedOut = session == null,
+            authorityEpoch = authorityEpochLocked()
         )
     }
 
@@ -94,7 +101,8 @@ internal class PhoneWearBindingManager(private val prefs: SharedPreferences) {
     fun authorizeSource(
         sourceNodeId: String,
         connectedNodeIds: Set<String>,
-        currentBinding: PhoneWearAccountBinding
+        currentBinding: PhoneWearAccountBinding,
+        linkIntent: Boolean = false
     ): Boolean = synchronized(lock) {
         if (!isValidNodeId(sourceNodeId)) return false
         if (
@@ -121,9 +129,13 @@ internal class PhoneWearBindingManager(private val prefs: SharedPreferences) {
             return true
         }
         if (connectedNodeIds.size != 1 || currentBinding.signedOut) return false
+        // A watch the user unlinked here is pinned again only by its own explicit link request
+        // ("Link to phone" on the watch), never by simply opening its app.
+        if (prefs.getString(KEY_UNLINKED_NODE_ID, null) == sourceNodeId && !linkIntent) return false
         return prefs.edit()
             .putString(KEY_SOURCE_NODE_ID, sourceNodeId)
             .putString(KEY_SOURCE_OWNER_ID, currentBinding.ownerId)
+            .remove(KEY_UNLINKED_NODE_ID)
             .commit()
     }
 
@@ -136,15 +148,115 @@ internal class PhoneWearBindingManager(private val prefs: SharedPreferences) {
     }
 
     /**
-     * The user's "Unlink watch": forgets only the pinned watch node and its owner. Account
-     * generations, sync revisions, workouts and receipts stay untouched, so nothing is deleted on
-     * either side; a later valid `request_full` from a single connected watch may pin again.
+     * The user's "Unlink watch": forgets the pinned watch node, its owner, its name, the link
+     * proof and the plans cached for it, and remembers the node as unlinked by the user so that it
+     * is not pinned again without an explicit link request. Account generations, sync revisions,
+     * workouts and receipts stay untouched.
      */
     fun clearPinnedSource(): Boolean = synchronized(lock) {
-        prefs.edit()
+        val pinned = prefs.getString(KEY_SOURCE_NODE_ID, null)?.takeIf(::isValidNodeId)
+        val editor = prefs.edit()
             .remove(KEY_SOURCE_NODE_ID)
             .remove(KEY_SOURCE_OWNER_ID)
-            .commit()
+            .remove(KEY_WATCH_NAME)
+            .remove(KEY_LINK_PROOF_AT)
+            .remove(KEY_LINK_PROOF_OWNER_ID)
+            .remove(KEY_LINK_PROOF_GENERATION)
+        prefs.all.keys
+            .filter { it.startsWith(KEY_PLAN_CACHE_PREFIX) }
+            .forEach { editor.remove(it) }
+        if (pinned != null) editor.putString(KEY_UNLINKED_NODE_ID, pinned)
+        editor.commit()
+    }
+
+    /** True for the watch node the user unlinked and that has not asked to link again. */
+    fun isUnlinkedNode(sourceNodeId: String): Boolean = synchronized(lock) {
+        isValidNodeId(sourceNodeId) && prefs.getString(KEY_UNLINKED_NODE_ID, null) == sourceNodeId
+    }
+
+    /** Remembers the Data Layer name of the pinned watch so the card can show it while offline. */
+    fun rememberWatchName(sourceNodeId: String, displayName: String?): Boolean = synchronized(lock) {
+        if (prefs.getString(KEY_SOURCE_NODE_ID, null) != sourceNodeId) return false
+        val name = displayName
+            ?.filterNot(Char::isISOControl)
+            ?.trim()
+            ?.take(MAX_WATCH_NAME_LENGTH)
+            ?.takeIf { it.isNotEmpty() }
+            ?: return false
+        if (prefs.getString(KEY_WATCH_NAME, null) == name) return true
+        prefs.edit().putString(KEY_WATCH_NAME, name).commit()
+    }
+
+    fun pinnedWatchName(): String? = synchronized(lock) {
+        if (prefs.getString(KEY_SOURCE_NODE_ID, null) == null) return null
+        prefs.getString(KEY_WATCH_NAME, null)?.takeIf { it.isNotBlank() && it.length <= MAX_WATCH_NAME_LENGTH }
+    }
+
+    /**
+     * Records that the pinned watch just presented exactly this phone's current owner and
+     * generation, i.e. it follows this phone. The value is a display hint only; it never
+     * authorizes anything.
+     */
+    fun recordLinkProof(sourceNodeId: String, binding: PhoneWearAccountBinding, now: Long): Boolean =
+        synchronized(lock) {
+            if (binding.signedOut || prefs.getString(KEY_SOURCE_NODE_ID, null) != sourceNodeId) return false
+            prefs.edit()
+                .putLong(KEY_LINK_PROOF_AT, now)
+                .putString(KEY_LINK_PROOF_OWNER_ID, binding.ownerId)
+                .putLong(KEY_LINK_PROOF_GENERATION, binding.accountGeneration)
+                .commit()
+        }
+
+    /** When the pinned watch last proved it follows [binding]; null when it never did. */
+    fun linkProofAt(binding: PhoneWearAccountBinding): Long? = synchronized(lock) {
+        if (binding.signedOut || prefs.getString(KEY_SOURCE_NODE_ID, null) == null) return null
+        if (
+            prefs.getString(KEY_LINK_PROOF_OWNER_ID, null) != binding.ownerId ||
+            prefs.getLong(KEY_LINK_PROOF_GENERATION, 0L) != binding.accountGeneration
+        ) {
+            return null
+        }
+        prefs.getLong(KEY_LINK_PROOF_AT, 0L).takeIf { it > 0L }
+    }
+
+    /** Keeps the last plan of [ownerId] for the pinned watch; false when nothing is pinned. */
+    fun cachePlan(ownerId: String, plan: PhoneWearCachedPlan): Boolean = synchronized(lock) {
+        if (!ownerIdPattern.matches(ownerId) || prefs.getString(KEY_SOURCE_NODE_ID, null) == null) {
+            return false
+        }
+        val raw = PhoneWearPlanCacheCodec.encode(plan) ?: return false
+        prefs.edit().putString(KEY_PLAN_CACHE_PREFIX + ownerId, raw).commit()
+    }
+
+    fun cachedPlan(ownerId: String, now: Long): PhoneWearCachedPlan? = synchronized(lock) {
+        if (!ownerIdPattern.matches(ownerId)) return null
+        val key = KEY_PLAN_CACHE_PREFIX + ownerId
+        val raw = prefs.getString(key, null) ?: return null
+        val plan = PhoneWearPlanCacheCodec.decode(raw, now)
+        if (plan == null) prefs.edit().remove(key).commit()
+        plan
+    }
+
+    /** Called after a successful send: the plan is on the watch and is not sent again. */
+    fun removeCachedPlan(ownerId: String, planId: String): Boolean = synchronized(lock) {
+        if (!ownerIdPattern.matches(ownerId)) return false
+        val key = KEY_PLAN_CACHE_PREFIX + ownerId
+        val raw = prefs.getString(key, null) ?: return false
+        // An unreadable entry is removed too; only another plan id (a newer plan) is kept.
+        val storedPlanId = runCatching { org.json.JSONObject(raw).getString("planId") }.getOrNull()
+        if (storedPlanId != null && storedPlanId != planId) return false
+        prefs.edit().remove(key).commit()
+    }
+
+    private fun authorityEpochLocked(): String {
+        prefs.getString(KEY_AUTHORITY_EPOCH, null)?.takeIf { stored ->
+            runCatching { UUID.fromString(stored).toString() == stored }.getOrDefault(false)
+        }?.let { return it }
+        val created = UUID.randomUUID().toString()
+        check(prefs.edit().putString(KEY_AUTHORITY_EPOCH, created).commit()) {
+            "Could not persist Wear authority epoch"
+        }
+        return created
     }
 
     fun pinnedSourceNodeId(): String? = synchronized(lock) {
@@ -214,6 +326,15 @@ internal class PhoneWearBindingManager(private val prefs: SharedPreferences) {
         const val KEY_ACTIVE_GENERATION = "active_generation"
         const val KEY_LAST_GENERATION = "last_generation"
         const val KEY_FULL_SYNC_REVISION = "full_sync_revision"
+        const val KEY_AUTHORITY_EPOCH = "authority_epoch"
+        const val KEY_UNLINKED_NODE_ID = "unlinked_node_id"
+        const val KEY_WATCH_NAME = "source_display_name"
+        const val KEY_LINK_PROOF_AT = "link_proof_at"
+        const val KEY_LINK_PROOF_OWNER_ID = "link_proof_owner_id"
+        const val KEY_LINK_PROOF_GENERATION = "link_proof_generation"
+        const val KEY_PLAN_CACHE_PREFIX = "plan_cache_"
+        const val MAX_WATCH_NAME_LENGTH = 64
+        val ownerIdPattern = Regex("^[0-9a-f]{64}$")
         const val KEY_LOCAL_ACCOUNT_ID_PREFIX = "local_account_id_"
         const val MAX_NODE_ID_LENGTH = 256
         const val MAX_CONNECTED_NODES = 8

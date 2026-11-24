@@ -4,6 +4,8 @@ import android.app.Application
 import com.example.gymapp.wear.data.WearWorkoutRepository
 import com.example.gymapp.wear.data.db.WearDatabase
 import com.example.gymapp.wear.health.WearExerciseTracker
+import com.example.gymapp.wear.sync.WatchOutbox
+import com.example.gymapp.wear.sync.WearSyncClient
 
 class WearGymApplication : Application() {
     val database: WearDatabase by lazy { WearDatabase.getInstance(this) }
@@ -11,4 +13,9 @@ class WearGymApplication : Application() {
 
     /** Process-wide: the Health Services exercise outlives any one ViewModel or Activity. */
     val exerciseTracker: WearExerciseTracker by lazy { WearExerciseTracker(this) }
+
+    val syncClient: WearSyncClient by lazy { WearSyncClient(this) }
+
+    /** Process-wide sender of the workout that waits for the phone; needs no screen. */
+    val outbox: WatchOutbox by lazy { WatchOutbox(this, syncClient) }
 }

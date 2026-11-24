@@ -1,7 +1,9 @@
 package com.example.gymapp.wear.sync
 
 import com.example.gymapp.wear.WearGymApplication
+import com.google.android.gms.wearable.CapabilityInfo
 import com.google.android.gms.wearable.MessageEvent
+import com.google.android.gms.wearable.Node
 import com.google.android.gms.wearable.WearableListenerService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,9 +42,15 @@ class WatchSyncListenerService : WearableListenerService() {
             return
         }
         // Reject an unexpected node before copying/parsing up to 100 KiB. Overflow is dropped;
-        // every protocol stream is revisioned or explicitly retryable.
+        // every protocol stream is revisioned or explicitly retryable. Besides the pinned phone
+        // only a node this watch itself just asked for a sync (relink candidate) is heard.
         val binding = WatchSyncBindingStorage.load(applicationContext) ?: return
-        if (binding.sourceNodeId != messageEvent.sourceNodeId) return
+        if (
+            binding.sourceNodeId != messageEvent.sourceNodeId &&
+            WatchRelinkCandidate.current() != messageEvent.sourceNodeId
+        ) {
+            return
+        }
         inboundMessages.trySend(
             QueuedMessage(
                 sourceNodeId = messageEvent.sourceNodeId,
@@ -52,12 +60,36 @@ class WatchSyncListenerService : WearableListenerService() {
         )
     }
 
+    /** The phone came back in range: send the queued workout without waiting for the app to open. */
+    override fun onPeerConnected(peer: Node) {
+        super.onPeerConnected(peer)
+        (applicationContext as WearGymApplication).outbox.flushAsync()
+    }
+
+    override fun onCapabilityChanged(capabilityInfo: CapabilityInfo) {
+        super.onCapabilityChanged(capabilityInfo)
+        // Delivered through the CAPABILITY_CHANGED manifest filter when the phone app becomes
+        // reachable. Only the pinned phone with a bound owner triggers the send; the outbox runs
+        // in the application scope, so it outlives this short-lived service.
+        val reachable = capabilityInfo.nodes.mapTo(HashSet()) { it.id }
+        if (
+            WatchBindingRules.pinnedPhoneReachable(
+                binding = WatchSyncBindingStorage.load(applicationContext),
+                capabilityName = capabilityInfo.name,
+                reachableNodeIds = reachable
+            )
+        ) {
+            (applicationContext as WearGymApplication).outbox.flushAsync()
+        }
+    }
+
     private suspend fun processMessage(message: QueuedMessage) {
         val rawPayload = message.data.toString(Charsets.UTF_8)
         when (message.path) {
             SyncPaths.FULL_SYNC_PAYLOAD -> handleFullSync(message.sourceNodeId, rawPayload)
             SyncPaths.PUSH_WORKOUT_PLAN -> handleWorkoutPlan(message.sourceNodeId, rawPayload)
             SyncPaths.MUTATION_ACK -> handleMutationAck(message.sourceNodeId, rawPayload)
+            SyncPaths.BINDING_STATE -> handleBindingState(message.sourceNodeId, rawPayload)
         }
     }
 
@@ -68,48 +100,46 @@ class WatchSyncListenerService : WearableListenerService() {
         val payload = parsed.value
         val envelope = payload.envelope
         val binding = WatchSyncBindingStorage.load(applicationContext) ?: return
-        if (binding.sourceNodeId != sourceNodeId) return
-
-        val ownerChanged = binding.ownerId != null && binding.ownerId != envelope.ownerId
-        val ownerUnbound = binding.ownerId == null
-        val minimumGeneration = binding.accountGeneration
-        if (ownerChanged && envelope.accountGeneration <= minimumGeneration) return
-        if (!ownerChanged && !ownerUnbound && envelope.accountGeneration < minimumGeneration) return
-        val generationChanged = !ownerChanged &&
-            !ownerUnbound &&
-            envelope.accountGeneration > minimumGeneration
-        val previousRevision = if (
-            binding.ownerId == envelope.ownerId &&
-            binding.accountGeneration == envelope.accountGeneration
-        ) {
-            binding.fullSyncRevision
-        } else {
-            0L
+        val decision = WatchBindingRules.decideFullSync(
+            binding = binding,
+            sourceNodeId = sourceNodeId,
+            envelope = envelope,
+            relinkCandidateNodeId = WatchRelinkCandidate.current(),
+            heldOwnerId = heldWorkOwnerId()
+        )
+        when (decision) {
+            FullSyncDecision.Reject -> return
+            FullSyncDecision.Duplicate -> {
+                WatchSyncStageStorage.clearFullSyncIfMatches(applicationContext, envelope)
+                return
+            }
+            is FullSyncDecision.Accept -> Unit
         }
-        if (envelope.revision < previousRevision) return
-        if (envelope.revision == previousRevision) {
-            WatchSyncStageStorage.clearFullSyncIfMatches(applicationContext, envelope)
+        if (
+            !decision.rebased &&
+            !stageAllows(WatchSyncStageStorage.loadFullSync(applicationContext), envelope)
+        ) {
             return
         }
-        if (!stageAllows(WatchSyncStageStorage.loadFullSync(applicationContext), envelope)) return
 
         // This durable stage is written before Room/preferences. After any crash, a delayed
         // lower revision is rejected until this exact message (or a newer one) completes.
         WatchSyncStageStorage.stageFullSync(applicationContext, envelope)
         val app = applicationContext as WearGymApplication
-        if (ownerChanged || ownerUnbound || generationChanged) {
+        if (decision.resetAccountData) {
             // Clear the previous account before changing the binding. A crash can leave an
             // empty watch, but never expose the previous account's data under the new owner.
-            app.repository.replaceSessionsFromSync(emptyList())
-            WatchPlanStorage.clear(applicationContext)
-            WatchExerciseCatalogStorage.save(applicationContext, emptyList())
-            WatchSyncStageStorage.clearPlan(applicationContext)
+            // The draft and the queued workout are not account data of the phone: they stay,
+            // stamped with their own owner, and are sent only to that owner.
+            clearAccountData(app)
             WatchSyncBindingStorage.acceptFullSync(
                 context = applicationContext,
                 sourceNodeId = sourceNodeId,
                 ownerId = envelope.ownerId,
                 accountGeneration = envelope.accountGeneration,
-                revision = 0L
+                revision = 0L,
+                authorityEpoch = envelope.authorityEpoch,
+                sentAt = envelope.sentAt
             )
         }
         app.repository.replaceSessionsFromSync(payload.sessions)
@@ -119,9 +149,14 @@ class WatchSyncListenerService : WearableListenerService() {
             sourceNodeId = sourceNodeId,
             ownerId = envelope.ownerId,
             accountGeneration = envelope.accountGeneration,
-            revision = envelope.revision
+            revision = envelope.revision,
+            authorityEpoch = envelope.authorityEpoch,
+            sentAt = envelope.sentAt
         )
         WatchSyncStageStorage.clearFullSyncIfMatches(applicationContext, envelope)
+        WatchRelinkCandidate.clear()
+        // The bound owner is reachable right now: send what was waiting for exactly this owner.
+        app.outbox.flushAsync()
     }
 
     private fun handleWorkoutPlan(sourceNodeId: String, rawPayload: String) {
@@ -131,14 +166,7 @@ class WatchSyncListenerService : WearableListenerService() {
         val payload = parsed.value
         val envelope = payload.envelope
         val binding = WatchSyncBindingStorage.load(applicationContext) ?: return
-        if (
-            binding.sourceNodeId != sourceNodeId ||
-            binding.ownerId != envelope.ownerId ||
-            binding.accountGeneration != envelope.accountGeneration ||
-            envelope.revision < binding.planRevision
-        ) {
-            return
-        }
+        if (!WatchBindingRules.planAllowed(binding, sourceNodeId, envelope)) return
         if (envelope.revision == binding.planRevision) {
             WatchSyncStageStorage.clearPlanIfMatches(applicationContext, envelope)
             return
@@ -160,11 +188,53 @@ class WatchSyncListenerService : WearableListenerService() {
         if (
             binding.sourceNodeId != sourceNodeId ||
             binding.ownerId != acknowledgement.ownerId ||
+            binding.authorityEpoch != acknowledgement.authorityEpoch ||
             binding.accountGeneration != acknowledgement.accountGeneration
         ) {
             return
         }
         WatchSyncAckRegistry.complete(acknowledgement.operationId, acknowledgement.accepted)
+    }
+
+    /** The phone signed out ("unbound") or the user unlinked this watch on the phone ("unlinked"). */
+    private suspend fun handleBindingState(sourceNodeId: String, rawPayload: String) {
+        val parsed = WatchSyncJson.parseBindingState(rawPayload)
+        if (parsed !is WatchSyncParseResult.Valid) return
+        val state = parsed.value
+        val binding = WatchSyncBindingStorage.load(applicationContext) ?: return
+        val app = applicationContext as WearGymApplication
+        when (WatchBindingRules.decideBindingState(binding, sourceNodeId, state)) {
+            BindingStateDecision.Reject -> return
+            BindingStateDecision.Unbind -> {
+                // Account data first, binding last: a crash in between leaves an empty watch that
+                // is still bound and gets the same message again, never old data without an owner.
+                clearAccountData(app)
+                WatchSyncBindingStorage.unbind(
+                    context = applicationContext,
+                    accountGeneration = state.accountGeneration,
+                    authorityEpoch = state.authorityEpoch,
+                    sentAt = state.sentAt
+                )
+            }
+            BindingStateDecision.Unlink -> {
+                clearAccountData(app)
+                WatchRelinkCandidate.clear()
+                WatchSyncBindingStorage.clearForUnlink(applicationContext)
+            }
+        }
+    }
+
+    /** Plan, history and catalog belong to the phone account. Held work is deliberately kept. */
+    private suspend fun clearAccountData(app: WearGymApplication) {
+        app.repository.replaceSessionsFromSync(emptyList())
+        WatchPlanStorage.clear(applicationContext)
+        WatchExerciseCatalogStorage.save(applicationContext, emptyList())
+        WatchSyncStageStorage.clearPlan(applicationContext)
+    }
+
+    private fun heldWorkOwnerId(): String? {
+        return WatchWorkoutDraftStorage.heldOwnerId(applicationContext)
+            ?: WatchPendingWorkoutStorage.heldOwnerId(applicationContext)
     }
 
     private fun stageAllows(stage: WatchSyncStage?, envelope: WatchSyncEnvelope): Boolean {
@@ -190,7 +260,8 @@ class WatchSyncListenerService : WearableListenerService() {
         val SUPPORTED_PATHS = setOf(
             SyncPaths.FULL_SYNC_PAYLOAD,
             SyncPaths.PUSH_WORKOUT_PLAN,
-            SyncPaths.MUTATION_ACK
+            SyncPaths.MUTATION_ACK,
+            SyncPaths.BINDING_STATE
         )
     }
 }

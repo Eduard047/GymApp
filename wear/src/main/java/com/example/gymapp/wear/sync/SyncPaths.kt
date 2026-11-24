@@ -26,4 +26,12 @@ object SyncPaths {
     const val DELETE_SET = "/gym/sync/delete_set"
     const val MUTATION_ACK = "/gym/sync/mutation_ack"
     const val FULL_SYNC_PAYLOAD = "/gym/sync/full_payload"
+    /** Phone -> watch: the phone signed out ("unbound") or the user unlinked this watch ("unlinked"). */
+    const val BINDING_STATE = "/gym/sync/binding_state"
+
+    /**
+     * Capability the phone app declares (its res/values/wear.xml). The manifest filter of
+     * WatchSyncListenerService names the same value; a change wakes the watch to send what waits.
+     */
+    const val PHONE_CAPABILITY = "gymapp_phone_sync"
 }
