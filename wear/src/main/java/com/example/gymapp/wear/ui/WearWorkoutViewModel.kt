@@ -55,7 +55,12 @@ data class WearSetInputUiState(
 enum class SaveOutcome {
     Sending,
     Saved,
-    Deferred
+
+    /** Not delivered (phone away, no answer, held for another account): stays queued. */
+    Deferred,
+
+    /** The phone answered and refused the workout: stays queued, but waiting will not help. */
+    Rejected
 }
 
 enum class WearSyncStatus {
@@ -87,6 +92,8 @@ data class WearWorkoutUiState(
     val workoutOnHold: Boolean = false,
     /** Explicitly unlinked (phone or watch): linking again needs the "Link to phone" action. */
     val unlinked: Boolean = false,
+    /** The phone refused the queued workout on the last send (until it is sent or discarded). */
+    val sendRejected: Boolean = false,
     val isSaving: Boolean = false,
     val message: String? = null,
     val syncStatus: WearSyncStatus = WearSyncStatus.Idle,
@@ -150,7 +157,8 @@ private data class SessionExtras(
     val hasQueuedWorkout: Boolean = false,
     val isLinked: Boolean = false,
     val workoutOnHold: Boolean = false,
-    val unlinked: Boolean = false
+    val unlinked: Boolean = false,
+    val sendRejected: Boolean = false
 )
 
 class WearWorkoutViewModel(
@@ -183,6 +191,7 @@ class WearWorkoutViewModel(
     private var pausedRestRemainingSeconds = 0
 
     private var nextDraftSetId = 1L
+    private var lastSetLoggedAtMs = Long.MIN_VALUE / 2
     private val draftSets = MutableStateFlow<List<WearSetInputUiState>>(emptyList())
     private val isSaving = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
@@ -268,6 +277,7 @@ class WearWorkoutViewModel(
             isLinked = extra.isLinked,
             workoutOnHold = extra.workoutOnHold,
             unlinked = extra.unlinked,
+            sendRejected = extra.sendRejected,
             isSaving = saving,
             message = currentMessage,
             syncStatus = currentSyncStatus,
@@ -371,6 +381,9 @@ class WearWorkoutViewModel(
         // A finished workout waiting for the phone is immutable: changing it would give it a new
         // operation id and could store it twice.
         if (extras.value.hasQueuedWorkout) return false
+        // A second tap on Save set while the screen is still closing must not log the set twice.
+        val tappedAt = nowElapsedMs()
+        if (tappedAt - lastSetLoggedAtMs in 0 until DOUBLE_TAP_GUARD_MS) return false
         val name = exerciseName.trim()
         if (
             name.isBlank() ||
@@ -383,7 +396,7 @@ class WearWorkoutViewModel(
             return false
         }
         if (draftSets.value.size >= SyncPaths.MAX_WORKOUT_SETS) {
-            message.value = appContext.getString(R.string.message_invalid_set_input)
+            message.value = appContext.getString(R.string.message_set_limit)
             return false
         }
         val set = WearSetInputUiState(
@@ -393,6 +406,7 @@ class WearWorkoutViewModel(
             reps = reps.toString()
         )
         if (!commitDraftEdit(draftSets.value + set)) return false
+        lastSetLoggedAtMs = tappedAt
         extras.update { it.copy(selectedExercise = name) }
         persistDraft(durable = true)
         startRest()
@@ -472,9 +486,15 @@ class WearWorkoutViewModel(
                 usingPlan = false,
                 hasQueuedWorkout = false,
                 workoutOnHold = false,
+                sendRejected = false,
                 saveOutcome = null
             )
         }
+    }
+
+    /** Always-on display update: the ticker sleeps with the CPU, so recompute the clock now. */
+    fun refreshClock() {
+        if (clock != null && workoutActive.value) elapsedSeconds.value = activeElapsedSeconds()
     }
 
     /**
@@ -612,7 +632,7 @@ class WearWorkoutViewModel(
         }
         isSaving.value = true
         syncStatus.value = WearSyncStatus.WaitingPhone
-        extras.update { it.copy(saveOutcome = SaveOutcome.Sending) }
+        extras.update { it.copy(saveOutcome = SaveOutcome.Sending, sendRejected = false) }
         viewModelScope.launch {
             runCatching {
                 outbox.exclusive<com.example.gymapp.wear.sync.PendingWorkoutMutation?> {
@@ -672,11 +692,21 @@ class WearWorkoutViewModel(
                     pendingMutation?.let { WatchPendingWorkoutStorage.clearIfMatches(appContext, it) }
                 }
                 requestRemoteSync(showError = false)
-            }.onFailure {
+            }.onFailure { failure ->
                 if (currentBindingIdentity() != submittedBinding) return@onFailure
                 // The workout is finished: stop the clock and HR, keep the sets queued for retry.
                 stopLiveTracking()
-                extras.update { it.copy(hasQueuedWorkout = true, paused = false, saveOutcome = SaveOutcome.Deferred) }
+                // "The phone said no" is not "the phone is away": only the second one is fixed
+                // by waiting, so the two are shown differently.
+                val rejected = failure is WearSyncClient.MutationRejectedException
+                extras.update {
+                    it.copy(
+                        hasQueuedWorkout = true,
+                        paused = false,
+                        sendRejected = rejected,
+                        saveOutcome = if (rejected) SaveOutcome.Rejected else SaveOutcome.Deferred
+                    )
+                }
                 syncStatus.value = WearSyncStatus.Failed
             }
             if (currentBindingIdentity() == submittedBinding) {
@@ -928,6 +958,7 @@ class WearWorkoutViewModel(
                 usingPlan = false,
                 hasQueuedWorkout = false,
                 workoutOnHold = false,
+                sendRejected = false,
                 saveOutcome = null
             )
         }
@@ -960,6 +991,7 @@ class WearWorkoutViewModel(
                 selectedExercise = null,
                 hasQueuedWorkout = false,
                 workoutOnHold = false,
+                sendRejected = false,
                 saveOutcome = null
             )
         }
@@ -1055,11 +1087,14 @@ class WearWorkoutViewModel(
     override fun onCleared() {
         // The exercise itself outlives the ViewModel (process-wide tracker + foreground service).
         tickerJob?.cancel()
+        // Nothing is left to vibrate at the end of the rest; do not keep the CPU awake for it.
+        restWakeLock.release()
         super.onCleared()
     }
 
     companion object {
         private const val TICK_MS = 250L
+        private const val DOUBLE_TAP_GUARD_MS = 600L
 
         fun factory(application: Application): ViewModelProvider.Factory = viewModelFactory {
             initializer {

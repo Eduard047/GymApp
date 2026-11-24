@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Gym Watch</string>
-    <string name="message_invalid_draft">Enter a valid exercise, reps, and weight if needed.</string>
-    <string name="message_invalid_set_input">Enter valid reps and weight if needed.</string>
-    <string name="message_sync_unavailable">Phone not connected. Open the app on your phone and try again.</string>
-    <string name="message_plan_deferred">New plan received. Your current draft was kept; the plan will be applied after it.</string>
+    <string name="app_name">GymApp</string>
+    <string name="message_invalid_draft">Record at least one set first.</string>
+    <string name="message_invalid_set_input">Check the weight and reps.</string>
+    <string name="message_set_limit">This workout already has the maximum number of sets.</string>
+    <string name="message_sync_unavailable">Phone not connected. Open GymApp on your phone and try again.</string>
+    <string name="message_plan_deferred">New plan received. It will be applied after this workout.</string>
     <string name="notification_workout_title">Workout in progress</string>
     <string name="notification_workout_text">Tracking heart rate</string>
     <string name="notification_workout_channel">Workout</string>
@@ -17,6 +18,7 @@
     <string name="open_phone">Open GymApp on your phone</string>
     <string name="phone_off">Phone not connected</string>
     <string name="log_set">Log set</string>
+    <string name="log_set_short">Log set</string>
     <string name="set_k_of_n">Set %1$d of %2$d</string>
     <string name="set_k">Set %d</string>
     <string name="weight_reps">%1$s kg × %2$s</string>
@@ -45,7 +47,7 @@
     <string name="discard_body">Recorded sets will be removed.</string>
     <string name="keep">Keep workout</string>
     <string name="summary">Workout summary</string>
-    <string name="label_duration">Duration</string>
+    <string name="label_duration">Time</string>
     <string name="label_sets">Sets</string>
     <string name="label_volume">Volume</string>
     <string name="label_avg_hr">Avg HR</string>
@@ -57,19 +59,32 @@
     <string name="sending">Sending…</string>
     <string name="saved_phone">Saved on phone</string>
     <string name="send_later">Will send when the phone is nearby</string>
+    <string name="send_rejected">The phone did not accept this workout. Update GymApp on the phone.</string>
     <string name="done">Done</string>
+    <string name="cancel">Cancel</string>
     <string name="hr_off">Heart rate is off</string>
-    <string name="a11y_heart_rate">Heart rate %1$d beats per minute, zone %2$d</string>
+    <string name="a11y_heart_rate">Heart rate %1$s, zone %2$d</string>
+    <plurals name="a11y_beats">
+        <item quantity="one">%d beat per minute</item>
+        <item quantity="other">%d beats per minute</item>
+    </plurals>
     <string name="a11y_heart_rate_waiting">Measuring heart rate</string>
-    <string name="a11y_set_values">%1$s kilograms, %2$d reps</string>
+    <string name="a11y_set_values">%1$s kilograms, %2$s</string>
+    <plurals name="a11y_reps">
+        <item quantity="one">%d rep</item>
+        <item quantity="other">%d reps</item>
+    </plurals>
     <string name="a11y_rest">Rest, %1$d min %2$d s</string>
     <string name="a11y_change_exercise">Change exercise</string>
     <string name="choose_exercise">Choose exercise</string>
+    <string name="choose_short">Choose</string>
     <string name="queued_title">Unsent</string>
     <string name="queued_body">Send it to your phone before starting a new one.</string>
     <string name="send_now">Send now</string>
-    <string name="link_phone">Link to phone</string>
-    <string name="unlink_phone">Unlink from phone</string>
-    <string name="link_unlinked">Not linked to a phone</string>
+    <string name="link_phone">Pair with phone</string>
+    <string name="unlink_phone">Unpair from phone</string>
+    <string name="link_unlinked">Not paired with a phone</string>
+    <string name="unlink_title">Unpair from phone?</string>
+    <string name="unlink_body">The plan is removed from the watch. An unsent workout stays.</string>
     <string name="queued_hold_body">Waiting for your account on the phone. It is sent after you sign in there.</string>
 </resources>

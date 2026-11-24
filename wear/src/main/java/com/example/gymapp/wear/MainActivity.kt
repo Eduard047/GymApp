@@ -12,27 +12,50 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.wear.ambient.AmbientModeSupport
+import androidx.wear.ambient.AmbientLifecycleObserver
 import com.example.gymapp.wear.ui.WearWorkoutApp
 import com.example.gymapp.wear.ui.WearWorkoutViewModel
 import kotlinx.coroutines.launch
 
-class MainActivity : FragmentActivity(), AmbientModeSupport.AmbientCallbackProvider {
+class MainActivity : FragmentActivity() {
     private var isAmbient by mutableStateOf(false)
+
+    private val workoutModel: WearWorkoutViewModel by lazy {
+        ViewModelProvider(this, WearWorkoutViewModel.factory(application))[WearWorkoutViewModel::class.java]
+    }
+
+    // Always-on display. While ambient the CPU sleeps between the system's once-a-minute
+    // updates, so the elapsed time is refreshed from onUpdateAmbient rather than by the ticker.
+    private val ambientObserver = AmbientLifecycleObserver(
+        this,
+        object : AmbientLifecycleObserver.AmbientLifecycleCallback {
+            override fun onEnterAmbient(ambientDetails: AmbientLifecycleObserver.AmbientDetails) {
+                isAmbient = true
+                workoutModel.refreshClock()
+            }
+
+            override fun onUpdateAmbient() {
+                workoutModel.refreshClock()
+            }
+
+            override fun onExitAmbient() {
+                isAmbient = false
+                workoutModel.refreshClock()
+            }
+        }
+    )
 
     // Asked when a workout starts; either answer just tells the ViewModel to carry on, with or
     // without heart rate.
     private val healthPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-            ViewModelProvider(this, WearWorkoutViewModel.factory(application))[WearWorkoutViewModel::class.java]
-                .onHealthPermissionsResult()
+            workoutModel.onHealthPermissionsResult()
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        AmbientModeSupport.attach(this)
+        lifecycle.addObserver(ambientObserver)
 
-        val workoutModel = ViewModelProvider(this, WearWorkoutViewModel.factory(application))[WearWorkoutViewModel::class.java]
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 workoutModel.healthPermissionRequest.collect { permissions ->
@@ -50,18 +73,6 @@ class MainActivity : FragmentActivity(), AmbientModeSupport.AmbientCallbackProvi
             )
             // Rotary input goes to the focused list or picker (Compose for Wear handles it).
             WearWorkoutApp(viewModel = workoutViewModel, isAmbient = isAmbient)
-        }
-    }
-
-    override fun getAmbientCallback(): AmbientModeSupport.AmbientCallback {
-        return object : AmbientModeSupport.AmbientCallback() {
-            override fun onEnterAmbient(ambientDetails: Bundle?) {
-                isAmbient = true
-            }
-
-            override fun onExitAmbient() {
-                isAmbient = false
-            }
         }
     }
 }

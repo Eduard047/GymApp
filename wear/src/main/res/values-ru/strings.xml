@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Gym Часы</string>
-    <string name="message_invalid_draft">Выбери упражнение, укажи повторы и при необходимости вес.</string>
-    <string name="message_invalid_set_input">Укажи корректное количество повторов и при необходимости вес.</string>
-    <string name="message_sync_unavailable">Телефон не подключён. Открой приложение на телефоне и попробуй ещё раз.</string>
-    <string name="message_plan_deferred">Новый план получен. Текущий черновик сохранён; план будет применён после него.</string>
+    <string name="app_name">GymApp</string>
+    <string name="message_invalid_draft">Сначала запишите хотя бы один подход.</string>
+    <string name="message_invalid_set_input">Проверьте вес и повторения.</string>
+    <string name="message_set_limit">В этой тренировке уже максимум подходов.</string>
+    <string name="message_sync_unavailable">Телефон не подключён. Откройте GymApp на телефоне и попробуйте ещё раз.</string>
+    <string name="message_plan_deferred">Получен новый план. Он применится после этой тренировки.</string>
     <string name="notification_workout_title">Тренировка идёт</string>
     <string name="notification_workout_text">Отслеживание пульса</string>
     <string name="notification_workout_channel">Тренировка</string>
@@ -14,9 +15,10 @@
     <string name="sets_count">Подходы: %d</string>
     <string name="weight_step">Шаг веса</string>
     <string name="weight_kg">%s кг</string>
-    <string name="open_phone">Открой GymApp на телефоне</string>
+    <string name="open_phone">Откройте GymApp на телефоне</string>
     <string name="phone_off">Телефон не подключён</string>
     <string name="log_set">Записать подход</string>
+    <string name="log_set_short">Записать</string>
     <string name="set_k_of_n">Подход %1$d из %2$d</string>
     <string name="set_k">Подход %d</string>
     <string name="weight_reps">%1$s кг × %2$s</string>
@@ -35,17 +37,17 @@
     <string name="rest_done">Отдых завершён</string>
     <string name="section_plan">План</string>
     <string name="section_all">Все упражнения</string>
-    <string name="no_exercises">Упражнений пока нет. Открой GymApp на телефоне.</string>
+    <string name="no_exercises">Упражнений пока нет. Откройте GymApp на телефоне.</string>
     <string name="paused">Пауза</string>
     <string name="resume">Продолжить</string>
     <string name="finish">Завершить</string>
-    <string name="need_set">Перед завершением запиши хотя бы один подход.</string>
+    <string name="need_set">Перед завершением запишите хотя бы один подход.</string>
     <string name="discard">Удалить тренировку</string>
     <string name="discard_title">Удалить тренировку?</string>
     <string name="discard_body">Записанные подходы будут удалены.</string>
     <string name="keep">Оставить тренировку</string>
     <string name="summary">Итог тренировки</string>
-    <string name="label_duration">Длительность</string>
+    <string name="label_duration">Время</string>
     <string name="label_sets">Подходы</string>
     <string name="label_volume">Объём</string>
     <string name="label_avg_hr">Сред. пульс</string>
@@ -57,19 +59,36 @@
     <string name="sending">Отправка…</string>
     <string name="saved_phone">Сохранено на телефоне</string>
     <string name="send_later">Отправим, когда телефон будет рядом</string>
+    <string name="send_rejected">Телефон не принял эту тренировку. Обновите GymApp на телефоне.</string>
     <string name="done">Готово</string>
+    <string name="cancel">Отмена</string>
     <string name="hr_off">Пульс выключен</string>
-    <string name="a11y_heart_rate">Пульс %1$d ударов в минуту, зона %2$d</string>
+    <string name="a11y_heart_rate">Пульс %1$s, зона %2$d</string>
+    <plurals name="a11y_beats">
+        <item quantity="one">%d удар в минуту</item>
+        <item quantity="few">%d удара в минуту</item>
+        <item quantity="many">%d ударов в минуту</item>
+        <item quantity="other">%d удара в минуту</item>
+    </plurals>
     <string name="a11y_heart_rate_waiting">Измерение пульса</string>
-    <string name="a11y_set_values">%1$s кг, %2$d повторений</string>
+    <string name="a11y_set_values">%1$s кг, %2$s</string>
+    <plurals name="a11y_reps">
+        <item quantity="one">%d повторение</item>
+        <item quantity="few">%d повторения</item>
+        <item quantity="many">%d повторений</item>
+        <item quantity="other">%d повторения</item>
+    </plurals>
     <string name="a11y_rest">Отдых, %1$d мин %2$d с</string>
     <string name="a11y_change_exercise">Сменить упражнение</string>
     <string name="choose_exercise">Выбрать упражнение</string>
+    <string name="choose_short">Выбрать</string>
     <string name="queued_title">Не отправлено</string>
-    <string name="queued_body">Отправь её на телефон, чтобы начать новую.</string>
+    <string name="queued_body">Отправьте её на телефон, чтобы начать новую.</string>
     <string name="send_now">Отправить</string>
     <string name="link_phone">Привязать к телефону</string>
     <string name="unlink_phone">Отвязать от телефона</string>
-    <string name="link_unlinked">Не привязаны к телефону</string>
+    <string name="link_unlinked">Не привязано к телефону</string>
+    <string name="unlink_title">Отвязать от телефона?</string>
+    <string name="unlink_body">План удалится с часов. Неотправленная тренировка останется.</string>
     <string name="queued_hold_body">Ждёт ваш аккаунт на телефоне. Отправится после входа.</string>
 </resources>

@@ -207,5 +207,7 @@ class WearSyncClient(
 
     private fun newOperationId(): String = UUID.randomUUID().toString()
 
-    private class MutationRejectedException : IllegalStateException("Phone rejected the operation")
+    /** The phone answered and refused the operation (as opposed to: no answer at all). */
+    class MutationRejectedException internal constructor() :
+        IllegalStateException("Phone rejected the operation")
 }

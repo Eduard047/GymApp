@@ -109,6 +109,27 @@ object WatchIcons {
     val Chevron: ImageVector = glyph("Chevron", "M10,6L8.59,7.41 13.17,12l-4.58,4.59L10,18l6,-6z")
     val Warning: ImageVector = glyph("Warning", "M1,21h22L12,2 1,21zM13,18h-2v-2h2v2zM13,14h-2v-4h2v4z")
 
+    /** Skip forward: the rest edge button on screens too narrow for the word. */
+    val SkipForward: ImageVector = glyph("SkipForward", "M6,18l8.5,-6L6,6v12zM16,6v12h2V6h-2z")
+
+    /** Phone with a slash ("phone not reachable"), the same meaning as `iphone.slash`. */
+    val PhoneSlash: ImageVector = ImageVector.Builder("PhoneSlash", 24.dp, 24.dp, 24f, 24f)
+        .addPath(
+            pathData = addPathNodes(
+                "M8.5,2.5h7c1.1,0 2,0.9 2,2v15c0,1.1 -0.9,2 -2,2h-7c-1.1,0 -2,-0.9 -2,-2v-15" +
+                    "c0,-1.1 0.9,-2 2,-2z"
+            ),
+            stroke = SolidColor(Color.Black),
+            strokeLineWidth = 2f
+        )
+        .addPath(
+            pathData = addPathNodes("M3,4L21,20"),
+            stroke = SolidColor(Color.Black),
+            strokeLineWidth = 2f,
+            strokeLineCap = StrokeCap.Round
+        )
+        .build()
+
     private fun glyph(name: String, path: String): ImageVector =
         ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f)
             .addPath(pathData = addPathNodes(path), fill = SolidColor(Color.Black))

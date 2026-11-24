@@ -5,7 +5,10 @@ import android.view.View
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,9 +32,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
@@ -90,6 +100,7 @@ private object Routes {
 
 private const val SENDING_TIMEOUT_MS = 15_000L
 private const val SAVED_DIALOG_MS = 2_000L
+private const val MESSAGE_MS = 4_000L
 
 @Composable
 fun WearWorkoutApp(viewModel: WearWorkoutViewModel, isAmbient: Boolean) {
@@ -125,6 +136,7 @@ fun WearWorkoutApp(viewModel: WearWorkoutViewModel, isAmbient: Boolean) {
 
     GymWatchTheme {
         AppScaffold {
+            Box(modifier = Modifier.fillMaxSize()) {
             SwipeDismissableNavHost(navController = nav, startDestination = Routes.START) {
                 composable(Routes.START) {
                     StartScreen(
@@ -231,6 +243,89 @@ fun WearWorkoutApp(viewModel: WearWorkoutViewModel, isAmbient: Boolean) {
                     )
                 }
             }
+            // Always-on: one layout over whichever route is open, so no screen keeps accent
+            // fills, white text or buttons while the watch is dozing (spec §4.2).
+            state.message?.let { text ->
+                if (!isAmbient) MessageBanner(text = text, onDone = viewModel::consumeMessage)
+            }
+            if (isAmbient) AmbientScreen(state = state)
+            }
+        }
+    }
+}
+
+/**
+ * One transient line for what the ViewModel has to say (set limit reached, new plan waiting,
+ * phone not connected). It goes away by itself or on a tap and is announced once.
+ */
+@Composable
+private fun MessageBanner(text: String, onDone: () -> Unit) {
+    LaunchedEffect(text) {
+        delay(MESSAGE_MS)
+        onDone()
+    }
+    Box(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = WatchColors.Text,
+            textAlign = TextAlign.Center,
+            maxLines = 5,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .clip(RoundedCornerShape(16.dp))
+                .background(WatchColors.SurfaceHigh)
+                .clickable(onClick = onDone)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .semantics { liveRegion = LiveRegionMode.Polite }
+        )
+    }
+}
+
+/**
+ * Always-on layout (spec §4.2): black, no accent fills, no buttons, secondary text, elapsed time
+ * without seconds. It covers the open route and takes its touches, so nothing below reacts.
+ */
+@Composable
+private fun AmbientScreen(state: WearWorkoutUiState) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(WatchColors.Background)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) awaitPointerEvent().changes.forEach { it.consume() }
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        if (state.workoutActive && !state.paused) {
+            DashboardScreen(
+                state = state,
+                isAmbient = true,
+                onLogSet = {},
+                onUndo = {},
+                onAddRest = {},
+                onSkipRest = {}
+            )
+        } else {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = stringResource(R.string.start_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = WatchColors.TextSecondary
+                )
+                if (state.workoutActive) {
+                    Text(
+                        text = "${stringResource(R.string.paused)} · ${ambientElapsed(state.elapsedSeconds)}",
+                        style = MaterialTheme.typography.labelMedium.tabular(),
+                        color = WatchColors.TextSecondary
+                    )
+                }
+            }
         }
     }
 }
@@ -245,16 +340,32 @@ private fun NavHostController.goToRoot(route: String) {
     navigate(route) { popUpTo(graph.id) { inclusive = true } }
 }
 
-/** Edge button label: up to 2 centred lines so UK/RU labels are never cut. */
+/**
+ * Edge button label. A word is never broken across lines: screens under 225dp get a one-word
+ * label ([singleLine], smaller type, no wrapping) or an icon, larger ones up to two whole words.
+ */
 @Composable
-private fun EdgeLabel(text: String) {
+private fun EdgeLabel(text: String, singleLine: Boolean = false) {
     Text(
         text = text,
-        style = MaterialTheme.typography.labelMedium,
+        style = if (singleLine) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
         textAlign = TextAlign.Center,
-        maxLines = 2,
+        maxLines = if (singleLine) 1 else 2,
+        softWrap = !singleLine,
         overflow = TextOverflow.Ellipsis
     )
+}
+
+/** Height the edge button really takes, so the content above it is never drawn under it. */
+@Composable
+private fun edgeHeightDp(measuredPx: Int, fallback: Dp): Dp =
+    if (measuredPx > 0) with(LocalDensity.current) { measuredPx.toDp() } else fallback
+
+/** Always-on elapsed time: minutes only, no seconds (spec §4.2). */
+private fun ambientElapsed(elapsedSeconds: Long): String {
+    val minutes = elapsedSeconds / 60
+    return if (minutes >= 60) String.format(Locale.ROOT, "%d:%02d", minutes / 60, minutes % 60)
+    else String.format(Locale.ROOT, "%d′", minutes)
 }
 
 /** Medium leaves room for the longer UK/RU labels ("Записати підхід") on 225dp+ screens. */
@@ -268,8 +379,9 @@ private fun View.haptic(constant: Int) {
 @Composable
 private fun isLargeScreen(): Boolean = LocalConfiguration.current.screenWidthDp >= 225
 
+/** Square and short rectangular screens: less height than the smallest round one. */
 @Composable
-private fun showNextLine(): Boolean = LocalConfiguration.current.screenHeightDp >= 240
+private fun isShortScreen(): Boolean = LocalConfiguration.current.screenHeightDp < 190
 
 @Composable
 private fun locale(): Locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
@@ -292,11 +404,14 @@ private fun StartScreen(
     // Held work (its account is not the one bound now) blocks Start like a queued workout.
     val canStart = state.isLinked && !queued && !state.isSaving && !state.workoutOnHold
     var confirmDiscard by remember { mutableStateOf(false) }
+    var confirmUnlink by remember { mutableStateOf(false) }
     val status = when {
         queued && state.isSaving -> stringResource(R.string.sending)
         state.unlinked -> stringResource(R.string.link_unlinked)
         !state.isLinked -> stringResource(R.string.open_phone)
-        // The queued block below says why starting is blocked and what to do about it.
+        // Held for another account, or refused by the phone: the queued block says so. "Will
+        // send when the phone is nearby" would be wrong for both, so there is no status line.
+        queued && (state.workoutOnHold || state.sendRejected) -> null
         queued -> stringResource(R.string.send_later)
         !hasPlan -> stringResource(R.string.open_phone)
         state.syncStatus == WearSyncStatus.Failed -> stringResource(R.string.phone_off)
@@ -376,12 +491,16 @@ private fun StartScreen(
                         )
                         Text(
                             text = stringResource(
-                                if (state.workoutOnHold) R.string.queued_hold_body else R.string.queued_body
+                                when {
+                                    state.workoutOnHold -> R.string.queued_hold_body
+                                    state.sendRejected -> R.string.send_rejected
+                                    else -> R.string.queued_body
+                                }
                             ),
                             style = MaterialTheme.typography.labelSmall,
                             color = WatchColors.TextSecondary,
                             textAlign = TextAlign.Center,
-                            maxLines = 4
+                            maxLines = 5
                         )
                     }
                 }
@@ -416,22 +535,13 @@ private fun StartScreen(
                     }
                 )
             }
-            // Minimal link controls (visual polish is a separate pass). Unlinking keeps the
-            // workout stored on the watch; it only forgets the phone and what it synced.
+            // Not paired: pairing is the one thing to do here, so it is the filled button.
             if (state.unlinked) {
                 item {
                     Button(
                         onClick = onLink,
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text(stringResource(R.string.link_phone), maxLines = 2) }
-                    )
-                }
-            } else if (state.isLinked && !state.isSaving) {
-                item {
-                    FilledTonalButton(
-                        onClick = onUnlink,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.unlink_phone), maxLines = 2) }
                     )
                 }
             }
@@ -448,11 +558,27 @@ private fun StartScreen(
                     )
                 }
             }
+            // Unpairing is rare and loses the synced plan: last in the list, text only, and it
+            // asks first. It never deletes a workout stored on the watch.
+            if (!state.unlinked && state.isLinked && !state.isSaving) {
+                item {
+                    Button(
+                        onClick = { confirmUnlink = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.childButtonColors(contentColor = WatchColors.TextSecondary),
+                        label = { CenteredLabel(R.string.unlink_phone) }
+                    )
+                }
+            }
         }
     }
     DiscardDialog(visible = confirmDiscard, onKeep = { confirmDiscard = false }, onDiscard = {
         confirmDiscard = false
         onDiscardQueued()
+    })
+    UnlinkDialog(visible = confirmUnlink, onCancel = { confirmUnlink = false }, onUnlink = {
+        confirmUnlink = false
+        onUnlink()
     })
 }
 
@@ -472,11 +598,32 @@ private fun DashboardScreen(
     val undoOpen = state.undoSetId != null
     val textColor = if (isAmbient) WatchColors.TextSecondary else WatchColors.Text
     val large = isLargeScreen()
+    val short = isShortScreen()
+    var edgePx by remember { mutableIntStateOf(0) }
+    val edgeButtonSize = when {
+        resting -> if (large) EdgeButtonSize.Small else EdgeButtonSize.ExtraSmall
+        else -> edgeSize(large)
+    }
+    val edgeHeight = edgeHeightDp(
+        edgePx,
+        when (edgeButtonSize) {
+            EdgeButtonSize.ExtraSmall -> 46.dp
+            EdgeButtonSize.Small -> 56.dp
+            else -> 70.dp
+        }
+    )
+    val bottomPadding = when {
+        isAmbient -> 16.dp
+        // The compact button keeps 8dp of clear touch margin under its pill; that margin may sit
+        // over the top of the edge button, the pill itself never does.
+        resting -> (edgeHeight - 8.dp).coerceAtLeast(0.dp)
+        else -> edgeHeight
+    }
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 28.dp, bottom = if (isAmbient) 16.dp else if (large && !resting) 64.dp else 50.dp)
+                .padding(top = if (large) 28.dp else 26.dp, bottom = bottomPadding)
                 .padding(horizontal = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
@@ -494,13 +641,14 @@ private fun DashboardScreen(
                 val restLabel = stringResource(R.string.a11y_rest, minutes, seconds)
                 Text(
                     text = WorkoutMath.formatDuration(state.restRemainingSeconds.toLong()),
-                    style = MaterialTheme.typography.numeralMedium.tabular(),
+                    style = (if (short) MaterialTheme.typography.numeralSmall
+                    else MaterialTheme.typography.numeralMedium).tabular(),
                     color = textColor,
                     maxLines = 1,
                     modifier = Modifier.clearAndSetSemantics { contentDescription = restLabel }
                 )
-                // "Next: …" only where it fits above the rest actions (spec §4.3 / §8).
-                if (showNextLine()) {
+                // "Next: …" only where it fits above the rest actions (spec §4.3 / §8 / §10: 225dp+).
+                if (large) {
                     state.nextTarget?.let { next ->
                         Text(
                             text = stringResource(
@@ -515,7 +663,7 @@ private fun DashboardScreen(
                     }
                 }
                 if (!isAmbient) {
-                    Spacer(Modifier.height(4.dp))
+                    // No spacer: the compact button brings its own 8dp touch margin above the pill.
                     CompactButton(
                         onClick = if (undoOpen) onUndo else onAddRest,
                         colors = ButtonDefaults.filledTonalButtonColors(),
@@ -532,8 +680,11 @@ private fun DashboardScreen(
                     style = MaterialTheme.typography.titleMedium.withHyphens(),
                     color = if (exercise == null) WatchColors.TextSecondary else textColor,
                     textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    // Under 225dp the second line would push the set line under the edge button
+                    // (spec §8: the name gives way before a number does).
+                    maxLines = if (large) 2 else 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = if (exercise == null) Modifier else Modifier.semantics { contentDescription = exercise }
                 )
                 // No exercise yet (free workout, nothing logged): there is no set to preview, so
                 // no "0 kg × 10" for a nameless exercise; the edge button picks the exercise.
@@ -541,7 +692,11 @@ private fun DashboardScreen(
                 val target = state.nextTarget ?: SetTarget(0.0, WorkoutMath.DEFAULT_REPS)
                 val weightText = WorkoutMath.formatWeight(target.weight, loc)
                 val hero = stringResource(R.string.weight_reps, weightText, target.reps.toString())
-                val heroLabel = stringResource(R.string.a11y_set_values, weightText, target.reps)
+                val heroLabel = stringResource(
+                    R.string.a11y_set_values,
+                    weightText,
+                    pluralStringResource(R.plurals.a11y_reps, target.reps, target.reps)
+                )
                 Text(
                     text = hero,
                     style = (if (hero.length > 11) MaterialTheme.typography.numeralExtraSmall
@@ -562,19 +717,24 @@ private fun DashboardScreen(
         if (!isAmbient) {
             EdgeButton(
                 onClick = if (resting) onSkipRest else onLogSet,
-                modifier = Modifier.align(Alignment.BottomCenter),
-                buttonSize = if (resting) EdgeButtonSize.Small else edgeSize(large),
+                modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { edgePx = it.height },
+                buttonSize = edgeButtonSize,
                 colors = if (resting) ButtonDefaults.filledTonalButtonColors() else ButtonDefaults.buttonColors()
             ) {
-                EdgeLabel(
-                    stringResource(
-                        when {
-                            resting -> R.string.skip
-                            state.currentExercise == null -> R.string.choose_exercise
-                            else -> R.string.log_set
-                        }
+                when {
+                    // "Пропустить" / "Пропустити" do not fit one line of a small edge button.
+                    resting && !large ->
+                        Icon(WatchIcons.SkipForward, contentDescription = stringResource(R.string.skip))
+                    resting -> EdgeLabel(stringResource(R.string.skip))
+                    state.currentExercise == null -> EdgeLabel(
+                        stringResource(if (large) R.string.choose_exercise else R.string.choose_short),
+                        singleLine = !large
                     )
-                )
+                    else -> EdgeLabel(
+                        stringResource(if (large) R.string.log_set else R.string.log_set_short),
+                        singleLine = !large
+                    )
+                }
             }
         }
     }
@@ -588,16 +748,14 @@ private fun HeartRateRow(state: WearWorkoutUiState, isAmbient: Boolean) {
     val zone = state.heartRateZone
     val label = when {
         off -> stringResource(R.string.hr_off)
-        bpm != null && zone != null -> stringResource(R.string.a11y_heart_rate, bpm, zone)
+        bpm != null && zone != null -> stringResource(
+            R.string.a11y_heart_rate,
+            pluralStringResource(R.plurals.a11y_beats, bpm, bpm),
+            zone
+        )
         else -> stringResource(R.string.a11y_heart_rate_waiting)
     }
-    val elapsed = if (isAmbient) {
-        val minutes = state.elapsedSeconds / 60
-        if (minutes >= 60) String.format(Locale.ROOT, "%d:%02d", minutes / 60, minutes % 60)
-        else String.format(Locale.ROOT, "%d′", minutes)
-    } else {
-        WorkoutMath.formatDuration(state.elapsedSeconds)
-    }
+    val elapsed = if (isAmbient) ambientElapsed(state.elapsedSeconds) else WorkoutMath.formatDuration(state.elapsedSeconds)
     Row(verticalAlignment = Alignment.CenterVertically) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -620,7 +778,7 @@ private fun HeartRateRow(state: WearWorkoutUiState, isAmbient: Boolean) {
                     else -> bpm.toString()
                 },
                 style = MaterialTheme.typography.labelMedium.tabular(),
-                color = if (off) WatchColors.TextSecondary else WatchColors.Text
+                color = if (off || isAmbient) WatchColors.TextSecondary else WatchColors.Text
             )
             if (!off && zone != null && !isAmbient) {
                 Spacer(Modifier.width(4.dp))
@@ -643,7 +801,7 @@ private fun HeartRateRow(state: WearWorkoutUiState, isAmbient: Boolean) {
         Text(
             text = elapsed,
             style = MaterialTheme.typography.labelMedium.tabular(),
-            color = WatchColors.Text
+            color = if (isAmbient) WatchColors.TextSecondary else WatchColors.Text
         )
     }
 }
@@ -1020,10 +1178,11 @@ private fun DiscardButton(onClick: () -> Unit) {
 }
 
 /**
- * Spec §4.8: Discard above, Keep workout (filled) below as the default; back-swipe keeps.
- * Both are list buttons rather than an edge button: "Залишити тренування" / "Оставить
- * тренировку" need two lines, which an edge button clips against the round bezel, while list
- * items always stay inside the scaffold's safe area on 192–227dp screens.
+ * Keep workout (filled, the safe default) comes first so it is on screen without scrolling on
+ * every size; Discard is below it; back-swipe keeps. Same order on Apple Watch (this replaces
+ * the order of spec §4.8). Both are list buttons rather than an edge button: "Залишити
+ * тренування" / "Оставить тренировку" need two lines, which an edge button clips against the
+ * round bezel, while list items stay inside the scaffold's safe area.
  */
 @Composable
 private fun DiscardDialog(visible: Boolean, onKeep: () -> Unit, onDiscard: () -> Unit) {
@@ -1033,22 +1192,39 @@ private fun DiscardDialog(visible: Boolean, onKeep: () -> Unit, onDiscard: () ->
         title = { Text(stringResource(R.string.discard_title), textAlign = TextAlign.Center) },
         text = { Text(stringResource(R.string.discard_body), textAlign = TextAlign.Center) }
     ) {
+        item { Button(onClick = onKeep, modifier = Modifier.fillMaxWidth(), label = { CenteredLabel(R.string.keep) }) }
         item { DiscardButton(onClick = onDiscard) }
+    }
+}
+
+/** Unpairing forgets the phone's plan and exercises on the watch, so it asks first. */
+@Composable
+private fun UnlinkDialog(visible: Boolean, onCancel: () -> Unit, onUnlink: () -> Unit) {
+    AlertDialog(
+        visible = visible,
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.unlink_title), textAlign = TextAlign.Center) },
+        text = { Text(stringResource(R.string.unlink_body), textAlign = TextAlign.Center) }
+    ) {
+        item { Button(onClick = onCancel, modifier = Modifier.fillMaxWidth(), label = { CenteredLabel(R.string.cancel) }) }
         item {
-            Button(
-                onClick = onKeep,
+            FilledTonalButton(
+                onClick = onUnlink,
                 modifier = Modifier.fillMaxWidth(),
-                label = {
-                    Text(
-                        stringResource(R.string.keep),
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center,
-                        maxLines = 2
-                    )
-                }
+                label = { CenteredLabel(R.string.unlink_phone) }
             )
         }
     }
+}
+
+@Composable
+private fun CenteredLabel(textRes: Int) {
+    Text(
+        stringResource(textRes),
+        modifier = Modifier.fillMaxWidth(),
+        textAlign = TextAlign.Center,
+        maxLines = 2
+    )
 }
 
 // ---------------------------------------------------------------- Summary
@@ -1056,23 +1232,32 @@ private fun DiscardDialog(visible: Boolean, onKeep: () -> Unit, onDiscard: () ->
 @Composable
 private fun SummaryScreen(state: WearWorkoutUiState, onSave: () -> Unit, onDiscarded: () -> Unit) {
     val loc = locale()
-    val listState = rememberScalingLazyListState()
+    val listState = rememberScalingLazyListState(initialCenterItemIndex = 0)
     var confirmDiscard by remember { mutableStateOf(false) }
     val summary = state.summary
     val none = "—"
-    ScreenScaffold(
-        scrollState = listState,
-        edgeButton = {
-            EdgeButton(
-                onClick = onSave,
-                enabled = summary.setCount > 0 && !state.isSaving,
-                buttonSize = edgeSize(isLargeScreen())
-            ) {
-                EdgeLabel(stringResource(R.string.save))
-            }
-        }
-    ) { padding ->
-        ScalingLazyColumn(modifier = Modifier.fillMaxSize(), state = listState, contentPadding = padding) {
+    val large = isLargeScreen()
+    var edgePx by remember { mutableIntStateOf(0) }
+    val edgeHeight = edgeHeightDp(edgePx, if (large) 70.dp else 46.dp)
+    val direction = LocalLayoutDirection.current
+    Box(modifier = Modifier.fillMaxSize()) {
+    ScreenScaffold(scrollState = listState) { padding ->
+        ScalingLazyColumn(
+            // The list's own viewport ends at the top of the Save button: rows are clipped there
+            // instead of showing through beside the button, and the last row (Discard) scrolls
+            // clear of it.
+            modifier = Modifier.fillMaxSize().padding(bottom = edgeHeight),
+            state = listState,
+            contentPadding = PaddingValues(
+                start = padding.calculateStartPadding(direction),
+                top = maxOf(padding.calculateTopPadding(), 24.dp),
+                end = padding.calculateEndPadding(direction),
+                bottom = 8.dp
+            ),
+            // The list starts at its top (title under the clock) instead of centring a row in
+            // the shortened viewport, which pushed the title under the time text.
+            autoCentering = null
+        ) {
             item { ListHeader { Text(stringResource(R.string.summary), textAlign = TextAlign.Center) } }
             item {
                 MetricRow(
@@ -1107,6 +1292,21 @@ private fun SummaryScreen(state: WearWorkoutUiState, onSave: () -> Unit, onDisca
             }
         }
     }
+    // Save stays on screen from the first view (spec §4.7) instead of appearing only at the end
+    // of the list. Under 225dp "Сохранить" would break inside the word, so it is a check mark.
+    EdgeButton(
+        onClick = onSave,
+        enabled = summary.setCount > 0 && !state.isSaving,
+        modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { edgePx = it.height },
+        buttonSize = if (large) EdgeButtonSize.Medium else EdgeButtonSize.ExtraSmall
+    ) {
+        if (large) {
+            EdgeLabel(stringResource(R.string.save))
+        } else {
+            Icon(WatchIcons.Check, contentDescription = stringResource(R.string.save))
+        }
+    }
+    }
     DiscardDialog(visible = confirmDiscard, onKeep = { confirmDiscard = false }, onDiscard = {
         confirmDiscard = false
         onDiscarded()
@@ -1115,7 +1315,8 @@ private fun SummaryScreen(state: WearWorkoutUiState, onSave: () -> Unit, onDisca
 
 @Composable
 private fun MetricRow(left: Pair<String, String>, right: Pair<String, String>) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+    // A fixed gap keeps two long labels ("Сред. пульс" / "Макс. пульс") apart on narrow screens.
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Metric(left.first, left.second, Modifier.weight(1f))
         Metric(right.first, right.second, Modifier.weight(1f))
     }
@@ -1149,9 +1350,13 @@ private fun ResultScreen(state: WearWorkoutUiState, onSavedHaptic: () -> Unit, o
     }
     val outcome = when {
         state.saveOutcome == SaveOutcome.Saved -> SaveOutcome.Saved
+        state.saveOutcome == SaveOutcome.Rejected -> SaveOutcome.Rejected
         state.saveOutcome == SaveOutcome.Deferred || timedOut -> SaveOutcome.Deferred
         else -> SaveOutcome.Sending
     }
+    val large = isLargeScreen()
+    var edgePx by remember { mutableIntStateOf(0) }
+    val edgeHeight = edgeHeightDp(edgePx, if (large) 70.dp else 56.dp)
     val savedText = stringResource(R.string.saved_phone)
     when (outcome) {
         SaveOutcome.Sending -> Column(
@@ -1172,29 +1377,48 @@ private fun ResultScreen(state: WearWorkoutUiState, onSavedHaptic: () -> Unit, o
                 durationMillis = SAVED_DIALOG_MS
             )
         }
-        SaveOutcome.Deferred -> Box(modifier = Modifier.fillMaxSize()) {
+        SaveOutcome.Deferred, SaveOutcome.Rejected -> Box(modifier = Modifier.fillMaxSize()) {
+            // Three different reasons, three different texts: the phone is away (waiting helps),
+            // the workout belongs to an account that is not signed in on the phone, or the phone
+            // answered and refused it.
+            val rejected = outcome == SaveOutcome.Rejected
+            val held = !rejected && state.workoutOnHold
             Column(
-                modifier = Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, bottom = 48.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = edgeHeight),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
                 Icon(
-                    WatchIcons.Warning,
+                    // Phone with a slash = "the phone is not reachable" (iphone.slash on Apple
+                    // Watch); a refusal is a real warning.
+                    if (rejected) WatchIcons.Warning else WatchIcons.PhoneSlash,
                     contentDescription = null,
                     tint = WatchColors.Warning,
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(if (rejected || held) 22.dp else 28.dp)
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(if (rejected || held) 2.dp else 6.dp))
                 Text(
-                    stringResource(R.string.send_later),
-                    style = MaterialTheme.typography.titleMedium,
-                    textAlign = TextAlign.Center
+                    stringResource(
+                        when {
+                            rejected -> R.string.send_rejected
+                            held -> R.string.queued_hold_body
+                            else -> R.string.send_later
+                        }
+                    ),
+                    // The two long explanations use the label size so they fit a 192dp screen.
+                    style = if (rejected || held) MaterialTheme.typography.labelSmall
+                    else MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center,
+                    maxLines = 5,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             EdgeButton(
                 onClick = onClose,
-                modifier = Modifier.align(Alignment.BottomCenter),
-                buttonSize = edgeSize(isLargeScreen())
+                modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { edgePx = it.height },
+                buttonSize = edgeSize(large)
             ) {
                 EdgeLabel(stringResource(R.string.done))
             }
