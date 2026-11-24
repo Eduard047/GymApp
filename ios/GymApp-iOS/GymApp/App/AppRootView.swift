@@ -497,6 +497,7 @@ private struct MainTabShell: View {
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @Environment(\.openURL) private var openURL
     @Environment(\.requestReview) private var requestReview
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var selectedTab: Tab
     @State private var workoutPath: [WorkoutRoute] = []
@@ -1803,33 +1804,56 @@ private struct MainTabShell: View {
                     showsAddWorkout = false
                     showsActiveWorkout = true
                 } label: {
-                    HStack(alignment: .center, spacing: 12) {
-                        Image(systemName: "play.circle.fill")
-                            .font(.title2)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(gymText("Continue workout", "Продовжити тренування", "Продолжить тренировку", languageCode: languageCode))
-                                .font(.subheadline.bold())
-                                .fixedSize(horizontal: false, vertical: true)
-                            Text(resumeBannerProgressText(
-                                completed: activeDraft.completedSetCount,
-                                planned: activeDraft.plannedSetCount
-                            ))
-                                .font(.footnote.monospacedDigit())
-                                .foregroundStyle(GymTheme.onHeroSecondary)
+                    let resumeTitle = gymText("Continue workout", "Продовжити тренування", "Продолжить тренировку", languageCode: languageCode)
+                    let resumeProgress = resumeBannerProgressText(
+                        completed: activeDraft.completedSetCount,
+                        planned: activeDraft.plannedSetCount
+                    )
+                    Group {
+                        if dynamicTypeSize.isAccessibilitySize {
+                            // Accessibility sizes: one short line so the pinned bar does not
+                            // cover the screen; the set count stays in the spoken label.
+                            HStack(alignment: .center, spacing: 8) {
+                                Image(systemName: "play.circle.fill")
+                                    .font(.title3)
+                                    .accessibilityHidden(true)
+                                Text(gymText("Continue", "Продовжити", "Продолжить", languageCode: languageCode))
+                                    .font(.subheadline.bold())
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        } else {
+                            HStack(alignment: .center, spacing: 12) {
+                                Image(systemName: "play.circle.fill")
+                                    .font(.title2)
+                                    .accessibilityHidden(true)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(resumeTitle)
+                                        .font(.subheadline.bold())
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Text(resumeProgress)
+                                        .font(.footnote.monospacedDigit())
+                                        .foregroundStyle(GymTheme.onHeroSecondary)
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(GymTheme.onHeroSecondary)
+                                    .accessibilityHidden(true)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
                         }
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(GymTheme.onHeroSecondary)
-                            .accessibilityHidden(true)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(resumeBannerAccessibilityLabel(for: activeDraft))
                 .foregroundStyle(GymTheme.heroAccentText)
                 .background(
                     GymTheme.heroSurface,
@@ -1848,6 +1872,14 @@ private struct MainTabShell: View {
                 .background(GymTheme.background)
             }
         }
+    }
+
+    /// Spoken label for the resume banner: title plus set count, also when the
+    /// accessibility-size layout hides the count.
+    private func resumeBannerAccessibilityLabel(for draft: ActiveWorkoutDraft) -> String {
+        let title = gymText("Continue workout", "Продовжити тренування", "Продолжить тренировку", languageCode: languageCode)
+        let progress = resumeBannerProgressText(completed: draft.completedSetCount, planned: draft.plannedSetCount)
+        return "\(title), \(progress)"
     }
 
     /// "4 of 13 sets" / "4 из 13 подходов" for the resume banner.

@@ -1716,8 +1716,11 @@ struct WorkoutDetailView: View {
                 if activityOnly {
                     // Two fixed columns (2 × 2 for the four imported metrics): an adaptive
                     // 3-column grid truncated «Макс. пульс» values like "158 уд/м…".
+                    // Accessibility sizes use one column so labels do not break mid-word.
                     LazyVGrid(
-                        columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
+                        columns: dynamicTypeSize.isAccessibilitySize
+                            ? [GridItem(.flexible(), spacing: 8)]
+                            : [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
                         spacing: 8
                     ) {
                         if let duration = workout.durationSeconds {

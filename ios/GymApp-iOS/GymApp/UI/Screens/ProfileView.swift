@@ -1190,6 +1190,32 @@ private struct WatchesScreen: View {
                                     .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(GymSecondaryButtonStyle(destructive: true))
+                            // Anchored to the relink button so the iPad / compact popover
+                            // arrow points at the action that opened it.
+                            .confirmationDialog(
+                                garminLinkedToAnotherAccountTitle,
+                                isPresented: Binding(
+                                    get: { pendingGarminRelinkDeviceID == device.id },
+                                    set: { if !$0 { pendingGarminRelinkDeviceID = nil } }
+                                ),
+                                titleVisibility: .visible,
+                                presenting: pendingGarminRelinkDeviceID
+                            ) { deviceID in
+                                Button(garminRelinkActionTitle, role: .destructive) {
+                                    garminPhoneSync.confirmReset(deviceID: deviceID)
+                                }
+                                Button(
+                                    gymText("Cancel", "Скасувати", "Отменить", languageCode: languageCode),
+                                    role: .cancel
+                                ) {}
+                            } message: { _ in
+                                Text(gymText(
+                                    "Relinking erases the workout data stored on the watch for that account. Finish and sync any workout on the watch first.",
+                                    "Повторне прив’язування зітре дані тренувань, збережені на годиннику для того акаунта. Спершу завершіть і синхронізуйте тренування на годиннику.",
+                                    "Повторная привязка сотрёт данные тренировок, сохранённые на часах для того аккаунта. Сначала завершите и синхронизируйте тренировку на часах.",
+                                    languageCode: languageCode
+                                ))
+                            }
                         }
                     }
                     if garminPhoneSync.devices.isEmpty, let device = selectedCloudDevice {
@@ -1223,30 +1249,6 @@ private struct WatchesScreen: View {
                 }
                 .buttonStyle(GymSecondaryButtonStyle())
             }
-        }
-        .confirmationDialog(
-            garminLinkedToAnotherAccountTitle,
-            isPresented: Binding(
-                get: { pendingGarminRelinkDeviceID != nil },
-                set: { if !$0 { pendingGarminRelinkDeviceID = nil } }
-            ),
-            titleVisibility: .visible,
-            presenting: pendingGarminRelinkDeviceID
-        ) { deviceID in
-            Button(garminRelinkActionTitle, role: .destructive) {
-                garminPhoneSync.confirmReset(deviceID: deviceID)
-            }
-            Button(
-                gymText("Cancel", "Скасувати", "Отменить", languageCode: languageCode),
-                role: .cancel
-            ) {}
-        } message: { _ in
-            Text(gymText(
-                "Relinking erases the workout data stored on the watch for that account. Finish and sync any workout on the watch first.",
-                "Повторне прив’язування зітре дані тренувань, збережені на годиннику для того акаунта. Спершу завершіть і синхронізуйте тренування на годиннику.",
-                "Повторная привязка сотрёт данные тренировок, сохранённые на часах для того аккаунта. Сначала завершите и синхронизируйте тренировку на часах.",
-                languageCode: languageCode
-            ))
         }
     }
 
