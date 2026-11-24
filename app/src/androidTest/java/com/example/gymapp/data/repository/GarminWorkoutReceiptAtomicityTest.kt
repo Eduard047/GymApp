@@ -172,6 +172,99 @@ class GarminWorkoutReceiptAtomicityTest {
     }
 
     @Test
+    fun lateArrivalCoveredByPhoneWorkoutWritesReceiptOnly() = runBlocking {
+        withDatabase("garmin-late-dup") { database, repository ->
+            val start = 1_750_000_000_000L
+            val phoneSets = listOf(
+                NamedWorkoutSetDraft("Bench Press", 80.0, 8),
+                NamedWorkoutSetDraft("Squat", 100.0, 5)
+            )
+            // The phone already saved this workout.
+            assertNotNull(
+                repository.createWorkoutSessionFromNamedSets(
+                    date = start,
+                    note = null,
+                    sets = phoneSets,
+                    durationSeconds = 2_400L
+                )
+            )
+
+            // Free activity (no sets) covering the same time: receipt only.
+            val freeNote = "Garmin · Free workout · Duration 39:00 · Gym kcal 210"
+            val freeStart = start + 60_000L
+            val freeItem = ActivityOnlyWorkoutItem(
+                workoutStartedAt = freeStart,
+                durationSeconds = 2_340L,
+                gymCalories = 210.0,
+                garminCalories = 220,
+                averageHeartRate = 120,
+                maximumHeartRate = 160,
+                endingHeartRateZone = 2,
+                note = freeNote
+            )
+            suspend fun receiveFree() = repository.applyGarminCreateWorkout(
+                ownerBinding = ownerBinding,
+                deviceBinding = deviceBinding,
+                pairingGeneration = pairingGeneration,
+                requestId = "late-free-1234567890",
+                payloadDigest = "1".repeat(64),
+                date = freeStart,
+                note = freeNote,
+                sets = emptyList(),
+                durationSeconds = 2_340L,
+                isFreeWorkout = true,
+                activityOnlyWorkout = freeItem
+            )
+            assertEquals(GarminWorkoutApplyResult.Applied, receiveFree())
+            assertEquals(GarminWorkoutApplyResult.AlreadyApplied, receiveFree())
+            assertEquals(1, database.workoutDao().getSessionCount())
+            assertTrue(database.activityOnlyWorkoutDao().getAll().isEmpty())
+            assertTrue(database.garminWorkoutReceiptDao().getProvenanceSessionIds().isEmpty())
+            assertEquals(1, database.garminWorkoutReceiptDao().count())
+
+            // Identical sets: receipt only, no provenance.
+            assertEquals(
+                GarminWorkoutApplyResult.Applied,
+                repository.applyGarminCreateWorkout(
+                    ownerBinding = ownerBinding,
+                    deviceBinding = deviceBinding,
+                    pairingGeneration = pairingGeneration,
+                    requestId = "late-sets-1234567890",
+                    payloadDigest = "2".repeat(64),
+                    date = start + 30_000L,
+                    note = "Garmin",
+                    sets = phoneSets,
+                    durationSeconds = 2_370L
+                )
+            )
+            assertEquals(1, database.workoutDao().getSessionCount())
+            assertTrue(database.garminWorkoutReceiptDao().getProvenanceSessionIds().isEmpty())
+            assertEquals(2, database.garminWorkoutReceiptDao().count())
+
+            // One rep differs: stored next to the phone workout, with provenance.
+            assertEquals(
+                GarminWorkoutApplyResult.Applied,
+                repository.applyGarminCreateWorkout(
+                    ownerBinding = ownerBinding,
+                    deviceBinding = deviceBinding,
+                    pairingGeneration = pairingGeneration,
+                    requestId = "late-diff-1234567890",
+                    payloadDigest = "3".repeat(64),
+                    date = start + 30_000L,
+                    note = "Garmin",
+                    sets = listOf(
+                        NamedWorkoutSetDraft("Bench Press", 80.0, 8),
+                        NamedWorkoutSetDraft("Squat", 100.0, 6)
+                    ),
+                    durationSeconds = 2_370L
+                )
+            )
+            assertEquals(2, database.workoutDao().getSessionCount())
+            assertEquals(1, database.garminWorkoutReceiptDao().getProvenanceSessionIds().size)
+        }
+    }
+
+    @Test
     fun legacyExtendedDigestUpgradesOnlyAnExistingReceiptWithoutRewritingWorkout() = runBlocking {
         withDatabase("garmin-receipt-digest-upgrade") { database, repository ->
             val legacyDigest = "b".repeat(64)
@@ -334,7 +427,8 @@ class GarminWorkoutReceiptAtomicityTest {
                     payloadDigest = "8".repeat(64),
                     date = 1_750_000_030_000L,
                     note = garminNote,
-                    sets = listOf(NamedWorkoutSetDraft("Bench Press", 80.0, 8))
+                    // Same volume, different exercise: identical sets would be skipped as a late duplicate.
+                    sets = listOf(NamedWorkoutSetDraft("Squat", 80.0, 8))
                 )
             )
 
@@ -536,7 +630,8 @@ class GarminWorkoutReceiptAtomicityTest {
                     payloadDigest = index.toString().padStart(64, 'a'),
                     date = 1_750_000_000_000L + index,
                     note = "Garmin",
-                    sets = listOf(NamedWorkoutSetDraft("Bench Press", 80.0, 8))
+                    // Distinct sets: identical overlapping sets would be skipped as a late duplicate.
+                    sets = listOf(NamedWorkoutSetDraft("Bench Press", 80.0, 8 + index))
                 )
                 assertEquals(GarminWorkoutApplyResult.Applied, result)
             }
@@ -781,7 +876,8 @@ class GarminWorkoutReceiptAtomicityTest {
                         payloadDigest = index.toString().padStart(64, 'a'),
                         date = 1_750_000_000_000L + index,
                         note = "Garmin",
-                        sets = listOf(NamedWorkoutSetDraft("Bench Press", 80.0, 8))
+                        // Distinct sets: identical overlapping sets would be skipped as a late duplicate.
+                        sets = listOf(NamedWorkoutSetDraft("Bench Press", 80.0, 8 + index))
                     )
                 )
             }

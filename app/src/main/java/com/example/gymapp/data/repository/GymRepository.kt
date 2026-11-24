@@ -31,6 +31,10 @@ import com.example.gymapp.health.HealthImportPersistResult
 import com.example.gymapp.health.HealthImportRules
 import com.example.gymapp.health.HealthImportSidecarGuard
 import com.example.gymapp.health.HealthImportStore
+import com.example.gymapp.health.LateWatchArrivalDecision
+import com.example.gymapp.health.LateWatchArrivalRule
+import com.example.gymapp.health.LateWatchSet
+import com.example.gymapp.health.LateWatchStoredWorkout
 import com.example.gymapp.health.PhoneDraftWatchOverlap
 import com.example.gymapp.health.StoredWorkoutOverlapCandidate
 import com.example.gymapp.data.entity.GarminWorkoutProvenanceEntity
@@ -4054,6 +4058,12 @@ class GymRepository(
 
             suspend fun persistFreeActivity(): Long? {
                 val item = checkNotNull(activityOnlyWorkout)
+                // A stored workout with sets already covers this activity: no visible row and no
+                // sidecar (cloud reconcile would re-materialise a sidecar as a visible activity).
+                // Evaluated here so a receipt replay decides the same way.
+                if (lateWatchArrivalCovered(item.workoutStartedAt, item.durationSeconds, emptyList())) {
+                    return null
+                }
                 // Before the exact-date collision checks below: an imported Health copy of this
                 // activity must not read as a divergent mirror.
                 removeHealthImportedDuplicates(item.workoutStartedAt, item.durationSeconds)
@@ -4185,15 +4195,21 @@ class GymRepository(
             val sessionId = if (isFreeWorkout) {
                 persistFreeActivity()
             } else {
-                val storedSessionId = createWorkoutSessionFromNamedSets(
-                    date = date,
-                    note = note,
-                    // Digest and receipt handling above used the watch's names; translate only now.
-                    sets = translateGarminWatchNames(sets),
-                    durationSeconds = durationSeconds
-                ) ?: return@withTransaction GarminWorkoutApplyResult.Rejected
-                removeHealthImportedDuplicates(date, durationSeconds)
-                storedSessionId
+                // Digest and receipt handling above used the watch's names; translate only now.
+                val translatedSets = translateGarminWatchNames(sets)
+                if (lateWatchArrivalCovered(date, durationSeconds, translatedSets)) {
+                    // Exact duplicate of a stored workout: receipt only, no provenance row.
+                    null
+                } else {
+                    val storedSessionId = createWorkoutSessionFromNamedSets(
+                        date = date,
+                        note = note,
+                        sets = translatedSets,
+                        durationSeconds = durationSeconds
+                    ) ?: return@withTransaction GarminWorkoutApplyResult.Rejected
+                    removeHealthImportedDuplicates(date, durationSeconds)
+                    storedSessionId
+                }
             }
             receiptDao.insert(
                 GarminWorkoutReceiptEntity(
@@ -4266,6 +4282,9 @@ class GymRepository(
             mutationType = WEAR_MUTATION_CREATE,
             payloadDigest = payloadDigest
         ) {
+            // A stored workout with exactly these sets already covers this late arrival: store
+            // nothing, but report success so the receipt is written and the watch clears its queue.
+            if (lateWatchArrivalCovered(date, durationSeconds, sets)) return@applyWearMutation true
             val stored = createWorkoutSessionFromNamedSets(
                 date = date,
                 note = note,
@@ -4288,6 +4307,61 @@ class GymRepository(
      * (120 s tolerance). Its activity-only sidecar goes with it; the receipt stays so the import
      * never brings it back. Must only be called inside [database]'s transaction.
      */
+    /**
+     * [LateWatchArrivalRule] against the stored workouts overlapping a late watch arrival: true when
+     * one of them already covers it (activity-only arrival vs. a workout with sets, or identical
+     * sets). Read-only; call inside the transaction that writes the arrival's receipt so a replay
+     * decides the same way.
+     */
+    private suspend fun lateWatchArrivalCovered(
+        startMillis: Long,
+        durationSeconds: Long?,
+        sets: List<NamedWorkoutSetDraft>
+    ): Boolean {
+        if (!WorkoutDataLimits.isValidTimestamp(startMillis)) return false
+        val arrivalSeconds = durationSeconds
+            ?.takeIf { it > 0L }
+            ?.coerceAtMost(WorkoutDataLimits.MAX_WORKOUT_DURATION_SECONDS)
+            ?: 0L
+        val endMillis = startMillis + arrivalSeconds * 1_000L
+        val candidateDates = healthImportDao.workoutIntervalsFrom(
+            startMillis - HealthImportRules.OVERLAP_TOLERANCE_MILLIS -
+                WorkoutDataLimits.MAX_WORKOUT_DURATION_SECONDS * 1_000L
+        ).asSequence()
+            .filter { it.startMillis <= endMillis + HealthImportRules.OVERLAP_TOLERANCE_MILLIS }
+            .filter { row ->
+                HealthImportRules.overlaps(
+                    startMillis,
+                    endMillis,
+                    HealthExistingWorkout(row.startMillis, row.durationSeconds)
+                )
+            }
+            .map { it.startMillis }
+            .distinct()
+            .toList()
+        if (candidateDates.isEmpty()) return false
+        val candidates = candidateDates.flatMap { date ->
+            workoutDao.getSessionDetailsAtExactDate(date).map { raw ->
+                val details = sortSessionDetails(raw)
+                LateWatchStoredWorkout(
+                    startMillis = details.session.date,
+                    durationSeconds = details.session.durationSeconds,
+                    sets = details.workoutExercises.flatMap { exercise ->
+                        exercise.sets.map { set ->
+                            LateWatchSet(exercise.exercise.name, set.weight, set.reps)
+                        }
+                    }
+                )
+            }
+        }
+        return LateWatchArrivalRule.decide(
+            arrivalStartMillis = startMillis,
+            arrivalDurationSeconds = durationSeconds,
+            arrivalSets = sets.map { LateWatchSet(it.exerciseName, it.weight, it.reps) },
+            candidates = candidates
+        ) == LateWatchArrivalDecision.Skip
+    }
+
     private suspend fun removeHealthImportedDuplicates(startMillis: Long, durationSeconds: Long?): Int {
         if (durationSeconds == null || durationSeconds <= 0L ||
             !WorkoutDataLimits.isValidTimestamp(startMillis)

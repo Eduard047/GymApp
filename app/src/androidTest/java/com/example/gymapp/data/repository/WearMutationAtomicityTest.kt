@@ -130,6 +130,63 @@ class WearMutationAtomicityTest {
     }
 
     @Test
+    fun lateIdenticalCreateIsAppliedWithoutSecondWorkoutAndDifferingCreateKeepsBoth() = runBlocking {
+        withDatabase("wear-late-dup") { database, repository ->
+            val start = 1_750_000_020_000L
+            val sets = listOf(
+                NamedWorkoutSetDraft("Bench Press", 80.0, 8),
+                NamedWorkoutSetDraft("Bench Press", 82.5, 6)
+            )
+            // The phone already saved this workout.
+            assertNotNull(
+                repository.createWorkoutSessionFromNamedSets(
+                    date = start,
+                    note = null,
+                    sets = sets,
+                    durationSeconds = 1_800L
+                )
+            )
+            val identicalOperation = "123e4567-e89b-42d3-a456-426614174020"
+            suspend fun createIdentical() = repository.applyWearCreateWorkout(
+                ownerId = ownerId,
+                accountGeneration = 1L,
+                operationId = identicalOperation,
+                sourceNodeId = sourceNodeId,
+                payloadDigest = "f".repeat(64),
+                date = start + 60_000L,
+                note = null,
+                sets = listOf(
+                    NamedWorkoutSetDraft(" bench press", 80.0, 8),
+                    NamedWorkoutSetDraft("Bench Press", 82.5, 6)
+                ),
+                durationSeconds = 1_740L
+            )
+            assertEquals(WearMutationApplyResult.Applied, createIdentical())
+            assertNotNull(database.wearMutationDao().get(ownerId, identicalOperation))
+            assertEquals(1, database.workoutDao().getSessionCount())
+            assertEquals(WearMutationApplyResult.AlreadyApplied, createIdentical())
+            assertEquals(1, database.workoutDao().getSessionCount())
+
+            val differing = repository.applyWearCreateWorkout(
+                ownerId = ownerId,
+                accountGeneration = 1L,
+                operationId = "123e4567-e89b-42d3-a456-426614174021",
+                sourceNodeId = sourceNodeId,
+                payloadDigest = "0".repeat(64),
+                date = start + 60_000L,
+                note = null,
+                sets = listOf(
+                    NamedWorkoutSetDraft("Bench Press", 80.0, 8),
+                    NamedWorkoutSetDraft("Bench Press", 82.5, 7)
+                ),
+                durationSeconds = 1_740L
+            )
+            assertEquals(WearMutationApplyResult.Applied, differing)
+            assertEquals(2, database.workoutDao().getSessionCount())
+        }
+    }
+
+    @Test
     fun dailyCreateCapIsADeterministicResultAndStoreFullIsNotAThrow() = runBlocking {
         withDatabase("wear-cap") { database, repository ->
             val sets = listOf(NamedWorkoutSetDraft("Bench Press", 80.0, 8))
