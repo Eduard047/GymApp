@@ -144,15 +144,31 @@ enum HealthImportRules {
         _ session: HealthImportSession,
         existing: [HealthImportExistingWorkout]
     ) -> Bool {
+        overlaps(startMillis: session.startMillis, endMillis: session.endMillis, existing: existing)
+    }
+
+    /// The contract overlap rule for any time window: an existing workout (start plus its
+    /// duration) counts when it is within `overlapToleranceSeconds` of the window.
+    static func overlaps(
+        startMillis: Int64,
+        endMillis: Int64,
+        existing: [HealthImportExistingWorkout]
+    ) -> Bool {
+        existing.contains { overlaps(startMillis: startMillis, endMillis: endMillis, existing: $0) }
+    }
+
+    static func overlaps(
+        startMillis: Int64,
+        endMillis: Int64,
+        existing workout: HealthImportExistingWorkout
+    ) -> Bool {
         let tolerance = Int64(overlapToleranceSeconds) * 1_000
-        return existing.contains { workout in
-            let start = workout.startMillis
-            let length = Int64(max(workout.durationSeconds ?? 0, 0)) * 1_000
-            let (end, overflow) = start.addingReportingOverflow(length)
-            let existingEnd = overflow ? Int64.max : end
-            return saturatingSubtract(start, tolerance) <= session.endMillis &&
-                saturatingAdd(existingEnd, tolerance) >= session.startMillis
-        }
+        let start = workout.startMillis
+        let length = Int64(max(workout.durationSeconds ?? 0, 0)) * 1_000
+        let (end, overflow) = start.addingReportingOverflow(length)
+        let existingEnd = overflow ? Int64.max : end
+        return saturatingSubtract(start, tolerance) <= endMillis &&
+            saturatingAdd(existingEnd, tolerance) >= startMillis
     }
 
     /// Steps 1-5 of the decision order. None of them depends on heart rate or calories, so the

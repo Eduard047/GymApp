@@ -230,6 +230,9 @@ struct ActiveWorkoutView: View {
     /// "Finish workout?" confirmation, shown only when planned sets remain
     /// unrecorded (they are not saved to history). Re-derives the live draft.
     @State private var showingFinishConfirmation = false
+    /// "A watch workout already covers this time": a watch or health-import workout overlaps
+    /// the draft being finished, so saving it too could duplicate the session.
+    @State private var showingWatchOverlapConfirmation = false
     /// Set whose rest row currently carries the one-time "notifications are off" note.
     @State private var restNotificationsNoteSetID: UUID?
     /// The exercise block a "Finish" tap is asking to confirm, when it has
@@ -828,6 +831,23 @@ struct ActiveWorkoutView: View {
             ) {}
         } message: {
             Text(finishConfirmationMessage)
+        }
+        .alert(
+            ActiveWorkoutFinishCopy.watchOverlapTitle(languageCode: gymCurrentLanguageCode()),
+            isPresented: $showingWatchOverlapConfirmation
+        ) {
+            Button(ActiveWorkoutFinishCopy.watchOverlapKeepBothButton(languageCode: gymCurrentLanguageCode())) {
+                if let draft = currentDraft { finish(draft, keepingWatchOverlap: true) }
+            }
+            .keyboardShortcut(.defaultAction)
+            Button(
+                ActiveWorkoutFinishCopy.watchOverlapDiscardButton(languageCode: gymCurrentLanguageCode()),
+                role: .destructive
+            ) {
+                discard()
+            }
+        } message: {
+            Text(ActiveWorkoutFinishCopy.watchOverlapMessage(languageCode: gymCurrentLanguageCode()))
         }
         .task(id: workoutStore.accountStorageKey) {
             reloadCues()
@@ -4511,7 +4531,19 @@ struct ActiveWorkoutView: View {
         )
     }
 
-    private func finish(_ draft: ActiveWorkoutDraft) {
+    /// Saves the draft to history. When a watch or health-import workout already covers its
+    /// time, asks first (keep both or discard the phone workout). A locked commit intent is a
+    /// retry of an already-made decision and is never asked again.
+    private func finish(_ draft: ActiveWorkoutDraft, keepingWatchOverlap: Bool = false) {
+        if !keepingWatchOverlap, draft.commitIntent == nil,
+           ActiveWorkoutWatchOverlap.coveringWorkout(
+               draftStartedAt: draft.startedAt,
+               finishedAt: max(Date(), draft.lastModifiedAt),
+               workouts: workoutStore.workouts
+           ) != nil {
+            showingWatchOverlapConfirmation = true
+            return
+        }
         do {
             let workout = try activeWorkoutStore.finish(
                 draftID: draft.id,

@@ -15,8 +15,73 @@ enum ActiveWorkoutFinishDecision: Equatable {
     }
 }
 
+/// Finishing a phone workout whose time a watch or health-import workout already covers would
+/// save the same session twice. Pure so the rule is unit-tested without the view or the store.
+enum ActiveWorkoutWatchOverlap {
+    /// True for a workout recorded on a watch (Apple Watch, Garmin, Wear OS) or imported from a
+    /// health store (Apple Health, Health Connect). The source is read from the stored note,
+    /// the same way the history rows label it.
+    static func isWatchOrImported(_ workout: WorkoutSession) -> Bool {
+        ActivityWorkoutPresentation.parse(workout.note).source != .unknown
+    }
+
+    /// The first watch or imported workout overlapping the draft's window (start to finish),
+    /// by the Health import overlap rule and its 120 s tolerance. Other workouts are ignored.
+    static func coveringWorkout(
+        draftStartedAt: Date,
+        finishedAt: Date,
+        workouts: [WorkoutSession]
+    ) -> WorkoutSession? {
+        let startMillis = draftStartedAt.gymEpochMilliseconds
+        let endMillis = max(finishedAt.gymEpochMilliseconds, startMillis)
+        return workouts.first { workout in
+            HealthImportRules.overlaps(
+                startMillis: startMillis,
+                endMillis: endMillis,
+                existing: HealthImportExistingWorkout(
+                    startMillis: workout.date.gymEpochMilliseconds,
+                    durationSeconds: workout.durationSeconds
+                )
+            ) && isWatchOrImported(workout)
+        }
+    }
+}
+
 /// Copy of the finish dialogs, ru/uk/en with correct plural forms. Android uses the same wording.
 enum ActiveWorkoutFinishCopy {
+    // MARK: Watch workout overlap
+
+    static func watchOverlapTitle(languageCode: String) -> String {
+        gymText(
+            "A watch workout already covers this time",
+            "На цей час уже є тренування з годинника",
+            "На это время уже есть тренировка с часов",
+            languageCode: languageCode
+        )
+    }
+
+    static func watchOverlapMessage(languageCode: String) -> String {
+        gymText(
+            "Save the phone workout too, or discard it?",
+            "Зберегти й тренування з телефона чи видалити його?",
+            "Сохранить и тренировку с телефона или удалить её?",
+            languageCode: languageCode
+        )
+    }
+
+    static func watchOverlapKeepBothButton(languageCode: String) -> String {
+        gymText("Keep both", "Залишити обидва", "Оставить обе", languageCode: languageCode)
+    }
+
+    static func watchOverlapDiscardButton(languageCode: String) -> String {
+        gymText(
+            "Discard phone workout",
+            "Видалити тренування з телефона",
+            "Удалить тренировку с телефона",
+            languageCode: languageCode
+        )
+    }
+
     // MARK: Finish workout
 
     static func workoutTitle(languageCode: String) -> String {
