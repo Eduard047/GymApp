@@ -808,7 +808,8 @@ extension WatchConnectivityService {
     /// QA audit seed (`-qaWatches`): shows the "Send to Apple Watch" panel for screenshots. DEBUG only.
     func applyQAPreset(_ preset: String) {
         let shown = preset == "a" || preset == "b" || preset == "d"
-        isPaired = shown
+        // "g": Apple Watch paired, GymApp not installed on it.
+        isPaired = shown || preset == "g"
         isWatchAppInstalled = shown
     }
 }

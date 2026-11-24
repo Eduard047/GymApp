@@ -47,7 +47,7 @@ test("iOS Apple Watch card mirrors the Android Wear OS card without an unlink ac
   assert.match(card, /gymText\("Paired", "Прив’язано", "Привязано", languageCode: languageCode\)/);
   assert.match(
     card,
-    /"Plan on the watch, sets and heart rate",\s*"План на годиннику, підходи та пульс",\s*"План на часах, подходы и пульс"/
+    /"Plan on the watch, sets and heart rate",\s*"План на годиннику, підходи й пульс",\s*"План на часах, подходы и пульс"/
   );
   // The system owns Apple Watch pairing: no unlink/unpair action and no destructive button.
   assert.doesNotMatch(card, /[Uu]nlink|[Uu]npair|role: \.destructive/);
@@ -82,10 +82,8 @@ test("iOS Watches cards carry the capability lines and keep their flows", async 
     profile,
     /"Plan on the watch, sets and heart rate",\s*"План на годиннику, підходи й пульс",\s*"План на часах, подходы и пульс"/
   );
-  assert.match(
-    health,
-    /"Imports workouts and heart rate",\s*"Імпортує тренування й пульс",\s*"Импортирует тренировки и пульс"/
-  );
+  // No card subtitle: it repeated the source caption below.
+  assert.doesNotMatch(health, /"Imports workouts and heart rate"/);
   // The source caption names Apple Watch and Apple Health, not the Android brand list.
   assert.match(
     health,

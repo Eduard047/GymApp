@@ -9,14 +9,9 @@ struct HealthDataCard: View {
     var body: some View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
+                // No subtitle: the source caption at the bottom already says what is imported.
                 GymSectionTitle(
-                    title: gymText("Health data", "Дані про здоров’я", "Данные о здоровье", languageCode: languageCode),
-                    supporting: gymText(
-                        "Imports workouts and heart rate",
-                        "Імпортує тренування й пульс",
-                        "Импортирует тренировки и пульс",
-                        languageCode: languageCode
-                    )
+                    title: gymText("Health data", "Дані про здоров’я", "Данные о здоровье", languageCode: languageCode)
                 )
 
                 if !service.isAvailable {

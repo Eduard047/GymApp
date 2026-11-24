@@ -150,6 +150,8 @@ struct ProfileView: View {
         .sheet(isPresented: $showsHealthAppSheet) {
             HealthAppRecommendationSheet(languageCode: languageCode)
                 .gymSheetPresentation(.standard)
+                // Opaque: the translucent default let Profile bleed through.
+                .presentationBackground(GymTheme.surface)
         }
 #if DEBUG
         // QA audit (`-qaOpen watches|healthapp`): opens the pushed Watches screen or the HealthApp sheet.
@@ -163,10 +165,18 @@ struct ProfileView: View {
             .gymTopBannerInset()
         }
         .task {
-            guard let open = QAAuditSeed.open else { return }
-            try? await Task.sleep(for: .milliseconds(900))
-            if open == "watches" { qaShowsWatches = true }
-            if open == "healthapp" { showsHealthAppSheet = true }
+            // Once per launch; retried while the view is still settling (seed import,
+            // route switch) so a push requested before the stack is ready is not lost.
+            guard let open = QAAuditSeed.open, !QAAuditSeed.didOpen else { return }
+            // Re-asserted for ~6 s (not just once): a late seed import or route switch
+            // can pop the stack / dismiss the sheet right after the first push.
+            for _ in 0..<12 {
+                try? await Task.sleep(for: .milliseconds(500))
+                if Task.isCancelled { return }
+                if open == "watches", !qaShowsWatches { qaShowsWatches = true }
+                if open == "healthapp", !showsHealthAppSheet { showsHealthAppSheet = true }
+            }
+            QAAuditSeed.didOpen = true
         }
 #endif
         .alert(item: $activeAlert, content: makeAlert)
@@ -1118,6 +1128,13 @@ private struct WatchesScreen: View {
             default: break
             }
         }
+        // QA audit (`-qaRelinkDialog 1` with `-qaWatches h`): presents the relink confirmation.
+        .task {
+            guard QAAuditSeed.wantsRelinkDialog else { return }
+            try? await Task.sleep(for: .milliseconds(1_800))
+            pendingGarminRelinkDeviceID = garminPhoneSync.devices
+                .first(where: { $0.linkedToAnotherAccount })?.id
+        }
 #endif
         }
         .navigationTitle(gymText("Watches", "Годинники", "Часы", languageCode: languageCode))
@@ -1239,21 +1256,24 @@ private struct WatchesScreen: View {
         let installed = appleWatchLinked(appleWatch)
         return GymPanel {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    GymSectionTitle(
-                        title: "Apple Watch",
-                        supporting: gymText(
-                            "Plan on the watch, sets and heart rate",
-                            "План на годиннику, підходи та пульс",
-                            "План на часах, подходы и пульс",
-                            languageCode: languageCode
-                        )
+                // The badge sits on the title line only, so the capability line keeps
+                // the full card width (it wrapped beside the badge in UK).
+                GymSectionTitle(
+                    title: "Apple Watch",
+                    supporting: gymText(
+                        "Plan on the watch, sets and heart rate",
+                        "План на годиннику, підходи й пульс",
+                        "План на часах, подходы и пульс",
+                        languageCode: languageCode
                     )
-                    Spacer(minLength: 4)
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .topTrailing) {
                     if installed {
                         Text(gymText("Paired", "Прив’язано", "Привязано", languageCode: languageCode))
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(GymTheme.primary)
+                            .padding(.top, 4)
                     }
                 }
                 .accessibilityElement(children: .combine)

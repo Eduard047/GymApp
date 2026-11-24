@@ -3802,6 +3802,17 @@ extension GarminPhoneSyncService {
                 "План сохранён на iPhone. Откройте GymApp на часах, чтобы получить его.",
                 languageCode: language
             )
+        case "h":
+            // The watch is linked to another GymApp account: warning row + Relink button.
+            devices = [
+                GarminPhoneDeviceSummary(
+                    id: "qa5",
+                    name: "Forerunner 265",
+                    model: "Forerunner 265",
+                    connected: true,
+                    linkedToAnotherAccount: true
+                )
+            ]
         default:
             devices = []
         }

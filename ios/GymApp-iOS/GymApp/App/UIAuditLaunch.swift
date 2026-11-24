@@ -274,6 +274,9 @@ extension AppState {
 
 /// DEBUG-only launch arguments for the wearables QA audit:
 ///   -qaWatches a|b|c|d|e|f   forces the Garmin / Health data / Apple Watch states
+///   -qaWatches g             Apple Watch paired, GymApp not installed on it
+///   -qaWatches h             Garmin watch linked to another account (Relink row)
+///   -qaRelinkDialog 1        with `h`: presents the relink confirmation dialog
 ///   -qaOpen watches|healthapp opens the Watches screen or the HealthApp sheet from Profile
 ///   -qaHealthImport 1        adds one Apple Health workout through the importer's own store call
 enum QAAuditSeed {
@@ -282,6 +285,9 @@ enum QAAuditSeed {
     static var wantsHealthImport: Bool { UIAuditLaunch.value(for: "-qaHealthImport") != nil }
     /// -qaScroll devices|health|bottom|garmin: scrolls Profile / Watches / the plan editor for a screenshot.
     static var scroll: String? { UIAuditLaunch.value(for: "-qaScroll") }
+    static var wantsRelinkDialog: Bool { UIAuditLaunch.value(for: "-qaRelinkDialog") != nil }
+    /// Set once `-qaOpen` has pushed/presented its target, so it fires once per launch.
+    @MainActor static var didOpen = false
 }
 
 extension AppState {
