@@ -1,5 +1,6 @@
 package com.example.gymapp.data.repository
 
+import com.example.gymapp.garmin.parseGarminWorkoutMetrics
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.nio.ByteBuffer
@@ -45,6 +46,37 @@ data class ActivityOnlyWorkoutSyncBaselineRecord(
     val itemsJson: String,
     val itemsDigest: String
 )
+
+/**
+ * Item for an activity-only workout that has no stored sidecar row (for example after a backup
+ * restore, which carries only date, duration, and note). Mirrors iOS
+ * `ActivityOnlyWorkoutCloudItem.localItems`: the metrics come from the Garmin workout note, Gym
+ * calories default to 0, and every other metric stays absent when the note does not carry it.
+ * A heart rate outside the sidecar contract (iOS parser rejects > 240) drops the whole summary,
+ * as iOS does, so the derived item always passes [requireValidActivityOnlyWorkoutItem].
+ */
+internal fun activityOnlyWorkoutItemFromNote(
+    workoutStartedAt: Long,
+    durationSeconds: Long,
+    note: String?
+): ActivityOnlyWorkoutItem {
+    val metrics = note
+        ?.let(::parseGarminWorkoutMetrics)
+        ?.takeUnless { parsed ->
+            listOfNotNull(parsed.averageHeartRate, parsed.maximumHeartRate)
+                .any { it !in 1..MAX_ACTIVITY_ONLY_HEART_RATE }
+        }
+    return ActivityOnlyWorkoutItem(
+        workoutStartedAt = workoutStartedAt,
+        durationSeconds = durationSeconds,
+        gymCalories = (metrics?.gymCalories ?: 0).toDouble(),
+        garminCalories = metrics?.garminCalories,
+        averageHeartRate = metrics?.averageHeartRate,
+        maximumHeartRate = metrics?.maximumHeartRate,
+        endingHeartRateZone = metrics?.endingHeartRateZone,
+        note = note
+    )
+}
 
 /**
  * Garmin computes calories as a floating-point accumulator while the owner-private RPC stores

@@ -901,10 +901,9 @@ class GymRepository(
             }
             val stored = byStartedAt[summary.session.date]
             byStartedAt[summary.session.date] = if (stored == null) {
-                ActivityOnlyWorkoutItem(
+                activityOnlyWorkoutItemFromNote(
                     workoutStartedAt = summary.session.date,
                     durationSeconds = duration,
-                    gymCalories = 0.0,
                     note = summary.session.note
                 )
             } else {
@@ -1126,10 +1125,9 @@ class GymRepository(
                 }
                 val stored = byStartedAt[details.session.date]
                 byStartedAt[details.session.date] = if (stored == null) {
-                    ActivityOnlyWorkoutItem(
+                    activityOnlyWorkoutItemFromNote(
                         workoutStartedAt = details.session.date,
                         durationSeconds = duration,
-                        gymCalories = 0.0,
                         note = details.session.note
                     )
                 } else {
