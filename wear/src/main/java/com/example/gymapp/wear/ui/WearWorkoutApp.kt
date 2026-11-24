@@ -16,7 +16,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -48,6 +51,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.takeOrElse
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.text.style.LineBreak
@@ -55,6 +60,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
@@ -69,6 +76,9 @@ import androidx.wear.compose.material3.EdgeButton
 import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.FilledTonalButton
 import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.LocalContentColor
+import androidx.wear.compose.material3.LocalTextConfiguration
+import androidx.wear.compose.material3.LocalTextStyle
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.PickerGroup
@@ -367,15 +377,51 @@ private fun NavHostController.goToRoot(route: String) {
  */
 @Composable
 private fun EdgeLabel(text: String, singleLine: Boolean = false) {
+    if (singleLine) {
+        // At a large text size the one word steps down instead of ending in "Запис…".
+        FitText(text, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center)
+        return
+    }
     Text(
         text = text,
-        style = if (singleLine) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+        style = MaterialTheme.typography.labelMedium,
         textAlign = TextAlign.Center,
-        maxLines = if (singleLine) 1 else 2,
-        softWrap = !singleLine,
+        maxLines = 2,
         overflow = TextOverflow.Ellipsis
     )
 }
+
+/**
+ * One line that steps its type size down when it does not fit, instead of breaking a word
+ * ("Продолжит / ь") or ending in an ellipsis. When the line fits (the default text size) it is
+ * drawn at [style]'s own size, exactly like [Text].
+ */
+@Composable
+private fun FitText(
+    text: String,
+    modifier: Modifier = Modifier,
+    style: TextStyle = LocalTextStyle.current,
+    textAlign: TextAlign = LocalTextConfiguration.current.textAlign ?: TextAlign.Unspecified,
+    color: Color = Color.Unspecified
+) {
+    val textColor = color.takeOrElse { style.color.takeOrElse { LocalContentColor.current } }
+    val maxSize = style.fontSize
+    BasicText(
+        text = text,
+        modifier = modifier,
+        style = style.copy(color = textColor, textAlign = textAlign),
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        autoSize = if (maxSize.isSpecified && maxSize > FIT_TEXT_MIN_SIZE) {
+            TextAutoSize.StepBased(minFontSize = FIT_TEXT_MIN_SIZE, maxFontSize = maxSize, stepSize = 0.5.sp)
+        } else {
+            null
+        }
+    )
+}
+
+private val FIT_TEXT_MIN_SIZE = 10.sp
 
 /** Height the edge button really takes, so the content above it is never drawn under it. */
 @Composable
@@ -418,6 +464,10 @@ private fun isLargeScreen(): Boolean = LocalConfiguration.current.screenWidthDp 
 /** Square and short rectangular screens: less height than the smallest round one. */
 @Composable
 private fun isShortScreen(): Boolean = LocalConfiguration.current.screenHeightDp < 190
+
+/** The user picked a larger text size (Settings › Display › Font size, 1.15 and up). */
+@Composable
+private fun isLargeText(): Boolean = LocalDensity.current.fontScale >= 1.15f
 
 @Composable
 private fun locale(): Locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
@@ -635,6 +685,9 @@ private fun DashboardScreen(
     val textColor = if (isAmbient) WatchColors.TextSecondary else WatchColors.Text
     val large = isLargeScreen()
     val short = isShortScreen()
+    // Under 225dp a large text size makes the stack taller than the space above the edge
+    // button; the numbers drop one numeral step so the set line and Undo stay clear of it.
+    val compactType = !large && isLargeText()
     var edgePx by remember { mutableIntStateOf(0) }
     val edgeButtonSize = when {
         resting -> if (large) EdgeButtonSize.Small else EdgeButtonSize.ExtraSmall
@@ -665,7 +718,7 @@ private fun DashboardScreen(
             verticalArrangement = Arrangement.Center
         ) {
             HeartRateRow(state = state, isAmbient = isAmbient)
-            if (!resting) Spacer(Modifier.height(6.dp))
+            if (!resting && !compactType) Spacer(Modifier.height(6.dp))
             if (resting) {
                 Text(
                     text = stringResource(if (undoOpen) R.string.set_saved else R.string.rest),
@@ -677,7 +730,7 @@ private fun DashboardScreen(
                 val restLabel = stringResource(R.string.a11y_rest, minutes, seconds)
                 Text(
                     text = WorkoutMath.formatDuration(state.restRemainingSeconds.toLong()),
-                    style = (if (short) MaterialTheme.typography.numeralSmall
+                    style = (if (short || compactType) MaterialTheme.typography.numeralSmall
                     else MaterialTheme.typography.numeralMedium).tabular(),
                     color = textColor,
                     maxLines = 1,
@@ -735,7 +788,7 @@ private fun DashboardScreen(
                 )
                 Text(
                     text = hero,
-                    style = (if (hero.length > 11) MaterialTheme.typography.numeralExtraSmall
+                    style = (if (hero.length > 11 || compactType) MaterialTheme.typography.numeralExtraSmall
                     else MaterialTheme.typography.numeralSmall).tabular(),
                     color = textColor,
                     maxLines = 1,
@@ -1051,9 +1104,14 @@ private fun ExerciseChip(
 /** One wheel row of a fixed height: the current value large, its neighbours small and dim. */
 @Composable
 private fun PickerValue(text: String, current: Boolean, columnSelected: Boolean, rowHeight: Dp) {
+    // At a large text size the current value's line is taller than its row; clamped to the row,
+    // its bottom (the comma's tail in "62,5") was cut off and read as "62.5". It keeps its own
+    // height and overflows the row evenly instead.
+    val unclamped = current && isLargeText()
     Box(modifier = Modifier.fillMaxWidth().height(rowHeight), contentAlignment = Alignment.Center) {
         Text(
             text = text,
+            modifier = if (unclamped) Modifier.wrapContentHeight(unbounded = true) else Modifier,
             style = (if (current) MaterialTheme.typography.displaySmall else MaterialTheme.typography.titleMedium).tabular(),
             color = when {
                 current && columnSelected -> WatchColors.Accent
@@ -1164,7 +1222,8 @@ private fun PauseScreen(
                     onClick = onResume,
                     modifier = Modifier.fillMaxWidth(),
                     icon = { Icon(WatchIcons.Play, contentDescription = null) },
-                    label = { Text(stringResource(R.string.resume)) }
+                    // One word: it steps down at a large text size instead of breaking ("Продолжит / ь").
+                    label = { FitText(stringResource(R.string.resume)) }
                 )
             }
             item {
@@ -1174,7 +1233,7 @@ private fun PauseScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                     icon = { Icon(WatchIcons.Check, contentDescription = null) },
-                    label = { Text(stringResource(R.string.finish)) }
+                    label = { FitText(stringResource(R.string.finish)) }
                 )
             }
             item {
@@ -1387,8 +1446,14 @@ private data class SummaryCell(
 
 @Composable
 private fun MetricRow(left: SummaryCell, right: SummaryCell) {
+    // A large text size widens the cells into the round bezel near the top and bottom of the
+    // list ("Подходь"); an extra side inset keeps them inside it.
+    val inset = if (LocalConfiguration.current.isScreenRound && isLargeText()) 8.dp else 0.dp
     // A fixed gap keeps two long labels ("Сред. пульс" / "Макс. пульс") apart on narrow screens.
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = inset),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
         Metric(left, Modifier.weight(1f))
         Metric(right, Modifier.weight(1f))
     }
@@ -1406,13 +1471,17 @@ private fun Metric(cell: SummaryCell, modifier: Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(value, style = MaterialTheme.typography.titleLarge.tabular(), maxLines = 1)
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = WatchColors.TextSecondary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        if (isLargeText()) {
+            FitText(label, style = MaterialTheme.typography.labelSmall, color = WatchColors.TextSecondary)
+        } else {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = WatchColors.TextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
