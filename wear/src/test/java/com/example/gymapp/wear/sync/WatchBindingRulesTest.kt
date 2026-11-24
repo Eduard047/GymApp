@@ -348,4 +348,61 @@ class WatchBindingRulesTest {
         assertFalse(WatchBindingRules.pinnedPhoneReachable(binding(owner = null), capability, setOf("phone-1")))
         assertFalse(WatchBindingRules.pinnedPhoneReachable(null, capability, setOf("phone-1")))
     }
+
+    @Test
+    fun liveWorkoutOfDeletedOwnerIsDropped() {
+        val day = 24L * 60 * 60 * 1000
+        val now = 100L * day
+        val deletedAt = now - 1_000L
+        assertTrue(WatchBindingRules.shouldDropForDeletedOwner(ownerA, deletedAt, ownerA, deletedAt - day, now))
+        // Started at the very moment of the deletion still belongs to the deleted owner.
+        assertTrue(WatchBindingRules.shouldDropForDeletedOwner(ownerA, deletedAt, ownerA, deletedAt, now))
+        assertTrue(
+            WatchBindingRules.shouldDropForDeletedOwner(
+                ownerA, now - WatchBindingRules.DELETED_OWNER_MARKER_TTL_MS, ownerA, now - 40L * day, now
+            )
+        )
+    }
+
+    @Test
+    fun workoutOfAnotherOwnerOrWithoutMarkerIsKept() {
+        val day = 24L * 60 * 60 * 1000
+        val now = 100L * day
+        val started = now - 2 * day
+        assertFalse(WatchBindingRules.shouldDropForDeletedOwner(ownerA, now - 1L, ownerB, started, now))
+        assertFalse(WatchBindingRules.shouldDropForDeletedOwner(null, now - 1L, ownerA, started, now))
+        assertFalse(WatchBindingRules.shouldDropForDeletedOwner(ownerA, now - 1L, null, started, now))
+        assertFalse(WatchBindingRules.shouldDropForDeletedOwner(ownerA, 0L, ownerA, started, now))
+        assertFalse(WatchBindingRules.shouldDropForDeletedOwner(ownerA, now - 1L, ownerA, null, now))
+        // A stale marker (beyond the cap) no longer drops anything.
+        assertFalse(
+            WatchBindingRules.shouldDropForDeletedOwner(
+                ownerA, now - WatchBindingRules.DELETED_OWNER_MARKER_TTL_MS - 1L, ownerA, now - 40L * day, now
+            )
+        )
+    }
+
+    @Test
+    fun workoutStartedAfterDeletionIsKept() {
+        val day = 24L * 60 * 60 * 1000
+        val now = 100L * day
+        val deletedAt = now - day
+        // Same owner id re-linked (local profile re-created under the same name), new workout.
+        assertFalse(WatchBindingRules.shouldDropForDeletedOwner(ownerA, deletedAt, ownerA, deletedAt + 1L, now))
+        assertFalse(WatchBindingRules.shouldDropForDeletedOwner(ownerA, deletedAt, ownerA, now, now))
+    }
+
+    @Test
+    fun sameOwnerReboundAfterDeletionClearsMarkerAndKeepsWork() {
+        val day = 24L * 60 * 60 * 1000
+        val now = 100L * day
+        val deletedAt = now - day
+        assertTrue(WatchBindingRules.deletedOwnerMarkerSuperseded(ownerA, ownerA))
+        assertFalse(WatchBindingRules.deletedOwnerMarkerSuperseded(ownerA, ownerB))
+        assertFalse(WatchBindingRules.deletedOwnerMarkerSuperseded(null, ownerA))
+        assertFalse(WatchBindingRules.deletedOwnerMarkerSuperseded(ownerA, null))
+        // Once superseded the marker is gone: even work from before the deletion is not dropped.
+        val marker: String? = ownerA.takeUnless { WatchBindingRules.deletedOwnerMarkerSuperseded(ownerA, ownerA) }
+        assertFalse(WatchBindingRules.shouldDropForDeletedOwner(marker, deletedAt, ownerA, deletedAt - day, now))
+    }
 }

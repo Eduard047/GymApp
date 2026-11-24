@@ -37,6 +37,37 @@ enum class BindingStateDecision { Reject, Unbind, Unlink }
  * pinned phone is newer than what it already holds.
  */
 object WatchBindingRules {
+    /** The cap only keeps a stale marker from living forever. */
+    const val DELETED_OWNER_MARKER_TTL_MS = 30L * 24 * 60 * 60 * 1000
+
+    /**
+     * The workout in memory was recorded for an owner the phone has since deleted: it has nowhere
+     * to go and is dropped. The same owner id can come back (a local profile re-created under the
+     * same name), so only work started before the deletion is dropped; work started later belongs
+     * to the new binding and is kept.
+     */
+    fun shouldDropForDeletedOwner(
+        markerOwnerId: String?,
+        markerDeletedAtMs: Long,
+        workOwnerId: String?,
+        workStartedAtMs: Long?,
+        nowMs: Long
+    ): Boolean =
+        markerOwnerId != null &&
+            workOwnerId != null &&
+            markerOwnerId == workOwnerId &&
+            markerDeletedAtMs > 0L &&
+            workStartedAtMs != null &&
+            workStartedAtMs <= markerDeletedAtMs &&
+            nowMs - markerDeletedAtMs <= DELETED_OWNER_MARKER_TTL_MS
+
+    /**
+     * A new binding for the deleted owner id (the unlink cleared the old one, so any binding
+     * established now is a re-link) ends the marker: that owner exists again.
+     */
+    fun deletedOwnerMarkerSuperseded(markerOwnerId: String?, newBindingOwnerId: String?): Boolean =
+        markerOwnerId != null && markerOwnerId == newBindingOwnerId
+
     fun heldWorkState(bindingOwnerId: String?, workOwnerId: String?, hasWork: Boolean): HeldWorkState = when {
         !hasWork -> HeldWorkState.None
         bindingOwnerId == null -> HeldWorkState.HeldUnbound

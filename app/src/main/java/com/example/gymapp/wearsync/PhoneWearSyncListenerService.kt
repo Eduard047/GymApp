@@ -232,8 +232,8 @@ class PhoneWearSyncListenerService : WearableListenerService() {
         // The pin is the watch node (checked by authorizeSource); the owner is whichever account is
         // active on the phone. A message stamped with another owner/generation is stale: it is not
         // applied and NOT acknowledged, so the watch never deletes it on the strength of a
-        // rejection. (The watch drops other-owner work itself when it rebinds; same-owner work is
-        // re-stamped with the new generation and retried.)
+        // rejection. (The watch holds other-owner work and sends it only when that owner is bound
+        // again; same-owner work is re-stamped with the new generation and retried.)
         if (
             session == null ||
             binding.signedOut ||

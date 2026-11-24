@@ -316,6 +316,7 @@ class WearWorkoutViewModel(
 
     init {
         restoreWorkout()
+        dropWorkoutOfDeletedOwner()
         applyPendingWorkoutPlanFromSync()
         viewModelScope.launch {
             WatchPlanStorage.observe(appContext).collect { rawPlan ->
@@ -655,7 +656,7 @@ class WearWorkoutViewModel(
         }.also { finishedSnapshot = it }
         if (clock == null) clock = WorkoutClock(startedAt = workoutStartedAt)
         // On disk as "finished" before anything is sent, so no outcome below can lose it.
-        persistDraft(durable = true)
+        if (!persistDraft(durable = true)) return
         if (submittedFullBinding == null) {
             // The owner of this workout is not bound right now (signed out, another account,
             // not linked): keep the workout queued and on hold, like a failed send.
@@ -859,8 +860,10 @@ class WearWorkoutViewModel(
      * Writes the workout to disk. Called after every change that would otherwise be lost with
      * the process: a set, the start, a pause, the exercise, the frozen result of Save.
      */
-    private fun persistDraft(durable: Boolean) {
-        val running = clock ?: return
+    private fun persistDraft(durable: Boolean): Boolean {
+        // The phone deleted this workout's owner meanwhile: drop it instead of saving it again.
+        if (dropWorkoutOfDeletedOwner()) return false
+        val running = clock ?: return true
         val draft = WatchWorkoutDraft(
             draftId = draftInstanceId,
             startedAt = running.startedAt,
@@ -879,6 +882,36 @@ class WearWorkoutViewModel(
         runCatching {
             WatchWorkoutDraftStorage.save(appContext, workOwnerId, draft, durable)
         }
+        return true
+    }
+
+    /**
+     * The listener marks an owner the phone deleted (unlink with reason account_deleted) and drops
+     * its stored work. A live workout of that owner still in memory is dropped here the same way:
+     * tracking stops, the workout is gone, and nothing is saved again for the deleted owner.
+     */
+    private fun dropWorkoutOfDeletedOwner(): Boolean {
+        val owner = workOwnerId ?: return false
+        val marker = runCatching {
+            com.example.gymapp.wear.sync.WatchDeletedOwnerMarker.load(appContext)
+        }.getOrNull() ?: return false
+        val drop = com.example.gymapp.wear.sync.WatchBindingRules.shouldDropForDeletedOwner(
+            markerOwnerId = marker.ownerId,
+            markerDeletedAtMs = marker.deletedAtMs,
+            workOwnerId = owner,
+            workStartedAtMs = clock?.startedAt,
+            nowMs = System.currentTimeMillis()
+        )
+        if (!drop) return false
+        // Only the deleted owner's work; anything stored for another owner stays.
+        runCatching {
+            if (WatchPendingWorkoutStorage.heldOwnerId(appContext) == owner) WatchPendingWorkoutStorage.clear(appContext)
+        }
+        runCatching {
+            if (WatchWorkoutDraftStorage.heldOwnerId(appContext) == owner) WatchWorkoutDraftStorage.clear(appContext)
+        }
+        resetAccountScopedEditor()
+        return true
     }
 
     /** Stops clock, rest, undo and HR, but keeps the sets and start time (queued workout). */
@@ -991,6 +1024,7 @@ class WearWorkoutViewModel(
      * (only Discard does that); what belongs to the previous account's view is dropped.
      */
     private fun onBindingIdentityChanged() {
+        if (dropWorkoutOfDeletedOwner()) return
         if (!hasWorkInMemory()) {
             resetAccountScopedEditor()
             return

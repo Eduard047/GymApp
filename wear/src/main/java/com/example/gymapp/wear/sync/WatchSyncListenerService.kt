@@ -142,6 +142,9 @@ class WatchSyncListenerService : WearableListenerService() {
                 authorityEpoch = envelope.authorityEpoch,
                 sentAt = envelope.sentAt
             )
+            // A new binding for an owner id the phone deleted earlier (e.g. a local profile
+            // re-created under the same name): that owner exists again, its new work is kept.
+            runCatching { WatchDeletedOwnerMarker.clearIfSuperseded(applicationContext, envelope.ownerId) }
         }
         app.repository.replaceSessionsFromSync(payload.sessions)
         WatchExerciseCatalogStorage.save(applicationContext, payload.exerciseCatalog)
@@ -220,6 +223,12 @@ class WatchSyncListenerService : WearableListenerService() {
             BindingStateDecision.Unlink -> {
                 // The owner was deleted on the phone: its held work has nowhere to go. Only this
                 // owner's work is dropped; work held for another owner stays.
+                // The marker comes first: an open app holding this owner's live workout in memory
+                // sees it before the binding goes and drops the workout instead of saving it again.
+                val deletedOwnerId = binding.ownerId.takeIf { state.accountDeleted }
+                if (deletedOwnerId != null) {
+                    runCatching { WatchDeletedOwnerMarker.record(applicationContext, deletedOwnerId) }
+                }
                 if (state.accountDeleted && binding.ownerId != null && heldWorkOwnerId() == binding.ownerId) {
                     RestEndAlarm.cancel(applicationContext)
                     WatchWorkoutDraftStorage.clear(applicationContext)
