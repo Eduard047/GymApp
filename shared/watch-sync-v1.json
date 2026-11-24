@@ -101,8 +101,8 @@
     "requestId known with a different digest: nack conflict.",
     "More than maximumReceiptsPerHour receipts in the last hour: nack rate-limited.",
     "Write the pending receipt durably before the store write; ack only after the workout is stored and the receipt is committed durably. Store validation error -> nack invalid; persistence error -> nack storage.",
-    "Sets present -> WorkoutStore.createWorkout(date:note:namedSets:durationSeconds:); no sets -> createActivityWorkout(date:note:durationSeconds:).",
-    "The import never consults Health import receipts or the Health overlap rule; it never skips a valid watch workout because another workout overlaps it."
+    "Sets present -> WorkoutStore.createWorkout(date:note:namedSets:durationSeconds:); no sets (time-only) -> createActivityWorkout(date:note:durationSeconds:), stored as an activity-only workout with its explicit metrics (duration, calories, heart rate).",
+    "The import never skips a valid watch workout because another workout overlaps it. In the same write, a watch workout replaces an overlapping Health-imported workout: one that is activity-only, carries a Health import receipt for its start, whose note still starts with the Health import note prefix, and that overlaps the watch workout by the Health import overlap rule (overlapToleranceSeconds). That workout and its activity sidecar are removed; the Health import receipt stays so the import never brings it back. A user-edited note (prefix gone) or a non-overlapping workout is kept. Both clients apply this to Garmin and Wear OS / Apple Watch workouts."
   ],
   "accountBinding": {
     "cloud": "sha256hex(\"gymapp-watch-account/v1\\u0000\" + lowercased cloud user UUID)",

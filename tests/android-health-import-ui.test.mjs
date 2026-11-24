@@ -150,7 +150,8 @@ test("the rationale screen reads its text from resources", () => {
   assert.doesNotMatch(rationale, /getIdentifier/);
 });
 
-test("disconnect revokes permissions and stops the opt-in", () => {
-  assert.match(viewModel, /revokeAllPermissions\(\)/);
+test("disconnect stops only this account's opt-in and never revokes the app-wide permission", () => {
+  assert.doesNotMatch(viewModel, /revokeAllPermissions/);
   assert.match(viewModel, /setEnabled\(false\)/);
+  assert.match(viewModel, /fun healthConnectSettingsIntent\(\)/);
 });

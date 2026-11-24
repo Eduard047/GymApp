@@ -87,7 +87,13 @@ internal data class HealthImportSession(
     val exerciseType: String?,
     val sourceId: String?,
     val kilocalories: Double? = null,
-    val heartRateSamples: List<HeartRateSample> = emptyList()
+    val heartRateSamples: List<HeartRateSample> = emptyList(),
+    /**
+     * False when the heart-rate series could not be read in full (page or sample cap hit). An
+     * average or maximum of a truncated series would be wrong, so [HealthImportRules.build]
+     * then stores no heart rate at all.
+     */
+    val heartRateComplete: Boolean = true
 )
 
 internal data class HealthExistingWorkout(val startMillis: Long, val durationSeconds: Long?)
@@ -227,6 +233,33 @@ internal object HealthImportRules {
             existingEnd + OVERLAP_TOLERANCE_MILLIS >= startMillis
     }
 
+    /**
+     * Whether a stored workout is a Health-imported copy that a watch workout covering
+     * [watchStartMillis]..[watchEndMillis] replaces (parity with iOS removeHealthImportedDuplicates).
+     * All must hold: activity-only (no exercises, duration > 0); a Health import receipt names its
+     * start; its note still starts with [store]'s note prefix (a user-edited note keeps it); its
+     * activity sidecar, when present, still has the same duration; and it overlaps the watch
+     * workout by [overlaps] (OVERLAP_TOLERANCE_SECONDS).
+     */
+    fun isReplaceableByWatchWorkout(
+        store: HealthImportStore,
+        workoutStartMillis: Long,
+        workoutDurationSeconds: Long?,
+        workoutNote: String?,
+        hasExercises: Boolean,
+        hasReceipt: Boolean,
+        sidecarDurationSeconds: Long?,
+        watchStartMillis: Long,
+        watchEndMillis: Long
+    ): Boolean {
+        val duration = workoutDurationSeconds ?: return false
+        if (hasExercises || duration <= 0L || !hasReceipt) return false
+        if (workoutNote?.startsWith(store.notePrefix) != true) return false
+        if (sidecarDurationSeconds != null && sidecarDurationSeconds != duration) return false
+        if (watchEndMillis <= watchStartMillis) return false
+        return overlaps(watchStartMillis, watchEndMillis, HealthExistingWorkout(workoutStartMillis, duration))
+    }
+
     /** Maps a session that passed [screen] to the activity-only workout that is stored. */
     fun build(
         store: HealthImportStore,
@@ -236,7 +269,7 @@ internal object HealthImportRules {
         val durationSeconds = checkNotNull(durationSeconds(session)) {
             "Health import session has an invalid interval."
         }
-        val plausible = session.heartRateSamples.filter { sample ->
+        val plausible = if (!session.heartRateComplete) emptyList() else session.heartRateSamples.filter { sample ->
             sample.timeMillis in session.startMillis..session.endMillis &&
                 sample.bpm in MIN_PLAUSIBLE_BPM..MAX_PLAUSIBLE_BPM
         }

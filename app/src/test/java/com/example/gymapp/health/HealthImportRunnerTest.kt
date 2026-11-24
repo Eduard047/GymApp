@@ -267,4 +267,48 @@ class HealthImportRunnerTest {
         assertEquals(listOf("health_connect:ok"), persistence.persisted.map { it.second })
         assertEquals(1, source.detailLoads)
     }
+
+    @Test
+    fun failedDetailReadSkipsOnlyThatCandidateWithoutReceipt() = runBlocking {
+        val failing = object : HealthSessionSource {
+            override suspend fun listSessions(fromMillis: Long, toMillis: Long, maxRecords: Int) =
+                HealthSessionListing(listOf(gym("a", 600), gym("b", 300)), false)
+
+            override suspend fun loadDetails(session: HealthImportSession): HealthImportSession {
+                if (session.recordId == "b") throw IllegalStateException("read failed")
+                return session
+            }
+        }
+        val persistence = FakePersistence()
+
+        val summary = runner(failing, persistence).run(HealthImportTrigger.MANUAL)
+
+        assertEquals(HealthImportStatus.COMPLETED, summary.status)
+        assertEquals(1, summary.imported)
+        assertEquals(1, summary.readFailures)
+        assertEquals(listOf("health_connect:a"), persistence.persisted.map { it.second })
+        assertEquals(now, persistence.last)
+    }
+
+    @Test
+    fun truncatedHeartRateSeriesStoresNoHeartRate() {
+        val session = gym("a", 600).let {
+            it.copy(
+                kilocalories = 200.0,
+                heartRateSamples = listOf(HeartRateSample(it.startMillis + 1_000L, 150)),
+                heartRateComplete = false
+            )
+        }
+        val item = HealthImportRules.build(HealthImportStore.HEALTH_CONNECT, session, AppLanguage.EN)
+        assertNull(item.averageHeartRate)
+        assertNull(item.maximumHeartRate)
+        assertEquals(200.0, item.gymCalories, 0.0)
+        assertFalse(item.note.orEmpty().contains("HR"))
+        val complete = HealthImportRules.build(
+            HealthImportStore.HEALTH_CONNECT,
+            session.copy(heartRateComplete = true),
+            AppLanguage.EN
+        )
+        assertEquals(150, complete.averageHeartRate)
+    }
 }

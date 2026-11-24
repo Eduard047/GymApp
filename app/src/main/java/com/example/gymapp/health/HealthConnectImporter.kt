@@ -257,20 +257,25 @@ private class HealthConnectSessionSource(
         )
         val samples = if (readHeartRate) readHeartRateSamples(range, origin) else emptyList()
         val kilocalories = if (readCalories) aggregateKilocalories(range, origin) else null
-        return session.copy(kilocalories = kilocalories, heartRateSamples = samples)
+        return session.copy(
+            kilocalories = kilocalories,
+            heartRateSamples = samples.orEmpty(),
+            heartRateComplete = samples != null
+        )
     }
 
     /**
-     * Reads the session's heart-rate samples within the per-run budget. A session that would
-     * cross the budget gets no heart rate (a partial average would be misleading) and so does
-     * every later session of the run.
+     * Reads the session's heart-rate samples within the per-run budget. Returns null when the
+     * series could not be read in full: a session that would cross the budget (and every later
+     * session of the run) or one with more pages than [MAX_HEART_RATE_PAGES] gets no heart rate,
+     * because an average of a truncated series would be misleading.
      */
     private suspend fun readHeartRateSamples(
         range: TimeRangeFilter,
         origin: Set<DataOrigin>
-    ): List<HeartRateSample> {
+    ): List<HeartRateSample>? {
         val budget = HealthImportRules.MAX_HEART_RATE_SAMPLES_PER_RUN
-        if (heartRateSamplesRead >= budget) return emptyList()
+        if (heartRateSamplesRead >= budget) return null
         val samples = ArrayList<HeartRateSample>()
         var pageToken: String? = null
         var pages = 0
@@ -288,7 +293,7 @@ private class HealthConnectSessionSource(
                 heartRateSamplesRead += record.samples.size
                 if (heartRateSamplesRead > budget) {
                     heartRateSamplesRead = budget
-                    return emptyList()
+                    return null
                 }
                 for (sample in record.samples) {
                     samples += HeartRateSample(sample.time.toEpochMilli(), sample.beatsPerMinute)
@@ -297,9 +302,15 @@ private class HealthConnectSessionSource(
             pageToken = response.pageToken.takeUnless { it.isNullOrEmpty() }
             pages++
         } while (pageToken != null && pages < MAX_HEART_RATE_PAGES)
-        return samples
+        // More pages than allowed: the series is incomplete.
+        return if (pageToken != null) null else samples
     }
 
+    /**
+     * Total energy (active + basal) the source app recorded for the session. iPhone imports
+     * active energy; Android would need READ_ACTIVE_CALORIES_BURNED for that, which the app
+     * does not declare, so Android stays on total energy (see shared/health-import-v1.json).
+     */
     private suspend fun aggregateKilocalories(
         range: TimeRangeFilter,
         origin: Set<DataOrigin>

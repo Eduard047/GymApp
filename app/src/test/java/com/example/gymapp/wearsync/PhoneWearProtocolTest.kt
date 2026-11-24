@@ -280,7 +280,7 @@ class PhoneWearProtocolTest {
             wearWorkoutNote(null, 128, 171, AppLanguage.RU)
         )
         assertEquals(
-            "Wear OS · Сер пульс 128 · Макс пульс 171",
+            "Wear OS · Середній пульс 128 · Макс. пульс 171",
             wearWorkoutNote(null, 128, 171, AppLanguage.UK)
         )
         assertEquals(

@@ -44,6 +44,10 @@ interface HealthImportDao {
     @Query("SELECT COUNT(*) FROM health_import_receipts")
     suspend fun countReceipts(): Int
 
+    /** Receipts whose imported workout started exactly at [workoutStartedAt]. */
+    @Query("SELECT COUNT(*) FROM health_import_receipts WHERE workoutStartedAt = :workoutStartedAt")
+    suspend fun countReceiptsForWorkoutStartedAt(workoutStartedAt: Long): Int
+
     @Query("SELECT * FROM health_import_state WHERE id = 1 LIMIT 1")
     suspend fun getState(): HealthImportStateEntity?
 

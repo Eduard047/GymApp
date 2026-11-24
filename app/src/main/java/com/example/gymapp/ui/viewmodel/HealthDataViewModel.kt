@@ -1,9 +1,8 @@
 package com.example.gymapp.ui.viewmodel
 
 import android.content.Context
-import android.os.Build
+import android.content.Intent
 import android.util.Log
-import androidx.annotation.RequiresApi
 import androidx.health.connect.client.HealthConnectClient
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -76,25 +75,29 @@ class HealthDataViewModel(
         }
     }
 
-    /** Stops auto-import and revokes the Health Connect permissions this app holds. */
+    /**
+     * Stops the import for this account only: clears this account's opt-in and nothing else.
+     * The Health Connect permission is per app and shared by every account on the device, so it
+     * is never revoked here (iPhone behaves the same); [healthConnectSettingsIntent] lets the
+     * user remove the access in Health Connect itself.
+     */
     fun disconnect() {
-        // Shown and gated first: even if the revoke is slow or fails, auto-import is already off.
+        // Shown and gated first: auto-import is off even before the opt-in write finishes.
         _state.update { it.copy(connected = false, notice = HealthImportNotice.NONE) }
         viewModelScope.launch {
             attempt { importer.setEnabled(false) }
-            // Health Connect exists from API 26; below it there is nothing to revoke.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                _state.value.availability == HealthConnectAvailability.AVAILABLE
-            ) {
-                attempt { revokeAllPermissions() }
-            }
             refreshNow()
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.O)
-    private suspend fun revokeAllPermissions() {
-        HealthConnectClient.getOrCreate(appContext).permissionController.revokeAllPermissions()
+    /**
+     * Intent that opens the Health Connect settings, where the user can remove this app's access
+     * for the whole device. Null when Health Connect is not available. The caller starts it
+     * (and falls back when no activity resolves it).
+     */
+    fun healthConnectSettingsIntent(): Intent? {
+        if (_state.value.availability != HealthConnectAvailability.AVAILABLE) return null
+        return Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)
     }
 
     private suspend fun refreshNow() {

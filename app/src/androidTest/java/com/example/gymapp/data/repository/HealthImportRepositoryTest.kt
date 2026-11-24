@@ -168,6 +168,89 @@ class HealthImportRepositoryTest {
         }
     }
 
+    private suspend fun applyGarmin(repository: GymRepository, start: Long = startedAt) =
+        repository.applyGarminCreateWorkout(
+            ownerBinding = "a".repeat(64),
+            deviceBinding = "123456789",
+            pairingGeneration = "1".repeat(64),
+            requestId = "request-1234567890",
+            payloadDigest = "b".repeat(64),
+            date = start,
+            note = "Garmin",
+            sets = listOf(NamedWorkoutSetDraft("Bench Press", 80.0, 8)),
+            durationSeconds = 1_800L
+        )
+
+    private suspend fun applyWear(repository: GymRepository, start: Long = startedAt) =
+        repository.applyWearCreateWorkout(
+            ownerId = "a".repeat(64),
+            accountGeneration = 5L,
+            operationId = "123e4567-e89b-42d3-a456-426614174000",
+            sourceNodeId = "trusted-watch",
+            payloadDigest = "c".repeat(64),
+            date = start,
+            note = "watch",
+            sets = listOf(NamedWorkoutSetDraft("Bench Press", 80.0, 8)),
+            durationSeconds = 1_800L
+        )
+
+    private suspend fun assertWatchReplacesImport(
+        database: GymDatabase,
+        repository: GymRepository,
+        apply: suspend () -> Unit
+    ) {
+        repository.importHealthActivity(item(), "health_connect:a")
+        apply()
+        val sessions = database.workoutDao().getSessions().first()
+        assertEquals(1, sessions.size)
+        assertTrue(sessions.single().exerciseCount > 0)
+        assertTrue(database.activityOnlyWorkoutDao().getAll().isEmpty())
+        // The receipt stays, so the import never brings the Health copy back.
+        assertEquals(1, database.healthImportDao().countReceipt("health_connect:a"))
+        assertEquals(
+            HealthImportPersistResult.DUPLICATE_RECEIPT,
+            repository.importHealthActivity(item(), "health_connect:a")
+        )
+        assertEquals(1, database.workoutDao().getSessions().first().size)
+    }
+
+    @Test
+    fun garminWorkoutReplacesOverlappingHealthImport() = runBlocking {
+        withDatabase { database, repository ->
+            assertWatchReplacesImport(database, repository) { applyGarmin(repository, startedAt + 60_000L) }
+        }
+    }
+
+    @Test
+    fun wearWorkoutReplacesOverlappingHealthImport() = runBlocking {
+        withDatabase { database, repository ->
+            assertWatchReplacesImport(database, repository) { applyWear(repository, startedAt + 60_000L) }
+        }
+    }
+
+    @Test
+    fun watchWorkoutKeepsHealthImportWithEditedNote() = runBlocking {
+        withDatabase { database, repository ->
+            repository.importHealthActivity(item(), "health_connect:a")
+            val imported = database.workoutDao().getSessions().first().single().session
+            database.workoutDao().update(imported.copy(note = "My own note"))
+            applyWear(repository)
+            assertEquals(2, database.workoutDao().getSessions().first().size)
+            assertEquals(1, database.activityOnlyWorkoutDao().getAll().size)
+        }
+    }
+
+    @Test
+    fun watchWorkoutKeepsNonOverlappingHealthImport() = runBlocking {
+        withDatabase { database, repository ->
+            repository.importHealthActivity(item(), "health_connect:a")
+            // Imported workout ends at start + 1800 s; 121 s later is outside the tolerance.
+            applyGarmin(repository, startedAt + 1_800_000L + 121_000L)
+            assertEquals(2, database.workoutDao().getSessions().first().size)
+            assertEquals(1, database.activityOnlyWorkoutDao().getAll().size)
+        }
+    }
+
     private suspend fun withDatabase(block: suspend (GymDatabase, GymRepository) -> Unit) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "health-import-${UUID.randomUUID()}"

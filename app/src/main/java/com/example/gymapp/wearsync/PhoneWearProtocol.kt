@@ -917,7 +917,8 @@ internal object PhoneWearProtocol {
 
 /**
  * Note stored with a watch workout: the watch's own note (if any) plus the heart-rate summary,
- * worded exactly like the Garmin note ("Avg HR n", "Max HR n", localized) so the numbers stay
+ * worded like the Health import note segments ("Avg HR n", "Max HR n"; uk "Середній пульс n",
+ * "Макс. пульс n") so the numbers stay
  * readable and parseable in the same way. Returns [watchNote] unchanged when there is no heart
  * rate or when the combined text would exceed the portable note bounds (512 code points,
  * 2048 UTF-8 bytes).
@@ -931,14 +932,14 @@ internal fun wearWorkoutNote(
     val details = mutableListOf<String>()
     averageHeartRate?.let {
         details += when (language) {
-            AppLanguage.UK -> "Сер пульс $it"
+            AppLanguage.UK -> "Середній пульс $it"
             AppLanguage.RU -> "Средний пульс $it"
             else -> "Avg HR $it"
         }
     }
     maxHeartRate?.let {
         details += when (language) {
-            AppLanguage.UK -> "Макс пульс $it"
+            AppLanguage.UK -> "Макс. пульс $it"
             AppLanguage.RU -> "Макс. пульс $it"
             else -> "Max HR $it"
         }

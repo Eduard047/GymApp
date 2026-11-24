@@ -3,6 +3,7 @@ package com.example.gymapp.health
 import com.example.gymapp.data.repository.ActivityOnlyWorkoutItem
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.util.AppLanguage
+import kotlinx.coroutines.CancellationException
 
 /** Where the exercise records come from (Health Connect on Android). */
 internal interface HealthSessionSource {
@@ -51,7 +52,9 @@ internal data class HealthImportSummary(
     /** Gym sessions that were left for a later run because of the per-run cap. */
     val truncated: Boolean = false,
     /** True when the local workout limit stopped the run. */
-    val capacityReached: Boolean = false
+    val capacityReached: Boolean = false,
+    /** Candidates whose details could not be read; left without a receipt for the next run. */
+    val readFailures: Int = 0
 ) {
     fun skippedCount(reason: HealthImportSkipReason): Int = skipped[reason] ?: 0
 }
@@ -116,6 +119,7 @@ internal class HealthImportRunner(
 
         var imported = 0
         var capacityReached = false
+        var readFailures = 0
         for (candidate in candidates) {
             if (!isAccountActive()) {
                 return summary(HealthImportStatus.ABORTED_ACCOUNT_CHANGED, imported, skipped, truncated, capacityReached)
@@ -125,7 +129,16 @@ internal class HealthImportRunner(
                 skip(reason)
                 continue
             }
-            val detailed = source.loadDetails(candidate)
+            // One failed read skips only this candidate: no receipt is written, so the next run
+            // retries it, and the run still completes (and so throttles the next automatic run).
+            val detailed = try {
+                source.loadDetails(candidate)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                readFailures++
+                continue
+            }
             // Re-check right before the write: loading details can take a while.
             if (!isAccountActive()) {
                 return summary(HealthImportStatus.ABORTED_ACCOUNT_CHANGED, imported, skipped, truncated, capacityReached)
@@ -146,7 +159,7 @@ internal class HealthImportRunner(
         }
 
         persistence.setLastImportAt(now)
-        return summary(HealthImportStatus.COMPLETED, imported, skipped, truncated, capacityReached)
+        return summary(HealthImportStatus.COMPLETED, imported, skipped, truncated, capacityReached, readFailures)
     }
 
     private fun summary(
@@ -154,13 +167,15 @@ internal class HealthImportRunner(
         imported: Int,
         skipped: Map<HealthImportSkipReason, Int>,
         truncated: Boolean,
-        capacityReached: Boolean
+        capacityReached: Boolean,
+        readFailures: Int = 0
     ) = HealthImportSummary(
         status = status,
         imported = imported,
         skipped = skipped.toMap(),
         truncated = truncated,
-        capacityReached = capacityReached
+        capacityReached = capacityReached,
+        readFailures = readFailures
     )
 
     private companion object {

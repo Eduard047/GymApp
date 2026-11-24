@@ -7,6 +7,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /** Runs shared/health-import-v1.json, the contract the iPhone HealthKit import also follows. */
@@ -258,5 +259,40 @@ class HealthImportRulesTest {
         val file = if (direct.isFile) direct else File("../shared/health-import-v1.json")
         check(file.isFile) { "Health import contract was not found." }
         return JSONObject(file.readText())
+    }
+
+    @Test
+    fun watchWorkoutReplacesOnlyUneditedOverlappingHealthImports() {
+        val start = 1_750_000_000_000L
+        fun replaceable(
+            note: String? = "Health Connect · Strength training · Duration 30:00",
+            hasExercises: Boolean = false,
+            hasReceipt: Boolean = true,
+            duration: Long? = 1_800L,
+            sidecar: Long? = 1_800L,
+            watchStart: Long = start + 60_000L
+        ) = HealthImportRules.isReplaceableByWatchWorkout(
+            store = HealthImportStore.HEALTH_CONNECT,
+            workoutStartMillis = start,
+            workoutDurationSeconds = duration,
+            workoutNote = note,
+            hasExercises = hasExercises,
+            hasReceipt = hasReceipt,
+            sidecarDurationSeconds = sidecar,
+            watchStartMillis = watchStart,
+            watchEndMillis = watchStart + 1_800_000L
+        )
+        assertTrue(replaceable())
+        assertTrue(replaceable(sidecar = null))
+        // Edge of the 120 s tolerance after the imported end (start + 1800 s).
+        assertTrue(replaceable(watchStart = start + 1_800_000L + 120_000L))
+        assertFalse(replaceable(watchStart = start + 1_800_000L + 121_000L))
+        assertFalse(replaceable(note = "My own note"))
+        assertFalse(replaceable(note = null))
+        assertFalse(replaceable(hasExercises = true))
+        assertFalse(replaceable(hasReceipt = false))
+        assertFalse(replaceable(duration = null))
+        assertFalse(replaceable(duration = 0L))
+        assertFalse(replaceable(sidecar = 1_200L))
     }
 }

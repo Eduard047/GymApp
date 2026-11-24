@@ -30,6 +30,7 @@ import com.example.gymapp.health.HealthExistingWorkout
 import com.example.gymapp.health.HealthImportPersistResult
 import com.example.gymapp.health.HealthImportRules
 import com.example.gymapp.health.HealthImportSidecarGuard
+import com.example.gymapp.health.HealthImportStore
 import com.example.gymapp.data.entity.GarminWorkoutProvenanceEntity
 import com.example.gymapp.data.entity.HealthImportReceiptEntity
 import com.example.gymapp.data.entity.HealthImportStateEntity
@@ -4018,6 +4019,9 @@ class GymRepository(
 
             suspend fun persistFreeActivity(): Long? {
                 val item = checkNotNull(activityOnlyWorkout)
+                // Before the exact-date collision checks below: an imported Health copy of this
+                // activity must not read as a divergent mirror.
+                removeHealthImportedDuplicates(item.workoutStartedAt, item.durationSeconds)
                 val stored = activityOnlyWorkoutDao
                     .getByStartedAt(item.workoutStartedAt)
                     ?.toItem()
@@ -4146,13 +4150,15 @@ class GymRepository(
             val sessionId = if (isFreeWorkout) {
                 persistFreeActivity()
             } else {
-                createWorkoutSessionFromNamedSets(
+                val storedSessionId = createWorkoutSessionFromNamedSets(
                     date = date,
                     note = note,
                     // Digest and receipt handling above used the watch's names; translate only now.
                     sets = translateGarminWatchNames(sets),
                     durationSeconds = durationSeconds
                 ) ?: return@withTransaction GarminWorkoutApplyResult.Rejected
+                removeHealthImportedDuplicates(date, durationSeconds)
+                storedSessionId
             }
             receiptDao.insert(
                 GarminWorkoutReceiptEntity(
@@ -4225,13 +4231,77 @@ class GymRepository(
             mutationType = WEAR_MUTATION_CREATE,
             payloadDigest = payloadDigest
         ) {
-            createWorkoutSessionFromNamedSets(
+            val stored = createWorkoutSessionFromNamedSets(
                 date = date,
                 note = note,
                 sets = sets,
                 durationSeconds = durationSeconds
             ) != null
+            // Only after the watch workout is stored: a rejected write must not remove anything.
+            if (stored) removeHealthImportedDuplicates(date, durationSeconds)
+            stored
         }
+    }
+
+    /**
+     * Removes Health-imported copies of a watch workout that is being stored in the same
+     * transaction (parity with iOS WorkoutStore.removeHealthImportedDuplicates). A workout is
+     * removed only when all hold: it is activity-only (no exercises, duration > 0); a Health
+     * import receipt names its start; its note still starts with the Health import note prefix
+     * (a user-edited note keeps it); its activity sidecar, when present, still has the imported
+     * duration; and it overlaps [startMillis]..+[durationSeconds] by HealthImportRules.overlaps
+     * (120 s tolerance). Its activity-only sidecar goes with it; the receipt stays so the import
+     * never brings it back. Must only be called inside [database]'s transaction.
+     */
+    private suspend fun removeHealthImportedDuplicates(startMillis: Long, durationSeconds: Long?): Int {
+        if (durationSeconds == null || durationSeconds <= 0L ||
+            !WorkoutDataLimits.isValidTimestamp(startMillis)
+        ) {
+            return 0
+        }
+        val endMillis = startMillis + durationSeconds * 1_000L
+        val candidateDates = healthImportDao.workoutIntervalsFrom(
+            startMillis - HealthImportRules.OVERLAP_TOLERANCE_MILLIS -
+                WorkoutDataLimits.MAX_WORKOUT_DURATION_SECONDS * 1_000L
+        ).asSequence()
+            .filter { it.startMillis <= endMillis + HealthImportRules.OVERLAP_TOLERANCE_MILLIS }
+            .filter { row ->
+                HealthImportRules.overlaps(
+                    startMillis,
+                    endMillis,
+                    HealthExistingWorkout(row.startMillis, row.durationSeconds)
+                )
+            }
+            .map { it.startMillis }
+            .distinct()
+            .toList()
+        var removed = 0
+        for (date in candidateDates) {
+            val hasReceipt = healthImportDao.countReceiptsForWorkoutStartedAt(date) > 0
+            if (!hasReceipt) continue
+            val sidecar = activityOnlyWorkoutDao.getByStartedAt(date)?.toItem()
+            for (details in workoutDao.getSessionDetailsAtExactDate(date)) {
+                val session = details.session
+                if (!HealthImportRules.isReplaceableByWatchWorkout(
+                        store = HealthImportStore.HEALTH_CONNECT,
+                        workoutStartMillis = session.date,
+                        workoutDurationSeconds = session.durationSeconds,
+                        workoutNote = session.note,
+                        hasExercises = details.workoutExercises.isNotEmpty(),
+                        hasReceipt = hasReceipt,
+                        sidecarDurationSeconds = sidecar?.durationSeconds,
+                        watchStartMillis = startMillis,
+                        watchEndMillis = endMillis
+                    )
+                ) {
+                    continue
+                }
+                workoutDao.deleteSessionById(session.id)
+                activityOnlyWorkoutDao.deleteByStartedAt(date)
+                removed++
+            }
+        }
+        return removed
     }
 
     suspend fun applyWearUpdateSet(
