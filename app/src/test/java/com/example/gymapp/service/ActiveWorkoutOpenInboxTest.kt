@@ -47,4 +47,40 @@ class ActiveWorkoutOpenInboxTest {
         inbox.clear()
         assertNull(inbox.pending.value)
     }
+
+    @Test
+    fun openRequestWaitsWhileNoAccountUiIsShown() {
+        assertEquals(
+            OpenActiveWorkoutStep.WaitForAccount,
+            openActiveWorkoutStep(hasSession = false, needsPasswordUpdate = false, hasActiveWorkout = true)
+        )
+        assertEquals(
+            OpenActiveWorkoutStep.WaitForAccount,
+            openActiveWorkoutStep(hasSession = true, needsPasswordUpdate = true, hasActiveWorkout = true)
+        )
+        assertEquals(
+            OpenActiveWorkoutStep.WaitForAccount,
+            openActiveWorkoutStep(hasSession = true, needsPasswordUpdate = true, hasActiveWorkout = false)
+        )
+    }
+
+    @Test
+    fun openRequestNavigatesOnlyForASignedInAccountWithAWorkout() {
+        assertEquals(
+            OpenActiveWorkoutStep.Navigate,
+            openActiveWorkoutStep(hasSession = true, needsPasswordUpdate = false, hasActiveWorkout = true)
+        )
+        assertEquals(
+            OpenActiveWorkoutStep.WaitForWorkout,
+            openActiveWorkoutStep(hasSession = true, needsPasswordUpdate = false, hasActiveWorkout = false)
+        )
+    }
+
+    @Test
+    fun clearDropsAWaitingOpenRequest() {
+        val inbox = ActiveWorkoutOpenInbox()
+        inbox.request()
+        inbox.clear()
+        assertNull(inbox.pending.value)
+    }
 }

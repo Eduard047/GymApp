@@ -103,6 +103,8 @@ class GymApplication : Application() {
                         )
                     ) {
                         com.example.gymapp.service.ActiveWorkoutNotifier.cancel(this@GymApplication)
+                        // A tap still waiting (signed out / password update) belongs to the old account.
+                        activeWorkoutOpenInbox.clear()
                     }
                     notificationAccountKey = nextKey
                     hasNotificationAccount = true

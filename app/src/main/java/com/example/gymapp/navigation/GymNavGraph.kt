@@ -1525,17 +1525,35 @@ internal fun GymAppRoot(
         }
     }
     val pendingOpenActiveWorkout by activeWorkoutOpenInbox.pending.collectAsStateWithLifecycle()
-    LaunchedEffect(pendingOpenActiveWorkout, activeWorkout != null) {
+    LaunchedEffect(
+        pendingOpenActiveWorkout,
+        activeWorkout != null,
+        authState.session != null,
+        authState.needsPasswordUpdate,
+        navController
+    ) {
         val requestId = pendingOpenActiveWorkout ?: return@LaunchedEffect
-        if (activeWorkout != null) {
-            navController.navigate(AppDestination.ActiveWorkout.route) {
-                launchSingleTop = true
+        val step = com.example.gymapp.service.openActiveWorkoutStep(
+            hasSession = authState.session != null,
+            needsPasswordUpdate = authState.needsPasswordUpdate,
+            hasActiveWorkout = activeWorkout != null
+        )
+        when (step) {
+            // No NavHost is shown (signed out / password update): keep the request until it is.
+            com.example.gymapp.service.OpenActiveWorkoutStep.WaitForAccount -> Unit
+            com.example.gymapp.service.OpenActiveWorkoutStep.Navigate -> {
+                runCatching {
+                    navController.navigate(AppDestination.ActiveWorkout.route) {
+                        launchSingleTop = true
+                    }
+                }
+                activeWorkoutOpenInbox.consume(requestId)
             }
-            activeWorkoutOpenInbox.consume(requestId)
-        } else {
-            // The workout may still be loading after a cold start; give up if none appears.
-            kotlinx.coroutines.delay(com.example.gymapp.service.OPEN_ACTIVE_WORKOUT_GRACE_MILLIS)
-            activeWorkoutOpenInbox.consume(requestId)
+            com.example.gymapp.service.OpenActiveWorkoutStep.WaitForWorkout -> {
+                // The workout may still be loading after a cold start; give up if none appears.
+                kotlinx.coroutines.delay(com.example.gymapp.service.OPEN_ACTIVE_WORKOUT_GRACE_MILLIS)
+                activeWorkoutOpenInbox.consume(requestId)
+            }
         }
     }
     val pendingStartShortcut by activeWorkoutOpenInbox.startShortcutPending

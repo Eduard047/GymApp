@@ -19,6 +19,29 @@ internal fun isOpenActiveWorkoutAction(action: String?): Boolean =
 internal fun shouldRequestOpenActiveWorkout(action: String?, restoredInstance: Boolean): Boolean =
     isOpenActiveWorkoutAction(action) && !restoredInstance
 
+internal enum class OpenActiveWorkoutStep {
+    /** Signed out or on the password-update screen: no nav graph to open; keep the request. */
+    WaitForAccount,
+    Navigate,
+    /** Signed in but no workout yet (cold start): wait the grace period, then drop it. */
+    WaitForWorkout
+}
+
+/**
+ * What a pending notification tap does now. The request is only acted on once the account UI
+ * (and its NavHost) is shown; an account change drops it in GymApplication, so it never opens
+ * another account's workout.
+ */
+internal fun openActiveWorkoutStep(
+    hasSession: Boolean,
+    needsPasswordUpdate: Boolean,
+    hasActiveWorkout: Boolean
+): OpenActiveWorkoutStep = when {
+    !hasSession || needsPasswordUpdate -> OpenActiveWorkoutStep.WaitForAccount
+    hasActiveWorkout -> OpenActiveWorkoutStep.Navigate
+    else -> OpenActiveWorkoutStep.WaitForWorkout
+}
+
 /** Launcher long-press "Start workout" shortcut action (res/xml/shortcuts.xml). */
 internal const val ACTION_START_WORKOUT_SHORTCUT = "com.setforge.gymapp.action.START_WORKOUT_SHORTCUT"
 
