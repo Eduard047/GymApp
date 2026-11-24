@@ -118,7 +118,8 @@ class HealthDataViewModel(
                     it.notice
                 },
                 lastImportAtMillis = last,
-                importedTotal = total
+                importedTotal = total,
+                permissionGranted = permitted
             )
         }
     }

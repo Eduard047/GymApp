@@ -8,7 +8,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.text.font.FontWeight
@@ -24,6 +23,7 @@ import com.example.gymapp.ui.components.GymMotion
 import com.example.gymapp.ui.components.rememberReduceMotion
 import com.example.gymapp.util.asString
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -229,6 +229,7 @@ internal fun ProfileScreen(
     onHealthPermissionRequestFinished: () -> Unit = {},
     onHealthImportNow: () -> Unit = {},
     onHealthDisconnect: () -> Unit = {},
+    healthConnectSettingsIntent: () -> Intent? = { null },
     onRefreshHealthData: () -> Unit = {},
     wearWatchState: WearWatchUiState? = null,
     onRefreshWearWatch: () -> Unit = {},
@@ -396,6 +397,7 @@ internal fun ProfileScreen(
                     onHealthPermissionRequestFinished = onHealthPermissionRequestFinished,
                     onHealthImportNow = onHealthImportNow,
                     onHealthDisconnect = onHealthDisconnect,
+                    healthConnectSettingsIntent = healthConnectSettingsIntent,
                     onUnlinkWearWatch = onUnlinkWearWatch,
                     modifier = Modifier.weight(1f)
                 )
@@ -749,14 +751,8 @@ private fun LazyListScope.profileRootContent(
                             true
                         }
                     },
-                    trailing = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        )
-                    },
+                    // The tap opens an in-app sheet (Google Play only from its button): a chevron, as on iPhone.
+                    chevron = true,
                     onClick = onOpenHealthApp
                 )
             }

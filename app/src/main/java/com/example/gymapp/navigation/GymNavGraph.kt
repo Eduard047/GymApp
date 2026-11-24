@@ -4827,6 +4827,9 @@ internal fun GymAppRoot(
                                 },
                                 onHealthImportNow = { healthDataViewModel?.importNow() },
                                 onHealthDisconnect = { healthDataViewModel?.disconnect() },
+                                healthConnectSettingsIntent = {
+                                    healthDataViewModel?.healthConnectSettingsIntent()
+                                },
                                 onRefreshHealthData = { healthDataViewModel?.refresh() },
                                 wearWatchState = wearWatchState,
                                 onRefreshWearWatch = { wearWatchViewModel?.refresh() },

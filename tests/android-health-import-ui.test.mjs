@@ -21,6 +21,7 @@ const plainKeys = [
   "health_data_last_import", "health_data_import_now", "health_data_disconnect", "health_data_importing",
   "health_data_empty", "health_data_failed", "health_data_caption",
   "health_data_update_required", "health_data_access_denied", "health_data_open_settings",
+  "health_data_permission_kept", "health_data_remove_access",
   "health_import_rationale_title", "health_import_rationale_body"
 ];
 
@@ -127,6 +128,25 @@ test("a declined permission request explains itself and offers the Health Connec
     /if \(state\.notice == HealthImportNotice\.ACCESS_DENIED\) \{\s*TintedButton\(\s*onClick = \{ openHealthConnectSettings\(context\) \}/
   );
   assert.match(card, /android\.health\.connect\.action\.MANAGE_HEALTH_PERMISSIONS/);
+});
+
+test("after Disconnect a kept permission can be removed in Health Connect via the view model intent", () => {
+  assert.match(viewModel, /permissionGranted = permitted/);
+  const notConnected = card.slice(card.indexOf("HealthDataCardMode.NOT_CONNECTED -> {"), card.indexOf("HealthDataCardMode.IMPORTING, HealthDataCardMode.CONNECTED -> {"));
+  assert.match(
+    notConnected,
+    /if \(state\.permissionGranted && state\.notice != HealthImportNotice\.ACCESS_DENIED\) \{\s*BodyText\(R\.string\.health_data_permission_kept\)\s*WatchCardDestructiveTextButton\(\s*text = stringResource\(R\.string\.health_data_remove_access\)/
+  );
+  assert.match(notConnected, /openHealthConnectAccessSettings\(context, healthConnectSettingsIntent\(\)\)/);
+  // The preferred intent falls back to the other Health Connect targets when nothing handles it.
+  const opener = card.slice(card.indexOf("internal fun openHealthConnectAccessSettings"));
+  assert.match(opener, /catch \(_: ActivityNotFoundException\)[\s\S]*?catch \(_: SecurityException\)[\s\S]*?openHealthConnectSettings\(context\)/);
+  assert.match(graph, /healthConnectSettingsIntent = \{\s*healthDataViewModel\?\.healthConnectSettingsIntent\(\)\s*\}/);
+  assert.match(profile, /healthConnectSettingsIntent = healthConnectSettingsIntent/);
+  assert.match(watches, /healthConnectSettingsIntent = healthConnectSettingsIntent/);
+  assert.match(strings.en, /<string name="health_data_remove_access">Remove access in Health Connect<\/string>/);
+  assert.match(strings.uk, /<string name="health_data_remove_access">Прибрати доступ у Health Connect<\/string>/);
+  assert.match(strings.ru, /<string name="health_data_remove_access">Убрать доступ в Health Connect<\/string>/);
 });
 
 test("the rationale screen scrolls, uses the app theme and language, and has a way back", () => {

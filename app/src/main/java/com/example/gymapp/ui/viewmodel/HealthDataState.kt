@@ -29,7 +29,12 @@ data class HealthDataUiState(
     val lastImportAtMillis: Long? = null,
     /** Workouts imported so far; null while the app cannot tell, and the summary then omits it. */
     val importedTotal: Int? = null,
-    val notice: HealthImportNotice = HealthImportNotice.NONE
+    val notice: HealthImportNotice = HealthImportNotice.NONE,
+    /**
+     * Health Connect still grants this app the exercise permission. It is per app (shared by every
+     * account), so it can outlive Disconnect; the card then offers to remove it in Health Connect.
+     */
+    val permissionGranted: Boolean = false
 )
 
 fun healthDataCardMode(state: HealthDataUiState): HealthDataCardMode = when {

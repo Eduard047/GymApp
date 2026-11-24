@@ -54,7 +54,8 @@ internal fun HealthDataCard(
     onPermissionRequestFinished: () -> Unit,
     onImportNow: () -> Unit,
     onDisconnect: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    healthConnectSettingsIntent: () -> Intent? = { null }
 ) {
     val context = LocalContext.current
     val mode = healthDataCardMode(state)
@@ -117,6 +118,17 @@ internal fun HealthDataCard(
                         ) {
                             Text(stringResource(R.string.health_data_open_settings))
                         }
+                    }
+                    // Disconnect stops the import for this account only; the Health Connect permission
+                    // stays (as on iPhone), so the card offers to remove it there.
+                    if (state.permissionGranted && state.notice != HealthImportNotice.ACCESS_DENIED) {
+                        BodyText(R.string.health_data_permission_kept)
+                        WatchCardDestructiveTextButton(
+                            text = stringResource(R.string.health_data_remove_access),
+                            onClick = {
+                                openHealthConnectAccessSettings(context, healthConnectSettingsIntent())
+                            }
+                        )
                     }
                 }
                 // Importing keeps the connected layout (as on iPhone): the summary stays, both
@@ -244,6 +256,25 @@ internal fun openHealthConnectInstallPage(context: Context) {
             // Try the next target.
         }
     }
+}
+
+/**
+ * Opens Health Connect where the user removes this app's access: [preferred] (the view model's
+ * settings intent) first; when it is missing or nothing handles it, the [openHealthConnectSettings]
+ * targets. Nothing is revoked from here; the user decides there.
+ */
+internal fun openHealthConnectAccessSettings(context: Context, preferred: Intent?) {
+    if (preferred != null) {
+        try {
+            context.startActivity(preferred.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            return
+        } catch (_: ActivityNotFoundException) {
+            // Fall back to the other targets.
+        } catch (_: SecurityException) {
+            // Fall back to the other targets.
+        }
+    }
+    openHealthConnectSettings(context)
 }
 
 /**

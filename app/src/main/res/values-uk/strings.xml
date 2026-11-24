@@ -1490,7 +1490,7 @@
     <string name="profile_group_our_apps">Наші застосунки</string>
     <string name="health_app_row_title">HealthApp</string>
     <string name="health_app_row_subtitle">Сон, HRV і відновлення з вашого годинника — від того ж розробника</string>
-    <string name="health_app_row_description">Відкрити HealthApp у Google Play</string>
+    <string name="health_app_row_description">HealthApp, докладніше</string>
     <string name="health_app_sheet_title">HealthApp: Recovery &amp; Sleep</string>
     <string name="health_app_sheet_lead">Тренування — це лише половина справи. HealthApp показує, як ви відновлюєтеся, щоб ви знали, коли навантажувати себе, а коли відпочити.</string>
     <string name="health_app_benefit_sleep">Сон і відновлення щоранку</string>
@@ -1930,6 +1930,8 @@
     <string name="health_data_failed">Не вдалося імпортувати. Спробуйте ще раз.</string>
     <string name="health_data_access_denied">GymApp не має доступу до тренувань. Дозвольте його в Health Connect.</string>
     <string name="health_data_open_settings">Відкрити Health Connect</string>
+    <string name="health_data_permission_kept">GymApp не імпортує тренування. Health Connect зберігає дозвіл, доки ви його не приберете.</string>
+    <string name="health_data_remove_access">Прибрати доступ у Health Connect</string>
     <string name="health_data_caption">Samsung, Xiaomi, Huawei, Amazfit, Polar, Fitbit та інші годинники — через Health Connect.</string>
     <string name="health_import_rationale_title">Як GymApp використовує дані про здоров’я</string>
     <string name="health_import_rationale_body">GymApp читає ваші тренування в залі, пульс і калорії з Health Connect лише після того, як ви його підключите, щоб додати тренування, записані вашим годинником. Він ніколи не записує дані в Health Connect і не використовує їх для реклами.</string>

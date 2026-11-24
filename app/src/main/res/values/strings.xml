@@ -1440,7 +1440,7 @@
     <string name="profile_group_our_apps">Our apps</string>
     <string name="health_app_row_title">HealthApp</string>
     <string name="health_app_row_subtitle">Sleep, HRV and recovery from your watch — by the same developer</string>
-    <string name="health_app_row_description">Open HealthApp in Google Play</string>
+    <string name="health_app_row_description">HealthApp, details</string>
     <string name="health_app_sheet_title">HealthApp: Recovery &amp; Sleep</string>
     <string name="health_app_sheet_lead">Your training is only half the story. HealthApp shows how well you recover, so you know when to push and when to rest.</string>
     <string name="health_app_benefit_sleep">Sleep and recovery every morning</string>
@@ -1872,6 +1872,8 @@
     <string name="health_data_failed">Couldn’t import. Try again.</string>
     <string name="health_data_access_denied">GymApp has no access to your workouts. Allow it in Health Connect.</string>
     <string name="health_data_open_settings">Open Health Connect</string>
+    <string name="health_data_permission_kept">GymApp isn’t importing. Health Connect keeps the permission until you remove it.</string>
+    <string name="health_data_remove_access">Remove access in Health Connect</string>
     <string name="health_data_caption">Samsung, Xiaomi, Huawei, Amazfit, Polar, Fitbit and other watches — through Health Connect.</string>
     <string name="health_import_rationale_title">How GymApp uses health data</string>
     <string name="health_import_rationale_body">GymApp reads your gym workouts, heart rate and calories from Health Connect only after you connect it, to add workouts recorded by your watch. It never writes to Health Connect and never uses this data for ads.</string>

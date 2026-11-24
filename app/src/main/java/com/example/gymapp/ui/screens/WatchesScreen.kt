@@ -85,7 +85,8 @@ internal fun WatchesScreen(
     onHealthImportNow: () -> Unit,
     onHealthDisconnect: () -> Unit,
     onUnlinkWearWatch: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    healthConnectSettingsIntent: () -> Intent? = { null }
 ) {
     val context = LocalContext.current
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
@@ -135,7 +136,8 @@ internal fun WatchesScreen(
                     onPermissionRequestFinished = onHealthPermissionRequestFinished,
                     onImportNow = onHealthImportNow,
                     onDisconnect = onHealthDisconnect,
-                    modifier = Modifier.padding(top = GymSpacing.Medium)
+                    modifier = Modifier.padding(top = GymSpacing.Medium),
+                    healthConnectSettingsIntent = healthConnectSettingsIntent
                 )
             }
         }

@@ -91,6 +91,10 @@ test("the store opens only from the sheet's primary button", () => {
   assert.equal(row.includes("arrow.up.right"), false);
   // Android: the row only raises onOpenHealthApp; the launcher is called from the sheet button.
   assert.equal(profile.includes("openHealthAppInGooglePlay"), false);
+  // Android matches: the shared GroupedRow chevron, no external-link icon.
+  const androidRow = profile.slice(profile.indexOf("R.string.health_app_row_description"), profile.indexOf("profile_group_account"));
+  assert.match(androidRow, /chevron = true,\s*onClick = onOpenHealthApp/);
+  assert.equal(androidRow.includes("OpenInNew"), false);
   assert.equal((recommendation.match(/openHealthAppInGooglePlay\(context\)/g) ?? []).length, 1);
   assert.match(recommendation, /onClick = \{\s*openHealthAppInGooglePlay\(context\)\s*onDismiss\(\)\s*\}/);
   assert.match(recommendation, /catch \(_: ActivityNotFoundException\)/);
@@ -135,9 +139,10 @@ test("platform-specific copy: source list, store button and accessibility labels
     uk: "HealthApp, докладніше",
     ru: "HealthApp, подробнее"
   });
-  assert.equal(androidString("en", "health_app_row_description"), "Open HealthApp in Google Play");
-  assert.equal(androidString("uk", "health_app_row_description"), "Відкрити HealthApp у Google Play");
-  assert.equal(androidString("ru", "health_app_row_description"), "Открыть HealthApp в Google Play");
+  // Same accessibility label as iPhone: the row opens the in-app sheet, not the store.
+  assert.equal(androidString("en", "health_app_row_description"), "HealthApp, details");
+  assert.equal(androidString("uk", "health_app_row_description"), "HealthApp, докладніше");
+  assert.equal(androidString("ru", "health_app_row_description"), "HealthApp, подробнее");
 });
 
 test("sheet uses the shared flat sheet and capsule button styles", () => {
