@@ -1050,6 +1050,9 @@ private fun ImportedActivityHeaderCard(
     onToggleEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
+    // Largest text sizes: one tile per row and a two-line date, as on iOS (a half-width tile cuts "Длительность").
+    val largeText = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+    val tileColumns = if (largeText) 1 else 2
     // Label, shown value, spoken value (full words: TalkBack reads "bpm" or "1 h 5 min" letter by letter).
     val tiles = mutableListOf<Triple<String, String, String>>()
     val duration = (durationSeconds ?: presentation.durationSeconds)?.takeIf { it > 0L }
@@ -1104,7 +1107,7 @@ private fun ImportedActivityHeaderCard(
                         text = date,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        maxLines = 1,
+                        maxLines = if (largeText) 2 else 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
@@ -1123,7 +1126,7 @@ private fun ImportedActivityHeaderCard(
                     )
                 }
             }
-            tiles.chunked(2).forEach { rowTiles ->
+            tiles.chunked(tileColumns).forEach { rowTiles ->
                 Row(
                     modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1137,7 +1140,7 @@ private fun ImportedActivityHeaderCard(
                             valueDescription = spokenValue
                         )
                     }
-                    if (rowTiles.size == 1 && tiles.size > 1) {
+                    if (tileColumns == 2 && rowTiles.size == 1 && tiles.size > 1) {
                         androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
                     }
                 }

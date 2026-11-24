@@ -12,10 +12,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -111,21 +113,21 @@ fun WeeklyReviewCard(
                 }
             }
             row {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = GroupedListDefaults.TextInset, vertical = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                // Largest text sizes: one stat per line, so labels such as "Тренировки" are never cut mid-word.
+                val stackStats = LocalDensity.current.fontScale >= 1.5f
+                val statsModifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = GroupedListDefaults.TextInset, vertical = 14.dp)
+                val stats: @Composable (Modifier) -> Unit = { itemModifier ->
                     WeekNumber(
                         value = review.trainingDays.toString(),
                         label = stringResource(R.string.progress_lifetime_workouts),
-                        modifier = Modifier.weight(1f)
+                        modifier = itemModifier
                     )
                     WeekNumber(
                         value = review.totalSets.toString(),
                         label = stringResource(R.string.muscle_heatmap_sets),
-                        modifier = Modifier.weight(1f)
+                        modifier = itemModifier
                     )
                     WeekNumber(
                         value = formattedStringResource(
@@ -133,8 +135,17 @@ fun WeeklyReviewCard(
                             formatVolumeTotal(review.totalVolume, locale)
                         ),
                         label = stringResource(R.string.focus_lens_volume),
-                        modifier = Modifier.weight(1f)
+                        modifier = itemModifier
                     )
+                }
+                if (stackStats) {
+                    Column(statsModifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        stats(Modifier.fillMaxWidth())
+                    }
+                } else {
+                    Row(statsModifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        stats(Modifier.weight(1f))
+                    }
                 }
             }
             row {
@@ -209,7 +220,8 @@ private fun WeekNumber(value: String, label: String, modifier: Modifier = Modifi
             text = label,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

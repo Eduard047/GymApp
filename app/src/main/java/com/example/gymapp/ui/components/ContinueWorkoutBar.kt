@@ -77,12 +77,14 @@ fun ContinueWorkoutBar(
                 tint = HeroTone.actionLabel,
                 modifier = Modifier.size(28.dp)
             )
+            val largeText = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stringResource(R.string.action_continue_workout),
                     style = MaterialTheme.typography.bodyLarge,
                     color = HeroTone.actionLabel,
-                    maxLines = 1,
+                    // Largest text sizes: the title wraps instead of ending as "Продолжить трен…".
+                    maxLines = if (largeText) 2 else 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
