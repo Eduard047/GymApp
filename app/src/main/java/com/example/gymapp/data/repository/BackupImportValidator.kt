@@ -37,7 +37,11 @@ internal data class ValidatedBackupSession(
     val note: String?,
     val durationSeconds: Long? = null,
     val blocks: List<ValidatedBackupBlock>
-)
+) {
+    /** No exercise blocks and a positive duration: a watch/Health summary without sets. */
+    val isActivityOnly: Boolean
+        get() = blocks.isEmpty() && durationSeconds?.let { it > 0L } == true
+}
 
 internal data class ValidatedBackup(
     val catalogSeedVersion: Int = 0,
@@ -197,10 +201,18 @@ internal object BackupImportValidator {
             )
         }
 
+        // An activity-only workout is identified by its start on both clients (the private
+        // sidecar key). Two such sessions at one start, for example the same Health import with
+        // notes in two languages, are one workout: keep the first and skip the rest.
+        val activityOnlyStarts = hashSetOf<Long>()
+        val dedupedSessions = normalizedSessions.filter { session ->
+            !session.isActivityOnly || activityOnlyStarts.add(session.date)
+        }
+
         return ValidatedBackup(
             catalogSeedVersion = catalogSeedVersion,
             exercises = exercises,
-            sessions = normalizedSessions
+            sessions = dedupedSessions
         )
     }
 

@@ -1947,7 +1947,12 @@ class GymRepository(
 
                 val isActivityOnly = drafts.isEmpty() && session.blocks.isEmpty() &&
                     session.durationSeconds?.let { it > 0L } == true
-                if (drafts.isNotEmpty() || isActivityOnly) {
+                // The activity-only sidecar is keyed by the exact start, and its note is localized
+                // and editable, so the signature below cannot tell that the same summary is
+                // already here. Merging must never create a second workout at that start.
+                val activityStartTaken = !replaceExisting && isActivityOnly &&
+                    workoutDao.getSessionDetailsAtExactDate(session.date).isNotEmpty()
+                if (!activityStartTaken && (drafts.isNotEmpty() || isActivityOnly)) {
                     val signature = workoutImportSignature(
                         date = session.date,
                         note = session.note,

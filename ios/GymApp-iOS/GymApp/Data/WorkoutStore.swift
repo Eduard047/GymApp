@@ -3747,6 +3747,14 @@ public final class WorkoutStore: ObservableObject {
         }
 
         var existingSignatures = Set(next.workouts.map(Self.importSignature))
+        // The activity-only cloud sidecar is keyed by the exact start, and the note of a watch or
+        // Health summary is localized and editable, so the signature cannot tell that the same
+        // summary is already here. Keep the first activity-only session per start in the file,
+        // and when merging never add one at a start that any workout already uses.
+        var incomingActivityOnlyStarts = Set<Int64>()
+        var mergedWorkoutStarts = replacingExisting
+            ? Set<Int64>()
+            : Set(next.workouts.map(\.date.gymEpochMilliseconds))
         for session in backup.sessions {
             let rawNote = session.note?.gymTrimmed
             if let rawNote,
@@ -3854,6 +3862,12 @@ public final class WorkoutStore: ObservableObject {
                 session.date ?? session.startedAt ?? Date().gymEpochMilliseconds,
                 field: "session timestamp"
             )
+            if isActivityOnly,
+               !incomingActivityOnlyStarts.insert(timestamp).inserted ||
+                mergedWorkoutStarts.contains(timestamp) {
+                skippedDuplicates += 1
+                continue
+            }
             let signature = Self.importSignature(
                 dateMilliseconds: timestamp,
                 note: note,
@@ -3881,6 +3895,9 @@ public final class WorkoutStore: ObservableObject {
                     )
                 }
                 next.workouts.append(workout)
+                if !replacingExisting {
+                    mergedWorkoutStarts.insert(timestamp)
+                }
                 importedSessions += 1
             } else {
                 skippedDuplicates += 1
