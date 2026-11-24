@@ -1,6 +1,7 @@
 package com.example.gymapp.garmin
 
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
+import com.example.gymapp.util.AppLanguage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -8,6 +9,92 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GarminWorkoutStatisticsTest {
+    @Test
+    fun activityPresentationReadsCurrentAndOlderImportedNotesInEveryLanguage() {
+        val notes = listOf(
+            // Current wording: number before the unit, h:mm:ss from one hour on.
+            "Health Connect · Strength training · Duration 1:02:05 · 356 kcal · Avg HR 124 · Max HR 158",
+            "Health Connect · Силове тренування · Тривалість 1:02:05 · 356 ккал · " +
+                "Середній пульс 124 · Макс. пульс 158",
+            "Health Connect · Силовая тренировка · Длительность 1:02:05 · 356 ккал · " +
+                "Средний пульс 124 · Макс. пульс 158",
+            // Wording stored before the note format changed; those notes are never rewritten.
+            "Health Connect · Strength training · Duration 62:05 · kcal 356 · Avg HR 124 · Max HR 158",
+            "Health Connect · Силове тренування · Тривалість 62:05 · ккал 356 · " +
+                "Сер пульс 124 · Макс пульс 158",
+            "Health Connect · Силовая тренировка · Длительность 62:05 · ккал 356 · " +
+                "Средний пульс 124 · Макс. пульс 158"
+        )
+        notes.forEach { note ->
+            val presentation = parseActivityWorkoutPresentation(note)
+            assertEquals(note, ActivityWorkoutSource.HealthConnect, presentation.source)
+            assertEquals(note, 3_725L, presentation.durationSeconds)
+            assertEquals(note, 356, presentation.kilocalories)
+            assertEquals(note, 124, presentation.averageHeartRate)
+            assertEquals(note, 158, presentation.maximumHeartRate)
+            // A known type follows the current app language, whatever language the note was saved in.
+            assertEquals(note, "Strength training", presentation.typeLabel(AppLanguage.EN))
+            assertEquals(note, "Силове тренування", presentation.typeLabel(AppLanguage.UK))
+            assertEquals(note, "Силовая тренировка", presentation.typeLabel(AppLanguage.RU))
+        }
+    }
+
+    @Test
+    fun activityPresentationNamesTheRealSourceAndNeverInventsGarmin() {
+        val appleHealth = parseActivityWorkoutPresentation(
+            "Apple Health · Тренування м'язів кора · Тривалість 15:00"
+        )
+        assertEquals(ActivityWorkoutSource.AppleHealth, appleHealth.source)
+        assertEquals("Тренування м’язів кора", appleHealth.typeLabel(AppLanguage.UK))
+        assertEquals("Core training", appleHealth.typeLabel(AppLanguage.EN))
+        assertEquals(900L, appleHealth.durationSeconds)
+        assertNull(appleHealth.kilocalories)
+        assertNull(appleHealth.averageHeartRate)
+
+        val wearOs = parseActivityWorkoutPresentation("Wear OS · Avg HR 128 · Max HR 171")
+        assertEquals(ActivityWorkoutSource.WearOs, wearOs.source)
+        assertNull(wearOs.typeLabel(AppLanguage.EN))
+        assertEquals(128, wearOs.averageHeartRate)
+        assertEquals(171, wearOs.maximumHeartRate)
+        val wearOsWithOwnNote =
+            parseActivityWorkoutPresentation("Leg day · Wear OS · Сер пульс 128 · Макс пульс 171")
+        assertEquals(ActivityWorkoutSource.WearOs, wearOsWithOwnNote.source)
+        assertEquals(128, wearOsWithOwnNote.averageHeartRate)
+
+        val appleWatch =
+            parseActivityWorkoutPresentation("Apple Watch · Avg HR 118 · Max HR 161 · kcal 312")
+        assertEquals(ActivityWorkoutSource.AppleWatch, appleWatch.source)
+        assertEquals(312, appleWatch.kilocalories)
+        assertEquals(
+            312,
+            parseActivityWorkoutPresentation("Apple Watch · Средний пульс 118 · 312 ккал").kilocalories
+        )
+
+        val garmin = parseActivityWorkoutPresentation(
+            "Garmin · Duration 45:00 · Gym kcal 250 · Garmin kcal 240 · Avg HR 140 · Max HR 175"
+        )
+        assertEquals(ActivityWorkoutSource.Garmin, garmin.source)
+        assertEquals(250, garmin.kilocalories)
+        assertEquals(
+            ActivityWorkoutSource.Garmin,
+            parseActivityWorkoutPresentation(null, hasGarminReceipt = true).source
+        )
+
+        assertEquals(ActivityWorkoutSource.Unknown, parseActivityWorkoutPresentation(null).source)
+        val ownNote = parseActivityWorkoutPresentation("Felt good")
+        assertEquals(ActivityWorkoutSource.Unknown, ownNote.source)
+        assertNull(ownNote.typeLabel(AppLanguage.EN))
+
+        // No type segment: the duration is not mistaken for a type label.
+        assertNull(
+            parseActivityWorkoutPresentation("Health Connect · Duration 10:00").typeLabel(AppLanguage.EN)
+        )
+        // An impossible pair is dropped instead of being shown.
+        val impossible = parseActivityWorkoutPresentation("Health Connect · Avg HR 180 · Max HR 120")
+        assertNull(impossible.averageHeartRate)
+        assertNull(impossible.maximumHeartRate)
+    }
+
     @Test
     fun parserKeepsLegacyNotesAndNamesTheFinalZoneHonestly() {
         val current = parseGarminWorkoutMetrics(

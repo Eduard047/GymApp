@@ -1247,6 +1247,14 @@
     <string name="garmin_workout_title">Силове тренування Garmin</string>
     <string name="garmin_free_workout_title">Вільне тренування Garmin</string>
     <string name="garmin_free_workout_summary">Показники годинника збережено. Додайте виконані вправи та підходи.</string>
+    <string name="activity_workout_health_connect_title">Тренування з Health Connect</string>
+    <string name="activity_workout_apple_health_title">Тренування з Apple Health</string>
+    <string name="activity_workout_wear_os_title">Тренування з Wear OS</string>
+    <string name="activity_workout_apple_watch_title">Тренування з Apple Watch</string>
+    <string name="activity_workout_free_title">Вільне тренування</string>
+    <string name="activity_workout_metrics_saved_hint">Показники збережено. Додайте виконані вправи та підходи.</string>
+    <string name="activity_metric_calories">Калорії</string>
+    <string name="activity_metric_kcal_value">%1$d ккал</string>
     <string name="action_complete_free_workout">Додати вправи</string>
     <string name="garmin_workout_format_title">Силове тренування у форматі Garmin</string>
     <string name="garmin_workout_synced_from">%1$s · синхронізовано з Garmin</string>
@@ -1267,8 +1275,8 @@
     <string name="garmin_metric_garmin_kcal">Garmin ккал</string>
     <string name="garmin_metric_our_formula">наша формула</string>
     <string name="garmin_metric_system">система</string>
-    <string name="garmin_metric_avg_hr">Сер пульс</string>
-    <string name="garmin_metric_max_hr">Макс пульс</string>
+    <string name="garmin_metric_avg_hr">Сер. пульс</string>
+    <string name="garmin_metric_max_hr">Макс. пульс</string>
     <string name="garmin_metric_bpm_value">%1$d уд/хв</string>
     <string name="garmin_metric_bpm_unit">уд/хв</string>
     <string name="garmin_metric_duration_value">тривалість %1$s</string>

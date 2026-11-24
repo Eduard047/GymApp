@@ -1247,6 +1247,14 @@
     <string name="garmin_workout_title">Силовая тренировка Garmin</string>
     <string name="garmin_free_workout_title">Свободная тренировка Garmin</string>
     <string name="garmin_free_workout_summary">Показатели часов сохранены. Добавьте выполненные упражнения и подходы.</string>
+    <string name="activity_workout_health_connect_title">Тренировка из Health Connect</string>
+    <string name="activity_workout_apple_health_title">Тренировка из Apple Health</string>
+    <string name="activity_workout_wear_os_title">Тренировка с Wear OS</string>
+    <string name="activity_workout_apple_watch_title">Тренировка с Apple Watch</string>
+    <string name="activity_workout_free_title">Свободная тренировка</string>
+    <string name="activity_workout_metrics_saved_hint">Показатели сохранены. Добавьте выполненные упражнения и подходы.</string>
+    <string name="activity_metric_calories">Калории</string>
+    <string name="activity_metric_kcal_value">%1$d ккал</string>
     <string name="action_complete_free_workout">Добавить упражнения</string>
     <string name="garmin_workout_format_title">Силовая тренировка в формате Garmin</string>
     <string name="garmin_workout_synced_from">%1$s · синхронизировано с Garmin</string>

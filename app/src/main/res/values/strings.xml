@@ -1205,6 +1205,14 @@
     <string name="garmin_workout_title">Garmin strength workout</string>
     <string name="garmin_free_workout_title">Garmin free workout</string>
     <string name="garmin_free_workout_summary">Watch metrics are saved. Add the exercises and sets you completed.</string>
+    <string name="activity_workout_health_connect_title">Workout from Health Connect</string>
+    <string name="activity_workout_apple_health_title">Workout from Apple Health</string>
+    <string name="activity_workout_wear_os_title">Wear OS workout</string>
+    <string name="activity_workout_apple_watch_title">Apple Watch workout</string>
+    <string name="activity_workout_free_title">Free workout</string>
+    <string name="activity_workout_metrics_saved_hint">Metrics are saved. Add the exercises and sets you completed.</string>
+    <string name="activity_metric_calories">Calories</string>
+    <string name="activity_metric_kcal_value">%1$d kcal</string>
     <string name="action_complete_free_workout">Add exercises</string>
     <string name="garmin_workout_format_title">Garmin-format strength workout</string>
     <string name="garmin_workout_synced_from">%1$s · synced from Garmin</string>

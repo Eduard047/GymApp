@@ -69,7 +69,16 @@ test("note segment templates exist for every language", () => {
       assert.ok(contract.noteSegments[key][language], `${key}.${language}`);
     }
   }
-  assert.ok(contract.noteSegments.duration.en.includes("{minutes}") && contract.noteSegments.duration.en.includes("{seconds}"));
+  // One {duration} placeholder: m:ss below one hour, h:mm:ss from one hour on.
+  assert.ok(contract.noteSegments.duration.en.includes("{duration}"));
+  assert.ok(!contract.noteSegments.duration.en.includes("{minutes}"));
+  // The number comes before the unit ("356 kcal"), like everywhere else in the apps.
+  assert.equal(contract.noteSegments.calories.en, "{value} kcal");
+  assert.equal(contract.noteSegments.calories.uk, "{value} ккал");
+  assert.equal(contract.noteSegments.calories.ru, "{value} ккал");
+  assert.equal(contract.noteSegments.averageHeartRate.uk, "Середній пульс {value}");
+  assert.equal(contract.noteSegments.maximumHeartRate.uk, "Макс. пульс {value}");
+  assert.equal(contract.stores.healthKit.typeLabels.coreTraining.uk, "Тренування м’язів кора");
 });
 
 test("golden cases are well formed and cover every outcome and boundary", () => {

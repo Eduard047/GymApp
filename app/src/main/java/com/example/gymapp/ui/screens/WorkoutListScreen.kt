@@ -1685,7 +1685,15 @@ private fun TrainingHistoryRow(
             )
             Text(
                 text = if (isActivityOnly) {
-                    stringResource(R.string.garmin_free_workout_title)
+                    // The real source (Garmin, Health Connect, Apple Health, a watch), never a fixed "Garmin".
+                    activityWorkoutSourceLabel(
+                        remember(session.session.note, session.hasGarminReceipt) {
+                            com.example.gymapp.garmin.parseActivityWorkoutPresentation(
+                                note = session.session.note,
+                                hasGarminReceipt = session.hasGarminReceipt
+                            )
+                        }
+                    )
                 } else {
                     listOf(
                         formattedPluralStringResource(

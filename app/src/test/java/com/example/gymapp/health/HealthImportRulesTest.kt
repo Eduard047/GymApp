@@ -92,7 +92,7 @@ class HealthImportRulesTest {
             ).split(HealthImportRules.NOTE_SEPARATOR)
             assertEquals(
                 segments.getJSONObject("duration").getString(tag)
-                    .replace("{minutes}", "62").replace("{seconds}", "05"),
+                    .replace("{duration}", "1:02:05"),
                 note[2]
             )
             assertEquals(segments.getJSONObject("calories").getString(tag).replace("{value}", "321"), note[3])
@@ -192,6 +192,36 @@ class HealthImportRulesTest {
             // ActivityOnlyWorkoutEntity.fromItem runs the same validator the sidecar sync uses.
             assertNotNull(com.example.gymapp.data.entity.ActivityOnlyWorkoutEntity.fromItem(decision.item))
         }
+    }
+
+    @Test
+    fun noteWritesTheNumberBeforeTheUnitAndHoursFromOneHourOn() {
+        fun note(seconds: Long, language: AppLanguage) = HealthImportRules.note(
+            store = HealthImportStore.HEALTH_KIT,
+            exerciseType = "coreTraining",
+            durationSeconds = seconds,
+            kilocalories = 356L,
+            averageHeartRate = 124,
+            maximumHeartRate = 158,
+            language = language
+        )
+        assertEquals(
+            "Apple Health · Core training · Duration 47:05 · 356 kcal · Avg HR 124 · Max HR 158",
+            note(2_825L, AppLanguage.EN)
+        )
+        assertEquals(
+            "Apple Health · Тренування м’язів кора · Тривалість 1:35:00 · 356 ккал · " +
+                "Середній пульс 124 · Макс. пульс 158",
+            note(5_700L, AppLanguage.UK)
+        )
+        assertEquals(
+            "Apple Health · Тренировка мышц кора · Длительность 2:05:30 · 356 ккал · " +
+                "Средний пульс 124 · Макс. пульс 158",
+            note(7_530L, AppLanguage.RU)
+        )
+        assertEquals("59:59", HealthImportRules.noteDuration(3_599L))
+        assertEquals("1:00:00", HealthImportRules.noteDuration(3_600L))
+        assertEquals("24:00:00", HealthImportRules.noteDuration(86_400L))
     }
 
     private fun session(json: JSONObject): HealthImportSession {

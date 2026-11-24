@@ -2509,13 +2509,9 @@ public struct WorkoutsView: View {
             ukrainianMany: "підходів",
             languageCode: languageCode
         )
+        // The real source (Garmin, Health Connect, Apple Health, a watch), never a fixed "Garmin".
         let supporting = activityOnly
-            ? gymText(
-                "Garmin free workout",
-                "Вільне тренування Garmin",
-                "Свободная тренировка Garmin",
-                languageCode: languageCode
-            )
+            ? ActivityWorkoutPresentation.parse(workout.note).subtitle(languageCode: languageCode)
             : "\(exerciseLabel)\u{00A0}· \(setLabel)"
         return Button {
             historyReturnWorkoutID = workout.workoutID
@@ -3231,12 +3227,12 @@ public struct WorkoutsView: View {
                             )
                         }
 
-                        Text(activityOnly ? gymText(
-                            "Garmin free workout",
-                            "Вільне тренування Garmin",
-                            "Свободная тренировка Garmin",
-                            languageCode: languageCode
-                        ) : workoutNote(workout))
+                        Text(
+                            activityOnly
+                                ? ActivityWorkoutPresentation.parse(workout.note)
+                                    .subtitle(languageCode: languageCode)
+                                : workoutNote(workout)
+                        )
                             .font(.subheadline)
                             .foregroundStyle(GymTheme.textSecondary)
                             .multilineTextAlignment(.leading)
@@ -3341,6 +3337,16 @@ public struct WorkoutsView: View {
     private func workoutAccessibilityValue(_ workout: WorkoutSessionSummary) -> String {
         if isActivityOnly(workout) {
             let duration = compactHistoryDuration(workout.durationSeconds ?? 0)
+            let activity = ActivityWorkoutPresentation.parse(workout.note)
+            if activity.source != .garmin {
+                let title = activity.subtitle(languageCode: languageCode)
+                return gymText(
+                    "\(title), \(duration), no exercises or sets",
+                    "\(title), \(duration), без вправ і підходів",
+                    "\(title), \(duration), без упражнений и подходов",
+                    languageCode: languageCode
+                )
+            }
             return gymText(
                 "Garmin free workout, \(duration), no exercises or sets",
                 "Вільне тренування Garmin, \(duration), без вправ і підходів",

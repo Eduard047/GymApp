@@ -6,6 +6,9 @@ import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.entity.WorkoutSessionSummary
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.normalizedExerciseName
+import com.example.gymapp.health.HealthImportStore
+import com.example.gymapp.health.HealthTypeLabel
+import com.example.gymapp.util.AppLanguage
 import kotlin.math.roundToInt
 
 private const val MAX_GARMIN_SET_HEART_RATE = 240
@@ -142,6 +145,102 @@ internal data class ComparableWorkoutSnapshot(
     val garminMetrics: GarminWorkoutMetrics?
 )
 
+/** Where an activity-only workout (time and metrics, no exercises or sets) came from. */
+internal enum class ActivityWorkoutSource {
+    Garmin,
+    HealthConnect,
+    AppleHealth,
+    WearOs,
+    AppleWatch,
+    Unknown
+}
+
+/**
+ * What the list row and the detail screen show for an activity-only workout. The source comes from
+ * the local Garmin receipt when there is one, otherwise from the note prefix; a workout may have
+ * been imported on the other platform and arrived through cloud sync, so every prefix is
+ * recognised here. Metrics are read from the note in the current wording ("356 kcal",
+ * "Duration 1:02:05", «Середній пульс») and in the wording stored before it changed ("kcal 356",
+ * "Duration 62:05", «Сер пульс»), in all three languages. Stored notes are never rewritten.
+ */
+internal data class ActivityWorkoutPresentation(
+    val source: ActivityWorkoutSource,
+    val knownTypeLabel: HealthTypeLabel? = null,
+    val savedTypeLabel: String? = null,
+    val durationSeconds: Long? = null,
+    val kilocalories: Int? = null,
+    val averageHeartRate: Int? = null,
+    val maximumHeartRate: Int? = null
+) {
+    /** Activity type in the current language when it is a known type, else as it was saved. */
+    fun typeLabel(language: AppLanguage): String? =
+        knownTypeLabel?.forLanguage(language) ?: savedTypeLabel
+}
+
+internal fun parseActivityWorkoutPresentation(
+    note: String?,
+    hasGarminReceipt: Boolean = false
+): ActivityWorkoutPresentation {
+    val text = note?.takeIf { WorkoutDataLimits.isValidNote(it) }.orEmpty()
+    val segments = text.split(ACTIVITY_NOTE_SEPARATOR).map { it.trim() }.filter { it.isNotEmpty() }
+    val first = segments.firstOrNull()
+    val source = when {
+        hasGarminReceipt || GARMIN_NOTE_MARKER.containsMatchIn(text) -> ActivityWorkoutSource.Garmin
+        first == HealthImportStore.HEALTH_CONNECT.notePrefix -> ActivityWorkoutSource.HealthConnect
+        first == HealthImportStore.HEALTH_KIT.notePrefix -> ActivityWorkoutSource.AppleHealth
+        // A watch note may start with the athlete's own text, so the marker can be any segment.
+        WEAR_OS_NOTE_MARKER in segments -> ActivityWorkoutSource.WearOs
+        APPLE_WATCH_NOTE_MARKER in segments -> ActivityWorkoutSource.AppleWatch
+        else -> ActivityWorkoutSource.Unknown
+    }
+    val savedTypeLabel = segments.getOrNull(1)?.takeIf { segment ->
+        (source == ActivityWorkoutSource.HealthConnect || source == ActivityWorkoutSource.AppleHealth) &&
+            !isActivityMetricSegment(segment)
+    }
+    val kilocalories = ACTIVITY_CALORIE_VALUE.find(text)
+        ?.let { match -> match.groupValues[1].ifEmpty { match.groupValues[2] }.toIntOrNull() }
+        ?.takeIf { it in 1..MAX_GARMIN_CALORIES.toInt() }
+        ?: GYM_CALORIE_VALUE.boundedInt(text, 1..MAX_GARMIN_CALORIES.toInt())
+    var averageHeartRate = AVERAGE_HEART_RATE_VALUE.boundedInt(text, 1..MAX_GARMIN_HEART_RATE)
+    var maximumHeartRate = MAXIMUM_HEART_RATE_VALUE.boundedInt(text, 1..MAX_GARMIN_HEART_RATE)
+    if (averageHeartRate != null && maximumHeartRate != null && averageHeartRate > maximumHeartRate) {
+        averageHeartRate = null
+        maximumHeartRate = null
+    }
+    return ActivityWorkoutPresentation(
+        source = source,
+        knownTypeLabel = savedTypeLabel?.let(::knownHealthTypeLabel),
+        savedTypeLabel = savedTypeLabel,
+        durationSeconds = DURATION_VALUE.firstGroup(text)?.let(::parseDurationSeconds)?.takeIf { it > 0L },
+        kilocalories = kilocalories,
+        averageHeartRate = averageHeartRate,
+        maximumHeartRate = maximumHeartRate
+    )
+}
+
+private fun isActivityMetricSegment(segment: String): Boolean =
+    DURATION_VALUE.containsMatchIn(segment) ||
+        ACTIVITY_CALORIE_VALUE.containsMatchIn(segment) ||
+        AVERAGE_HEART_RATE_VALUE.containsMatchIn(segment) ||
+        MAXIMUM_HEART_RATE_VALUE.containsMatchIn(segment)
+
+/** Matches a saved type label in any language (and with the older straight apostrophe). */
+private fun knownHealthTypeLabel(saved: String): HealthTypeLabel? {
+    val wanted = saved.replace('\'', '’')
+    return HealthImportStore.entries.asSequence()
+        .flatMap { store -> store.typeLabels.values.asSequence() }
+        .firstOrNull { label -> label.en == wanted || label.uk == wanted || label.ru == wanted }
+}
+
+private const val ACTIVITY_NOTE_SEPARATOR = " · "
+private const val WEAR_OS_NOTE_MARKER = "Wear OS"
+private const val APPLE_WATCH_NOTE_MARKER = "Apple Watch"
+
+/** "356 kcal" / «356 ккал» (current) and "kcal 356" / «ккал 356» (older) as a whole note segment. */
+private val ACTIVITY_CALORIE_VALUE = Regex(
+    """(?:^| · )(?:(?:kcal|ккал)\s+([0-9]{1,6})|([0-9]{1,6})\s+(?:kcal|ккал))(?= ·|$)""",
+    RegexOption.IGNORE_CASE
+)
 private val GARMIN_NOTE_MARKER =
     Regex("""^Garmin(?: Fenix 8)?(?: ·|$)""", RegexOption.IGNORE_CASE)
 private val DURATION_VALUE = Regex(
@@ -153,7 +252,7 @@ private val GYM_CALORIE_VALUE =
 private val GARMIN_CALORIE_VALUE =
     Regex("""Garmin\s+(?:kcal|ккал)\s+([0-9]{1,6})(?![0-9])""", RegexOption.IGNORE_CASE)
 private val AVERAGE_HEART_RATE_VALUE = Regex(
-    """(?:Avg HR|Сер пульс|Средний пульс)\s+([0-9]{1,3})(?![0-9])""",
+    """(?:Avg HR|Сер пульс|Сер\. пульс|Середній пульс|Средний пульс)\s+([0-9]{1,3})(?![0-9])""",
     RegexOption.IGNORE_CASE
 )
 private val MAXIMUM_HEART_RATE_VALUE = Regex(

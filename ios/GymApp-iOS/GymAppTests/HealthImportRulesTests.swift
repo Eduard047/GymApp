@@ -155,6 +155,126 @@ final class HealthImportRulesTests: XCTestCase {
         XCTAssertNil(plan.skipped[.overlap])
     }
 
+    // MARK: Note wording and reading
+
+    func testNoteWritesTheNumberBeforeTheUnitAndHoursFromOneHourOn() {
+        func note(_ seconds: Int, _ language: String) -> String {
+            HealthImportRules.buildNote(
+                type: "coreTraining",
+                durationSeconds: seconds,
+                gymCalories: 356,
+                averageHeartRate: 124,
+                maximumHeartRate: 158,
+                languageCode: language
+            )
+        }
+        XCTAssertEqual(
+            note(2_825, "en"),
+            "Apple Health · Core training · Duration 47:05 · 356 kcal · Avg HR 124 · Max HR 158"
+        )
+        XCTAssertEqual(
+            note(5_700, "uk"),
+            "Apple Health · Тренування м’язів кора · Тривалість 1:35:00 · 356 ккал · " +
+                "Середній пульс 124 · Макс. пульс 158"
+        )
+        XCTAssertEqual(
+            note(7_530, "ru"),
+            "Apple Health · Тренировка мышц кора · Длительность 2:05:30 · 356 ккал · " +
+                "Средний пульс 124 · Макс. пульс 158"
+        )
+        XCTAssertEqual(HealthImportRules.noteDuration(3_599), "59:59")
+        XCTAssertEqual(HealthImportRules.noteDuration(3_600), "1:00:00")
+        XCTAssertEqual(HealthImportRules.noteDuration(86_400), "24:00:00")
+    }
+
+    func testActivityPresentationReadsCurrentAndOlderNotesInEveryLanguage() {
+        let notes = [
+            // Current wording: number before the unit, h:mm:ss from one hour on.
+            "Health Connect · Strength training · Duration 1:02:05 · 356 kcal · Avg HR 124 · Max HR 158",
+            "Health Connect · Силове тренування · Тривалість 1:02:05 · 356 ккал · Середній пульс 124 · Макс. пульс 158",
+            "Health Connect · Силовая тренировка · Длительность 1:02:05 · 356 ккал · Средний пульс 124 · Макс. пульс 158",
+            // Wording stored before the note format changed; those notes are never rewritten.
+            "Health Connect · Strength training · Duration 62:05 · kcal 356 · Avg HR 124 · Max HR 158",
+            "Health Connect · Силове тренування · Тривалість 62:05 · ккал 356 · Сер пульс 124 · Макс пульс 158",
+            "Health Connect · Силовая тренировка · Длительность 62:05 · ккал 356 · Средний пульс 124 · Макс. пульс 158"
+        ]
+        for note in notes {
+            let presentation = ActivityWorkoutPresentation.parse(note)
+            XCTAssertEqual(presentation.source, .healthConnect, note)
+            XCTAssertEqual(presentation.durationSeconds, 3_725, note)
+            XCTAssertEqual(presentation.kilocalories, 356, note)
+            XCTAssertEqual(presentation.averageHeartRate, 124, note)
+            XCTAssertEqual(presentation.maximumHeartRate, 158, note)
+            // A known type follows the current app language, whatever language the note was saved in.
+            XCTAssertEqual(presentation.typeLabel(languageCode: "en"), "Strength training", note)
+            XCTAssertEqual(presentation.typeLabel(languageCode: "uk"), "Силове тренування", note)
+            XCTAssertEqual(presentation.typeLabel(languageCode: "ru"), "Силовая тренировка", note)
+            XCTAssertEqual(
+                presentation.subtitle(languageCode: "ru"),
+                "Тренировка из Health Connect · Силовая тренировка",
+                note
+            )
+        }
+    }
+
+    func testActivityPresentationNamesTheRealSourceAndNeverInventsGarmin() {
+        let appleHealth = ActivityWorkoutPresentation.parse(
+            "Apple Health · Тренування м'язів кора · Тривалість 15:00"
+        )
+        XCTAssertEqual(appleHealth.source, .appleHealth)
+        XCTAssertEqual(appleHealth.typeLabel(languageCode: "uk"), "Тренування м’язів кора")
+        XCTAssertEqual(appleHealth.subtitle(languageCode: "en"), "Workout from Apple Health · Core training")
+        XCTAssertEqual(appleHealth.subtitle(languageCode: "uk"), "Тренування з Apple Health · Тренування м’язів кора")
+        XCTAssertEqual(appleHealth.durationSeconds, 900)
+        XCTAssertNil(appleHealth.kilocalories)
+        XCTAssertNil(appleHealth.averageHeartRate)
+
+        let wearOS = ActivityWorkoutPresentation.parse("Wear OS · Avg HR 128 · Max HR 171")
+        XCTAssertEqual(wearOS.source, .wearOS)
+        XCTAssertEqual(wearOS.subtitle(languageCode: "ru"), "Тренировка с Wear OS")
+        XCTAssertEqual(wearOS.averageHeartRate, 128)
+        XCTAssertEqual(wearOS.maximumHeartRate, 171)
+        let wearOSWithOwnNote = ActivityWorkoutPresentation.parse(
+            "Leg day · Wear OS · Сер пульс 128 · Макс пульс 171"
+        )
+        XCTAssertEqual(wearOSWithOwnNote.source, .wearOS)
+        XCTAssertEqual(wearOSWithOwnNote.averageHeartRate, 128)
+
+        let appleWatch = ActivityWorkoutPresentation.parse(
+            "Apple Watch · Avg HR 118 · Max HR 161 · kcal 312"
+        )
+        XCTAssertEqual(appleWatch.source, .appleWatch)
+        XCTAssertEqual(appleWatch.subtitle(languageCode: "uk"), "Тренування з Apple Watch")
+        XCTAssertEqual(appleWatch.kilocalories, 312)
+        XCTAssertEqual(
+            ActivityWorkoutPresentation.parse("Apple Watch · Средний пульс 118 · 312 ккал").kilocalories,
+            312
+        )
+
+        let garmin = ActivityWorkoutPresentation.parse(
+            "Garmin · Duration 45:00 · Gym kcal 250 · Garmin kcal 240 · Avg HR 140 · Max HR 175"
+        )
+        XCTAssertEqual(garmin.source, .garmin)
+        XCTAssertEqual(garmin.subtitle(languageCode: "en"), "Garmin free workout")
+        XCTAssertEqual(garmin.kilocalories, 250)
+
+        XCTAssertEqual(ActivityWorkoutPresentation.parse(nil).source, .unknown)
+        let ownNote = ActivityWorkoutPresentation.parse("Felt good")
+        XCTAssertEqual(ownNote.source, .unknown)
+        XCTAssertEqual(ownNote.subtitle(languageCode: "ru"), "Свободная тренировка")
+        XCTAssertFalse(ownNote.subtitle(languageCode: "en").contains("Garmin"))
+
+        // No type segment: the duration is not mistaken for a type label.
+        XCTAssertNil(
+            ActivityWorkoutPresentation.parse("Health Connect · Duration 10:00")
+                .typeLabel(languageCode: "en")
+        )
+        // An impossible pair is dropped instead of being shown.
+        let impossible = ActivityWorkoutPresentation.parse("Health Connect · Avg HR 180 · Max HR 120")
+        XCTAssertNil(impossible.averageHeartRate)
+        XCTAssertNil(impossible.maximumHeartRate)
+    }
+
     // MARK: Service
 
     func testReimportIsIdempotentAndDeletedWorkoutNeverReturns() async throws {
@@ -280,6 +400,9 @@ final class HealthImportRulesTests: XCTestCase {
         let suite = "HealthImportRulesTests-\(name)-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        // The note is written in the app language; pin it so the suite does not depend on the
+        // simulator language (an empty suite falls back to `Locale.preferredLanguages`).
+        defaults.set("en", forKey: "app-language")
         let auth = AuthService(keychain: HealthImportTestKeychain(), defaults: defaults)
         let account = AppAccountSession.local(
             id: "00000000-0000-4000-8000-000000000401",

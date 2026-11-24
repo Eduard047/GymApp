@@ -1480,12 +1480,21 @@ struct WorkoutDetailView: View {
                                 presentWorkoutDeletionConfirmation()
                             } label: {
                                 Label(
-                                    gymText(
-                                        "Delete free workout",
-                                        "Видалити вільне тренування",
-                                        "Удалить свободную тренировку",
-                                        languageCode: gymCurrentLanguageCode()
-                                    ),
+                                    // "Free workout" wording only for Garmin; other sources get the neutral label.
+                                    garminSummary != nil ||
+                                        ActivityWorkoutPresentation.parse(workout.note).source == .garmin
+                                        ? gymText(
+                                            "Delete free workout",
+                                            "Видалити вільне тренування",
+                                            "Удалить свободную тренировку",
+                                            languageCode: gymCurrentLanguageCode()
+                                        )
+                                        : gymText(
+                                            "Delete workout",
+                                            "Видалити тренування",
+                                            "Удалить тренировку",
+                                            languageCode: gymCurrentLanguageCode()
+                                        ),
                                     systemImage: "trash"
                                 )
                                 .frame(maxWidth: .infinity, minHeight: 46)
@@ -1648,6 +1657,21 @@ struct WorkoutDetailView: View {
     ) -> some View {
         let languageCode = gymCurrentLanguageCode()
         let activityOnly = isActivityOnly(workout)
+        // An activity-only workout is labelled by its real source; "Garmin" only for Garmin.
+        let activity = ActivityWorkoutPresentation.parse(workout.note)
+        let importedActivity = activityOnly && garminSummary == nil && activity.source != .garmin
+        // Stored metrics first (the import saves them as fields); the note is the fallback for a
+        // workout that arrived without them.
+        let storedMetrics = store.activityOnlyCloudItems.first {
+            $0.workoutStartedAt == workout.date.gymEpochMilliseconds
+        }
+        let storedCalories = storedMetrics.flatMap { item -> Int? in
+            guard item.gymCalories.isFinite, item.gymCalories >= 0.5 else { return nil }
+            return Int(item.gymCalories.rounded())
+        }
+        let importedCalories = storedCalories ?? activity.kilocalories
+        let importedAverageHeartRate = storedMetrics?.averageHeartRate ?? activity.averageHeartRate
+        let importedMaximumHeartRate = storedMetrics?.maximumHeartRate ?? activity.maximumHeartRate
         return GymHeroPanel {
             VStack(alignment: .leading, spacing: 12) {
                 Text(compactHeroTitle(workout.date, languageCode: languageCode))
@@ -1655,12 +1679,14 @@ struct WorkoutDetailView: View {
                     .accessibilityAddTraits(.isHeader)
 
                 if activityOnly {
-                    Text(gymText(
-                        "Garmin free workout",
-                        "Вільне тренування Garmin",
-                        "Свободная тренировка Garmin",
-                        languageCode: languageCode
-                    ))
+                    Text(
+                        garminSummary != nil
+                            ? ActivityWorkoutPresentation(
+                                source: .garmin, savedTypeLabel: nil, durationSeconds: nil,
+                                kilocalories: nil, averageHeartRate: nil, maximumHeartRate: nil
+                            ).sourceTitle(languageCode: languageCode)
+                            : activity.subtitle(languageCode: languageCode)
+                    )
                     .font(.subheadline)
                     .foregroundStyle(GymTheme.onHeroSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1699,7 +1725,43 @@ struct WorkoutDetailView: View {
                                 onHero: true
                             )
                         }
-                        if let calories = garminSummary?.gymCalories {
+                        if importedActivity {
+                            // Same order as Android: duration, kcal, average and maximum heart rate.
+                            if let calories = importedCalories, calories > 0 {
+                                GymMetricTile(
+                                    label: gymText(
+                                        "Calories", "Калорії", "Калории",
+                                        languageCode: languageCode
+                                    ),
+                                    value: "\(calories)\u{00A0}\(GarminWorkoutDetailCopy.calorieUnit(languageCode: languageCode))",
+                                    onHero: true
+                                )
+                            }
+                            if let average = importedAverageHeartRate, average > 0 {
+                                GymMetricTile(
+                                    label: gymText(
+                                        "Avg HR", "Сер. пульс", "Сред. пульс",
+                                        languageCode: languageCode
+                                    ),
+                                    value: GarminWorkoutDetailCopy.beatsPerMinute(
+                                        average, languageCode: languageCode
+                                    ),
+                                    onHero: true
+                                )
+                            }
+                            if let maximum = importedMaximumHeartRate, maximum > 0 {
+                                GymMetricTile(
+                                    label: gymText(
+                                        "Max HR", "Макс. пульс", "Макс. пульс",
+                                        languageCode: languageCode
+                                    ),
+                                    value: GarminWorkoutDetailCopy.beatsPerMinute(
+                                        maximum, languageCode: languageCode
+                                    ),
+                                    onHero: true
+                                )
+                            }
+                        } else if let calories = garminSummary?.gymCalories {
                             GymMetricTile(
                                 label: "GymApp",
                                 value: "\(calories) \(GarminWorkoutDetailCopy.calorieUnit(languageCode: languageCode))",
@@ -1716,7 +1778,14 @@ struct WorkoutDetailView: View {
                 }
 
                 if activityOnly {
-                    Text(gymText(
+                    // Shown together with the tiles above, so "metrics are saved" is always true;
+                    // "watch" is said only for a Garmin workout.
+                    Text(importedActivity ? gymText(
+                        "Metrics are saved. Add the exercises and sets you completed.",
+                        "Показники збережено. Додайте виконані вправи та підходи.",
+                        "Показатели сохранены. Добавьте выполненные упражнения и подходы.",
+                        languageCode: languageCode
+                    ) : gymText(
                         "Watch metrics are saved. Add the exercises and sets you completed.",
                         "Показники годинника збережено. Додайте виконані вправи та підходи.",
                         "Показатели часов сохранены. Добавьте выполненные упражнения и подходы.",

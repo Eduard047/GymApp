@@ -57,7 +57,7 @@ internal enum class HealthImportStore(
                 "Функциональная силовая тренировка"
             ),
             "coreTraining" to HealthTypeLabel(
-                "Core training", "Тренування м'язів кора", "Тренировка мышц кора"
+                "Core training", "Тренування м’язів кора", "Тренировка мышц кора"
             ),
             "highIntensityIntervalTraining" to HealthTypeLabel("HIIT", "HIIT", "HIIT"),
             "crossTraining" to HealthTypeLabel("Cross training", "Крос-тренінг", "Кросс-тренинг"),
@@ -285,34 +285,46 @@ internal object HealthImportRules {
         val details = mutableListOf(store.notePrefix)
         store.typeLabels[exerciseType]?.let { details += it.forLanguage(language) }
         if (durationSeconds > 0L) {
-            val minutes = (durationSeconds / 60L).toString()
-            val seconds = (durationSeconds % 60L).toString().padStart(2, '0')
+            val duration = noteDuration(durationSeconds)
             details += when (language) {
-                AppLanguage.UK -> "Тривалість $minutes:$seconds"
-                AppLanguage.RU -> "Длительность $minutes:$seconds"
-                AppLanguage.EN -> "Duration $minutes:$seconds"
+                AppLanguage.UK -> "Тривалість $duration"
+                AppLanguage.RU -> "Длительность $duration"
+                AppLanguage.EN -> "Duration $duration"
             }
         }
         if (kilocalories > 0L) {
+            // Number before the unit, like everywhere else in the app ("356 kcal").
             details += when (language) {
-                AppLanguage.UK, AppLanguage.RU -> "ккал $kilocalories"
-                AppLanguage.EN -> "kcal $kilocalories"
+                AppLanguage.UK, AppLanguage.RU -> "$kilocalories ккал"
+                AppLanguage.EN -> "$kilocalories kcal"
             }
         }
         if (averageHeartRate != null && averageHeartRate > 0) {
             details += when (language) {
-                AppLanguage.UK -> "Сер пульс $averageHeartRate"
+                AppLanguage.UK -> "Середній пульс $averageHeartRate"
                 AppLanguage.RU -> "Средний пульс $averageHeartRate"
                 AppLanguage.EN -> "Avg HR $averageHeartRate"
             }
         }
         if (maximumHeartRate != null && maximumHeartRate > 0) {
             details += when (language) {
-                AppLanguage.UK -> "Макс пульс $maximumHeartRate"
+                AppLanguage.UK -> "Макс. пульс $maximumHeartRate"
                 AppLanguage.RU -> "Макс. пульс $maximumHeartRate"
                 AppLanguage.EN -> "Max HR $maximumHeartRate"
             }
         }
         return details.joinToString(NOTE_SEPARATOR)
+    }
+
+    /** Note duration: m:ss below one hour, h:mm:ss from one hour on (two-digit minutes and seconds). */
+    internal fun noteDuration(durationSeconds: Long): String {
+        val hours = durationSeconds / 3_600L
+        val minutes = (durationSeconds % 3_600L) / 60L
+        val seconds = (durationSeconds % 60L).toString().padStart(2, '0')
+        return if (hours > 0L) {
+            "$hours:${minutes.toString().padStart(2, '0')}:$seconds"
+        } else {
+            "$minutes:$seconds"
+        }
     }
 }

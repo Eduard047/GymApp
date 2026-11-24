@@ -336,17 +336,15 @@ enum HealthImportRules {
     ) -> String {
         let language = normalizedLanguage(languageCode)
         var segments = [notePrefix, typeLabel(type, language: language)]
-        segments.append(
-            durationLabel(language: language) + " " +
-                "\(durationSeconds / 60):" + String(format: "%02d", durationSeconds % 60)
-        )
+        segments.append(durationLabel(language: language) + " " + noteDuration(durationSeconds))
         if gymCalories > 0 {
-            segments.append(language == "en" ? "kcal \(gymCalories)" : "ккал \(gymCalories)")
+            // Number before the unit, like everywhere else in the app ("356 kcal").
+            segments.append(language == "en" ? "\(gymCalories) kcal" : "\(gymCalories) ккал")
         }
         if let averageHeartRate, averageHeartRate > 0 {
             let label: String
             switch language {
-            case "uk": label = "Сер пульс"
+            case "uk": label = "Середній пульс"
             case "ru": label = "Средний пульс"
             default: label = "Avg HR"
             }
@@ -355,13 +353,24 @@ enum HealthImportRules {
         if let maximumHeartRate, maximumHeartRate > 0 {
             let label: String
             switch language {
-            case "uk": label = "Макс пульс"
+            case "uk": label = "Макс. пульс"
             case "ru": label = "Макс. пульс"
             default: label = "Max HR"
             }
             segments.append("\(label) \(maximumHeartRate)")
         }
         return segments.joined(separator: noteSeparator)
+    }
+
+    /// Note duration: m:ss below one hour, h:mm:ss from one hour on (two-digit minutes and seconds).
+    static func noteDuration(_ durationSeconds: Int) -> String {
+        let hours = durationSeconds / 3_600
+        let minutes = (durationSeconds % 3_600) / 60
+        let seconds = String(format: "%02d", durationSeconds % 60)
+        if hours > 0 {
+            return "\(hours):" + String(format: "%02d", minutes) + ":\(seconds)"
+        }
+        return "\(minutes):\(seconds)"
     }
 
     private static func durationLabel(language: String) -> String {
@@ -383,7 +392,7 @@ enum HealthImportRules {
                 "Функциональная силовая тренировка"
             ),
             "coreTraining": (
-                "Core training", "Тренування м'язів кора", "Тренировка мышц кора"
+                "Core training", "Тренування м’язів кора", "Тренировка мышц кора"
             ),
             "highIntensityIntervalTraining": ("HIIT", "HIIT", "HIIT"),
             "crossTraining": ("Cross training", "Крос-тренінг", "Кросс-тренинг"),
@@ -412,5 +421,223 @@ enum HealthImportRules {
     private static func saturatingSubtract(_ lhs: Int64, _ rhs: Int64) -> Int64 {
         let (value, overflow) = lhs.subtractingReportingOverflow(rhs)
         return overflow ? (rhs > 0 ? Int64.min : Int64.max) : value
+    }
+}
+
+// MARK: - Activity-only workout presentation
+
+/// Where an activity-only workout (time and metrics, no exercises or sets) came from.
+enum ActivityWorkoutSource: Equatable {
+    case garmin
+    case healthConnect
+    case appleHealth
+    case wearOS
+    case appleWatch
+    case unknown
+}
+
+/// What the workout row and the detail screen show for an activity-only workout. The source is
+/// read from the note prefix; a workout may have been imported on the other platform and arrived
+/// through cloud sync, so every prefix is recognised here. Metrics are read from the note in the
+/// current wording ("356 kcal", "Duration 1:02:05", «Середній пульс») and in the wording stored
+/// before it changed ("kcal 356", "Duration 62:05", «Сер пульс»), in all three languages.
+/// Stored notes are never rewritten. Mirrors Android `parseActivityWorkoutPresentation`.
+struct ActivityWorkoutPresentation: Equatable {
+    let source: ActivityWorkoutSource
+    let savedTypeLabel: String?
+    let durationSeconds: Int?
+    let kilocalories: Int?
+    let averageHeartRate: Int?
+    let maximumHeartRate: Int?
+
+    static func parse(_ note: String?) -> ActivityWorkoutPresentation {
+        var text = ""
+        if let note, note.utf8.count <= maxNoteBytes { text = note }
+        let segments = text.components(separatedBy: HealthImportRules.noteSeparator)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let source: ActivityWorkoutSource
+        if captures(garminMarker, in: text) != nil {
+            source = .garmin
+        } else if segments.first == healthConnectPrefix {
+            source = .healthConnect
+        } else if segments.first == HealthImportRules.notePrefix {
+            source = .appleHealth
+        } else if segments.contains(wearOSMarker) {
+            // A watch note may start with the athlete's own text, so the marker can be any segment.
+            source = .wearOS
+        } else if segments.contains(appleWatchMarker) {
+            source = .appleWatch
+        } else {
+            source = .unknown
+        }
+
+        var savedTypeLabel: String?
+        if source == .healthConnect || source == .appleHealth, segments.count > 1,
+           !isMetricSegment(segments[1]) {
+            savedTypeLabel = segments[1]
+        }
+
+        // Group 1 is the older "kcal 356" order, group 2 the current "356 kcal" order.
+        let calorieText = group(1, of: calorieValue, in: text) ?? group(2, of: calorieValue, in: text)
+        var kilocalories = bounded(calorieText, 1 ... maxKilocalories)
+        if kilocalories == nil {
+            kilocalories = bounded(group(1, of: gymCalorieValue, in: text), 1 ... maxKilocalories)
+        }
+        var averageHeartRate = bounded(
+            group(1, of: averageHeartRateValue, in: text), 1 ... maxHeartRate
+        )
+        var maximumHeartRate = bounded(
+            group(1, of: maximumHeartRateValue, in: text), 1 ... maxHeartRate
+        )
+        if let average = averageHeartRate, let maximum = maximumHeartRate, average > maximum {
+            averageHeartRate = nil
+            maximumHeartRate = nil
+        }
+        return ActivityWorkoutPresentation(
+            source: source,
+            savedTypeLabel: savedTypeLabel,
+            durationSeconds: group(1, of: durationValue, in: text).flatMap(parseDuration),
+            kilocalories: kilocalories,
+            averageHeartRate: averageHeartRate,
+            maximumHeartRate: maximumHeartRate
+        )
+    }
+
+    /// Activity type in the given language when it is a known type, else as it was saved.
+    func typeLabel(languageCode: String) -> String? {
+        guard let savedTypeLabel else { return nil }
+        let wanted = savedTypeLabel.replacingOccurrences(of: "'", with: "’")
+        guard let known = Self.knownTypeLabels.first(where: {
+            $0.en == wanted || $0.uk == wanted || $0.ru == wanted
+        }) else { return savedTypeLabel }
+        let lowered = languageCode.lowercased()
+        if lowered.hasPrefix("uk") { return known.uk }
+        if lowered.hasPrefix("ru") { return known.ru }
+        return known.en
+    }
+
+    /// The real source of the workout; "Garmin" only for a Garmin workout.
+    func sourceTitle(languageCode: String) -> String {
+        switch source {
+        case .garmin:
+            gymText(
+                "Garmin free workout", "Вільне тренування Garmin", "Свободная тренировка Garmin",
+                languageCode: languageCode
+            )
+        case .healthConnect:
+            gymText(
+                "Workout from Health Connect", "Тренування з Health Connect",
+                "Тренировка из Health Connect",
+                languageCode: languageCode
+            )
+        case .appleHealth:
+            gymText(
+                "Workout from Apple Health", "Тренування з Apple Health",
+                "Тренировка из Apple Health",
+                languageCode: languageCode
+            )
+        case .wearOS:
+            gymText(
+                "Wear OS workout", "Тренування з Wear OS", "Тренировка с Wear OS",
+                languageCode: languageCode
+            )
+        case .appleWatch:
+            gymText(
+                "Apple Watch workout", "Тренування з Apple Watch", "Тренировка с Apple Watch",
+                languageCode: languageCode
+            )
+        case .unknown:
+            gymText(
+                "Free workout", "Вільне тренування", "Свободная тренировка",
+                languageCode: languageCode
+            )
+        }
+    }
+
+    /// Row and detail subtitle: the source, then the activity type when the import knows it.
+    func subtitle(languageCode: String) -> String {
+        let title = sourceTitle(languageCode: languageCode)
+        guard let type = typeLabel(languageCode: languageCode), !type.isEmpty else { return title }
+        return "\(title) · \(type)"
+    }
+
+    private static let maxNoteBytes = 16_384
+    private static let maxKilocalories = 100_000
+    private static let maxHeartRate = 240
+    private static let healthConnectPrefix = "Health Connect"
+    private static let wearOSMarker = "Wear OS"
+    private static let appleWatchMarker = "Apple Watch"
+    private static let garminMarker = #"^Garmin(?: Fenix 8)?(?: ·|$)"#
+    private static let durationValue =
+        #"(?:Duration|Тривалість|Длительность)\s+([0-9]{1,5}:[0-9]{2}(?::[0-9]{2})?)(?![0-9:])"#
+    /// "356 kcal" / «356 ккал» (current) and "kcal 356" / «ккал 356» (older) as a whole segment.
+    private static let calorieValue =
+        #"(?:^| · )(?:(?:kcal|ккал)\s+([0-9]{1,6})|([0-9]{1,6})\s+(?:kcal|ккал))(?= ·|$)"#
+    private static let gymCalorieValue = #"Gym\s+(?:kcal|ккал)\s+([0-9]{1,6})(?![0-9])"#
+    private static let averageHeartRateValue =
+        #"(?:Avg HR|Сер пульс|Сер\. пульс|Середній пульс|Средний пульс)\s+([0-9]{1,3})(?![0-9])"#
+    private static let maximumHeartRateValue =
+        #"(?:Max HR|Макс пульс|Макс\. пульс)\s+([0-9]{1,3})(?![0-9])"#
+
+    /// Type labels of both health stores, so a workout imported on the other platform reads in
+    /// the current language too.
+    private static let knownTypeLabels: [(en: String, uk: String, ru: String)] = [
+        ("Strength training", "Силове тренування", "Силовая тренировка"),
+        (
+            "Functional strength training", "Функціональне силове тренування",
+            "Функциональная силовая тренировка"
+        ),
+        ("Core training", "Тренування м’язів кора", "Тренировка мышц кора"),
+        ("HIIT", "HIIT", "HIIT"),
+        ("Cross training", "Крос-тренінг", "Кросс-тренинг"),
+        ("Gymnastics", "Гімнастика", "Гимнастика"),
+        ("Weightlifting", "Важка атлетика", "Тяжёлая атлетика"),
+        ("Calisthenics", "Калістеніка", "Калистеника"),
+        ("Boot camp", "Буткемп", "Буткемп")
+    ]
+
+    private static func isMetricSegment(_ segment: String) -> Bool {
+        [durationValue, calorieValue, averageHeartRateValue, maximumHeartRateValue]
+            .contains { captures($0, in: segment) != nil }
+    }
+
+    private static func captures(_ pattern: String, in text: String) -> [String?]? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text))
+        else { return nil }
+        return (0 ..< match.numberOfRanges).map { index in
+            Range(match.range(at: index), in: text).map { String(text[$0]) }
+        }
+    }
+
+    /// One capture group of the first match, nil when the pattern or that group did not match.
+    private static func group(_ index: Int, of pattern: String, in text: String) -> String? {
+        guard let groups = captures(pattern, in: text), groups.indices.contains(index) else {
+            return nil
+        }
+        return groups[index]
+    }
+
+    private static func bounded(_ value: String?, _ range: ClosedRange<Int>) -> Int? {
+        guard let text = value, let number = Int(text), range.contains(number) else {
+            return nil
+        }
+        return number
+    }
+
+    private static func parseDuration(_ value: String) -> Int? {
+        let parts = value.split(separator: ":", omittingEmptySubsequences: false).map { Int($0) }
+        guard parts.count == 2 || parts.count == 3, !parts.contains(nil) else { return nil }
+        let numbers = parts.compactMap { $0 }
+        let seconds: Int
+        if numbers.count == 2 {
+            guard (0 ... 59).contains(numbers[1]) else { return nil }
+            seconds = numbers[0] * 60 + numbers[1]
+        } else {
+            guard (0 ... 59).contains(numbers[1]), (0 ... 59).contains(numbers[2]) else { return nil }
+            seconds = numbers[0] * 3_600 + numbers[1] * 60 + numbers[2]
+        }
+        return seconds > 0 ? seconds : nil
     }
 }

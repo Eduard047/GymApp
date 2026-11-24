@@ -38,7 +38,7 @@
     "sessionCap": "At most maxSessionsPerRun sessions that pass own-app and not-gym-type are evaluated per run, newest start first; at most maxRecordsScannedPerRun records are read. Remaining sessions are reported as truncated, not skipped with a reason.",
     "heartRate": "Samples with startMillis <= timeMillis <= endMillis and minPlausibleBpm <= bpm <= maxPlausibleBpm. averageHeartRate = sum / count rounded half up; maximumHeartRate = max. Both absent without samples.",
     "calories": "gymCalories = kilocalories rounded half up to an integer when finite and within 0..maxKilocalories, else 0. A value of 0 adds no kcal note segment.",
-    "workout": "workoutStartedAt = startMillis; garminCalories and endingHeartRateZone are never set; note is notePrefix, type label, then the segments below joined by noteSeparator, each present only when its value is greater than 0. Duration shows as minutes:seconds with two-digit seconds; minutes are not capped at 59.",
+    "workout": "workoutStartedAt = startMillis; garminCalories and endingHeartRateZone are never set; note is notePrefix, type label, then the segments below joined by noteSeparator, each present only when its value is greater than 0. Duration shows as minutes:seconds with two-digit seconds below one hour and as hours:minutes:seconds with two-digit minutes and seconds from one hour on. The kcal segment writes the number before the unit. Readers of stored notes must also accept the earlier wording (unit before the number, minutes not capped at 59, uk 'Сер пульс' / 'Макс пульс'); stored notes are never rewritten.",
     "window": "Only sessions that start within the last windowDays days are read. Runs started automatically are skipped when the last completed run is newer than minAutoImportIntervalSeconds.",
     "accountOptIn": "Health permission belongs to the app, not to a GymApp account, so every account opts in on its own. The per-account flag enabled is off by default. Connect = request the store permissions + set enabled; disconnect = clear enabled (revoking the store permission itself stays a UI action). A run for an account whose flag is off returns status notEnabled before it reads anything from the store, for automatic and manual triggers alike. Other accounts of the same install never import on its behalf.",
     "dataOrigin": "Heart-rate samples and kilocalories are read only from the data origin (source app) that recorded the session itself, never from any other source. A session without a source id gets no heart rate and no kilocalories. Missing data stays missing; there is no fallback to other apps.",
@@ -46,23 +46,23 @@
   },
   "noteSegments": {
     "duration": {
-      "en": "Duration {minutes}:{seconds}",
-      "uk": "Тривалість {minutes}:{seconds}",
-      "ru": "Длительность {minutes}:{seconds}"
+      "en": "Duration {duration}",
+      "uk": "Тривалість {duration}",
+      "ru": "Длительность {duration}"
     },
     "calories": {
-      "en": "kcal {value}",
-      "uk": "ккал {value}",
-      "ru": "ккал {value}"
+      "en": "{value} kcal",
+      "uk": "{value} ккал",
+      "ru": "{value} ккал"
     },
     "averageHeartRate": {
       "en": "Avg HR {value}",
-      "uk": "Сер пульс {value}",
+      "uk": "Середній пульс {value}",
       "ru": "Средний пульс {value}"
     },
     "maximumHeartRate": {
       "en": "Max HR {value}",
-      "uk": "Макс пульс {value}",
+      "uk": "Макс. пульс {value}",
       "ru": "Макс. пульс {value}"
     }
   },
@@ -143,7 +143,7 @@
         },
         "coreTraining": {
           "en": "Core training",
-          "uk": "Тренування м'язів кора",
+          "uk": "Тренування м’язів кора",
           "ru": "Тренировка мышц кора"
         },
         "highIntensityIntervalTraining": {
@@ -231,7 +231,7 @@
           "gymCalories": 312,
           "averageHeartRate": 140,
           "maximumHeartRate": 170,
-          "note": "Health Connect · Strength training · Duration 60:00 · kcal 312 · Avg HR 140 · Max HR 170"
+          "note": "Health Connect · Strength training · Duration 1:00:00 · 312 kcal · Avg HR 140 · Max HR 170"
         }
       }
     },
@@ -304,7 +304,7 @@
           "gymCalories": 500,
           "averageHeartRate": 100,
           "maximumHeartRate": 101,
-          "note": "Health Connect · HIIT · Длительность 20:00 · ккал 500 · Средний пульс 100 · Макс. пульс 101"
+          "note": "Health Connect · HIIT · Длительность 20:00 · 500 ккал · Средний пульс 100 · Макс. пульс 101"
         }
       }
     },
@@ -502,7 +502,7 @@
           "gymCalories": 0,
           "averageHeartRate": null,
           "maximumHeartRate": null,
-          "note": "Health Connect · Strength training · Duration 1440:00"
+          "note": "Health Connect · Strength training · Duration 24:00:00"
         }
       }
     },
@@ -869,7 +869,7 @@
           "gymCalories": 0,
           "averageHeartRate": null,
           "maximumHeartRate": null,
-          "note": "Health Connect · Strength training · Duration 60:00"
+          "note": "Health Connect · Strength training · Duration 1:00:00"
         }
       }
     },
@@ -930,7 +930,7 @@
           "gymCalories": 0,
           "averageHeartRate": null,
           "maximumHeartRate": null,
-          "note": "Health Connect · Strength training · Duration 60:00"
+          "note": "Health Connect · Strength training · Duration 1:00:00"
         }
       }
     },
@@ -1017,7 +1017,7 @@
           "gymCalories": 0,
           "averageHeartRate": null,
           "maximumHeartRate": null,
-          "note": "Health Connect · Strength training · Duration 60:00"
+          "note": "Health Connect · Strength training · Duration 1:00:00"
         }
       }
     },
@@ -1086,7 +1086,7 @@
           "gymCalories": 251,
           "averageHeartRate": 100,
           "maximumHeartRate": 110,
-          "note": "Apple Health · Strength training · Duration 45:00 · kcal 251 · Avg HR 100 · Max HR 110"
+          "note": "Apple Health · Strength training · Duration 45:00 · 251 kcal · Avg HR 100 · Max HR 110"
         }
       }
     },
@@ -1471,7 +1471,7 @@
           "gymCalories": 312,
           "averageHeartRate": 140,
           "maximumHeartRate": 170,
-          "note": "Health Connect · Strength training · Duration 60:00 · kcal 312 · Avg HR 140 · Max HR 170"
+          "note": "Health Connect · Strength training · Duration 1:00:00 · 312 kcal · Avg HR 140 · Max HR 170"
         }
       }
     },
@@ -1756,7 +1756,7 @@
           "gymCalories": 251,
           "averageHeartRate": 100,
           "maximumHeartRate": 110,
-          "note": "Apple Health · Strength training · Duration 45:00 · kcal 251 · Avg HR 100 · Max HR 110"
+          "note": "Apple Health · Strength training · Duration 45:00 · 251 kcal · Avg HR 100 · Max HR 110"
         }
       }
     },
@@ -1873,7 +1873,7 @@
           "gymCalories": 312,
           "averageHeartRate": 140,
           "maximumHeartRate": 170,
-          "note": "Health Connect · Strength training · Duration 60:00 · kcal 312 · Avg HR 140 · Max HR 170"
+          "note": "Health Connect · Strength training · Duration 1:00:00 · 312 kcal · Avg HR 140 · Max HR 170"
         }
       }
     },

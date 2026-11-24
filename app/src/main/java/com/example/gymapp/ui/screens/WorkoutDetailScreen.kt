@@ -101,7 +101,11 @@ import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.data.repository.SharedWorkoutPlan
+import com.example.gymapp.garmin.ActivityWorkoutPresentation
+import com.example.gymapp.garmin.ActivityWorkoutSource
 import com.example.gymapp.garmin.GarminSetIntervalMetrics
+import com.example.gymapp.garmin.parseActivityWorkoutPresentation
+import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.garmin.GarminSetEvidenceMetrics
 import com.example.gymapp.garmin.GarminSetHeartRateChartPoint
 import com.example.gymapp.garmin.GarminWorkoutMetrics
@@ -447,6 +451,21 @@ internal fun WorkoutDetailScreen(
             }
             val garminMetrics = garminPresentation?.metrics
             val isGarminWorkout = garminMetrics != null
+            // An activity-only workout is labelled by its real source; only a Garmin one keeps the Garmin card.
+            val importedActivity = remember(
+                details.session.note,
+                uiState.hasGarminReceipt,
+                isActivityOnly
+            ) {
+                if (isActivityOnly) {
+                    parseActivityWorkoutPresentation(
+                        note = details.session.note,
+                        hasGarminReceipt = uiState.hasGarminReceipt
+                    ).takeIf { it.source != ActivityWorkoutSource.Garmin }
+                } else {
+                    null
+                }
+            }
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize().imePadding(),
@@ -466,7 +485,16 @@ internal fun WorkoutDetailScreen(
                             is24Hour
                         )
                     }
-                    if (garminMetrics != null) {
+                    if (importedActivity != null) {
+                        ImportedActivityHeaderCard(
+                            date = workoutTitle,
+                            presentation = importedActivity,
+                            durationSeconds = details.session.durationSeconds,
+                            isEditing = isEditingWorkout,
+                            onToggleEdit = toggleEditMode,
+                            onDelete = { confirmDeleteSession = true }
+                        )
+                    } else if (garminMetrics != null) {
                         GarminWorkoutHeaderCard(
                             date = workoutTitle,
                             metrics = garminMetrics,
@@ -964,6 +992,135 @@ private fun GarminWorkoutHeaderCard(
             WorkoutEditModeButton(
                 isEditing = isEditing,
                 isActivityOnly = isActivityOnly,
+                onToggleEdit = onToggleEdit
+            )
+        }
+    }
+}
+
+/** String resource naming the real source of an activity-only workout; "Garmin" only for Garmin. */
+internal fun activityWorkoutSourceTitleRes(source: ActivityWorkoutSource): Int = when (source) {
+    ActivityWorkoutSource.Garmin -> R.string.garmin_free_workout_title
+    ActivityWorkoutSource.HealthConnect -> R.string.activity_workout_health_connect_title
+    ActivityWorkoutSource.AppleHealth -> R.string.activity_workout_apple_health_title
+    ActivityWorkoutSource.WearOs -> R.string.activity_workout_wear_os_title
+    ActivityWorkoutSource.AppleWatch -> R.string.activity_workout_apple_watch_title
+    ActivityWorkoutSource.Unknown -> R.string.activity_workout_free_title
+}
+
+/** Row and detail subtitle of an activity-only workout: its source, then the activity type when the import knows it. */
+@Composable
+internal fun activityWorkoutSourceLabel(presentation: ActivityWorkoutPresentation): String {
+    val source = stringResource(activityWorkoutSourceTitleRes(presentation.source))
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
+        ?: Locale.getDefault()
+    val type = presentation.typeLabel(AppLanguage.fromTag(locale.language) ?: AppLanguage.EN)
+    return if (type.isNullOrBlank()) source else "$source · $type"
+}
+
+/**
+ * Hero of an activity-only workout that did not come from Garmin (Health Connect, Apple Health,
+ * Wear OS, Apple Watch): date, source and type, then the stored metrics as tiles in iPhone order
+ * (duration, kcal, average and maximum heart rate). A tile exists only when its value does.
+ */
+@Composable
+private fun ImportedActivityHeaderCard(
+    date: String,
+    presentation: ActivityWorkoutPresentation,
+    durationSeconds: Long?,
+    isEditing: Boolean,
+    onToggleEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val tiles = mutableListOf<Pair<String, String>>()
+    val duration = (durationSeconds ?: presentation.durationSeconds)?.takeIf { it > 0L }
+    if (duration != null) {
+        tiles += stringResource(R.string.garmin_metric_duration) to
+            keepNumberWithUnit(formatWorkoutDuration(duration))
+    }
+    val kilocalories = presentation.kilocalories
+    if (kilocalories != null) {
+        tiles += stringResource(R.string.activity_metric_calories) to
+            keepNumberWithUnit(formattedStringResource(R.string.activity_metric_kcal_value, kilocalories))
+    }
+    val averageHeartRate = presentation.averageHeartRate
+    if (averageHeartRate != null) {
+        tiles += stringResource(R.string.garmin_metric_avg_hr) to
+            keepNumberWithUnit(formattedStringResource(R.string.garmin_metric_bpm_value, averageHeartRate))
+    }
+    val maximumHeartRate = presentation.maximumHeartRate
+    if (maximumHeartRate != null) {
+        tiles += stringResource(R.string.garmin_metric_max_hr) to
+            keepNumberWithUnit(formattedStringResource(R.string.garmin_metric_bpm_value, maximumHeartRate))
+    }
+    HeroPanel(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = 16.dp
+    ) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = date,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = activityWorkoutSourceLabel(presentation),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = HeroTone.supporting
+                    )
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = formattedStringResource(
+                            R.string.cd_delete_workout_on,
+                            date
+                        )
+                    )
+                }
+            }
+            tiles.chunked(2).forEach { rowTiles ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowTiles.forEach { (label, value) ->
+                        MetricTile(
+                            label = label,
+                            value = value,
+                            modifier = Modifier.weight(1f),
+                            onHero = true
+                        )
+                    }
+                    if (rowTiles.size == 1 && tiles.size > 1) {
+                        androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+            if (tiles.isNotEmpty()) {
+                // Shown only together with the tiles, so "metrics are saved" is always true.
+                Text(
+                    text = stringResource(R.string.activity_workout_metrics_saved_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = HeroTone.supporting
+                )
+            }
+            WorkoutEditModeButton(
+                isEditing = isEditing,
+                isActivityOnly = true,
                 onToggleEdit = onToggleEdit
             )
         }
