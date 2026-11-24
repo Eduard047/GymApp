@@ -53,18 +53,18 @@ enum ActiveWorkoutFinishCopy {
 
     static func watchOverlapTitle(languageCode: String) -> String {
         gymText(
-            "A watch workout already covers this time",
-            "На цей час уже є тренування з годинника",
-            "На это время уже есть тренировка с часов",
+            "Another workout already covers this time",
+            "На цей час уже є інше тренування",
+            "На это время уже есть другая тренировка",
             languageCode: languageCode
         )
     }
 
     static func watchOverlapMessage(languageCode: String) -> String {
         gymText(
-            "Save the phone workout too, or discard it?",
-            "Зберегти й тренування з телефона чи видалити його?",
-            "Сохранить и тренировку с телефона или удалить её?",
+            "Save this workout too, or discard it?",
+            "Зберегти й це тренування чи відкинути його?",
+            "Сохранить и эту тренировку или удалить её?",
             languageCode: languageCode
         )
     }
@@ -75,9 +75,9 @@ enum ActiveWorkoutFinishCopy {
 
     static func watchOverlapDiscardButton(languageCode: String) -> String {
         gymText(
-            "Discard phone workout",
-            "Видалити тренування з телефона",
-            "Удалить тренировку с телефона",
+            "Discard this workout",
+            "Відкинути це тренування",
+            "Удалить эту тренировку",
             languageCode: languageCode
         )
     }

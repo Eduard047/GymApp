@@ -594,8 +594,8 @@ final class WatchConnectivityService: NSObject, ObservableObject, WatchSessionTr
             publishStatus(
                 gymText(
                     "This Apple Watch workout is already saved on the phone, so it was not added again.",
-                    "Це тренування з Apple Watch уже збережено на телефоні, тому його не додано вдруге.",
-                    "Эта тренировка с Apple Watch уже сохранена на телефоне, поэтому она не добавлена повторно.",
+                    "Це тренування Apple Watch уже збережене на телефоні, тому повторно не додане.",
+                    "Эта тренировка Apple Watch уже сохранена на телефоне, поэтому повторно не добавлена.",
                     languageCode: gymCurrentLanguageCode(defaults: defaults)
                 ),
                 isError: false

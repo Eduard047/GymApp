@@ -75,15 +75,17 @@ struct SummaryView: View {
             }
             GridRow {
                 cell(average.map { model.format(.valueBpm, $0) } ?? dash, model.text(.labelAvgHR),
+                     a11yLabel: model.text(.a11yAvgHR),
                      spoken: average.map { WatchText.spokenBpm($0, language) } ?? noData)
                 cell(maximum.map { model.format(.valueBpm, $0) } ?? dash, model.text(.labelMaxHR),
+                     a11yLabel: model.text(.a11yMaxHR),
                      spoken: maximum.map { WatchText.spokenBpm($0, language) } ?? noData)
             }
         }
     }
 
     /// VoiceOver reads the label first, then `spoken` (full words, "No data" for "—").
-    private func cell(_ value: String, _ label: String, spoken: String? = nil) -> some View {
+    private func cell(_ value: String, _ label: String, a11yLabel: String? = nil, spoken: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(value)
                 .font(.title3.weight(.semibold))
@@ -98,7 +100,7 @@ struct SummaryView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
+        .accessibilityLabel(a11yLabel ?? label)
         .accessibilityValue(spoken ?? value)
     }
 }

@@ -72,6 +72,8 @@ enum WatchTextKey: String, CaseIterable, Sendable {
     case saveFailed
     case updateWatch
     case a11yNoData
+    case a11yAvgHR
+    case a11yMaxHR
     case a11yHours
     case a11yMinutes
     case a11ySeconds
@@ -210,8 +212,8 @@ enum WatchText {
         .labelDuration: ("Time", "Час", "Время"),
         .labelSets: ("Sets", "Підходи", "Подходы"),
         .labelVolume: ("Volume", "Обсяг", "Объём"),
-        .labelAvgHR: ("Avg HR", "Сер пульс", "Сред. пульс"),
-        .labelMaxHR: ("Max HR", "Макс пульс", "Макс. пульс"),
+        .labelAvgHR: ("Avg HR", "Сер. пульс", "Сред. пульс"),
+        .labelMaxHR: ("Max HR", "Макс. пульс", "Макс. пульс"),
         .valueBpm: ("%d bpm", "%d уд/хв", "%d уд/мин"),
         .valueKcal: ("%d kcal", "%d ккал", "%d ккал"),
         .calories: ("Calories", "Калорії", "Калории"),
@@ -239,6 +241,8 @@ enum WatchText {
         .updateWatch: ("Update GymApp on your Apple Watch", "Оновіть GymApp на Apple Watch", "Обновите GymApp на Apple Watch"),
         // VoiceOver-only. Plural keys: "one|many" (en), "one|few|many" (uk/ru).
         .a11yNoData: ("No data", "Немає даних", "Нет данных"),
+        .a11yAvgHR: ("Average heart rate", "Середній пульс", "Средний пульс"),
+        .a11yMaxHR: ("Maximum heart rate", "Максимальний пульс", "Максимальный пульс"),
         .a11yHours: ("%d hour|%d hours", "%d година|%d години|%d годин", "%d час|%d часа|%d часов"),
         .a11yMinutes: ("%d minute|%d minutes", "%d хвилина|%d хвилини|%d хвилин", "%d минута|%d минуты|%d минут"),
         .a11ySeconds: ("%d second|%d seconds", "%d секунда|%d секунди|%d секунд", "%d секунда|%d секунды|%d секунд"),

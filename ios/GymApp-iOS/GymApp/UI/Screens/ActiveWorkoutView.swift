@@ -230,7 +230,7 @@ struct ActiveWorkoutView: View {
     /// "Finish workout?" confirmation, shown only when planned sets remain
     /// unrecorded (they are not saved to history). Re-derives the live draft.
     @State private var showingFinishConfirmation = false
-    /// "A watch workout already covers this time": a watch or health-import workout overlaps
+    /// "Another workout already covers this time": a watch or health-import workout overlaps
     /// the draft being finished, so saving it too could duplicate the session.
     @State private var showingWatchOverlapConfirmation = false
     /// Set whose rest row currently carries the one-time "notifications are off" note.

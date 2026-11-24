@@ -2905,8 +2905,8 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             publishStatus(
                 gymText(
                     "This Garmin workout is already saved on the phone, so it was not added again.",
-                    "Це тренування з Garmin уже збережено на телефоні, тому його не додано вдруге.",
-                    "Эта тренировка с Garmin уже сохранена на телефоне, поэтому она не добавлена повторно.",
+                    "Це тренування Garmin уже збережене на телефоні, тому повторно не додане.",
+                    "Эта тренировка Garmin уже сохранена на телефоне, поэтому повторно не добавлена.",
                     languageCode: gymCurrentLanguageCode(defaults: defaults)
                 ),
                 isError: false

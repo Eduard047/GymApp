@@ -86,16 +86,16 @@ final class ActiveWorkoutWatchOverlapTests: XCTestCase {
     func testDialogCopyIsLocalized() {
         XCTAssertEqual(
             ActiveWorkoutFinishCopy.watchOverlapTitle(languageCode: "en"),
-            "A watch workout already covers this time"
+            "Another workout already covers this time"
         )
         XCTAssertEqual(
             ActiveWorkoutFinishCopy.watchOverlapMessage(languageCode: "uk"),
-            "Зберегти й тренування з телефона чи видалити його?"
+            "Зберегти й це тренування чи відкинути його?"
         )
         XCTAssertEqual(ActiveWorkoutFinishCopy.watchOverlapKeepBothButton(languageCode: "ru"), "Оставить обе")
         XCTAssertEqual(
             ActiveWorkoutFinishCopy.watchOverlapDiscardButton(languageCode: "ru"),
-            "Удалить тренировку с телефона"
+            "Удалить эту тренировку"
         )
     }
 }
