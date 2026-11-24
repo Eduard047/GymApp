@@ -84,6 +84,11 @@ struct SetEntrySheet: View {
                     } label: {
                         Text(model.text(.labelWeight))
                     }
+                    // The "kg" title above the wheel is hidden from VoiceOver, so the value
+                    // carries the unit ("Weight, 20 kg"), like Wear OS.
+                    .accessibilityValue(
+                        "\(WatchCrownSteps.formatWeight(weight, language: model.language)) \(model.text(.unitKg))"
+                    )
                 }
                 Text(verbatim: "×")
                     .foregroundStyle(WatchTheme.textSecondary)

@@ -112,13 +112,19 @@ struct HealthDataCard: View {
         .buttonStyle(GymSecondaryButtonStyle())
         .disabled(service.isImporting)
 
-        Button {
+        // Error-toned like the Android card's destructive Disconnect; the spoken label names
+        // the source so "Disconnect" is not ambiguous in VoiceOver's button rotor.
+        Button(role: .destructive) {
             service.disconnect()
         } label: {
             Text(gymText("Disconnect", "Відключити", "Отключить", languageCode: languageCode))
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(GymSecondaryButtonStyle())
+        .buttonStyle(GymSecondaryButtonStyle(destructive: true))
+        .accessibilityLabel(gymText(
+            "Disconnect Apple Health", "Відключити Apple Health", "Отключить Apple Health",
+            languageCode: languageCode
+        ))
         .disabled(service.isImporting)
     }
 

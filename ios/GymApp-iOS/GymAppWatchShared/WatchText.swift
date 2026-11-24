@@ -71,6 +71,12 @@ enum WatchTextKey: String, CaseIterable, Sendable {
     case close
     case saveFailed
     case updateWatch
+    case a11yNoData
+    case a11yHours
+    case a11yMinutes
+    case a11ySeconds
+    case a11yBpm
+    case a11yKcal
 }
 
 enum WatchText {
@@ -114,6 +120,50 @@ enum WatchText {
 
     static func restAccessibility(seconds: Int, _ language: String) -> String {
         format(.a11yRest, language, seconds / 60, seconds % 60)
+    }
+
+    /// Full-word duration for VoiceOver ("12 minutes 34 seconds", "1 час 2 минуты 5 секунд"),
+    /// so "12:34" is not read as a clock time.
+    static func spokenDuration(seconds: Int64, _ language: String) -> String {
+        let total = max(0, seconds)
+        let hours = Int(total / 3_600)
+        let minutes = Int((total % 3_600) / 60)
+        let secs = Int(total % 60)
+        var parts: [String] = []
+        if hours > 0 { parts.append(plural(.a11yHours, hours, language)) }
+        if minutes > 0 { parts.append(plural(.a11yMinutes, minutes, language)) }
+        if secs > 0 || parts.isEmpty { parts.append(plural(.a11ySeconds, secs, language)) }
+        return parts.joined(separator: " ")
+    }
+
+    static func spokenBpm(_ value: Int, _ language: String) -> String {
+        plural(.a11yBpm, value, language)
+    }
+
+    static func spokenKcal(_ value: Int, _ language: String) -> String {
+        plural(.a11yKcal, value, language)
+    }
+
+    /// Plural keys hold "one|many" (en) or "one|few|many" (uk/ru) with a `%d` count;
+    /// uk/ru follow the standard rules (1, 21 → one; 2–4, 22–24 → few; else many).
+    static func plural(_ key: WatchTextKey, _ count: Int, _ language: String) -> String {
+        let forms = string(key, language).components(separatedBy: "|")
+        let index: Int
+        let magnitude = count.magnitude
+        if forms.count >= 3 {
+            let last = magnitude % 10
+            let lastTwo = magnitude % 100
+            if last == 1, lastTwo != 11 {
+                index = 0
+            } else if (2 ... 4).contains(last), !(12 ... 14).contains(lastTwo) {
+                index = 1
+            } else {
+                index = 2
+            }
+        } else {
+            index = magnitude == 1 ? 0 : forms.count - 1
+        }
+        return String(format: forms[index], locale: Locale(identifier: language), count)
     }
 
     // MARK: Table (en, uk, ru)
@@ -186,6 +236,21 @@ enum WatchText {
         .sameAccount: ("Sign in to the same account on your iPhone", "Увійдіть у той самий акаунт на iPhone", "Войдите в тот же аккаунт на iPhone"),
         .close: ("Close", "Закрити", "Закрыть"),
         .saveFailed: ("Couldn't save. Try again.", "Не вдалося зберегти. Спробуй ще раз.", "Не удалось сохранить. Попробуй ещё раз."),
-        .updateWatch: ("Update GymApp on your Apple Watch", "Оновіть GymApp на Apple Watch", "Обновите GymApp на Apple Watch")
+        .updateWatch: ("Update GymApp on your Apple Watch", "Оновіть GymApp на Apple Watch", "Обновите GymApp на Apple Watch"),
+        // VoiceOver-only. Plural keys: "one|many" (en), "one|few|many" (uk/ru).
+        .a11yNoData: ("No data", "Немає даних", "Нет данных"),
+        .a11yHours: ("%d hour|%d hours", "%d година|%d години|%d годин", "%d час|%d часа|%d часов"),
+        .a11yMinutes: ("%d minute|%d minutes", "%d хвилина|%d хвилини|%d хвилин", "%d минута|%d минуты|%d минут"),
+        .a11ySeconds: ("%d second|%d seconds", "%d секунда|%d секунди|%d секунд", "%d секунда|%d секунды|%d секунд"),
+        .a11yBpm: (
+            "%d beat per minute|%d beats per minute",
+            "%d удар за хвилину|%d удари за хвилину|%d ударів за хвилину",
+            "%d удар в минуту|%d удара в минуту|%d ударов в минуту"
+        ),
+        .a11yKcal: (
+            "%d kilocalorie|%d kilocalories",
+            "%d кілокалорія|%d кілокалорії|%d кілокалорій",
+            "%d килокалория|%d килокалории|%d килокалорий"
+        )
     ]
 }

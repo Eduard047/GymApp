@@ -249,6 +249,8 @@ public struct GymMetricTile: View {
     private let onHero: Bool
     private let compactValue: Bool
     private let singleLineLabel: Bool
+    /// Full-word reading of `value` for VoiceOver ("72 beats per minute" instead of "72 bpm").
+    private let spokenValue: String?
 
     public init(
         label: String,
@@ -256,10 +258,12 @@ public struct GymMetricTile: View {
         emphasized: Bool = false,
         onHero: Bool = false,
         compactValue: Bool = false,
-        singleLineLabel: Bool = false
+        singleLineLabel: Bool = false,
+        spokenValue: String? = nil
     ) {
         self.label = label
         self.value = value
+        self.spokenValue = spokenValue
         self.emphasized = emphasized
         self.onHero = onHero
         self.compactValue = compactValue
@@ -300,7 +304,7 @@ public struct GymMetricTile: View {
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(gymLocalized(label, locale: locale))
-        .accessibilityValue(gymLocalized(value, locale: locale))
+        .accessibilityValue(spokenValue ?? gymLocalized(value, locale: locale))
     }
 }
 

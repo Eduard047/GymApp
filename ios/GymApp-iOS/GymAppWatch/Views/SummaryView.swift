@@ -56,24 +56,34 @@ struct SummaryView: View {
             activeKilocalories: workout.lastActiveKilocalories
         )
         let dash = "—"
+        let noData = model.text(.a11yNoData)
+        let language = model.language
+        let kcal = stats.activeKilocalories.map { Int($0.rounded()) }
+        let average = stats.averageHeartRate.map { Int($0.rounded()) }
+        let maximum = stats.maximumHeartRate.map { Int($0.rounded()) }
         return Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 8) {
             GridRow {
-                cell(WatchCrownSteps.formatDuration(seconds: seconds), model.text(.labelDuration))
+                cell(WatchCrownSteps.formatDuration(seconds: seconds), model.text(.labelDuration),
+                     spoken: WatchText.spokenDuration(seconds: seconds, language))
                 cell(String(workout.sets.count), model.text(.labelSets))
             }
             GridRow {
                 cell(model.format(.weightKg, WatchCrownSteps.formatVolume(WatchWorkoutModel.volume(workout.sets), language: model.language)),
                      model.text(.labelVolume))
-                cell(stats.activeKilocalories.map { model.format(.valueKcal, Int($0.rounded())) } ?? dash, model.text(.calories))
+                cell(kcal.map { model.format(.valueKcal, $0) } ?? dash, model.text(.calories),
+                     spoken: kcal.map { WatchText.spokenKcal($0, language) } ?? noData)
             }
             GridRow {
-                cell(stats.averageHeartRate.map { model.format(.valueBpm, Int($0.rounded())) } ?? dash, model.text(.labelAvgHR))
-                cell(stats.maximumHeartRate.map { model.format(.valueBpm, Int($0.rounded())) } ?? dash, model.text(.labelMaxHR))
+                cell(average.map { model.format(.valueBpm, $0) } ?? dash, model.text(.labelAvgHR),
+                     spoken: average.map { WatchText.spokenBpm($0, language) } ?? noData)
+                cell(maximum.map { model.format(.valueBpm, $0) } ?? dash, model.text(.labelMaxHR),
+                     spoken: maximum.map { WatchText.spokenBpm($0, language) } ?? noData)
             }
         }
     }
 
-    private func cell(_ value: String, _ label: String) -> some View {
+    /// VoiceOver reads the label first, then `spoken` (full words, "No data" for "—").
+    private func cell(_ value: String, _ label: String, spoken: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(value)
                 .font(.title3.weight(.semibold))
@@ -87,6 +97,8 @@ struct SummaryView: View {
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(spoken ?? value)
     }
 }

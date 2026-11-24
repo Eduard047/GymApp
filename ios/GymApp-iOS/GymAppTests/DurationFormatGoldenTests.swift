@@ -17,6 +17,19 @@ final class DurationFormatGoldenTests: XCTestCase {
         }
     }
 
+    func testSpokenImportedMetricsUseFullWordsAndPlurals() {
+        XCTAssertEqual(gymSpokenWorkoutDuration(3_900, languageCode: "en"), "1 hour 5 minutes")
+        XCTAssertEqual(gymSpokenWorkoutDuration(3_900, languageCode: "ru"), "1 час 5 минут")
+        XCTAssertEqual(gymSpokenWorkoutDuration(7_380, languageCode: "uk"), "2 години 3 хвилини")
+        XCTAssertEqual(gymSpokenWorkoutDuration(0, languageCode: "en"), "1 minute")
+        XCTAssertEqual(gymSpokenWorkoutDuration(7_200, languageCode: "ru"), "2 часа")
+        XCTAssertEqual(gymSpokenBeatsPerMinute(72, languageCode: "ru"), "72 удара в минуту")
+        XCTAssertEqual(gymSpokenBeatsPerMinute(115, languageCode: "uk"), "115 ударів на хвилину")
+        XCTAssertEqual(gymSpokenBeatsPerMinute(1, languageCode: "en"), "1 beat per minute")
+        XCTAssertEqual(gymSpokenKilocalories(421, languageCode: "ru"), "421 килокалория")
+        XCTAssertEqual(gymSpokenKilocalories(350, languageCode: "en"), "350 kilocalories")
+    }
+
     func testElapsedTimerMatchesSharedCases() throws {
         try checkPlain("elapsedTimer") { seconds in
             ActiveWorkoutView.clock(TimeInterval(seconds))

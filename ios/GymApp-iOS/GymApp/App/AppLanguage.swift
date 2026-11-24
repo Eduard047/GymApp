@@ -415,6 +415,70 @@ func gymWorkoutDuration(
     gymCompactDuration(max(1, seconds), languageCode: languageCode)
 }
 
+/// VoiceOver reading of `gymWorkoutDuration` in full words with agreeing plurals
+/// ("1 hour 5 minutes", "1 час 5 минут", "2 години 3 хвилини"), so "1 ч 5 мин" is
+/// not spelled out letter by letter.
+func gymSpokenWorkoutDuration(
+    _ seconds: Int,
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    let minutes = max(1, seconds / 60)
+    let hours = minutes / 60
+    let remaining = minutes % 60
+    func hoursText(_ count: Int) -> String {
+        "\(count) " + gymPlural(
+            count,
+            en: ("hour", "hours"),
+            uk: ("година", "години", "годин"),
+            ru: ("час", "часа", "часов"),
+            languageCode: languageCode
+        )
+    }
+    func minutesText(_ count: Int) -> String {
+        "\(count) " + gymPlural(
+            count,
+            en: ("minute", "minutes"),
+            uk: ("хвилина", "хвилини", "хвилин"),
+            ru: ("минута", "минуты", "минут"),
+            languageCode: languageCode
+        )
+    }
+    if hours == 0 { return minutesText(minutes) }
+    if remaining == 0 { return hoursText(hours) }
+    return "\(hoursText(hours)) \(minutesText(remaining))"
+}
+
+/// VoiceOver reading of a heart rate: "72 beats per minute" / "72 удари на хвилину" /
+/// "72 удара в минуту".
+func gymSpokenBeatsPerMinute(
+    _ value: Int,
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    let noun = gymPlural(
+        value,
+        en: ("beat per minute", "beats per minute"),
+        uk: ("удар на хвилину", "удари на хвилину", "ударів на хвилину"),
+        ru: ("удар в минуту", "удара в минуту", "ударов в минуту"),
+        languageCode: languageCode
+    )
+    return "\(value) \(noun)"
+}
+
+/// VoiceOver reading of an energy value: "350 kilocalories" / "350 кілокалорій" / "350 килокалорий".
+func gymSpokenKilocalories(
+    _ value: Int,
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    let noun = gymPlural(
+        value,
+        en: ("kilocalorie", "kilocalories"),
+        uk: ("кілокалорія", "кілокалорії", "кілокалорій"),
+        ru: ("килокалория", "килокалории", "килокалорий"),
+        languageCode: languageCode
+    )
+    return "\(value) \(noun)"
+}
+
 /// "12.4K kg" / "1 240 kg" — a training volume with the weight unit. `compact`
 /// uses the short "12.4K" notation for tight stat tiles.
 func gymVolumeText(

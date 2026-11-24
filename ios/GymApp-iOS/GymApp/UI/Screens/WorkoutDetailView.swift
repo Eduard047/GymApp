@@ -1727,7 +1727,8 @@ struct WorkoutDetailView: View {
                                     languageCode: languageCode
                                 ),
                                 value: compactWorkoutDuration(duration, languageCode: languageCode),
-                                onHero: true
+                                onHero: true,
+                                spokenValue: gymSpokenWorkoutDuration(duration, languageCode: languageCode)
                             )
                         }
                         if importedActivity {
@@ -1739,7 +1740,8 @@ struct WorkoutDetailView: View {
                                         languageCode: languageCode
                                     ),
                                     value: "\(calories)\u{00A0}\(GarminWorkoutDetailCopy.calorieUnit(languageCode: languageCode))",
-                                    onHero: true
+                                    onHero: true,
+                                    spokenValue: gymSpokenKilocalories(calories, languageCode: languageCode)
                                 )
                             }
                             if let average = importedAverageHeartRate, average > 0 {
@@ -1751,7 +1753,8 @@ struct WorkoutDetailView: View {
                                     value: GarminWorkoutDetailCopy.beatsPerMinute(
                                         average, languageCode: languageCode
                                     ),
-                                    onHero: true
+                                    onHero: true,
+                                    spokenValue: gymSpokenBeatsPerMinute(average, languageCode: languageCode)
                                 )
                             }
                             if let maximum = importedMaximumHeartRate, maximum > 0 {
@@ -1763,14 +1766,16 @@ struct WorkoutDetailView: View {
                                     value: GarminWorkoutDetailCopy.beatsPerMinute(
                                         maximum, languageCode: languageCode
                                     ),
-                                    onHero: true
+                                    onHero: true,
+                                    spokenValue: gymSpokenBeatsPerMinute(maximum, languageCode: languageCode)
                                 )
                             }
                         } else if let calories = garminSummary?.gymCalories {
                             GymMetricTile(
                                 label: "GymApp",
                                 value: "\(calories) \(GarminWorkoutDetailCopy.calorieUnit(languageCode: languageCode))",
-                                onHero: true
+                                onHero: true,
+                                spokenValue: gymSpokenKilocalories(calories, languageCode: languageCode)
                             )
                         }
                     }

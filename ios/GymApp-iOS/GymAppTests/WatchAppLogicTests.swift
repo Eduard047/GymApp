@@ -426,6 +426,20 @@ final class WatchTextAndContextTests: XCTestCase {
         XCTAssertEqual(WatchText.format(.next, "en", WatchText.weightReps(weight: 60, reps: 8, "en")), "Next: 60 kg × 8")
     }
 
+    func testSpokenSummaryValuesUseFullWordsAndPlurals() {
+        XCTAssertEqual(WatchText.spokenDuration(seconds: 754, "en"), "12 minutes 34 seconds")
+        XCTAssertEqual(WatchText.spokenDuration(seconds: 3_725, "ru"), "1 час 2 минуты 5 секунд")
+        XCTAssertEqual(WatchText.spokenDuration(seconds: 3_600, "uk"), "1 година")
+        XCTAssertEqual(WatchText.spokenDuration(seconds: 0, "en"), "0 seconds")
+        XCTAssertEqual(WatchText.spokenDuration(seconds: 61, "en"), "1 minute 1 second")
+        XCTAssertEqual(WatchText.spokenBpm(72, "ru"), "72 удара в минуту")
+        XCTAssertEqual(WatchText.spokenBpm(111, "uk"), "111 ударів за хвилину")
+        XCTAssertEqual(WatchText.spokenBpm(121, "uk"), "121 удар за хвилину")
+        XCTAssertEqual(WatchText.spokenKcal(350, "ru"), "350 килокалорий")
+        XCTAssertEqual(WatchText.spokenKcal(1, "en"), "1 kilocalorie")
+        XCTAssertEqual(WatchText.string(.a11yNoData, "ru"), "Нет данных")
+    }
+
     func testContextMergeTakesAPlanWhoseRevisionRestartedOnThePhone() {
         let cached = WatchContextMessage(sentAtMillis: 10, bound: boundContext(plan: plan, revision: 7))
         let newPlan = [WatchPlanExercise(name: "Присед", restSeconds: 60, sets: [.init(weight: 80, reps: 5)])]
