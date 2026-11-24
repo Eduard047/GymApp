@@ -297,7 +297,8 @@ enum ActivityOnlyWorkoutCloudCodec {
         base: [ActivityOnlyWorkoutCloudItem],
         remote: [ActivityOnlyWorkoutCloudItem],
         local: [ActivityOnlyWorkoutCloudItem],
-        coreWorkoutTimestamps: Set<Int64>
+        coreWorkoutTimestamps: Set<Int64>,
+        localDerivedTimestamps: Set<Int64> = []
     ) throws -> (
         outbound: [ActivityOnlyWorkoutCloudItem],
         materialize: [ActivityOnlyWorkoutCloudItem]
@@ -332,6 +333,11 @@ enum ActivityOnlyWorkoutCloudCodec {
                 mergedItem = remoteItem
             } else if remoteItem == baseItem {
                 mergedItem = localItem
+            } else if baseItem == nil, remoteItem != nil, localItem != nil,
+                      localDerivedTimestamps.contains(timestamp) {
+                // The local copy was rebuilt from its note (no cached sidecar item, e.g.
+                // after a backup restore), not edited; with no base the server copy wins.
+                mergedItem = remoteItem
             } else {
                 // This includes delete-vs-edit, divergent edits and divergent
                 // same-identity additions. Exact optional nil/zero values participate

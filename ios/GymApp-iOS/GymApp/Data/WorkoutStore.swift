@@ -883,6 +883,16 @@ public final class WorkoutStore: ObservableObject {
         }
     }
 
+    /// Timestamps of activity-only workouts whose sidecar item is rebuilt from the note
+    /// because no cached cloud item exists (backup restore, fresh install). In-memory only.
+    func activityOnlyCloudDerivedTimestamps() -> Set<Int64> {
+        let cached = Set(activityOnlyCloudItems.lazy.map(\.workoutStartedAt))
+        return Set(workouts.lazy
+            .filter { $0.exercises.isEmpty }
+            .map { $0.date.gymEpochMilliseconds }
+            .filter { !cached.contains($0) })
+    }
+
     func activityOnlyCloudSnapshotItems() throws -> [ActivityOnlyWorkoutCloudItem] {
         let derived = try ActivityOnlyWorkoutCloudItem.localItems(from: workouts)
         let cachedByTimestamp = Dictionary(uniqueKeysWithValues: activityOnlyCloudItems.map {

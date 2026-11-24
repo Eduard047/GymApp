@@ -1113,6 +1113,7 @@ class GymRepository(
             .map(ActivityOnlyWorkoutEntity::toItem)
             .associateByTo(linkedMapOf(), ActivityOnlyWorkoutItem::workoutStartedAt)
         val mirroredStartedAt = hashSetOf<Long>()
+        val derivedStartedAt = hashSetOf<Long>()
         workoutDao.getAllSessionDetailsForBackup()
             .map(::sortSessionDetails)
             .forEach { details ->
@@ -1125,6 +1126,7 @@ class GymRepository(
                 }
                 val stored = byStartedAt[details.session.date]
                 byStartedAt[details.session.date] = if (stored == null) {
+                    derivedStartedAt.add(details.session.date)
                     activityOnlyWorkoutItemFromNote(
                         workoutStartedAt = details.session.date,
                         durationSeconds = duration,
@@ -1136,7 +1138,7 @@ class GymRepository(
             }
         val items = byStartedAt.values.sortedBy(ActivityOnlyWorkoutItem::workoutStartedAt)
         requireValidActivityOnlyWorkoutItems(items)
-        return ActivityOnlyWorkoutLocalSnapshot(items)
+        return ActivityOnlyWorkoutLocalSnapshot(items, derivedStartedAt)
     }
 
     private fun requireCanonicalUuid(value: String) {

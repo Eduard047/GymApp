@@ -26,7 +26,12 @@ data class ActivityOnlyWorkoutItem(
 )
 
 data class ActivityOnlyWorkoutLocalSnapshot(
-    val items: List<ActivityOnlyWorkoutItem>
+    val items: List<ActivityOnlyWorkoutItem>,
+    /**
+     * Start times of [items] built from the workout note because no stored sidecar row exists
+     * (backup restore, fresh install). In-memory only: never part of the digest or the wire.
+     */
+    val derivedStartedAt: Set<Long> = emptySet()
 ) {
     val digest: String = activityOnlyWorkoutDigest(items)
 }
@@ -167,11 +172,15 @@ internal fun requireValidActivityOnlyWorkoutItems(
  * Equality deliberately uses every field so absent optionals, zeroes, empty notes, and null notes
  * remain distinct. A delete/edit race or two divergent edits is ambiguous and therefore fails
  * closed instead of silently resurrecting or overwriting an activity.
+ *
+ * A local item listed in [localDerivedStartedAt] was rebuilt from its note, not edited; with no
+ * base item to compare against, the server copy is taken instead of reporting a conflict.
  */
 internal fun threeWayMergeActivityOnlyWorkoutItems(
     base: List<ActivityOnlyWorkoutItem>,
     local: List<ActivityOnlyWorkoutItem>,
-    remote: List<ActivityOnlyWorkoutItem>
+    remote: List<ActivityOnlyWorkoutItem>,
+    localDerivedStartedAt: Set<Long> = emptySet()
 ): List<ActivityOnlyWorkoutItem> {
     requireValidActivityOnlyWorkoutItems(base)
     requireValidActivityOnlyWorkoutItems(local)
@@ -195,6 +204,8 @@ internal fun threeWayMergeActivityOnlyWorkoutItems(
                 localItem == remoteItem -> localItem
                 localItem == baseItem -> remoteItem
                 remoteItem == baseItem -> localItem
+                baseItem == null && remoteItem != null && localItem != null &&
+                    startedAt in localDerivedStartedAt -> remoteItem
                 else -> throw IllegalArgumentException(
                     "Activity-only workout has conflicting edits at $startedAt."
                 )

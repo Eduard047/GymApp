@@ -378,6 +378,116 @@ final class ActivityOnlyWorkoutCloudSidecarTests: XCTestCase {
         )
     }
 
+    func testMissingBaseTakesRemoteOnlyForDerivedLocalItem() throws {
+        let timestamp: Int64 = 1_750_000_000_000
+        let remote = try item(
+            timestamp: timestamp,
+            duration: 600,
+            gymCalories: 40,
+            note: "Garmin · Free workout"
+        )
+        let derivedLocal = try item(
+            timestamp: timestamp,
+            duration: 600,
+            gymCalories: 40.123,
+            note: "Garmin · Free workout"
+        )
+        let merged = try ActivityOnlyWorkoutCloudCodec.reconciledItems(
+            base: [],
+            remote: [remote],
+            local: [derivedLocal],
+            coreWorkoutTimestamps: [],
+            localDerivedTimestamps: [timestamp]
+        )
+        XCTAssertEqual(merged.outbound, [remote])
+        XCTAssertEqual(merged.materialize, [remote])
+
+        // A Health or Wear note derives 0 kcal; the server copy still wins.
+        let zeroLocal = try item(
+            timestamp: timestamp,
+            duration: 600,
+            gymCalories: 0,
+            note: "Garmin · Free workout"
+        )
+        XCTAssertEqual(
+            try ActivityOnlyWorkoutCloudCodec.reconciledItems(
+                base: [],
+                remote: [remote],
+                local: [zeroLocal],
+                coreWorkoutTimestamps: [],
+                localDerivedTimestamps: [timestamp]
+            ).outbound,
+            [remote]
+        )
+        // A cached (edited) local item still conflicts when the base is missing.
+        XCTAssertThrowsError(
+            try ActivityOnlyWorkoutCloudCodec.reconciledItems(
+                base: [],
+                remote: [remote],
+                local: [derivedLocal],
+                coreWorkoutTimestamps: []
+            )
+        )
+        // A derived item the server lacks is still uploaded.
+        XCTAssertEqual(
+            try ActivityOnlyWorkoutCloudCodec.reconciledItems(
+                base: [],
+                remote: [],
+                local: [derivedLocal],
+                coreWorkoutTimestamps: [],
+                localDerivedTimestamps: [timestamp]
+            ).outbound,
+            [derivedLocal]
+        )
+        // With a base item, a divergent derived local keeps the existing conflict.
+        let base = try item(timestamp: timestamp, duration: 600, gymCalories: 1, note: "base")
+        XCTAssertThrowsError(
+            try ActivityOnlyWorkoutCloudCodec.reconciledItems(
+                base: [base],
+                remote: [remote],
+                local: [derivedLocal],
+                coreWorkoutTimestamps: [],
+                localDerivedTimestamps: [timestamp]
+            )
+        )
+    }
+
+    func testDerivedLocalItemWithoutCacheTakesRemoteAndIsCachedAfterApply() throws {
+        let directory = try temporaryDirectory(named: "derived-takes-remote")
+        let storageKey = "activity-derived-owner"
+        let timestamp: Int64 = 1_750_000_000_000
+        let store = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: directory
+        )
+        _ = try store.createActivityWorkout(
+            date: Date(gymEpochMilliseconds: timestamp),
+            note: "restored",
+            durationSeconds: 600
+        )
+        XCTAssertEqual(store.activityOnlyCloudDerivedTimestamps(), [timestamp])
+        let local = try store.activityOnlyCloudSnapshotItems()
+        let remote = try item(
+            timestamp: timestamp,
+            duration: 600,
+            gymCalories: 40,
+            averageHeartRate: 120,
+            note: "restored"
+        )
+        XCTAssertNotEqual(local, [remote])
+        let merged = try ActivityOnlyWorkoutCloudCodec.reconciledItems(
+            base: [],
+            remote: [remote],
+            local: local,
+            coreWorkoutTimestamps: [],
+            localDerivedTimestamps: store.activityOnlyCloudDerivedTimestamps()
+        )
+        XCTAssertEqual(merged.outbound, [remote])
+        _ = try store.applyActivityOnlyCloudItems(merged.outbound, expectedLocalItems: local)
+        XCTAssertEqual(try store.activityOnlyCloudSnapshotItems(), [remote])
+        XCTAssertTrue(store.activityOnlyCloudDerivedTimestamps().isEmpty)
+    }
+
     func testThreeWayApplyPropagatesRemoteEditAndDeletionAtomicallyAcrossReopen() throws {
         let directory = try temporaryDirectory(named: "three-way-apply")
         let storageKey = "activity-three-way-owner"

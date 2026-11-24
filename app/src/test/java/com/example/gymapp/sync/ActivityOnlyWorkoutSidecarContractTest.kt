@@ -272,6 +272,60 @@ class ActivityOnlyWorkoutSidecarContractTest {
     }
 
     @Test
+    fun `three-way merge without base takes remote for a derived local item only`() {
+        val remote = activity(gymCalories = 40.0)
+        val derivedLocal = activity(gymCalories = 40.123)
+        val startedAt = remote.workoutStartedAt
+
+        assertEquals(
+            listOf(remote),
+            threeWayMergeActivityOnlyWorkoutItems(
+                base = emptyList(),
+                local = listOf(derivedLocal),
+                remote = listOf(remote),
+                localDerivedStartedAt = setOf(startedAt)
+            )
+        )
+        // A Health or Wear note derives 0 kcal; the server copy still wins.
+        assertEquals(
+            listOf(remote),
+            threeWayMergeActivityOnlyWorkoutItems(
+                base = emptyList(),
+                local = listOf(remote.copy(gymCalories = 0.0, garminCalories = null)),
+                remote = listOf(remote),
+                localDerivedStartedAt = setOf(startedAt)
+            )
+        )
+        // A stored (edited) local row still conflicts with a differing remote when base is missing.
+        assertThrows(IllegalArgumentException::class.java) {
+            threeWayMergeActivityOnlyWorkoutItems(
+                base = emptyList(),
+                local = listOf(derivedLocal),
+                remote = listOf(remote)
+            )
+        }
+        // A derived item that the server lacks is still uploaded, not dropped.
+        assertEquals(
+            listOf(derivedLocal),
+            threeWayMergeActivityOnlyWorkoutItems(
+                base = emptyList(),
+                local = listOf(derivedLocal),
+                remote = emptyList(),
+                localDerivedStartedAt = setOf(startedAt)
+            )
+        )
+        // With a base item, derived local versus a divergent remote keeps the existing conflict.
+        assertThrows(IllegalArgumentException::class.java) {
+            threeWayMergeActivityOnlyWorkoutItems(
+                base = listOf(activity(gymCalories = 1.0)),
+                local = listOf(derivedLocal),
+                remote = listOf(remote),
+                localDerivedStartedAt = setOf(startedAt)
+            )
+        }
+    }
+
+    @Test
     fun `durable baseline record round-trips exact optional fields and rejects tampering`() {
         val exact = activity().copy(
             garminCalories = null,

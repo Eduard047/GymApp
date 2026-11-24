@@ -3403,7 +3403,8 @@ final class AppState: ObservableObject {
                 local: localItems,
                 coreWorkoutTimestamps: ActivityOnlyWorkoutCloudCodec.coreWorkoutTimestamps(
                     store.workouts
-                )
+                ),
+                localDerivedTimestamps: store.activityOnlyCloudDerivedTimestamps()
             )
             _ = try performCloudStoreMutation {
                 try store.applyActivityOnlyCloudItems(

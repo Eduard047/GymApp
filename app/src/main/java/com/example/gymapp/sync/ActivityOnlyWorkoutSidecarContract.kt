@@ -380,7 +380,8 @@ internal suspend fun syncActivityOnlyWorkoutSidecar(
             val resolvedWithNewerLocal = threeWayMergeActivityOnlyWorkoutItems(
                 base = items,
                 local = currentLocal.items,
-                remote = resolvedAttempt
+                remote = resolvedAttempt,
+                localDerivedStartedAt = currentLocal.derivedStartedAt
             )
             val canonical = reconcileLocal(resolvedWithNewerLocal)
             if (canonical.digest == remoteBaseline.digest) {
@@ -467,7 +468,8 @@ internal suspend fun syncActivityOnlyWorkoutSidecar(
         val mergedItems = threeWayMergeActivityOnlyWorkoutItems(
             base = currentBaseline?.items.orEmpty(),
             local = local.items,
-            remote = remote.items
+            remote = remote.items,
+            localDerivedStartedAt = local.derivedStartedAt
         )
         val canonical = reconcileLocal(mergedItems)
         currentBaseline = rememberConfirmed(
