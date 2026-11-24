@@ -263,6 +263,46 @@ class PhoneWearBindingManagerTest {
         assertEquals("watch-1", manager.pinnedSourceNodeId())
     }
 
+    @Test
+    fun releasedWatchKeepsThePendingDeletedOwnerUntilToldOrExpired() {
+        val prefs = InMemoryPreferences()
+        val manager = PhoneWearBindingManager(prefs)
+        val owner = binding()
+        val day = 24L * 60 * 60 * 1000
+        val deletedAt = 50L * day
+        assertTrue(manager.authorizeSource("watch-1", setOf("watch-1"), owner))
+        // Not pinned to that owner: nothing pending.
+        assertTrue(manager.clearOwner("d".repeat(64), now = deletedAt).committed)
+        assertNull(manager.pendingDeletedOwnerId("watch-1", deletedAt))
+
+        val cleanup = manager.clearOwner(owner.ownerId, now = deletedAt)
+        assertEquals("watch-1", cleanup.releasedNodeId)
+        assertTrue(manager.isUnlinkedNode("watch-1"))
+        assertEquals(owner.ownerId, manager.pendingDeletedOwnerId("watch-1", deletedAt + day))
+        // Only for the released watch.
+        assertNull(manager.pendingDeletedOwnerId("watch-2", deletedAt + day))
+        // Told: gone.
+        assertFalse(manager.clearPendingDeletedOwner("d".repeat(64)))
+        assertTrue(manager.clearPendingDeletedOwner(owner.ownerId))
+        assertNull(manager.pendingDeletedOwnerId("watch-1", deletedAt + day))
+
+        // Expires after 30 days.
+        assertTrue(manager.authorizeSource("watch-1", setOf("watch-1"), owner, linkIntent = true))
+        manager.clearOwner(owner.ownerId, now = deletedAt)
+        assertEquals(owner.ownerId, manager.pendingDeletedOwnerId("watch-1", deletedAt + 30L * day))
+        assertNull(manager.pendingDeletedOwnerId("watch-1", deletedAt + 30L * day + 1L))
+        assertFalse(prefs.contains(PhoneWearBindingManager.KEY_PENDING_DELETED_OWNER_ID))
+
+        // A re-link or a plain "Unlink watch" ends it as well.
+        assertTrue(manager.authorizeSource("watch-1", setOf("watch-1"), owner, linkIntent = true))
+        manager.clearOwner(owner.ownerId, now = deletedAt)
+        assertTrue(manager.authorizeSource("watch-1", setOf("watch-1"), owner, linkIntent = true))
+        assertFalse(prefs.contains(PhoneWearBindingManager.KEY_PENDING_DELETED_OWNER_ID))
+        manager.clearOwner(owner.ownerId, now = deletedAt)
+        assertTrue(manager.clearPinnedSource())
+        assertFalse(prefs.contains(PhoneWearBindingManager.KEY_PENDING_DELETED_OWNER_ID))
+    }
+
     private fun cachedPlan() = PhoneWearCachedPlan(
         planId = "11111111-2222-4333-8444-555555555555",
         createdAt = System.currentTimeMillis(),

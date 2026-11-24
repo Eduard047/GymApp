@@ -62,6 +62,18 @@ object WatchBindingRules {
             nowMs - markerDeletedAtMs <= DELETED_OWNER_MARKER_TTL_MS
 
     /**
+     * The owner an accepted unlink reports as deleted: the one the phone names, else the bound
+     * owner (phones that predate the name). Null when the unlink is not a deletion, or when the
+     * watch was already unbound and the phone named nobody.
+     */
+    fun deletedOwnerOf(state: ParsedBindingState, bindingOwnerId: String?): String? =
+        if (state.accountDeleted) state.deletedOwnerId ?: bindingOwnerId else null
+
+    /** Held work is dropped for a deletion only when it belongs to exactly that owner. */
+    fun dropHeldWorkForDeletedOwner(deletedOwnerId: String?, heldOwnerId: String?): Boolean =
+        deletedOwnerId != null && heldOwnerId == deletedOwnerId
+
+    /**
      * A new binding for the deleted owner id (the unlink cleared the old one, so any binding
      * established now is a re-link) ends the marker: that owner exists again.
      */

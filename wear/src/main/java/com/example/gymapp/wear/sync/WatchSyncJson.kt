@@ -49,7 +49,12 @@ data class ParsedBindingState(
     val messageId: String,
     val sentAt: Long,
     /** Unlinked because the owner's profile/account was deleted: held work for it goes too. */
-    val accountDeleted: Boolean = false
+    val accountDeleted: Boolean = false,
+    /**
+     * The deleted owner, named by the phone (only with [accountDeleted]): the sign-out before a
+     * deletion may already have unbound this watch, so the binding no longer knows the owner.
+     */
+    val deletedOwnerId: String? = null
 )
 
 data class ParsedFullSyncPayload(
@@ -360,7 +365,9 @@ object WatchSyncJson {
                 "protocolVersion", "state", "authorityEpoch", "accountGeneration", "messageId", "sentAt"
             )
             val keys = root.keys().asSequence().toSet()
-            require(keys == baseKeys || keys == baseKeys + "reason") { "Unexpected binding state field" }
+            require(
+                keys == baseKeys || keys == baseKeys + "reason" || keys == baseKeys + "reason" + "deletedOwnerId"
+            ) { "Unexpected binding state field" }
             require(root.requiredInt("protocolVersion") == SyncPaths.PROTOCOL_VERSION)
             val kind = when (root.requiredString("state", 16)) {
                 "unbound" -> BindingStateKind.Unbound
@@ -374,17 +381,31 @@ object WatchSyncJson {
             require(sentAt in (now - MAX_MESSAGE_AGE_MS)..(now + MAX_CLOCK_SKEW_MS)) { "Stale sync message" }
             // Optional and forward-compatible: an unknown reason is ignored, not rejected.
             val reason = if (root.has("reason")) root.requiredString("reason", 64) else null
+            val accountDeleted = kind == BindingStateKind.Unlinked &&
+                reason == SyncPaths.BINDING_REASON_ACCOUNT_DELETED
+            // The deleted owner is meaningful only on an account_deleted unlink; anything else is
+            // a malformed message, never an owner to drop work for.
+            val deletedOwnerId = if (root.has("deletedOwnerId")) {
+                require(accountDeleted) { "Deleted owner without deletion" }
+                root.requiredString("deletedOwnerId", 64).also {
+                    require(ownerIdPattern.matches(it)) { "Invalid deleted owner" }
+                }
+            } else {
+                null
+            }
             ParsedBindingState(
                 kind = kind,
                 authorityEpoch = root.requiredAuthorityEpoch(),
                 accountGeneration = accountGeneration,
                 messageId = messageId,
                 sentAt = sentAt,
-                accountDeleted = kind == BindingStateKind.Unlinked &&
-                    reason == SyncPaths.BINDING_REASON_ACCOUNT_DELETED
+                accountDeleted = accountDeleted,
+                deletedOwnerId = deletedOwnerId
             )
         }
     }
+
+    private val ownerIdPattern = Regex("^[0-9a-f]{64}$")
 
     private val authorityEpochPattern =
         Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")

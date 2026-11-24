@@ -67,17 +67,17 @@ class WearRussianLocalizationTest {
                     val forms = requireNotNull(plurals[name]) { "$directory is missing plurals '$name'" }
                     assertEquals("$directory/$name", quantities, forms.keys)
                     forms.forEach { (quantity, text) ->
-                        assertEquals("$directory/$name/$quantity", listOf("%d"), Regex("%d").findAll(text).map { it.value }.toList())
+                        assertEquals("$directory/$name/$quantity", listOf("%1\$d"), Regex("%(?:1\\$)?d").findAll(text).map { it.value }.toList())
                     }
                 }
             }
         val russian = loadPlurals("values-ru")
-        assertEquals("%d повторение", russian.getValue("a11y_reps").getValue("one"))
-        assertEquals("%d повторения", russian.getValue("a11y_reps").getValue("few"))
-        assertEquals("%d повторений", russian.getValue("a11y_reps").getValue("many"))
-        assertEquals("%d удар в минуту", russian.getValue("a11y_beats").getValue("one"))
-        assertEquals("%d удара в минуту", russian.getValue("a11y_beats").getValue("few"))
-        assertEquals("%d ударов в минуту", russian.getValue("a11y_beats").getValue("many"))
+        assertEquals("%1\$d повторение", russian.getValue("a11y_reps").getValue("one"))
+        assertEquals("%1\$d повторения", russian.getValue("a11y_reps").getValue("few"))
+        assertEquals("%1\$d повторений", russian.getValue("a11y_reps").getValue("many"))
+        assertEquals("%1\$d удар в минуту", russian.getValue("a11y_beats").getValue("one"))
+        assertEquals("%1\$d удара в минуту", russian.getValue("a11y_beats").getValue("few"))
+        assertEquals("%1\$d ударов в минуту", russian.getValue("a11y_beats").getValue("many"))
     }
 
     private fun loadPlurals(valuesDirectory: String): Map<String, Map<String, String>> {

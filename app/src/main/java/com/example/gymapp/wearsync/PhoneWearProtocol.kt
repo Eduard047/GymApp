@@ -291,17 +291,22 @@ internal object PhoneWearProtocol {
      * [accountDeleted] (only with [unlinked]) adds `"reason":"account_deleted"`: the owner's
      * profile or account is gone, so the watch also drops its held work for that owner. Watches
      * built before this field reject the message, so the caller sends a plain unlink after it.
+     * [deletedOwnerId] (only with [accountDeleted]) names the deleted owner: the phone may have
+     * signed out first, so the watch is already unbound and no longer knows its owner.
      */
     fun buildBindingState(
         binding: PhoneWearAccountBinding,
         unlinked: Boolean,
         now: Long = System.currentTimeMillis(),
         messageId: String = UUID.randomUUID().toString(),
-        accountDeleted: Boolean = false
+        accountDeleted: Boolean = false,
+        deletedOwnerId: String? = null
     ): ByteArray {
         requireValidBinding(binding)
         requireValidOperationId(messageId)
         require(!accountDeleted || unlinked) { "Account deletion is an unlink" }
+        require(deletedOwnerId == null || accountDeleted) { "A deleted owner needs the deletion reason" }
+        require(deletedOwnerId == null || ownerIdPattern.matches(deletedOwnerId)) { "Invalid deleted owner" }
         val root = JSONObject()
             .put("protocolVersion", PhoneWearPaths.PROTOCOL_VERSION)
             .put("state", if (unlinked) "unlinked" else "unbound")
@@ -310,6 +315,7 @@ internal object PhoneWearProtocol {
             .put("messageId", messageId)
             .put("sentAt", now)
         if (accountDeleted) root.put("reason", PhoneWearPaths.BINDING_REASON_ACCOUNT_DELETED)
+        if (deletedOwnerId != null) root.put("deletedOwnerId", deletedOwnerId)
         return encodeBounded(root)
     }
 

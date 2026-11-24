@@ -159,6 +159,8 @@ internal class PhoneWearBindingManager(private val prefs: SharedPreferences) {
             .putString(KEY_SOURCE_NODE_ID, sourceNodeId)
             .putString(KEY_SOURCE_OWNER_ID, currentBinding.ownerId)
             .remove(KEY_UNLINKED_NODE_ID)
+            .remove(KEY_PENDING_DELETED_OWNER_ID)
+            .remove(KEY_PENDING_DELETED_OWNER_AT)
             .commit()
     }
 
@@ -185,11 +187,46 @@ internal class PhoneWearBindingManager(private val prefs: SharedPreferences) {
             .remove(KEY_LINK_PROOF_AT)
             .remove(KEY_LINK_PROOF_OWNER_ID)
             .remove(KEY_LINK_PROOF_GENERATION)
+            .remove(KEY_PENDING_DELETED_OWNER_ID)
+            .remove(KEY_PENDING_DELETED_OWNER_AT)
         prefs.all.keys
             .filter { it.startsWith(KEY_PLAN_CACHE_PREFIX) }
             .forEach { editor.remove(it) }
         if (pinned != null) editor.putString(KEY_UNLINKED_NODE_ID, pinned)
         editor.commit()
+    }
+
+    /**
+     * The deleted owner the unlinked watch [sourceNodeId] has not been told about yet
+     * ([clearOwner]), so a later unlink reply still carries the deletion and the owner. Kept for
+     * [PENDING_DELETED_OWNER_TTL_MS]; an expired or foreign value is null (and an expired one is
+     * removed).
+     */
+    fun pendingDeletedOwnerId(sourceNodeId: String, now: Long = System.currentTimeMillis()): String? =
+        synchronized(lock) {
+            if (!isValidNodeId(sourceNodeId)) return null
+            if (prefs.getString(KEY_UNLINKED_NODE_ID, null) != sourceNodeId) return null
+            val ownerId = prefs.getString(KEY_PENDING_DELETED_OWNER_ID, null) ?: return null
+            val recordedAt = prefs.getLong(KEY_PENDING_DELETED_OWNER_AT, -1L)
+            if (!ownerIdPattern.matches(ownerId) || recordedAt < 0L ||
+                now - recordedAt !in 0L..PENDING_DELETED_OWNER_TTL_MS
+            ) {
+                prefs.edit()
+                    .remove(KEY_PENDING_DELETED_OWNER_ID)
+                    .remove(KEY_PENDING_DELETED_OWNER_AT)
+                    .commit()
+                return null
+            }
+            ownerId
+        }
+
+    /** The watch has been told that [ownerId] was deleted: the pending value goes. */
+    fun clearPendingDeletedOwner(ownerId: String): Boolean = synchronized(lock) {
+        if (prefs.getString(KEY_PENDING_DELETED_OWNER_ID, null) != ownerId) return false
+        prefs.edit()
+            .remove(KEY_PENDING_DELETED_OWNER_ID)
+            .remove(KEY_PENDING_DELETED_OWNER_AT)
+            .commit()
     }
 
     /** True for the watch node the user unlinked and that has not asked to link again. */
@@ -325,7 +362,11 @@ internal class PhoneWearBindingManager(private val prefs: SharedPreferences) {
      * ([clearPinnedSource]) and the released node is returned in the result so the caller can tell
      * the watch. Account generations and revisions stay monotonic and are never reset here.
      */
-    fun clearOwner(ownerId: String, localDatabaseName: String? = null): PhoneWearOwnerCleanup =
+    fun clearOwner(
+        ownerId: String,
+        localDatabaseName: String? = null,
+        now: Long = System.currentTimeMillis()
+    ): PhoneWearOwnerCleanup =
         synchronized(lock) {
             if (!ownerIdPattern.matches(ownerId)) return PhoneWearOwnerCleanup(false, null)
             val pinnedNode = prefs.getString(KEY_SOURCE_NODE_ID, null)?.takeIf(::isValidNodeId)
@@ -339,6 +380,12 @@ internal class PhoneWearBindingManager(private val prefs: SharedPreferences) {
                     .remove(KEY_LINK_PROOF_GENERATION)
             }
             if (localDatabaseName != null) editor.remove(localAccountIdKey(localDatabaseName))
+            // The released watch may be out of range, or already unbound by the sign-out that
+            // precedes a deletion: later unlink replies must still name this owner.
+            if (releasePin) {
+                editor.putString(KEY_PENDING_DELETED_OWNER_ID, ownerId)
+                    .putLong(KEY_PENDING_DELETED_OWNER_AT, now)
+            }
             PhoneWearOwnerCleanup(
                 committed = editor.commit(),
                 releasedNodeId = pinnedNode.takeIf { releasePin }
@@ -390,6 +437,9 @@ internal class PhoneWearBindingManager(private val prefs: SharedPreferences) {
         const val KEY_FULL_SYNC_REVISION = "full_sync_revision"
         const val KEY_AUTHORITY_EPOCH = "authority_epoch"
         const val KEY_UNLINKED_NODE_ID = "unlinked_node_id"
+        const val KEY_PENDING_DELETED_OWNER_ID = "pending_deleted_owner_id"
+        const val KEY_PENDING_DELETED_OWNER_AT = "pending_deleted_owner_at"
+        const val PENDING_DELETED_OWNER_TTL_MS = 30L * 24L * 60L * 60L * 1000L
         const val KEY_WATCH_NAME = "source_display_name"
         const val KEY_LINK_PROOF_AT = "link_proof_at"
         const val KEY_LINK_PROOF_OWNER_ID = "link_proof_owner_id"

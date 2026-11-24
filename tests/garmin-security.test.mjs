@@ -52,8 +52,12 @@ test("Wear sync rejects malformed payloads before destructive replacement", asyn
   // or an unlink whose reason is that this very owner was deleted on the phone.
   assert.doesNotMatch(bindingStorage, /WatchPendingWorkoutStorage|WatchWorkoutDraftStorage/);
   const deletedOwnerDrop =
-    /if \(state\.accountDeleted && binding\.ownerId != null && heldWorkOwnerId\(\) == binding\.ownerId\) \{[^}]*\}/;
+    /if \(WatchBindingRules\.dropHeldWorkForDeletedOwner\(deletedOwnerId, heldWorkOwnerId\(\)\)\) \{[^}]*\}/;
   assert.match(listener, deletedOwnerDrop);
+  assert.match(listener, /val deletedOwnerId = WatchBindingRules\.deletedOwnerOf\(state, binding\.ownerId\)/);
+  assert.match(rules, /fun deletedOwnerOf\([^)]*\): String\? =\s*if \(state\.accountDeleted\) state\.deletedOwnerId \?: bindingOwnerId else null/);
+  assert.match(rules, /fun dropHeldWorkForDeletedOwner\([^)]*\): Boolean =\s*deletedOwnerId != null && heldOwnerId == deletedOwnerId/);
+  assert.match(parser, /require\(accountDeleted\) \{ "Deleted owner without deletion" \}/);
   assert.match(listener.match(deletedOwnerDrop)[0], /WatchWorkoutDraftStorage\.clear[\s\S]*WatchPendingWorkoutStorage\.clear/);
   assert.doesNotMatch(listener.replace(deletedOwnerDrop, ""), /WatchPendingWorkoutStorage\.clear|WatchWorkoutDraftStorage\.clear/);
   assert.match(parser, /accountDeleted = kind == BindingStateKind\.Unlinked &&/);

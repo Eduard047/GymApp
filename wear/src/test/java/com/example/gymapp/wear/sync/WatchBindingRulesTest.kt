@@ -261,6 +261,23 @@ class WatchBindingRulesTest {
             WatchSyncJson.parseBindingState(state("unlinked").put("reason", "account_deleted").put("extra", 1).toString())
                 is WatchSyncParseResult.Invalid
         )
+        // The deleted owner: only with reason account_deleted on an unlink, only a 64-hex owner id.
+        fun deletedState() = state("unlinked").put("reason", "account_deleted")
+        val named = WatchSyncJson.parseBindingState(deletedState().put("deletedOwnerId", ownerA).toString())
+        assertEquals(ownerA, (named as WatchSyncParseResult.Valid).value.deletedOwnerId)
+        assertTrue(named.value.accountDeleted)
+        assertNull((WatchSyncJson.parseBindingState(deletedState().toString()) as WatchSyncParseResult.Valid).value.deletedOwnerId)
+        fun invalid(raw: JSONObject) =
+            assertTrue(WatchSyncJson.parseBindingState(raw.toString()) is WatchSyncParseResult.Invalid)
+        invalid(state("unlinked").put("deletedOwnerId", ownerA))
+        invalid(state("unlinked").put("reason", "something_new").put("deletedOwnerId", ownerA))
+        invalid(state().put("reason", "account_deleted").put("deletedOwnerId", ownerA))
+        invalid(deletedState().put("deletedOwnerId", "A".repeat(64)))
+        invalid(deletedState().put("deletedOwnerId", "a".repeat(63)))
+        invalid(deletedState().put("deletedOwnerId", "a".repeat(65)))
+        invalid(deletedState().put("deletedOwnerId", "z".repeat(64)))
+        invalid(deletedState().put("deletedOwnerId", 1))
+        invalid(deletedState().put("deletedOwnerId", ownerA).put("extra", 1))
         // A binding state never names an account (Apple Watch contract: "unbound" has no binding).
         assertTrue(WatchSyncJson.parseBindingState(state().put("ownerId", ownerA).toString()) is WatchSyncParseResult.Invalid)
         assertTrue(WatchSyncJson.parseBindingState(state("bound").toString()) is WatchSyncParseResult.Invalid)
@@ -404,5 +421,38 @@ class WatchBindingRulesTest {
         // Once superseded the marker is gone: even work from before the deletion is not dropped.
         val marker: String? = ownerA.takeUnless { WatchBindingRules.deletedOwnerMarkerSuperseded(ownerA, ownerA) }
         assertFalse(WatchBindingRules.shouldDropForDeletedOwner(marker, deletedAt, ownerA, deletedAt - day, now))
+    }
+
+    @Test
+    fun deletionAfterSignOutStillDropsOnlyTheDeletedOwnersWork() {
+        val day = 24L * 60 * 60 * 1000
+        // The phone signs out first: the watch is unbound and forgets its owner.
+        assertEquals(
+            BindingStateDecision.Unbind,
+            WatchBindingRules.decideBindingState(binding(), "phone-1", unbound(generation = 6L))
+        )
+        val unboundBinding = binding(owner = null, generation = 6L, revision = 0L, lastSentAt = 2_000L)
+        // Then the deletion arrives naming the owner: the unlink is accepted, the owner is known.
+        val deletion = unlinked(sentAt = 3_000L).copy(accountDeleted = true, deletedOwnerId = ownerA)
+        assertEquals(
+            BindingStateDecision.Unlink,
+            WatchBindingRules.decideBindingState(unboundBinding, "phone-1", deletion)
+        )
+        val deleted = WatchBindingRules.deletedOwnerOf(deletion, unboundBinding.ownerId)
+        assertEquals(ownerA, deleted)
+        assertTrue(WatchBindingRules.dropHeldWorkForDeletedOwner(deleted, ownerA))
+        assertFalse(WatchBindingRules.dropHeldWorkForDeletedOwner(deleted, ownerB))
+        assertFalse(WatchBindingRules.dropHeldWorkForDeletedOwner(deleted, null))
+        // The marker for that owner drops an in-memory workout started before the deletion.
+        assertTrue(WatchBindingRules.shouldDropForDeletedOwner(deleted, 10L * day, ownerA, 9L * day, 11L * day))
+
+        // An older phone names nobody: the bound owner is used, and an unbound watch has none.
+        val legacy = unlinked(sentAt = 3_000L).copy(accountDeleted = true)
+        assertEquals(ownerA, WatchBindingRules.deletedOwnerOf(legacy, ownerA))
+        assertNull(WatchBindingRules.deletedOwnerOf(legacy, null))
+        assertFalse(WatchBindingRules.dropHeldWorkForDeletedOwner(null, ownerA))
+        // The named owner wins over the binding; a plain unlink deletes nobody.
+        assertEquals(ownerA, WatchBindingRules.deletedOwnerOf(deletion, ownerB))
+        assertNull(WatchBindingRules.deletedOwnerOf(unlinked(sentAt = 3_000L), ownerA))
     }
 }

@@ -362,6 +362,29 @@ class PhoneWearProtocolTest {
         assertEquals("unlinked", deleted.getString("state"))
         assertEquals("account_deleted", deleted.getString("reason"))
         assertThrows { PhoneWearProtocol.buildBindingState(signedOut, unlinked = false, accountDeleted = true) }
+        // The deleted owner rides only on the deletion reason, and only as a valid owner id.
+        val deletedOwner = "c".repeat(64)
+        val named = org.json.JSONObject(
+            String(
+                PhoneWearProtocol.buildBindingState(
+                    signedOut, unlinked = true, now = now, messageId = operationId,
+                    accountDeleted = true, deletedOwnerId = deletedOwner
+                )
+            )
+        )
+        assertEquals(keys + "reason" + "deletedOwnerId", named.keys().asSequence().toSet())
+        assertEquals("account_deleted", named.getString("reason"))
+        assertEquals(deletedOwner, named.getString("deletedOwnerId"))
+        assertThrows { PhoneWearProtocol.buildBindingState(signedOut, unlinked = true, deletedOwnerId = deletedOwner) }
+        assertThrows {
+            PhoneWearProtocol.buildBindingState(signedOut, unlinked = false, accountDeleted = true, deletedOwnerId = deletedOwner)
+        }
+        assertThrows {
+            PhoneWearProtocol.buildBindingState(signedOut, unlinked = true, accountDeleted = true, deletedOwnerId = "C".repeat(64))
+        }
+        assertThrows {
+            PhoneWearProtocol.buildBindingState(signedOut, unlinked = true, accountDeleted = true, deletedOwnerId = "c".repeat(63))
+        }
         assertThrows {
             PhoneWearProtocol.buildBindingState(signedOut.copy(authorityEpoch = "not-an-epoch"), unlinked = false)
         }

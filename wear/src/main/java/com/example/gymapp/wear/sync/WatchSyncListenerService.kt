@@ -225,11 +225,13 @@ class WatchSyncListenerService : WearableListenerService() {
                 // owner's work is dropped; work held for another owner stays.
                 // The marker comes first: an open app holding this owner's live workout in memory
                 // sees it before the binding goes and drops the workout instead of saving it again.
-                val deletedOwnerId = binding.ownerId.takeIf { state.accountDeleted }
+                // The phone names the owner: a sign-out before the deletion may have unbound this
+                // watch already, so the binding alone no longer knows whose work it is.
+                val deletedOwnerId = WatchBindingRules.deletedOwnerOf(state, binding.ownerId)
                 if (deletedOwnerId != null) {
                     runCatching { WatchDeletedOwnerMarker.record(applicationContext, deletedOwnerId) }
                 }
-                if (state.accountDeleted && binding.ownerId != null && heldWorkOwnerId() == binding.ownerId) {
+                if (WatchBindingRules.dropHeldWorkForDeletedOwner(deletedOwnerId, heldWorkOwnerId())) {
                     RestEndAlarm.cancel(applicationContext)
                     WatchWorkoutDraftStorage.clear(applicationContext)
                     WatchPendingWorkoutStorage.clear(applicationContext)

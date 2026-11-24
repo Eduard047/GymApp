@@ -202,14 +202,20 @@ internal class PhoneWearSyncManager(
         val nodeId = result.releasedNodeId ?: return result.committed
         lastFullSyncCompletedAt.clear()
         _pinReleases.update { it + 1 }
-        scope.launch {
-            // With the reason first, so a current watch drops that owner's held work too; then a
-            // plain unlink for watches that predate the reason (a current one is unbound by then
-            // and ignores it).
-            sendUnlinked(nodeId, accountDeleted = true)
-            sendUnlinked(nodeId)
-        }
+        scope.launch { sendDeletedOwnerUnlink(nodeId, ownerId) }
         return result.committed
+    }
+
+    /**
+     * With the reason and the owner first, so a current watch drops that owner's held work even
+     * when the sign-out before the deletion already unbound it; then a plain unlink for watches
+     * that predate the reason (a current one has forgotten the phone by then and ignores it).
+     */
+    private suspend fun sendDeletedOwnerUnlink(nodeId: String, deletedOwnerId: String) {
+        if (sendUnlinked(nodeId, deletedOwnerId = deletedOwnerId)) {
+            bindingManager.clearPendingDeletedOwner(deletedOwnerId)
+        }
+        sendUnlinked(nodeId)
     }
 
     fun forgetDeletedLocalProfile(databaseName: String): Boolean =
@@ -221,22 +227,28 @@ internal class PhoneWearSyncManager(
     /** True when [sourceNodeId] is the watch the user unlinked; it is told so again. */
     suspend fun replyUnlinkedIfBlocked(sourceNodeId: String): Boolean {
         if (!bindingManager.isUnlinkedNode(sourceNodeId)) return false
-        sendUnlinked(sourceNodeId)
+        val deletedOwnerId = bindingManager.pendingDeletedOwnerId(sourceNodeId)
+        if (deletedOwnerId != null) sendDeletedOwnerUnlink(sourceNodeId, deletedOwnerId)
+        else sendUnlinked(sourceNodeId)
         return true
     }
 
-    private suspend fun sendUnlinked(nodeId: String, accountDeleted: Boolean = false) {
-        try {
+    /** Returns whether the message was handed to the watch. */
+    private suspend fun sendUnlinked(nodeId: String, deletedOwnerId: String? = null): Boolean {
+        return try {
             val (_, binding) = currentSessionAndBinding()
             sendMessage(
                 nodeId,
                 PhoneWearPaths.BINDING_STATE,
-                PhoneWearProtocol.buildBindingState(binding, unlinked = true, accountDeleted = accountDeleted)
+                PhoneWearProtocol.buildBindingState(binding, unlinked = true, deletedOwnerId = deletedOwnerId,
+                    accountDeleted = deletedOwnerId != null)
             )
+            true
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
             // Out of range: the watch learns it the next time it sends anything.
+            false
         }
     }
 
