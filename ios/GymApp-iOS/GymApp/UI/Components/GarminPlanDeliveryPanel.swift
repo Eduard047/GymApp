@@ -71,14 +71,19 @@ struct GarminPlanDeliveryPanel: View {
     private var message: String {
         if destinations.isEmpty {
             return gymText("Connect a Garmin watch in Profile → Watches before syncing a plan.",
-                "Перед синхронізацією плану підключіть годинник: Профіль → Годинники.",
-                "Перед синхронизацией плана подключите часы: Профиль → Часы.", languageCode: gymCurrentLanguageCode())
+                "Підключіть годинник Garmin у Профілі → Годинники перед синхронізацією плану.",
+                "Подключите часы Garmin в Профиле → Часы перед синхронизацией плана.", languageCode: gymCurrentLanguageCode())
         }
         if selectedIsLite { return GarminPhoneSyncProtocol.liteWatchMessage(languageCode: gymCurrentLanguageCode()) }
         if selected.hasPrefix("phone:"), let status = phone.planDeliveryMessages[String(selected.dropFirst(6))] { return status }
-        return gymText("The current edited plan is sent to the selected watch. No workout is saved or started.",
-            "Поточний відредагований план буде надіслано на вибраний годинник. Тренування не буде збережено чи розпочато.",
-            "Текущий отредактированный план будет отправлен на выбранные часы. Тренировка не будет сохранена или начата.", languageCode: gymCurrentLanguageCode())
+        return Self.planHelper(languageCode: gymCurrentLanguageCode())
+    }
+
+    /// The one helper sentence for sending a plan to a watch (Garmin or Apple Watch); shown once per editor.
+    static func planHelper(languageCode: String) -> String {
+        gymText("The current edited plan will be sent to the watch. The workout will not be saved or started.",
+            "Поточний відредагований план буде надіслано на годинник. Тренування не буде збережено чи розпочато.",
+            "Текущий отредактированный план будет отправлен на часы. Тренировка не будет сохранена или начата.", languageCode: languageCode)
     }
 
     private func reconcileSelection() {

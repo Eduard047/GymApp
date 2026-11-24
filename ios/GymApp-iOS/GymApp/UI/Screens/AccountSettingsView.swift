@@ -909,9 +909,9 @@ private struct GarminLegacyCloudCard: View {
             ) {}
         } message: { _ in
             Text(gymText(
-                "This invalidates the watch’s cloud token and discards its pending cloud plans. Connect the watch over Bluetooth in Profile → Watches.",
-                "Це скасовує хмарний токен годинника й відхиляє його плани, що очікують у хмарі. Підключіть годинник через Bluetooth: Профіль → Годинники.",
-                "Это отзывает облачный токен часов и отклоняет их ожидающие облачные планы. Подключите часы по Bluetooth: Профиль → Часы.",
+                "This removes the watch’s cloud link and discards its pending cloud plans. Connect the watch over Bluetooth in Profile → Watches.",
+                "Це прибирає хмарну прив’язку годинника й відхиляє його плани, що очікують у хмарі. Підключіть годинник через Bluetooth: Профіль → Годинники.",
+                "Это убирает облачную привязку часов и отклоняет их ожидающие облачные планы. Подключите часы по Bluetooth: Профиль → Часы.",
                 languageCode: languageCode
             ))
         }

@@ -10,7 +10,7 @@ struct HealthDataCard: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    title: gymText("Health data", "Дані здоров’я", "Данные здоровья", languageCode: languageCode),
+                    title: gymText("Health data", "Дані про здоров’я", "Данные о здоровье", languageCode: languageCode),
                     supporting: gymText(
                         "Imports workouts and heart rate",
                         "Імпортує тренування й пульс",
@@ -35,15 +35,11 @@ struct HealthDataCard: View {
                     notConnectedContent
                 }
 
-                if let failure = service.failure {
-                    GymStatusBanner(message: failureText(failure), isError: true)
-                }
-
-                // Brand caption: which watches reach GymApp through Apple Health.
+                // Source caption: which watches reach GymApp through Apple Health.
                 Text(gymText(
-                    "Samsung, Xiaomi, Huawei, Amazfit, Polar, Fitbit and other watches — through Apple Health.",
-                    "Samsung, Xiaomi, Huawei, Amazfit, Polar, Fitbit та інші годинники — через Apple Health.",
-                    "Samsung, Xiaomi, Huawei, Amazfit, Polar, Fitbit и другие часы — через Apple Health.",
+                    "Imports gym workouts and heart rate from Apple Watch and other watches that save to Apple Health.",
+                    "Імпортує тренування в залі та пульс з Apple Watch й інших годинників, які зберігають дані в Apple Health.",
+                    "Импортирует тренировки в зале и пульс с Apple Watch и других часов, которые сохраняют данные в Apple Health.",
                     languageCode: languageCode
                 ))
                 .font(.caption)
@@ -53,8 +49,18 @@ struct HealthDataCard: View {
         }
     }
 
+    /// Status first, actions after: the failure banner always sits above the buttons.
+    @ViewBuilder
+    private var failureBanner: some View {
+        if let failure = service.failure {
+            GymStatusBanner(message: failureText(failure), isError: true)
+        }
+    }
+
     @ViewBuilder
     private var notConnectedContent: some View {
+        failureBanner
+
         Button {
             Task { await service.connect() }
         } label: {
@@ -80,11 +86,13 @@ struct HealthDataCard: View {
             .foregroundStyle(GymTheme.textPrimary)
             .fixedSize(horizontal: false, vertical: true)
 
+        failureBanner
+
         if let summary = service.lastSummary, summary.imported == 0, !service.isImporting {
             Text(gymText(
-                "No new gym workouts found. If you expected some, allow access in Settings › Health › Data Access.",
-                "Нових тренувань у залі не знайдено. Якщо очікували їх, дозвольте доступ у Налаштуваннях › Здоров’я › Доступ до даних.",
-                "Новых тренировок в зале не найдено. Если ожидали их, разрешите доступ в Настройках › Здоровье › Доступ к данным.",
+                "No new gym workouts found. If you expected some, allow access in Settings › Apps › Health › Data Access & Devices.",
+                "Нових тренувань у залі не знайдено. Якщо ви очікували їх, дозвольте доступ: Параметри › Програми › Здоров’я › Доступ до даних і пристрої.",
+                "Новых тренировок в зале не найдено. Если вы ожидали их, разрешите доступ: Настройки › Приложения › Здоровье › Доступ к данным и устройства.",
                 languageCode: languageCode
             ))
             .font(.caption)
@@ -122,9 +130,9 @@ struct HealthDataCard: View {
     private var settingsHint: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(gymText(
-                "GymApp stopped importing. Apple Health keeps the permission until you remove it in Settings › Health › Data Access.",
-                "GymApp припинив імпорт. Apple Health зберігає дозвіл, доки ви не приберете його в Налаштуваннях › Здоров’я › Доступ до даних.",
-                "GymApp перестал импортировать. Apple Health хранит разрешение, пока вы не уберёте его в Настройках › Здоровье › Доступ к данным.",
+                "GymApp stopped importing. Apple Health keeps the permission until you remove it in Settings › Apps › Health › Data Access & Devices.",
+                "GymApp припинив імпорт. Apple Health зберігає дозвіл, доки ви не приберете його: Параметри › Програми › Здоров’я › Доступ до даних і пристрої.",
+                "GymApp перестал импортировать. Apple Health хранит разрешение, пока вы не уберёте его: Настройки › Приложения › Здоровье › Доступ к данным и устройства.",
                 languageCode: languageCode
             ))
             .font(.caption)
@@ -136,7 +144,7 @@ struct HealthDataCard: View {
                     UIApplication.shared.open(url)
                 }
             } label: {
-                Text(gymText("Open Settings", "Відкрити Налаштування", "Открыть Настройки", languageCode: languageCode))
+                Text(gymText("Open Settings", "Відкрити Параметри", "Открыть Настройки", languageCode: languageCode))
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(GymSecondaryButtonStyle())

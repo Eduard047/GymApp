@@ -157,6 +157,7 @@ struct ProfileView: View {
             WatchesScreen(
                 garminCloud: garminCloud,
                 garminPhoneSync: garminPhoneSync,
+                appleWatch: appState.watchSync,
                 healthImport: appState.healthImport
             )
             .gymTopBannerInset()
@@ -515,15 +516,15 @@ struct ProfileView: View {
                     "Сон, HRV и восстановление с ваших часов — от того же разработчика",
                     languageCode: languageCode
                 ),
-                subtitleLineLimit: 2,
-                trailingSymbol: "arrow.up.right"
+                subtitleLineLimit: 2
             )
         }
         .buttonStyle(.plain)
+        // The tap opens an in-app sheet (the App Store only from its button): a chevron, not an arrow.
         .accessibilityLabel(gymText(
-            "Open HealthApp in the App Store",
-            "Відкрити HealthApp в App Store",
-            "Открыть HealthApp в App Store",
+            "HealthApp, details",
+            "HealthApp, докладніше",
+            "HealthApp, подробнее",
             languageCode: languageCode
         ))
         .accessibilityHint(gymText(
@@ -587,17 +588,16 @@ struct ProfileView: View {
             WatchesScreen(
                 garminCloud: garminCloud,
                 garminPhoneSync: garminPhoneSync,
+                appleWatch: appState.watchSync,
                 healthImport: appState.healthImport
             )
                 .gymTopBannerInset()
         } label: {
-            ProfileRowLabel(
-                title: gymText("Watches", "Годинники", "Часы", languageCode: languageCode),
-                subtitle: WatchesStatus.summary(
-                    garminPaired: garminPaired,
-                    healthConnected: appState.healthImport.isConnected,
-                    languageCode: languageCode
-                )
+            WatchesRowLabel(
+                garminPaired: garminPaired,
+                appleWatch: appState.watchSync,
+                healthImport: appState.healthImport,
+                languageCode: languageCode
             )
         }
         .buttonStyle(.plain)
@@ -1042,11 +1042,39 @@ enum BackupFileReader {
     }
 }
 
-/// Every watch connection on one screen: the Garmin card, then the health data
-/// card. Order: Garmin, (future Apple Watch card), Health data.
+/// The Profile "Watches" row label. Observes the Apple Watch and health services
+/// itself so the status line follows pairing and import changes live.
+private struct WatchesRowLabel: View {
+    let garminPaired: Bool
+    @ObservedObject var appleWatch: WatchConnectivityService
+    @ObservedObject var healthImport: HealthKitImportService
+    let languageCode: String
+
+    var body: some View {
+        ProfileRowLabel(
+            title: gymText("Watches", "Годинники", "Часы", languageCode: languageCode),
+            subtitle: WatchesStatus.summary(
+                garminPaired: garminPaired,
+                appleWatchLinked: appleWatchLinked(appleWatch),
+                healthConnected: healthImport.isConnected,
+                languageCode: languageCode
+            )
+        )
+    }
+}
+
+/// An Apple Watch is paired with this iPhone and has GymApp installed.
+@MainActor
+private func appleWatchLinked(_ appleWatch: WatchConnectivityService) -> Bool {
+    appleWatch.isPaired && appleWatch.isWatchAppInstalled
+}
+
+/// Every watch connection on one screen. Order (parity with Android's
+/// Garmin · Wear OS · Health data): Garmin, Apple Watch, Health data.
 private struct WatchesScreen: View {
     @ObservedObject var garminCloud: GarminCloudService
     @ObservedObject var garminPhoneSync: GarminPhoneSyncService
+    @ObservedObject var appleWatch: WatchConnectivityService
     @ObservedObject var healthImport: HealthKitImportService
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     private let garminStoreURL = URL(
@@ -1065,8 +1093,11 @@ private struct WatchesScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: GymTheme.contentSpacing) {
                     garminCard
-                    // WATCHES-APPLE-WATCH-SLOT (stage 5): the Apple Watch card goes here,
-                    // between the Garmin card and the health data card. No UI yet.
+                    // Hidden when no Apple Watch is paired (like Wear OS on Android
+                    // without the Wearable API).
+                    if appleWatch.isPaired {
+                        appleWatchCard
+                    }
                     HealthDataCard(service: healthImport)
                         .id("qa-health")
                 }
@@ -1170,6 +1201,7 @@ private struct WatchesScreen: View {
                         "Открыть Gym Workout Tracker в Garmin",
                         languageCode: languageCode
                     ))
+                    .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(GymSecondaryButtonStyle())
@@ -1199,6 +1231,47 @@ private struct WatchesScreen: View {
                 languageCode: languageCode
             ))
         }
+    }
+
+    /// Apple Watch card (parity with Android's Wear OS card). Shown only while a watch
+    /// is paired. Pairing belongs to the system, so there is no unlink action here.
+    private var appleWatchCard: some View {
+        let installed = appleWatchLinked(appleWatch)
+        return GymPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    GymSectionTitle(
+                        title: "Apple Watch",
+                        supporting: gymText(
+                            "Plan on the watch, sets and heart rate",
+                            "План на годиннику, підходи та пульс",
+                            "План на часах, подходы и пульс",
+                            languageCode: languageCode
+                        )
+                    )
+                    Spacer(minLength: 4)
+                    if installed {
+                        Text(gymText("Paired", "Прив’язано", "Привязано", languageCode: languageCode))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(GymTheme.primary)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+
+                if !installed {
+                    GymInlineState(
+                        gymText(
+                            "Install GymApp on your Apple Watch from the Watch app.",
+                            "Встановіть GymApp на Apple Watch у застосунку Watch.",
+                            "Установите GymApp на Apple Watch в приложении Watch.",
+                            languageCode: languageCode
+                        ),
+                        systemImage: "applewatch"
+                    )
+                }
+            }
+        }
+        .id("qa-apple-watch")
     }
 
     private var garminLinkedToAnotherAccountTitle: String {
@@ -1270,9 +1343,13 @@ private struct WatchesScreen: View {
                 Text(name)
                     .font(.headline)
                     .foregroundStyle(GymTheme.textPrimary)
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(GymTheme.textSecondary)
+                // The model line repeats nothing: hidden when it equals the device name.
+                if !detail.isEmpty && detail.trimmingCharacters(in: .whitespaces)
+                    .caseInsensitiveCompare(name.trimmingCharacters(in: .whitespaces)) != .orderedSame {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                }
                 Text(status)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(connected ? GymTheme.primary : GymTheme.textSecondary)

@@ -66,13 +66,18 @@ final class ActiveWorkoutDeepLinkTests: XCTestCase {
     @MainActor
     func testNotificationTapIsConsumedOnceAndExpires() {
         typealias D = ActiveWorkoutDeepLink
+        // A stash of its own, and no notification is posted: the tests run inside the real
+        // app, whose live listener takes every tap from the shared stash.
+        let stash = D.NotificationTapStash()
         let t0 = Date()
-        _ = D.takeNotificationTap(now: t0)
-        XCTAssertFalse(D.takeNotificationTap(now: t0))
-        D.noteNotificationTap(now: t0)
-        XCTAssertTrue(D.takeNotificationTap(now: t0.addingTimeInterval(1)))
-        XCTAssertFalse(D.takeNotificationTap(now: t0.addingTimeInterval(1)))
-        D.noteNotificationTap(now: t0)
-        XCTAssertFalse(D.takeNotificationTap(now: t0.addingTimeInterval(D.notificationTapTimeout + 1)))
+        XCTAssertFalse(stash.take(now: t0))
+        stash.note(now: t0)
+        XCTAssertTrue(stash.take(now: t0.addingTimeInterval(1)))
+        XCTAssertFalse(stash.take(now: t0.addingTimeInterval(1)))
+        stash.note(now: t0)
+        XCTAssertFalse(stash.take(now: t0.addingTimeInterval(D.notificationTapTimeout + 1)))
+        stash.note(now: t0)
+        XCTAssertFalse(stash.take(now: t0.addingTimeInterval(-1)), "a tap dated after `now` is dropped")
+        XCTAssertFalse(stash.take(now: t0), "a dropped tap is cleared too")
     }
 }

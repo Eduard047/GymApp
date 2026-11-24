@@ -361,7 +361,302 @@ final class HealthImportRulesTests: XCTestCase {
         XCTAssertEqual(client.heartRateSources, ["com.example.watch"])
     }
 
+    // MARK: Heart rate source (workout statistics first)
+
+    func testWorkoutStatisticsGiveHeartRateWithoutASourceFilteredQuery() async throws {
+        let fixture = try makeFixture(name: "statistics")
+        let client = FakeHealthKitClient(sessions: [fixture.session(id: "EEEE-1", hoursAgo: 3)])
+        // A third-party watch app: the samples belong to the watch, the workout to the app.
+        client.statistics = HealthImportHeartRateStatistics(average: 131.5, maximum: 172.4)
+        let service = fixture.service(client: client)
+        await service.connect()
+
+        let workout = try XCTUnwrap(fixture.store.workouts.first)
+        let item = try XCTUnwrap(fixture.store.activityOnlyCloudItems.first)
+        XCTAssertEqual(item.averageHeartRate, 132)
+        XCTAssertEqual(item.maximumHeartRate, 172)
+        XCTAssertEqual(
+            workout.note,
+            "Apple Health · Core training · Duration 30:00 · Avg HR 132 · Max HR 172"
+        )
+        XCTAssertEqual(client.statisticsRequests, ["EEEE-1"])
+        XCTAssertTrue(client.heartRateSources.isEmpty, "no sample query when the workout has statistics")
+    }
+
+    func testMissingOrImplausibleStatisticsFallBackToTheSourceFilteredSamples() async throws {
+        XCTAssertNil(HealthKitImportService.heartRateSummary(nil))
+        for statistics in [
+            HealthImportHeartRateStatistics(average: 10, maximum: 120),
+            HealthImportHeartRateStatistics(average: 120, maximum: 300),
+            HealthImportHeartRateStatistics(average: 150, maximum: 120),
+            HealthImportHeartRateStatistics(average: .nan, maximum: 120)
+        ] {
+            XCTAssertNil(HealthKitImportService.heartRateSummary(statistics))
+        }
+        let fixture = try makeFixture(name: "statistics-fallback")
+        let client = FakeHealthKitClient(sessions: [fixture.session(id: "EEEE-2", hoursAgo: 3)])
+        client.statistics = HealthImportHeartRateStatistics(average: 10, maximum: 300)
+        let service = fixture.service(client: client)
+        await service.connect()
+        XCTAssertEqual(fixture.store.activityOnlyCloudItems.first?.averageHeartRate, 100)
+        XCTAssertEqual(fixture.store.activityOnlyCloudItems.first?.maximumHeartRate, 110)
+        XCTAssertEqual(client.heartRateSources, ["com.example.watch"])
+    }
+
+    // MARK: Watch transfer after the import
+
+    func testWatchWorkoutStoredAfterTheImportReplacesTheImportedCopy() async throws {
+        let fixture = try makeFixture(name: "watch-after-import")
+        let same = fixture.session(id: "FFFF-1", hoursAgo: 3)
+        let other = fixture.session(id: "FFFF-2", hoursAgo: 9)
+        let client = FakeHealthKitClient(sessions: [same, other])
+        let service = fixture.service(client: client)
+        await service.connect()
+        XCTAssertEqual(fixture.store.workouts.count, 2)
+
+        // The store call the Garmin phone sync makes for a workout with sets.
+        _ = try fixture.store.createWorkout(
+            date: Date(gymEpochMilliseconds: same.startMillis + 45_000),
+            note: "Garmin",
+            namedSets: [NamedWorkoutSetDraft(exerciseName: "Bench press", weight: 60, reps: 8)],
+            durationSeconds: 1_700
+        )
+        XCTAssertEqual(fixture.store.workouts.count, 2, "one session, one workout")
+        XCTAssertEqual(fixture.store.workouts.filter { !$0.exercises.isEmpty }.count, 1)
+        XCTAssertEqual(
+            fixture.store.activityOnlyCloudItems.map(\.workoutStartedAt), [other.startMillis]
+        )
+
+        _ = await service.importNow()
+        XCTAssertEqual(fixture.store.workouts.count, 2)
+        XCTAssertEqual(service.lastSummary?.imported, 0)
+        let ledger = HealthImportStateStore(root: fixture.stateRoot)
+            .load(account: fixture.store.accountStorageKey)
+        XCTAssertEqual(Set(ledger.receipts), ["apple_health:FFFF-1", "apple_health:FFFF-2"])
+
+        // Also after a restart of the service.
+        let reopened = fixture.service(client: client)
+        _ = await reopened.importNow()
+        XCTAssertEqual(fixture.store.workouts.count, 2)
+    }
+
+    func testGarminTimeOnlyWorkoutReplacesTheImportedCopy() async throws {
+        let fixture = try makeFixture(name: "garmin-free-after-import")
+        let same = fixture.session(id: "GGGG-1", hoursAgo: 3)
+        let service = fixture.service(client: FakeHealthKitClient(sessions: [same]))
+        await service.connect()
+        XCTAssertEqual(fixture.store.workouts.count, 1)
+
+        _ = try fixture.store.createActivityWorkout(
+            date: Date(gymEpochMilliseconds: same.startMillis),
+            note: "Garmin",
+            durationSeconds: 1_800
+        )
+        XCTAssertEqual(fixture.store.workouts.count, 1)
+        XCTAssertEqual(fixture.store.workouts.first?.note, "Garmin")
+        XCTAssertTrue(fixture.store.activityOnlyCloudItems.isEmpty)
+        _ = await service.importNow()
+        XCTAssertEqual(fixture.store.workouts.count, 1)
+    }
+
+    func testWatchWorkoutNeverRemovesWhatTheImportDidNotCreate() async throws {
+        let fixture = try makeFixture(name: "watch-keeps-foreign")
+        let imported = fixture.session(id: "HHHH-1", hoursAgo: 3)
+        let service = fixture.service(client: FakeHealthKitClient(sessions: [imported]))
+        await service.connect()
+        let start = Date(gymEpochMilliseconds: imported.startMillis)
+        // Same wording, but not in the ledger: an activity that came from another device.
+        _ = try fixture.store.createImportedActivityWorkout(
+            date: start.addingTimeInterval(60),
+            note: "Apple Health · Core training · Duration 30:00",
+            durationSeconds: 1_800,
+            gymCalories: 0,
+            averageHeartRate: nil,
+            maximumHeartRate: nil
+        )
+        // The user's own time-only entry.
+        _ = try fixture.store.createImportedActivityWorkout(
+            date: start.addingTimeInterval(120),
+            note: "Felt good",
+            durationSeconds: 1_800,
+            gymCalories: 0,
+            averageHeartRate: nil,
+            maximumHeartRate: nil
+        )
+        XCTAssertEqual(fixture.store.workouts.count, 3)
+
+        // A watch workout far outside the overlap tolerance removes nothing.
+        _ = try fixture.store.createWorkout(
+            date: start.addingTimeInterval(-36_000),
+            note: "Garmin",
+            namedSets: [NamedWorkoutSetDraft(exerciseName: "Bench press", weight: 60, reps: 8)],
+            durationSeconds: 1_700
+        )
+        XCTAssertEqual(fixture.store.workouts.count, 4)
+
+        // An overlapping one removes only the workout the import created.
+        _ = try fixture.store.createWorkout(
+            date: start.addingTimeInterval(30),
+            note: "Garmin",
+            namedSets: [NamedWorkoutSetDraft(exerciseName: "Bench press", weight: 60, reps: 8)],
+            durationSeconds: 1_700
+        )
+        XCTAssertEqual(fixture.store.workouts.count, 4)
+        XCTAssertFalse(fixture.store.workouts.contains {
+            $0.date.gymEpochMilliseconds == imported.startMillis
+        })
+        XCTAssertEqual(fixture.store.activityOnlyCloudItems.count, 2)
+    }
+
+    func testLedgerWrittenBeforeImportedWorkoutsStillDecodesAndTrimsWithItsReceipts() throws {
+        let old = Data(
+            #"{"version":1,"connected":true,"receipts":["apple_health:OLD-1"],"lastImportAt":10,"importedTotal":1}"#.utf8
+        )
+        var ledger = try JSONDecoder().decode(HealthImportLedger.self, from: old)
+        XCTAssertTrue(ledger.connected)
+        XCTAssertEqual(ledger.receipts, ["apple_health:OLD-1"])
+        XCTAssertEqual(ledger.importedTotal, 1)
+        XCTAssertNil(ledger.importedWorkouts)
+        XCTAssertTrue(ledger.importedWorkoutDurationsByStart.isEmpty)
+
+        for index in 0 ..< HealthImportLedger.maximumReceipts {
+            ledger.add(
+                receipt: "apple_health:NEW-\(index)",
+                workout: .init(startMillis: Int64(index) * 10_000_000, durationSeconds: 600)
+            )
+        }
+        XCTAssertEqual(ledger.receipts.count, HealthImportLedger.maximumReceipts)
+        XCTAssertFalse(ledger.receipts.contains("apple_health:OLD-1"))
+        XCTAssertEqual(ledger.importedWorkouts?.count, HealthImportLedger.maximumReceipts)
+        ledger.add(receipt: "apple_health:NEW-LAST", workout: .init(startMillis: -1, durationSeconds: 60))
+        XCTAssertNil(ledger.importedWorkouts?["apple_health:NEW-0"], "an interval leaves with its receipt")
+        XCTAssertEqual(ledger.importedWorkouts?.count, HealthImportLedger.maximumReceipts)
+        let decoded = try JSONDecoder().decode(
+            HealthImportLedger.self, from: JSONEncoder().encode(ledger)
+        )
+        XCTAssertEqual(decoded, ledger)
+    }
+
+    // MARK: Overlapping runs and the automatic throttle
+
+    func testAutoImportRunsAgainAfterTheClockWasSetBack() async throws {
+        let fixture = try makeFixture(name: "clock-back")
+        let client = FakeHealthKitClient(sessions: [])
+        let clock = HealthImportTestClock(Date())
+        let service = HealthKitImportService(
+            auth: fixture.auth,
+            defaults: fixture.defaults,
+            client: client,
+            stateStore: HealthImportStateStore(root: fixture.stateRoot),
+            now: { clock.now }
+        )
+        service.bind(workoutStore: fixture.store)
+        await service.connect()
+        XCTAssertEqual(client.fetchCount, 1)
+
+        clock.now = clock.now.addingTimeInterval(-7_200)
+        await service.autoImportIfDue()
+        XCTAssertEqual(client.fetchCount, 2, "a last run that lies in the future never blocks")
+        clock.now = clock.now.addingTimeInterval(1_800)
+        await service.autoImportIfDue()
+        XCTAssertEqual(client.fetchCount, 2, "30 minutes after that run is still throttled")
+        clock.now = clock.now.addingTimeInterval(1_800)
+        await service.autoImportIfDue()
+        XCTAssertEqual(client.fetchCount, 3, "one hour later it is due")
+    }
+
+    func testRunLeftBehindByAnAccountSwitchCannotClearTheNewAccountsRun() async throws {
+        let fixture = try makeFixture(name: "run-token")
+        let client = FakeHealthKitClient(sessions: [])
+        let service = fixture.service(client: client)
+        await service.connect()
+
+        let other = AppAccountSession.local(
+            id: "00000000-0000-4000-8000-000000000403",
+            displayName: "Second account"
+        )
+        XCTAssertTrue(
+            HealthImportStateStore(root: fixture.stateRoot)
+                .save(HealthImportLedger(connected: true), account: other.storageKey)
+        )
+        let otherRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HealthImportRulesTests-other-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: otherRoot, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: otherRoot) }
+        let otherStore = try WorkoutStore(
+            accountStorageKey: other.storageKey,
+            directoryURL: otherRoot.appendingPathComponent("workouts", isDirectory: true)
+        )
+
+        client.suspendFetches = true
+        let oldRun = Task { @MainActor in await service.importNow() }
+        await waitUntil { client.suspendedFetchCount == 1 }
+        XCTAssertTrue(service.isImporting)
+
+        try fixture.auth.installSessionForTesting(other)
+        await waitUntil { !service.isImporting }
+        service.bind(workoutStore: otherStore)
+        XCTAssertTrue(service.isConnected)
+        let newRun = Task { @MainActor in await service.importNow() }
+        await waitUntil { client.suspendedFetchCount == 2 }
+        XCTAssertTrue(service.isImporting)
+
+        client.resumeFetch(at: 0)
+        let oldResult = await oldRun.value
+        XCTAssertFalse(oldResult)
+        XCTAssertTrue(service.isImporting, "only the run that owns the flag may clear it")
+        let third = await service.importNow()
+        XCTAssertFalse(third, "no second run while the new account's run is active")
+        XCTAssertEqual(client.fetchCount, 3)
+
+        client.resumeFetch(at: 1)
+        let newResult = await newRun.value
+        XCTAssertTrue(newResult)
+        XCTAssertFalse(service.isImporting)
+    }
+
+    func testRunLeftBehindWritesNothingAfterReturningToTheSameAccount() async throws {
+        let fixture = try makeFixture(name: "run-token-return")
+        let first = try XCTUnwrap(fixture.auth.session)
+        let client = FakeHealthKitClient(sessions: [])
+        let service = fixture.service(client: client)
+        await service.connect()
+        client.sessions = [fixture.session(id: "IIII-1", hoursAgo: 3)]
+
+        client.suspendFetches = true
+        let oldRun = Task { @MainActor in await service.importNow() }
+        await waitUntil { client.suspendedFetchCount == 1 }
+        try fixture.auth.installSessionForTesting(
+            .local(id: "00000000-0000-4000-8000-000000000404", displayName: "Passing by")
+        )
+        await waitUntil { !service.isConnected }
+        try fixture.auth.installSessionForTesting(first)
+        await waitUntil { service.isConnected }
+
+        let newRun = Task { @MainActor in await service.importNow() }
+        await waitUntil { client.suspendedFetchCount == 2 }
+        client.resumeFetch(at: 0)
+        let oldResult = await oldRun.value
+        XCTAssertFalse(oldResult, "the earlier run was abandoned by the account change")
+        XCTAssertTrue(fixture.store.workouts.isEmpty)
+        XCTAssertTrue(service.isImporting)
+
+        client.resumeFetch(at: 1)
+        let newResult = await newRun.value
+        XCTAssertTrue(newResult)
+        XCTAssertEqual(fixture.store.workouts.count, 1)
+        XCTAssertEqual(service.importedTotal, 1)
+        XCTAssertFalse(service.isImporting)
+    }
+
     // MARK: Helpers
+
+    private func waitUntil(_ condition: @MainActor () -> Bool) async {
+        for _ in 0 ..< 3_000 where !condition() {
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+        XCTAssertTrue(condition(), "timed out waiting for the service")
+    }
 
     private struct Fixture {
         let auth: AuthService
@@ -459,8 +754,24 @@ final class HealthImportRulesTests: XCTestCase {
 private final class FakeHealthKitClient: HealthKitImportClient, @unchecked Sendable {
     var sessions: [HealthImportSession]
     var beforeFetchReturns: (() -> Void)?
-    private(set) var fetchCount = 0
-    private(set) var heartRateSources: [String] = []
+    /// What Apple Health reports for the workout itself; nil means "no statistics".
+    var statistics: HealthImportHeartRateStatistics?
+    /// When true, every fetch waits until `resumeFetch(at:)` releases it.
+    var suspendFetches = false
+    private let lock = NSLock()
+    private var gates: [CheckedContinuation<Void, Never>] = []
+    private var fetches = 0
+    private var sources: [String] = []
+    private var statisticsIds: [String] = []
+
+    var fetchCount: Int { lock.withLock { fetches } }
+    var heartRateSources: [String] { lock.withLock { sources } }
+    var statisticsRequests: [String] { lock.withLock { statisticsIds } }
+    var suspendedFetchCount: Int { lock.withLock { gates.count } }
+
+    func resumeFetch(at index: Int) {
+        lock.withLock { gates[index] }.resume()
+    }
 
     init(sessions: [HealthImportSession]) {
         self.sessions = sessions
@@ -471,9 +782,19 @@ private final class FakeHealthKitClient: HealthKitImportClient, @unchecked Senda
     func requestAuthorization() async throws {}
 
     func fetchWorkouts(since: Date, limit: Int) async throws -> [HealthImportSession] {
-        fetchCount += 1
+        lock.withLock { fetches += 1 }
+        if suspendFetches {
+            await withCheckedContinuation { continuation in
+                lock.withLock { gates.append(continuation) }
+            }
+        }
         beforeFetchReturns?()
         return sessions
+    }
+
+    func heartRateStatistics(recordId: String) async throws -> HealthImportHeartRateStatistics? {
+        lock.withLock { statisticsIds.append(recordId) }
+        return statistics
     }
 
     func heartRateSamples(
@@ -481,12 +802,17 @@ private final class FakeHealthKitClient: HealthKitImportClient, @unchecked Senda
         endMillis: Int64,
         sourceId: String
     ) async throws -> [HealthImportHeartRateSample] {
-        heartRateSources.append(sourceId)
+        lock.withLock { sources.append(sourceId) }
         return [
             HealthImportHeartRateSample(timeMillis: startMillis + 1_000, bpm: 90),
             HealthImportHeartRateSample(timeMillis: startMillis + 2_000, bpm: 110)
         ]
     }
+}
+
+private final class HealthImportTestClock: @unchecked Sendable {
+    var now: Date
+    init(_ now: Date) { self.now = now }
 }
 
 private final class HealthImportTestKeychain: KeychainStoring {

@@ -141,7 +141,8 @@ test("iOS String Catalog has Russian values for every key and preserves format p
   );
   assert.match(addWorkout, /Label\("Save as completed workout"/);
   assert.doesNotMatch(addWorkout, /Planned rows are targets\. They do not start rest timers/);
-  assert.match(addWorkout, /The current edited plan is sent to the selected watch\. No workout is saved or started\./);
+  assert.match(addWorkout, /GarminPlanDeliveryPanel\.planHelper\(languageCode: gymCurrentLanguageCode\(\)\)/);
+  assert.doesNotMatch(addWorkout, /The current edited plan is sent to/);
   assert.doesNotMatch(addWorkout, /Garmin plan mode: after saving, every planned row is sent/);
   assert.match(addWorkout, /Adds every planned row to history and summaries as completed/);
   assert.match(workoutDashboard, /"\\\(progression\.xpIntoLevel(?:\.formatted\([^"]*\))?\) из "/);

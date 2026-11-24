@@ -87,7 +87,8 @@ test("the store opens only from the sheet's primary button", () => {
   const row = ios.slice(ios.indexOf("private var healthAppRow"), ios.indexOf("/// The help row's one action"));
   assert.match(row, /showsHealthAppSheet = true/);
   assert.equal(row.includes("open("), false);
-  assert.match(row, /trailingSymbol: "arrow\.up\.right"/);
+  // The row opens an in-app sheet, so it carries the default chevron, not an external-link arrow.
+  assert.equal(row.includes("arrow.up.right"), false);
   // Android: the row only raises onOpenHealthApp; the launcher is called from the sheet button.
   assert.equal(profile.includes("openHealthAppInGooglePlay"), false);
   assert.equal((recommendation.match(/openHealthAppInGooglePlay\(context\)/g) ?? []).length, 1);
@@ -129,10 +130,10 @@ test("platform-specific copy: source list, store button and accessibility labels
   assert.equal(androidString("uk", "health_app_sheet_open_store"), "Відкрити в Google Play");
   assert.equal(androidString("ru", "health_app_sheet_open_store"), "Открыть в Google Play");
 
-  assert.deepEqual(swiftText(ios, "Open HealthApp in the App Store"), {
-    en: "Open HealthApp in the App Store",
-    uk: "Відкрити HealthApp в App Store",
-    ru: "Открыть HealthApp в App Store"
+  assert.deepEqual(swiftText(ios, "HealthApp, details"), {
+    en: "HealthApp, details",
+    uk: "HealthApp, докладніше",
+    ru: "HealthApp, подробнее"
   });
   assert.equal(androidString("en", "health_app_row_description"), "Open HealthApp in Google Play");
   assert.equal(androidString("uk", "health_app_row_description"), "Відкрити HealthApp у Google Play");

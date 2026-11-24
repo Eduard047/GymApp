@@ -1372,8 +1372,9 @@ public final class WorkoutStore: ObservableObject {
         durationSeconds: Int? = nil
     ) throws -> WorkoutSession? {
         guard !namedSets.isEmpty else { return nil }
+        let previousCloudItems = activityOnlyCloudItems
         var created: WorkoutSession?
-        try mutate { state in
+        do { try mutate { state in
             var orderedIDs: [UUID] = []
             var grouped: [UUID: [WorkoutSetDraft]] = [:]
 
@@ -1411,10 +1412,68 @@ public final class WorkoutStore: ObservableObject {
                 drafts: drafts,
                 knownExerciseIDs: Set(state.exercises.map(\.id))
             )
+            removeHealthImportedDuplicates(
+                in: &state,
+                date: workout.date,
+                durationSeconds: workout.durationSeconds
+            )
             state.workouts.append(workout)
             created = workout
+        } } catch {
+            activityOnlyCloudItems = previousCloudItems
+            throw error
         }
         return created
+    }
+
+    /// Set by the Apple Health import for this store's account: start (epoch ms) -> duration
+    /// (s) of the activity-only workouts that import created. Read only while a watch workout
+    /// is being stored, to drop the imported copy of the same session.
+    var healthImportedActivityWorkouts: (@MainActor () -> [Int64: Int])?
+
+    /// A watch workout (Apple Watch, Garmin) and an Apple Health import of the same session
+    /// must not both stay. Removes activity-only workouts that the Health import created
+    /// (start and duration are in its ledger, the note still carries its prefix) and that
+    /// overlap the new workout by the importer's own overlap rule. The import receipt stays,
+    /// so the session is never imported again. Call inside `mutate`; the caller restores
+    /// `activityOnlyCloudItems` when the commit fails.
+    private func removeHealthImportedDuplicates(
+        in state: inout WorkoutDataSnapshot,
+        date: Date,
+        durationSeconds: Int?
+    ) {
+        guard let durationSeconds, durationSeconds > 0,
+              let imported = healthImportedActivityWorkouts?(), !imported.isEmpty else { return }
+        let start = date.gymEpochMilliseconds
+        let (end, overflow) = start.addingReportingOverflow(Int64(durationSeconds) * 1_000)
+        guard !overflow else { return }
+        let probe = HealthImportSession(
+            recordId: "",
+            startMillis: start,
+            endMillis: end,
+            exerciseType: nil,
+            sourceId: "",
+            kilocalories: nil,
+            heartRateSamples: []
+        )
+        var removedStarts = Set<Int64>()
+        state.workouts.removeAll { workout in
+            guard Self.isActivityOnlyWorkout(workout),
+                  workout.note?.hasPrefix(HealthImportRules.notePrefix) == true else { return false }
+            let startedAt = workout.date.gymEpochMilliseconds
+            guard imported[startedAt] == workout.durationSeconds,
+                  HealthImportRules.overlaps(probe, existing: [
+                      HealthImportExistingWorkout(
+                          startMillis: startedAt,
+                          durationSeconds: workout.durationSeconds
+                      )
+                  ]) else { return false }
+            removedStarts.insert(startedAt)
+            return true
+        }
+        if !removedStarts.isEmpty {
+            activityOnlyCloudItems.removeAll { removedStarts.contains($0.workoutStartedAt) }
+        }
     }
 
     @discardableResult
@@ -1423,15 +1482,26 @@ public final class WorkoutStore: ObservableObject {
         note: String? = nil,
         durationSeconds: Int
     ) throws -> WorkoutSession {
+        let previousCloudItems = activityOnlyCloudItems
         var created: WorkoutSession?
-        try mutate { state in
-            let workout = try Self.makeActivityOnlyWorkout(
-                date: date,
-                note: note,
-                durationSeconds: durationSeconds
-            )
-            state.workouts.append(workout)
-            created = workout
+        do {
+            try mutate { state in
+                let workout = try Self.makeActivityOnlyWorkout(
+                    date: date,
+                    note: note,
+                    durationSeconds: durationSeconds
+                )
+                removeHealthImportedDuplicates(
+                    in: &state,
+                    date: workout.date,
+                    durationSeconds: workout.durationSeconds
+                )
+                state.workouts.append(workout)
+                created = workout
+            }
+        } catch {
+            activityOnlyCloudItems = previousCloudItems
+            throw error
         }
         guard let created else {
             throw WorkoutStoreError.persistenceFailure("The activity-only workout was not stored.")
@@ -1440,9 +1510,11 @@ public final class WorkoutStore: ObservableObject {
     }
 
     /// Creates an activity-only workout together with its private metrics item (calories and
-    /// heart rate) in one commit. Used by the read-only Apple Health import: the metrics are
-    /// stored exactly as given, never parsed back from the note, and no Garmin-only field
-    /// (`garminCalories`, ending zone) is ever set. An already occupied start time is refused.
+    /// heart rate) in one commit. Used by the read-only Apple Health import and by a time-only
+    /// Apple Watch workout: the metrics are stored exactly as given, never parsed back from the
+    /// note, and no Garmin-only field (`garminCalories`, ending zone) is ever set. An already
+    /// occupied start time is refused. `replacingHealthImport` (watch workouts only) first
+    /// drops the Health-imported copy of the same session.
     @discardableResult
     func createImportedActivityWorkout(
         date: Date,
@@ -1450,7 +1522,8 @@ public final class WorkoutStore: ObservableObject {
         durationSeconds: Int,
         gymCalories: Int,
         averageHeartRate: Int?,
-        maximumHeartRate: Int?
+        maximumHeartRate: Int?,
+        replacingHealthImport: Bool = false
     ) throws -> WorkoutSession {
         let previousCloudItems = activityOnlyCloudItems
         var created: WorkoutSession?
@@ -1462,6 +1535,13 @@ public final class WorkoutStore: ObservableObject {
                     durationSeconds: durationSeconds
                 )
                 let startedAt = workout.date.gymEpochMilliseconds
+                if replacingHealthImport {
+                    removeHealthImportedDuplicates(
+                        in: &state,
+                        date: workout.date,
+                        durationSeconds: workout.durationSeconds
+                    )
+                }
                 guard !Self.hasOtherWorkout(in: state, at: startedAt, excluding: workout.id) else {
                     throw WorkoutStoreError.invalidWorkout(
                         "Activity-only workout timestamp already exists."

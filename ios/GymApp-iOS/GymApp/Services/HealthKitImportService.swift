@@ -13,12 +13,28 @@ protocol HealthKitImportClient: Sendable {
     /// Workouts that start at or after `since`, newest first, at most `limit`.
     /// Heart-rate samples are not included; they are read per workout.
     func fetchWorkouts(since: Date, limit: Int) async throws -> [HealthImportSession]
+    /// Average and maximum of the heart-rate samples Apple Health associated with this workout
+    /// itself (whichever device measured them), or nil when the workout carries none.
+    func heartRateStatistics(recordId: String) async throws -> HealthImportHeartRateStatistics?
     /// Heart-rate samples written by `sourceId` only; other sources never fill in.
+    /// Fallback for workouts without their own heart-rate statistics.
     func heartRateSamples(
         startMillis: Int64,
         endMillis: Int64,
         sourceId: String
     ) async throws -> [HealthImportHeartRateSample]
+}
+
+/// Heart rate of one workout in beats per minute, as Apple Health computed it.
+struct HealthImportHeartRateStatistics: Equatable, Sendable {
+    let average: Double
+    let maximum: Double
+}
+
+extension HealthKitImportClient {
+    func heartRateStatistics(recordId: String) async throws -> HealthImportHeartRateStatistics? {
+        nil
+    }
 }
 
 struct LiveHealthKitImportClient: HealthKitImportClient, @unchecked Sendable {
@@ -64,6 +80,30 @@ struct LiveHealthKitImportClient: HealthKitImportClient, @unchecked Sendable {
         }
     }
 
+    /// A third-party Apple Watch app saves the workout, but the samples of its session belong
+    /// to the watch, so a source filter finds none. The workout's own statistics cover them.
+    func heartRateStatistics(recordId: String) async throws -> HealthImportHeartRateStatistics? {
+        guard let uuid = UUID(uuidString: recordId) else { return nil }
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.workout(HKQuery.predicateForObject(with: uuid))],
+            sortDescriptors: [SortDescriptor(\.startDate)],
+            limit: 1
+        )
+        let unit = HKUnit.count().unitDivided(by: .minute())
+        guard let statistics = try await descriptor.result(for: store).first?
+            .statistics(for: heartRateType),
+              let average = statistics.averageQuantity()?.doubleValue(for: unit),
+              let maximum = statistics.maximumQuantity()?.doubleValue(for: unit) else {
+            return nil
+        }
+        return HealthImportHeartRateStatistics(average: average, maximum: maximum)
+    }
+
+    /// Upper bound of raw samples read for one workout before the source filter.
+    static let maxHeartRateSamplesRead = 100_000
+    /// Samples kept for one workout after the source filter.
+    static let maxHeartRateSamplesPerWorkout = 20_000
+
     func heartRateSamples(
         startMillis: Int64,
         endMillis: Int64,
@@ -77,11 +117,13 @@ struct LiveHealthKitImportClient: HealthKitImportClient, @unchecked Sendable {
         let descriptor = HKSampleQueryDescriptor(
             predicates: [.quantitySample(type: heartRateType, predicate: predicate)],
             sortDescriptors: [SortDescriptor(\.startDate)],
-            limit: 20_000
+            limit: Self.maxHeartRateSamplesRead
         )
         let unit = HKUnit.count().unitDivided(by: .minute())
+        // The per-workout limit applies to this source's samples, not to everything in range.
         return try await descriptor.result(for: store)
             .filter { $0.sourceRevision.source.bundleIdentifier == sourceId }
+            .prefix(Self.maxHeartRateSamplesPerWorkout)
             .map {
             HealthImportHeartRateSample(
                 timeMillis: Self.millis($0.startDate),
@@ -131,18 +173,43 @@ struct HealthImportLedger: Codable, Equatable {
     static let currentVersion = 1
     static let maximumReceipts = 5_000
 
+    /// Where an imported workout was stored. Kept next to its receipt so a later watch
+    /// transfer of the same session can replace the imported copy.
+    struct ImportedWorkout: Codable, Equatable {
+        var startMillis: Int64
+        var durationSeconds: Int
+    }
+
     var version = HealthImportLedger.currentVersion
     var connected = false
     var receipts: [String] = []
     var lastImportAt: Double?
     var importedTotal = 0
+    /// Receipt key -> stored workout. Optional: files written before this field existed
+    /// decode without it (those older imports are simply not matched to watch workouts).
+    var importedWorkouts: [String: ImportedWorkout]?
 
-    mutating func add(receipt: String) {
+    mutating func add(receipt: String, workout: ImportedWorkout? = nil) {
         guard !receipts.contains(receipt) else { return }
         receipts.append(receipt)
-        if receipts.count > Self.maximumReceipts {
-            receipts.removeFirst(receipts.count - Self.maximumReceipts)
+        if let workout {
+            if importedWorkouts == nil { importedWorkouts = [:] }
+            importedWorkouts?[receipt] = workout
         }
+        if receipts.count > Self.maximumReceipts {
+            let dropped = receipts.prefix(receipts.count - Self.maximumReceipts)
+            for key in dropped { importedWorkouts?[key] = nil }
+            receipts.removeFirst(dropped.count)
+        }
+    }
+
+    /// Start (epoch ms) -> duration (s) of every workout this import stored.
+    var importedWorkoutDurationsByStart: [Int64: Int] {
+        var result: [Int64: Int] = [:]
+        for workout in (importedWorkouts ?? [:]).values {
+            result[workout.startMillis] = workout.durationSeconds
+        }
+        return result
     }
 }
 
@@ -260,6 +327,10 @@ final class HealthKitImportService: ObservableObject {
     private var sessionSubscription: AnyCancellable?
     private var activeStorageKey: String?
     private var ledger = HealthImportLedger()
+    /// Token of the run that owns `isImporting`. Only that run may clear the flag or write; a
+    /// run left behind by an account change keeps its old token and can do neither.
+    private var activeRun: UInt64?
+    private var lastRunToken: UInt64 = 0
 
     init(
         auth: AuthService,
@@ -284,6 +355,14 @@ final class HealthKitImportService: ObservableObject {
 
     func bind(workoutStore: WorkoutStore) {
         self.workoutStore = workoutStore
+        // A watch workout that covers an imported session replaces the imported copy; the
+        // store asks which activity-only workouts this import created for its account.
+        workoutStore.healthImportedActivityWorkouts = { [weak self, weak workoutStore] in
+            guard let self, let workoutStore,
+                  self.workoutStore === workoutStore,
+                  self.activeStorageKey == workoutStore.accountStorageKey else { return [:] }
+            return self.ledger.importedWorkoutDurationsByStart
+        }
     }
 
     /// Asks Apple Health for read access, remembers the choice and imports right away.
@@ -341,21 +420,32 @@ final class HealthKitImportService: ObservableObject {
 
     @discardableResult
     private func runImport(automatic: Bool) async -> Bool {
-        guard isConnected, isAvailable, !isImporting,
+        guard isConnected, isAvailable, activeRun == nil,
               let store = readyWorkoutStore(),
               let account = activeStorageKey else {
             return false
         }
         let started = now()
-        if automatic,
-           let last = ledger.lastImportAt,
-           started.timeIntervalSince1970 - last <
-            TimeInterval(HealthImportRules.minAutoImportIntervalSeconds) {
-            return false
+        if automatic, let last = ledger.lastImportAt {
+            // Throttled only while the last run is in the past and less than the interval ago.
+            // A clock that was set back (negative elapsed time) never blocks the import.
+            let elapsed = started.timeIntervalSince1970 - last
+            if elapsed >= 0,
+               elapsed < TimeInterval(HealthImportRules.minAutoImportIntervalSeconds) {
+                return false
+            }
         }
+        lastRunToken &+= 1
+        let run = lastRunToken
+        activeRun = run
         isImporting = true
         failure = nil
-        defer { isImporting = false }
+        defer {
+            if activeRun == run {
+                activeRun = nil
+                isImporting = false
+            }
+        }
 
         var working = ledger
         var summary = HealthImportRunSummary()
@@ -364,7 +454,7 @@ final class HealthKitImportService: ObservableObject {
                 -TimeInterval(HealthImportRules.windowDays) * 86_400
             )
             let fetched = try await fetch(since: since)
-            try ensureBound(store: store, account: account)
+            try ensureBound(store: store, account: account, run: run)
 
             let selection = HealthImportRules.select(fetched)
             summary.skipped = selection.skipped
@@ -392,17 +482,25 @@ final class HealthKitImportService: ObservableObject {
                     summary.skipped[reason, default: 0] += 1
                     continue
                 }
-                // Heart rate comes only from the session's own source. The per-run sample
-                // budget is shared: a session that would cross it, and every later one, is
-                // imported without heart rate (never a partial average).
+                // Heart rate: first the statistics Apple Health keeps for the workout itself
+                // (they cover a third-party watch app, whose samples belong to the watch),
+                // otherwise samples of the session's own source. The per-run sample budget is
+                // shared: a session that would cross it, and every later one, is imported
+                // without heart rate (never a partial average).
                 var samples: [HealthImportHeartRateSample] = []
-                if heartRateBudget > 0, !candidate.sourceId.isEmpty {
+                var workoutHeartRate: (average: Int, maximum: Int)?
+                if !candidate.sourceId.isEmpty {
                     do {
-                        samples = try await client.heartRateSamples(
-                            startMillis: candidate.startMillis,
-                            endMillis: candidate.endMillis,
-                            sourceId: candidate.sourceId
+                        workoutHeartRate = Self.heartRateSummary(
+                            try await client.heartRateStatistics(recordId: candidate.recordId)
                         )
+                        if workoutHeartRate == nil, heartRateBudget > 0 {
+                            samples = try await client.heartRateSamples(
+                                startMillis: candidate.startMillis,
+                                endMillis: candidate.endMillis,
+                                sourceId: candidate.sourceId
+                            )
+                        }
                     } catch {
                         // One unreadable record never stops the run; it is retried next time.
                         summary.failed += 1
@@ -416,7 +514,7 @@ final class HealthKitImportService: ObservableObject {
                     }
                 }
                 // The account may have changed while Health was being read.
-                try ensureBound(store: store, account: account)
+                try ensureBound(store: store, account: account, run: run)
                 switch HealthImportRules.evaluate(
                     candidate.withHeartRateSamples(samples),
                     existingWorkouts: existing,
@@ -426,7 +524,13 @@ final class HealthKitImportService: ObservableObject {
                 ) {
                 case let .skipped(reason):
                     summary.skipped[reason, default: 0] += 1
-                case let .imported(key, workout):
+                case let .imported(key, evaluated):
+                    let workout = Self.applying(
+                        workoutHeartRate,
+                        to: evaluated,
+                        type: candidate.exerciseType,
+                        languageCode: language
+                    )
                     do {
                         try store.createImportedActivityWorkout(
                             date: Date(gymEpochMilliseconds: workout.workoutStartedAt),
@@ -440,7 +544,14 @@ final class HealthKitImportService: ObservableObject {
                         summary.failed += 1
                         continue
                     }
-                    working.add(receipt: key)
+                    let stored = HealthImportLedger.ImportedWorkout(
+                        startMillis: workout.workoutStartedAt,
+                        durationSeconds: workout.durationSeconds
+                    )
+                    working.add(receipt: key, workout: stored)
+                    // Known at once (not only when the run ends), so a watch workout that
+                    // arrives during this run already finds the imported copy.
+                    ledger.add(receipt: key, workout: stored)
                     working.importedTotal += 1
                     receipts.insert(key)
                     existing.append(HealthImportExistingWorkout(
@@ -453,7 +564,7 @@ final class HealthKitImportService: ObservableObject {
                     _ = stateStore.save(working, account: account)
                 }
             }
-            try ensureBound(store: store, account: account)
+            try ensureBound(store: store, account: account, run: run)
             working.connected = isConnected
             working.lastImportAt = started.timeIntervalSince1970
             summary.finishedAt = now()
@@ -481,6 +592,47 @@ final class HealthKitImportService: ObservableObject {
     }
 
 
+    /// Workout statistics are used only when both values are plausible; otherwise the
+    /// source-filtered samples decide.
+    static func heartRateSummary(
+        _ statistics: HealthImportHeartRateStatistics?
+    ) -> (average: Int, maximum: Int)? {
+        guard let statistics,
+              statistics.average.isFinite, statistics.maximum.isFinite,
+              statistics.average >= HealthImportRules.minPlausibleBpm,
+              statistics.maximum <= HealthImportRules.maxPlausibleBpm,
+              statistics.maximum >= statistics.average else { return nil }
+        return (
+            average: Int((statistics.average + 0.5).rounded(.down)),
+            maximum: Int(statistics.maximum.rounded())
+        )
+    }
+
+    /// The evaluated workout with the workout's own heart rate, the note rebuilt to match.
+    private static func applying(
+        _ heartRate: (average: Int, maximum: Int)?,
+        to workout: HealthImportWorkout,
+        type: String?,
+        languageCode: String
+    ) -> HealthImportWorkout {
+        guard let heartRate, let type else { return workout }
+        return HealthImportWorkout(
+            workoutStartedAt: workout.workoutStartedAt,
+            durationSeconds: workout.durationSeconds,
+            gymCalories: workout.gymCalories,
+            averageHeartRate: heartRate.average,
+            maximumHeartRate: heartRate.maximum,
+            note: HealthImportRules.buildNote(
+                type: type,
+                durationSeconds: workout.durationSeconds,
+                gymCalories: workout.gymCalories,
+                averageHeartRate: heartRate.average,
+                maximumHeartRate: heartRate.maximum,
+                languageCode: languageCode
+            )
+        )
+    }
+
     private func fetch(since: Date) async throws -> [HealthImportSession] {
         do {
             return try await client.fetchWorkouts(
@@ -492,8 +644,9 @@ final class HealthKitImportService: ObservableObject {
         }
     }
 
-    private func ensureBound(store: WorkoutStore, account: String) throws {
-        guard readyWorkoutStore() === store,
+    private func ensureBound(store: WorkoutStore, account: String, run: UInt64) throws {
+        guard activeRun == run,
+              readyWorkoutStore() === store,
               activeStorageKey == account,
               store.accountStorageKey == account else {
             throw HealthImportError.accountChanged
@@ -514,6 +667,9 @@ final class HealthKitImportService: ObservableObject {
         lastSummary = nil
         failure = nil
         revokeRequiresSettings = false
+        // A run of the previous account is abandoned here: it loses the token, so it can no
+        // longer write or clear the flag of a run started for the new account.
+        activeRun = nil
         isImporting = false
         if let key = session?.storageKey {
             ledger = stateStore.load(account: key)

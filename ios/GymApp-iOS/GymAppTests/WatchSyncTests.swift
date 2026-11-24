@@ -144,6 +144,111 @@ final class WatchConnectivityServiceTests: XCTestCase {
         XCTAssertEqual(try fixture.files.loadLedger(storageKey: fixture.storageKey).records.map(\.state), [.committed])
     }
 
+    func testTimeOnlyWorkoutStoresHeartRateAndCaloriesAsSidecarMetrics() throws {
+        let fixture = try WatchSyncFixture(name: "time-only-metrics")
+        let cases = try XCTUnwrap(WatchSyncTestSupport.loadContract()["cases"] as? [[String: Any]])
+        let byID = Dictionary(uniqueKeysWithValues: cases.map { ($0["id"] as! String, $0) })
+        var message = try WatchSyncTestSupport.message(
+            for: try XCTUnwrap(byID["workout-free-time-only"]), byID: byID
+        )
+        let measured = try WatchSyncTestSupport.message(
+            for: try XCTUnwrap(byID["workout-plan-imported"]), byID: byID
+        )
+        for key in ["healthKit", "averageHeartRate", "maximumHeartRate", "activeKilocalories"] {
+            message[key] = try XCTUnwrap(measured[key], key)
+        }
+        XCTAssertEqual(
+            fixture.service.receiveWorkout(try WatchSyncTestSupport.bytes(message)),
+            .ack(.committed)
+        )
+        let workout = try XCTUnwrap(fixture.store.workouts.last)
+        XCTAssertTrue(workout.exercises.isEmpty)
+        XCTAssertTrue(workout.note?.hasPrefix("Apple Watch") == true)
+        XCTAssertTrue(fixture.store.hasRecordedActivityMetrics(workout))
+        XCTAssertEqual(fixture.store.activityOnlyCloudItems.count, 1)
+        let item = try XCTUnwrap(fixture.store.activityOnlyCloudItems.first)
+        XCTAssertEqual(item.workoutStartedAt, 1_794_990_000_000)
+        XCTAssertEqual(item.durationSeconds, 2_400)
+        XCTAssertEqual(item.gymCalories, 312)
+        XCTAssertEqual(item.averageHeartRate, 118)
+        XCTAssertEqual(item.maximumHeartRate, 161)
+        XCTAssertNil(item.garminCalories)
+        XCTAssertNil(item.endingHeartRateZone)
+        XCTAssertEqual(try fixture.store.activityOnlyCloudSnapshotItems(), [item], "what cloud sync uploads")
+        // The same bytes again: still one workout and one item.
+        XCTAssertEqual(
+            fixture.service.receiveWorkout(try WatchSyncTestSupport.bytes(message)),
+            .ack(.duplicate)
+        )
+        XCTAssertEqual(fixture.store.workouts.count, 1)
+        XCTAssertEqual(fixture.store.activityOnlyCloudItems.count, 1)
+    }
+
+    func testActivityMetricsComeFromTheMessageFields() throws {
+        let bytes = try WatchSyncTestSupport.caseBytes("workout-plan-imported")
+        guard case let .valid(message) = WatchSyncCodec.decodeWorkout(
+            bytes, nowMillis: 1_795_000_000_000
+        ) else {
+            return XCTFail("the contract case must decode")
+        }
+        let metrics = WatchConnectivityService.activityMetrics(message)
+        XCTAssertEqual(metrics.gymCalories, 312)
+        XCTAssertEqual(metrics.averageHeartRate, 118)
+        XCTAssertEqual(metrics.maximumHeartRate, 161)
+    }
+
+    func testWatchWorkoutWithSetsReplacesTheHealthImportOfTheSameSession() async throws {
+        let fixture = try WatchSyncFixture(name: "after-health-import")
+        // Garmin Connect / another app wrote the same session to Apple Health a little later.
+        let health = try await fixture.importedHealthSession(
+            recordId: "WATCH-DUP-1", startMillis: 1_794_996_020_000, endMillis: 1_794_999_010_000
+        )
+        XCTAssertEqual(fixture.store.workouts.count, 1)
+        XCTAssertTrue(try XCTUnwrap(fixture.store.workouts.first).exercises.isEmpty)
+        XCTAssertEqual(fixture.store.activityOnlyCloudItems.count, 1)
+
+        let bytes = try WatchSyncTestSupport.caseBytes("workout-plan-imported")
+        XCTAssertEqual(fixture.service.receiveWorkout(bytes), .ack(.committed))
+        XCTAssertEqual(fixture.store.workouts.count, 1, "the imported copy is replaced, not doubled")
+        XCTAssertFalse(try XCTUnwrap(fixture.store.workouts.first).exercises.isEmpty)
+        XCTAssertTrue(fixture.store.activityOnlyCloudItems.isEmpty)
+
+        _ = await health.service.importNow()
+        XCTAssertEqual(fixture.store.workouts.count, 1, "the receipt keeps the session out")
+        XCTAssertEqual(health.service.lastSummary?.imported, 0)
+        XCTAssertEqual(health.states.load(account: fixture.storageKey).receipts, ["apple_health:WATCH-DUP-1"])
+    }
+
+    func testTimeOnlyWatchWorkoutReplacesTheHealthImportAtTheSameStart() async throws {
+        let fixture = try WatchSyncFixture(name: "time-only-after-health-import")
+        let health = try await fixture.importedHealthSession(
+            recordId: "WATCH-DUP-2", startMillis: 1_794_990_000_000, endMillis: 1_794_992_400_000
+        )
+        XCTAssertEqual(fixture.store.workouts.count, 1)
+
+        let bytes = try WatchSyncTestSupport.caseBytes("workout-free-time-only")
+        XCTAssertEqual(fixture.service.receiveWorkout(bytes), .ack(.committed))
+        XCTAssertEqual(fixture.store.workouts.count, 1)
+        XCTAssertTrue(try XCTUnwrap(fixture.store.workouts.first).note?.hasPrefix("Apple Watch") == true)
+        XCTAssertEqual(fixture.store.activityOnlyCloudItems.map(\.workoutStartedAt), [1_794_990_000_000])
+
+        _ = await health.service.importNow()
+        XCTAssertEqual(fixture.store.workouts.count, 1)
+        XCTAssertEqual(health.service.lastSummary?.imported, 0)
+    }
+
+    func testWatchWorkoutLeavesANonOverlappingHealthImportAlone() async throws {
+        let fixture = try WatchSyncFixture(name: "separate-health-import")
+        // Ends more than the overlap tolerance before the watch workout starts.
+        _ = try await fixture.importedHealthSession(
+            recordId: "WATCH-SEP-1", startMillis: 1_794_980_000_000, endMillis: 1_794_983_000_000
+        )
+        let bytes = try WatchSyncTestSupport.caseBytes("workout-plan-imported")
+        XCTAssertEqual(fixture.service.receiveWorkout(bytes), .ack(.committed))
+        XCTAssertEqual(fixture.store.workouts.count, 2)
+        XCTAssertEqual(fixture.store.activityOnlyCloudItems.count, 1)
+    }
+
     func testDuplicateGivesTheSameAckWithoutASecondWorkout() throws {
         let fixture = try WatchSyncFixture(name: "duplicate")
         let bytes = try WatchSyncTestSupport.caseBytes("workout-free-time-only")
@@ -469,6 +574,37 @@ final class WatchSyncFixture {
         if bindStore { service.bind(workoutStore: store) }
     }
 
+    /// Connects an Apple Health import to this fixture's account and store and imports one
+    /// gym session with the given interval.
+    func importedHealthSession(
+        recordId: String,
+        startMillis: Int64,
+        endMillis: Int64
+    ) async throws -> (service: HealthKitImportService, states: HealthImportStateStore) {
+        let states = HealthImportStateStore(root: root.appendingPathComponent("HealthImport", isDirectory: true))
+        let fixedNow = now
+        let health = HealthKitImportService(
+            auth: auth,
+            defaults: defaults,
+            client: WatchSyncHealthClient(session: HealthImportSession(
+                recordId: recordId,
+                startMillis: startMillis,
+                endMillis: endMillis,
+                exerciseType: "traditionalStrengthTraining",
+                sourceId: "com.example.health-writer",
+                kilocalories: 300,
+                heartRateSamples: []
+            )),
+            stateStore: states,
+            now: { fixedNow }
+        )
+        health.bind(workoutStore: store)
+        await health.connect()
+        XCTAssertTrue(health.isConnected)
+        XCTAssertEqual(health.lastSummary?.imported, 1)
+        return (health, states)
+    }
+
     var ledgerExists: Bool {
         FileManager.default.fileExists(
             atPath: files.directory(storageKey: storageKey).appendingPathComponent("receipts.json").path
@@ -479,6 +615,22 @@ final class WatchSyncFixture {
         UserDefaults().removePersistentDomain(forName: suite)
         try? FileManager.default.removeItem(at: root)
     }
+}
+
+private struct WatchSyncHealthClient: HealthKitImportClient {
+    let session: HealthImportSession
+
+    var isAvailable: Bool { true }
+
+    func requestAuthorization() async throws {}
+
+    func fetchWorkouts(since: Date, limit: Int) async throws -> [HealthImportSession] { [session] }
+
+    func heartRateSamples(
+        startMillis: Int64,
+        endMillis: Int64,
+        sourceId: String
+    ) async throws -> [HealthImportHeartRateSample] { [] }
 }
 
 private final class WatchSyncTestKeychain: KeychainStoring {

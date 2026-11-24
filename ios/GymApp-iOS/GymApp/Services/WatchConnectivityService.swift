@@ -586,10 +586,18 @@ final class WatchConnectivityService: NSObject, ObservableObject, WatchSessionTr
             let date = Date(timeIntervalSince1970: TimeInterval(message.startedAtMillis / 1_000))
             let note = workoutNote(message)
             if message.sets.isEmpty {
-                created = try store.createActivityWorkout(
+                // Time-only workout: kcal and heart rate are stored as explicit fields (like the
+                // Apple Health import), so the cloud sidecar item carries them. Deriving the
+                // item from the note would lose them: that parser reads Garmin notes only.
+                let metrics = Self.activityMetrics(message)
+                created = try store.createImportedActivityWorkout(
                     date: date,
                     note: note,
-                    durationSeconds: Int(message.durationSeconds)
+                    durationSeconds: Int(message.durationSeconds),
+                    gymCalories: metrics.gymCalories,
+                    averageHeartRate: metrics.averageHeartRate,
+                    maximumHeartRate: metrics.maximumHeartRate,
+                    replacingHealthImport: true
                 )
             } else {
                 created = try store.createWorkout(
@@ -672,6 +680,31 @@ final class WatchConnectivityService: NSObject, ObservableObject, WatchSessionTr
         }
         let domain = (error as NSError).domain
         return domain == NSCocoaErrorDomain || domain == NSPOSIXErrorDomain
+    }
+
+    /// Metrics of a time-only watch workout, bounded to what the activity-only sidecar accepts.
+    /// A value outside its range is left out; an impossible pair (maximum below average) drops
+    /// both heart-rate values. The workout itself is stored either way.
+    static func activityMetrics(
+        _ message: WatchWorkoutMessage
+    ) -> (gymCalories: Int, averageHeartRate: Int?, maximumHeartRate: Int?) {
+        func heartRate<Value: BinaryInteger>(_ value: Value?) -> Int? {
+            guard let value, value > 0,
+                  value <= Value(ActivityOnlyWorkoutCloudCodec.maximumHeartRate) else { return nil }
+            return Int(value)
+        }
+        var average = heartRate(message.averageHeartRate)
+        var maximum = heartRate(message.maximumHeartRate)
+        if let low = average, let high = maximum, high < low {
+            average = nil
+            maximum = nil
+        }
+        var calories = 0
+        if let value = message.activeKilocalories.map({ Double($0) }), value.isFinite, value >= 1,
+           value <= Double(ActivityOnlyWorkoutCloudCodec.maximumCalories) {
+            calories = Int(value.rounded())
+        }
+        return (calories, average, maximum)
     }
 
     /// "Apple Watch · Avg HR 118 · Max HR 161 · kcal 312" (segments only when > 0).

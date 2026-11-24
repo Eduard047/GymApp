@@ -39,20 +39,40 @@ enum ActiveWorkoutDeepLink {
         hasDraft || isPreparingAccount
     }
 
-    @MainActor private static var pendingNotificationTapSince: Date?
+    /// One pending rest-notification tap. The app uses the shared instance below; tests use
+    /// their own instance, so the running host app can never consume their tap.
+    @MainActor final class NotificationTapStash {
+        private let timeout: TimeInterval
+        private var pendingSince: Date?
+
+        init(timeout: TimeInterval = ActiveWorkoutDeepLink.notificationTapTimeout) {
+            self.timeout = timeout
+        }
+
+        func note(now: Date = Date()) {
+            pendingSince = now
+        }
+
+        /// Returns true once for a fresh stashed tap and clears it.
+        func take(now: Date = Date()) -> Bool {
+            defer { pendingSince = nil }
+            guard let since = pendingSince else { return false }
+            let age = now.timeIntervalSince(since)
+            return age >= 0 && age <= timeout
+        }
+    }
+
+    @MainActor private static let notificationTapStash = NotificationTapStash()
 
     /// Stashes a rest-notification tap (cold launch: the UI does not exist yet) and wakes any listener.
     @MainActor static func noteNotificationTap(now: Date = Date()) {
-        pendingNotificationTapSince = now
+        notificationTapStash.note(now: now)
         NotificationCenter.default.post(name: notificationTapRequested, object: nil)
     }
 
     /// Returns true once for a fresh stashed tap and clears it.
     @MainActor static func takeNotificationTap(now: Date = Date()) -> Bool {
-        defer { pendingNotificationTapSince = nil }
-        guard let since = pendingNotificationTapSince else { return false }
-        let age = now.timeIntervalSince(since)
-        return age >= 0 && age <= notificationTapTimeout
+        notificationTapStash.take(now: now)
     }
 
     enum PendingOpenAction: Equatable {

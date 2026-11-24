@@ -1181,7 +1181,18 @@ struct AddWorkoutView: View {
                 garminCloudPanel
             }
             if let appleWatch {
-                AppleWatchPlanPanel(watch: appleWatch, isEmpty: drafts.isEmpty, send: sendPlanToAppleWatch)
+                // The helper sentence shows once: under the Garmin panel while it has a watch to send to,
+                // otherwise under the Apple Watch panel.
+                if let garminPhone {
+                    GarminPhoneDeviceGate(phone: garminPhone) { hasPhoneWatch in
+                        AppleWatchPlanPanel(watch: appleWatch, isEmpty: drafts.isEmpty,
+                            showsHelper: !(hasPhoneWatch || (isCloudAccount && garminCloud.selectedDevice != nil)),
+                            send: sendPlanToAppleWatch)
+                    }
+                } else {
+                    AppleWatchPlanPanel(watch: appleWatch, isEmpty: drafts.isEmpty,
+                        showsHelper: garminCloud.selectedDevice == nil, send: sendPlanToAppleWatch)
+                }
             }
         }
     }
@@ -1208,16 +1219,11 @@ struct AddWorkoutView: View {
                     garminCloud.selectedDevice == nil
                         ? gymText(
                             "Connect a Garmin watch in Profile → Watches before syncing a plan.",
-                            "Перед синхронізацією плану підключіть годинник: Профіль → Годинники.",
-                            "Перед синхронизацией плана подключите часы: Профиль → Часы.",
+                            "Підключіть годинник Garmin у Профілі → Годинники перед синхронізацією плану.",
+                            "Подключите часы Garmin в Профиле → Часы перед синхронизацией плана.",
                             languageCode: gymCurrentLanguageCode()
                         )
-                        : gymText(
-                            "The current edited plan is sent to the selected watch. No workout is saved or started.",
-                            "Поточний відредагований план буде надіслано на вибраний годинник. Тренування не буде збережено чи розпочато.",
-                            "Текущий отредактированный план будет отправлен на выбранные часы. Тренировка не будет сохранена или начата.",
-                            languageCode: gymCurrentLanguageCode()
-                        )
+                        : GarminPlanDeliveryPanel.planHelper(languageCode: gymCurrentLanguageCode())
                 )
                     .font(.caption)
                     .foregroundStyle(GymTheme.textSecondary)
@@ -2351,7 +2357,12 @@ struct AddWorkoutView: View {
             return
         }
         guard isCloudAccount, let binding = garminCloud.selectedDevice else {
-            show(gymLocalized("Connect a Garmin watch in Profile → Watches before syncing a plan."), error: true)
+            show(gymText(
+                "Connect a Garmin watch in Profile → Watches before syncing a plan.",
+                "Підключіть годинник Garmin у Профілі → Годинники перед синхронізацією плану.",
+                "Подключите часы Garmin в Профиле → Часы перед синхронизацией плана.",
+                languageCode: gymCurrentLanguageCode()
+            ), error: true)
             return
         }
         do {
@@ -2954,6 +2965,8 @@ private extension SmartWorkoutEffortAdjustment {
 private struct AppleWatchPlanPanel: View {
     @ObservedObject var watch: WatchConnectivityService
     let isEmpty: Bool
+    /// False while the Garmin panel above already shows the same helper sentence.
+    let showsHelper: Bool
     let send: () -> Void
 
     var body: some View {
@@ -2973,17 +2986,22 @@ private struct AppleWatchPlanPanel: View {
                     }
                     .buttonStyle(GymSecondaryButtonStyle())
                     .disabled(isEmpty)
-                    Text(gymText(
-                        "The current edited plan is sent to your Apple Watch. No workout is saved or started.",
-                        "Поточний відредагований план буде надіслано на Apple Watch. Тренування не буде збережено чи розпочато.",
-                        "Текущий отредактированный план будет отправлен на Apple Watch. Тренировка не будет сохранена или начата.",
-                        languageCode: gymCurrentLanguageCode()
-                    ))
-                    .font(.caption)
-                    .foregroundStyle(GymTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    if showsHelper {
+                        Text(GarminPlanDeliveryPanel.planHelper(languageCode: gymCurrentLanguageCode()))
+                            .font(.caption)
+                            .foregroundStyle(GymTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }
     }
+}
+
+/// Re-renders its content when the Garmin phone destinations change (the editor holds that service unobserved).
+private struct GarminPhoneDeviceGate<Content: View>: View {
+    @ObservedObject var phone: GarminPhoneSyncService
+    @ViewBuilder let content: (Bool) -> Content
+
+    var body: some View { content(!phone.devices.isEmpty) }
 }
