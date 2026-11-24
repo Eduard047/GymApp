@@ -65,37 +65,37 @@
     <string name="hr_off">Heart rate is off</string>
     <string name="a11y_heart_rate">Heart rate %1$s, zone %2$d</string>
     <plurals name="a11y_beats">
-        <item quantity="one">%d beat per minute</item>
-        <item quantity="other">%d beats per minute</item>
+        <item quantity="one">%1$d beat per minute</item>
+        <item quantity="other">%1$d beats per minute</item>
     </plurals>
     <string name="a11y_heart_rate_waiting">Measuring heart rate</string>
     <string name="a11y_set_values">%1$s kilograms, %2$s</string>
     <plurals name="a11y_reps">
-        <item quantity="one">%d rep</item>
-        <item quantity="other">%d reps</item>
+        <item quantity="one">%1$d rep</item>
+        <item quantity="other">%1$d reps</item>
     </plurals>
     <string name="a11y_rest">Rest, %1$d min %2$d s</string>
     <string name="a11y_change_exercise">Change exercise</string>
     <string name="a11y_no_data">No data</string>
     <string name="a11y_avg_hr">Average heart rate</string>
     <string name="a11y_max_hr">Maximum heart rate</string>
-    <string name="a11y_kilograms">%s kilograms</string>
+    <string name="a11y_kilograms">%1$s kilograms</string>
     <string name="a11y_dismiss">Dismiss</string>
     <plurals name="a11y_kcal">
-        <item quantity="one">%d kilocalorie</item>
-        <item quantity="other">%d kilocalories</item>
+        <item quantity="one">%1$d kilocalorie</item>
+        <item quantity="other">%1$d kilocalories</item>
     </plurals>
     <plurals name="a11y_hours">
-        <item quantity="one">%d hour</item>
-        <item quantity="other">%d hours</item>
+        <item quantity="one">%1$d hour</item>
+        <item quantity="other">%1$d hours</item>
     </plurals>
     <plurals name="a11y_minutes">
-        <item quantity="one">%d minute</item>
-        <item quantity="other">%d minutes</item>
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
     </plurals>
     <plurals name="a11y_seconds">
-        <item quantity="one">%d second</item>
-        <item quantity="other">%d seconds</item>
+        <item quantity="one">%1$d second</item>
+        <item quantity="other">%1$d seconds</item>
     </plurals>
     <string name="choose_exercise">Choose exercise</string>
     <string name="choose_short">Choose</string>

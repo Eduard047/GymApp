@@ -4061,6 +4061,7 @@ class GymRepository(
                 // A stored workout with sets already covers this activity: no visible row and no
                 // sidecar (cloud reconcile would re-materialise a sidecar as a visible activity).
                 // Evaluated here so a receipt replay decides the same way.
+                // No user-facing status here (iOS shows one): intended native difference, Android has no Garmin receive-status surface.
                 if (lateWatchArrivalCovered(item.workoutStartedAt, item.durationSeconds, emptyList())) {
                     return null
                 }
@@ -4197,6 +4198,7 @@ class GymRepository(
             } else {
                 // Digest and receipt handling above used the watch's names; translate only now.
                 val translatedSets = translateGarminWatchNames(sets)
+                // No user-facing status here (iOS shows one): intended native difference, Android has no Garmin receive-status surface.
                 if (lateWatchArrivalCovered(date, durationSeconds, translatedSets)) {
                     // Exact duplicate of a stored workout: receipt only, no provenance row.
                     null
@@ -4284,6 +4286,7 @@ class GymRepository(
         ) {
             // A stored workout with exactly these sets already covers this late arrival: store
             // nothing, but report success so the receipt is written and the watch clears its queue.
+            // No user-facing status here (iOS shows one): intended native difference, Wear OS has no sync-status surface.
             if (lateWatchArrivalCovered(date, durationSeconds, sets)) return@applyWearMutation true
             val stored = createWorkoutSessionFromNamedSets(
                 date = date,
