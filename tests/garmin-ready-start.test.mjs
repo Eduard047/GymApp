@@ -210,7 +210,9 @@ test("Ready copy, order, version, and redacted sync status stay compact in EN UK
   assert.match(binding, /readyStatusText\(\)/);
   assert.doesNotMatch(binding, /accountBinding|deviceBinding|CloudDeviceToken/);
   assert.doesNotMatch(compactMenu, /selected \+ 1/);
-  assert.match(compactMenu, /fitTextWidth\(dc, readyActionText\(i, count\), font, width - 12\)/);
+  assert.match(compactMenu, /fitTextWidth\(dc, readyActionText\(i, count\), font, rowWidth - pad\)/);
+  assert.match(compactMenu, /var rowWidth = \(i == 0 && pad == 6\) \? w \* 0\.\d+ : width;/);
+  assert.match(compactMenu, /fillRoundedRectangle\(\(w - rowWidth\) \/ 2, y, rowWidth, rowHeight, 7\)/);
 });
 
 test("free workout mode is explicit, owner-bound, resume-safe, and omits plan progress", async () => {

@@ -1735,20 +1735,34 @@ class WorkoutView extends Ui.View {
         var top = h * (count == 4 ? 0.32 : 0.40);
         var rowHeight = h * (count == 4 ? 0.12 : 0.13);
         var width = w * (count == 4 ? 0.70 : 0.72);
+        var step = h * (count == 4 ? 0.135 : 0.155);
+        var pad = 12;
+        // Sub-window (Instinct): start below the sub-window ring, fit the
+        // rows inside the round bezel and give the first label more room.
+        if (cx < w / 2 && Ui has :getSubscreen) {
+            var sub = Ui.getSubscreen();
+            if (sub != null && top < sub.y + sub.height + 14) {
+                top = sub.y + sub.height + 14;
+            }
+            if (step > (h * 0.86 - top) / count) { step = (h * 0.86 - top) / count; }
+            if (rowHeight > step - 2) { rowHeight = step - 2; }
+            pad = 6;
+        }
         for (var i = 0; i < count; i += 1) {
-            var y = top + i * h * (count == 4 ? 0.135 : 0.155);
+            var y = top + i * step;
+            var rowWidth = (i == 0 && pad == 6) ? w * 0.77 : width;
             // Sub-window (Instinct) displays are monochrome: green fill
             // renders dark there and hid the selected first row.
             var color = (i == 0 && cx >= w / 2) ? Gfx.COLOR_GREEN : Gfx.COLOR_WHITE;
             dc.setColor(color, Gfx.COLOR_TRANSPARENT);
             if (i == selected) {
-                dc.fillRoundedRectangle((w - width) / 2, y, width, rowHeight, 7);
+                dc.fillRoundedRectangle((w - rowWidth) / 2, y, rowWidth, rowHeight, 7);
                 dc.setColor(Gfx.COLOR_BLACK, Gfx.COLOR_TRANSPARENT);
             } else {
-                dc.drawRoundedRectangle((w - width) / 2, y, width, rowHeight, 7);
+                dc.drawRoundedRectangle((w - rowWidth) / 2, y, rowWidth, rowHeight, 7);
             }
             dc.drawText(w / 2, y + (rowHeight - dc.getFontHeight(font)) / 2, font,
-                fitTextWidth(dc, readyActionText(i, count), font, width - 12),
+                fitTextWidth(dc, readyActionText(i, count), font, rowWidth - pad),
                 Gfx.TEXT_JUSTIFY_CENTER);
         }
     }
