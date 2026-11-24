@@ -6,8 +6,14 @@ import com.example.gymapp.wear.data.WearWorkoutSetDraft
 import com.google.android.gms.wearable.Node
 import com.google.android.gms.wearable.Wearable
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * A phone node this watch asked for a sync while its pinned phone was not connected. Memory only
@@ -36,6 +42,46 @@ object WatchRelinkCandidate {
     }
 
     fun clear() = synchronized(lock) { nodeId = null }
+}
+
+/**
+ * Tells the phone this watch was pinned to that the user unlinked it on the watch, so the phone's
+ * Watches card drops it. Best effort and detached from the caller: the local unlink is already
+ * committed, nothing waits for the phone, and a phone that is out of range (or a build that does
+ * not know the path) simply keeps the old card until it hears from the watch again.
+ */
+object WatchUnlinkNotifier {
+    private const val SEND_TIMEOUT_MS = 10_000L
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    fun notifyAsync(context: Context, previousBinding: WatchSyncBinding) {
+        val appContext = context.applicationContext ?: context
+        scope.launch { send(appContext, previousBinding) }
+    }
+
+    /** True only when the message left for the pinned phone; never throws (except cancellation). */
+    suspend fun send(context: Context, previousBinding: WatchSyncBinding): Boolean {
+        return try {
+            val payload = WatchSyncJson
+                .buildUnlinkPayload(UUID.randomUUID().toString(), previousBinding)
+                .toByteArray(Charsets.UTF_8)
+            if (payload.size > SyncPaths.MAX_MESSAGE_BYTES) return false
+            withTimeoutOrNull(SEND_TIMEOUT_MS) {
+                // Only the phone this watch was pinned to; never a different node.
+                val node = Wearable.getNodeClient(context).connectedNodes.await()
+                    .firstOrNull { it.id == previousBinding.sourceNodeId }
+                    ?: return@withTimeoutOrNull false
+                Wearable.getMessageClient(context)
+                    .sendMessage(node.id, SyncPaths.UNLINK, payload)
+                    .await()
+                true
+            } ?: false
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            false
+        }
+    }
 }
 
 class WearSyncClient(

@@ -178,6 +178,28 @@ class PhoneWearBindingManagerTest {
         assertNull(PhoneWearPlanCacheCodec.decode("{\"planId\":\"x\"}", now = 2_000L))
     }
 
+    @Test
+    fun watchUnlinkIsAcceptedOnlyFromThePinnedNodeForTheCurrentAccount() {
+        val current = binding()
+        fun accepted(
+            pinned: Boolean = true,
+            owner: String? = current.ownerId,
+            generation: Long? = current.accountGeneration,
+            binding: PhoneWearAccountBinding = current
+        ) = phoneWearWatchUnlinkAccepted(pinned, owner, generation, binding)
+
+        assertTrue(accepted())
+        assertFalse(accepted(pinned = false))
+        assertFalse(accepted(owner = "b".repeat(64)))
+        assertFalse(accepted(generation = current.accountGeneration + 1))
+        assertFalse(accepted(owner = null, generation = null))
+
+        val signedOut = current.copy(ownerId = "c".repeat(64), signedOut = true)
+        assertTrue(accepted(owner = null, generation = null, binding = signedOut))
+        assertFalse(accepted(binding = signedOut))
+        assertFalse(accepted(pinned = false, owner = null, generation = null, binding = signedOut))
+    }
+
     private fun binding() = PhoneWearAccountBinding(
         ownerId = "a".repeat(64),
         accountGeneration = 1,

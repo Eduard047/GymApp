@@ -97,6 +97,13 @@ object WatchSyncJson {
         .apply { if (linkIntent) put("link", true) }
         .toString()
 
+    /**
+     * The watch's own "Unlink from phone", for the phone it was pinned to. Carries the account the
+     * watch was bound to (absent while it was unbound) so the phone acts only on its current binding.
+     */
+    fun buildUnlinkPayload(operationId: String, binding: WatchSyncBinding): String =
+        commandEnvelope("unlink", operationId, binding).toString()
+
     fun buildCreateWorkoutPayload(
         operationId: String,
         binding: WatchSyncBinding,

@@ -13,9 +13,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
@@ -161,8 +165,16 @@ internal class PhoneWearSyncManager(
         }
     }
 
+    private val _pinReleases = MutableStateFlow(0L)
+
     /**
-     * Unlinks the watch (Watches screen). Deletes no workouts. The pin is removed first, so the
+     * Counts releases of the pinned watch in this process: the phone's "Unlink watch" and the
+     * watch's own unlink message. A screen that shows the link can re-read it when this changes.
+     */
+    val pinReleases: StateFlow<Long> = _pinReleases.asStateFlow()
+
+    /**
+     * Unlinks the watch (Watches screen, or the watch's own "Unlink from phone" message). Deletes no workouts. The pin is removed first, so the
      * unlink holds even when the watch is out of range; the watch is told now if it is connected,
      * or the next time it speaks ([replyUnlinkedIfBlocked]). It links again only through its own
      * explicit link request.
@@ -172,6 +184,7 @@ internal class PhoneWearSyncManager(
         val cleared = bindingManager.clearPinnedSource()
         if (cleared) {
             lastFullSyncCompletedAt.clear()
+            _pinReleases.update { it + 1 }
             if (nodeId != null) sendUnlinked(nodeId)
         }
         return cleared

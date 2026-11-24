@@ -188,13 +188,20 @@ object WatchSyncBindingStorage {
         check(committed) { "Could not persist unbound state" }
     }
 
-    /** Explicit unlink (phone message or the watch's own action): forget the phone entirely. */
-    fun clearForUnlink(context: Context) {
+    /**
+     * Explicit unlink (phone message or the watch's own action): forget the phone entirely.
+     * [notifyPhone] is true for the watch's own "Unlink from phone": once the local state is
+     * cleared, the phone it was pinned to is told in the background (WatchUnlinkNotifier); the
+     * local unlink never waits for or depends on that. False when the phone itself said "unlinked".
+     */
+    fun clearForUnlink(context: Context, notifyPhone: Boolean = true) {
+        val previous = if (notifyPhone) load(context) else null
         val committed = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .clear()
             .putBoolean(KEY_UNLINKED, true)
             .commit()
         check(committed) { "Could not clear sync binding" }
+        if (previous != null) WatchUnlinkNotifier.notifyAsync(context, previous)
     }
 }

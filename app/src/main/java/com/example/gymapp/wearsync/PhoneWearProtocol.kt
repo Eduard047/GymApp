@@ -35,6 +35,11 @@ internal object PhoneWearPaths {
     const val FULL_SYNC_PAYLOAD = "/gym/sync/full_payload"
     /** Phone -> watch: signed out ("unbound") or unlinked by the user ("unlinked"). No owner id. */
     const val BINDING_STATE = "/gym/sync/binding_state"
+    /**
+     * Watch -> phone: the user tapped "Unlink from phone" on the watch. Builds that predate it drop
+     * the path (it is not in their [inboundPaths]), so adding it changes nothing for them.
+     */
+    const val UNLINK = "/gym/sync/unlink"
 
     /**
      * Capability the watch app declares (its res/values/wear.xml). The manifest filter of
@@ -42,7 +47,7 @@ internal object PhoneWearPaths {
      */
     const val WATCH_CAPABILITY = "gymapp_watch_sync"
 
-    val inboundPaths = setOf(REQUEST_FULL_SYNC, CREATE_WORKOUT, UPDATE_SET, DELETE_SET)
+    val inboundPaths = setOf(REQUEST_FULL_SYNC, CREATE_WORKOUT, UPDATE_SET, DELETE_SET, UNLINK)
 }
 
 internal data class PhoneWearCommandEnvelope(
@@ -82,6 +87,14 @@ internal sealed interface PhoneWearCommand {
     data class DeleteSet(
         override val envelope: PhoneWearCommandEnvelope,
         val setId: Long
+    ) : PhoneWearCommand
+
+    /**
+     * The watch unlinked itself. Owner and generation are the account it was bound to (both absent
+     * while it was unbound); the phone acts only when they match its current binding.
+     */
+    data class Unlink(
+        override val envelope: PhoneWearCommandEnvelope
     ) : PhoneWearCommand
 }
 
@@ -163,6 +176,7 @@ internal object PhoneWearProtocol {
                 PhoneWearPaths.CREATE_WORKOUT -> parseCreateWorkout(root, now)
                 PhoneWearPaths.UPDATE_SET -> parseUpdateSet(root, now)
                 PhoneWearPaths.DELETE_SET -> parseDeleteSet(root, now)
+                PhoneWearPaths.UNLINK -> parseUnlink(root, now)
                 else -> error("Unsupported sync path")
             }
             PhoneWearParseResult.Valid(
@@ -391,6 +405,29 @@ internal object PhoneWearProtocol {
             } else {
                 false
             }
+        )
+    }
+
+    private fun parseUnlink(root: JSONObject, now: Long): PhoneWearCommand.Unlink {
+        root.requireKnownKeys(
+            required = setOf("type", "protocolVersion", "operationId", "sentAt"),
+            optional = setOf("ownerId", "accountGeneration")
+        )
+        require(root.requiredString("type", 32) == "unlink")
+        requireProtocolVersion(root)
+        val ownerPresent = root.has("ownerId")
+        require(ownerPresent == root.has("accountGeneration")) { "Incomplete account binding" }
+        return PhoneWearCommand.Unlink(
+            PhoneWearCommandEnvelope(
+                operationId = root.requiredOperationId("operationId"),
+                sentAt = root.requiredFreshTimestamp("sentAt", now),
+                ownerId = if (ownerPresent) root.requiredOwnerId("ownerId") else null,
+                accountGeneration = if (ownerPresent) {
+                    root.requiredProtocolCounter("accountGeneration")
+                } else {
+                    null
+                }
+            )
         )
     }
 
@@ -748,6 +785,7 @@ internal object PhoneWearProtocol {
                 addString("delete_set")
                 addLong(command.setId)
             }
+            is PhoneWearCommand.Unlink -> addString("unlink")
         }
         return digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
     }

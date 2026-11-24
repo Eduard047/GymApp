@@ -208,6 +208,47 @@ class WatchSyncJsonTest {
         )
     }
 
+    @Test
+    fun unlinkPayloadCarriesTheBoundAccountAndTheStandardEnvelope() {
+        val operationId = "123e4567-e89b-42d3-a456-426614174000"
+        val before = System.currentTimeMillis()
+        val bound = JSONObject(
+            WatchSyncJson.buildUnlinkPayload(
+                operationId,
+                WatchSyncBinding("node", "a".repeat(64), 3L, 1L, 0L)
+            )
+        )
+
+        assertEquals("unlink", bound.getString("type"))
+        assertEquals(SyncPaths.PROTOCOL_VERSION, bound.getInt("protocolVersion"))
+        assertEquals(operationId, bound.getString("operationId"))
+        assertTrue(bound.getLong("sentAt") in before..System.currentTimeMillis())
+        assertEquals("a".repeat(64), bound.getString("ownerId"))
+        assertEquals(3L, bound.getLong("accountGeneration"))
+        // No node id, plan, history or any other account data goes back to the phone.
+        assertEquals(
+            setOf("type", "protocolVersion", "operationId", "sentAt", "ownerId", "accountGeneration"),
+            bound.keys().asSequence().toSet()
+        )
+        assertTrue(SyncPaths.UNLINK.startsWith("/gym/sync/"))
+    }
+
+    @Test
+    fun unlinkPayloadOfAnUnboundWatchHasNoAccount() {
+        val unbound = JSONObject(
+            WatchSyncJson.buildUnlinkPayload(
+                "123e4567-e89b-42d3-a456-426614174000",
+                WatchSyncBinding("node", null, 0L, 0L, 0L)
+            )
+        )
+
+        assertTrue(!unbound.has("ownerId"))
+        assertTrue(!unbound.has("accountGeneration"))
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            WatchSyncJson.buildUnlinkPayload(" ", WatchSyncBinding("node", null, 0L, 0L, 0L))
+        }
+    }
+
     private fun envelope(
         revision: Long = 1L,
         sentAt: Long = System.currentTimeMillis()

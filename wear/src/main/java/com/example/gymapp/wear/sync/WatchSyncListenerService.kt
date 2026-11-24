@@ -219,7 +219,8 @@ class WatchSyncListenerService : WearableListenerService() {
             BindingStateDecision.Unlink -> {
                 clearAccountData(app)
                 WatchRelinkCandidate.clear()
-                WatchSyncBindingStorage.clearForUnlink(applicationContext)
+                // The phone already knows: do not echo an unlink back to it.
+                WatchSyncBindingStorage.clearForUnlink(applicationContext, notifyPhone = false)
             }
         }
     }

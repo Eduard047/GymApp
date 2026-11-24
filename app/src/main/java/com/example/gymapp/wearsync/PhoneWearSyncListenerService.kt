@@ -1,6 +1,7 @@
 package com.example.gymapp.wearsync
 
 import android.os.SystemClock
+import android.util.Log
 import com.example.gymapp.GymApplication
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
 import com.example.gymapp.data.repository.WearMutationApplyResult
@@ -145,6 +146,11 @@ class PhoneWearSyncListenerService : WearableListenerService() {
         // Parse first: a node is pinned only after a valid command arrives from it (never on junk).
         val parsed = PhoneWearProtocol.parse(path, payload)
         if (parsed !is PhoneWearParseResult.Valid) return
+        // The watch unlinked itself: never pins, authorizes or replies; it only releases the pin.
+        (parsed.command as? PhoneWearCommand.Unlink)?.let { unlink ->
+            handleWatchUnlink(sourceNodeId, unlink, syncManager)
+            return
+        }
         val requestFull = parsed.command as? PhoneWearCommand.RequestFull
         val linkIntent = requestFull?.linkIntent == true
         when (
@@ -186,7 +192,32 @@ class PhoneWearSyncListenerService : WearableListenerService() {
                 application = application,
                 syncManager = syncManager
             )
+            is PhoneWearCommand.Unlink -> Unit // Handled above.
         }
+    }
+
+    /**
+     * "Unlink from phone" on the watch: release the binding exactly as the phone's own "Unlink
+     * watch" does, so the Watches card drops it. Only the pinned node, and only for the account it
+     * is bound to now; the log line carries no node, owner or payload data.
+     */
+    private suspend fun handleWatchUnlink(
+        sourceNodeId: String,
+        command: PhoneWearCommand.Unlink,
+        syncManager: PhoneWearSyncManager
+    ) {
+        val (_, binding) = syncManager.currentSessionAndBinding()
+        val accepted = phoneWearWatchUnlinkAccepted(
+            pinnedNode = syncManager.isPinnedNode(sourceNodeId),
+            envelopeOwnerId = command.envelope.ownerId,
+            envelopeAccountGeneration = command.envelope.accountGeneration,
+            binding = binding
+        )
+        if (!accepted) {
+            Log.i(TAG, "Ignored a watch unlink that does not match the current binding")
+            return
+        }
+        syncManager.unlinkWatch()
     }
 
     private suspend fun handleMutation(
@@ -260,7 +291,8 @@ class PhoneWearSyncListenerService : WearableListenerService() {
                     setId = command.setId
                 )
 
-                is PhoneWearCommand.RequestFull -> error("Not a mutation")
+                is PhoneWearCommand.RequestFull,
+                is PhoneWearCommand.Unlink -> error("Not a mutation")
             }
         } catch (error: CancellationException) {
             throw error
@@ -351,6 +383,7 @@ class PhoneWearSyncListenerService : WearableListenerService() {
     }
 
     private companion object {
+        const val TAG = "PhoneWearSync"
         const val MAX_RECENT_FULL_SYNC_REQUESTS = 256
         const val FULL_SYNC_ENQUEUE_COOLDOWN_MS = 1_000L
     }

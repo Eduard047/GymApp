@@ -435,6 +435,64 @@ class PhoneWearProtocolTest {
         assertEquals(1, JSONObject(build(listOf(good)).toString(Charsets.UTF_8)).getJSONArray("sets").length())
     }
 
+    @Test
+    fun watchUnlinkParsesABoundOrUnboundEnvelope() {
+        fun unlink(extra: String = ""): String =
+            """{"type":"unlink","protocolVersion":1,"operationId":"$operationId","sentAt":$now$extra}"""
+
+        val bound = PhoneWearProtocol.parse(
+            PhoneWearPaths.UNLINK,
+            unlink(""","ownerId":"$ownerId","accountGeneration":7""").toByteArray(),
+            now
+        ) as PhoneWearParseResult.Valid
+        val command = bound.command as PhoneWearCommand.Unlink
+        assertEquals(ownerId, command.envelope.ownerId)
+        assertEquals(7L, command.envelope.accountGeneration)
+        assertEquals(operationId, command.envelope.operationId)
+
+        val unbound = PhoneWearProtocol.parse(PhoneWearPaths.UNLINK, unlink().toByteArray(), now)
+            as PhoneWearParseResult.Valid
+        assertEquals(null, unbound.command.envelope.ownerId)
+        assertEquals(null, unbound.command.envelope.accountGeneration)
+        assertTrue(PhoneWearPaths.UNLINK in PhoneWearPaths.inboundPaths)
+        assertTrue(PhoneWearPaths.UNLINK.startsWith("/gym/sync/"))
+    }
+
+    @Test
+    fun watchUnlinkRejectsMalformedIncompleteStaleAndPathConfusedMessages() {
+        fun parse(raw: String, path: String = PhoneWearPaths.UNLINK) =
+            PhoneWearProtocol.parse(path, raw.toByteArray(), now)
+        val day = 24L * 60 * 60 * 1_000
+        val head = """"protocolVersion":1,"operationId":"$operationId""""
+        val owner = ""","ownerId":"$ownerId","accountGeneration":7"""
+
+        listOf(
+            "not json",
+            """{"type":"unlink",$head}""", // sentAt missing
+            """{"type":"unlink",$head,"sentAt":$now,"ownerId":"$ownerId"}""", // half a binding
+            """{"type":"unlink",$head,"sentAt":$now,"accountGeneration":7}""",
+            """{"type":"unlink",$head,"sentAt":$now,"ownerId":"not-an-owner","accountGeneration":7}""",
+            """{"type":"unlink",$head,"sentAt":$now,"ownerId":"$ownerId","accountGeneration":0}""",
+            """{"type":"unlink","protocolVersion":2,"operationId":"$operationId","sentAt":$now$owner}""",
+            """{"type":"unlink","protocolVersion":1,"operationId":"op-1","sentAt":$now$owner}""",
+            """{"type":"delete_set",$head,"sentAt":$now$owner}""",
+            """{"type":"unlink",$head,"sentAt":${now - 8 * day}$owner}""", // too old
+            """{"type":"unlink",$head,"sentAt":${now + 10 * 60 * 1_000}$owner}""" // from the future
+        ).forEach { raw ->
+            assertTrue(raw, parse(raw) is PhoneWearParseResult.Invalid)
+        }
+        // An unlink body sent on another path is not an unlink (and not a valid mutation).
+        assertTrue(
+            parse("""{"type":"unlink",$head,"sentAt":$now$owner}""", PhoneWearPaths.DELETE_SET)
+                is PhoneWearParseResult.Invalid
+        )
+        // Inside the existing freshness window it is accepted.
+        assertTrue(
+            parse("""{"type":"unlink",$head,"sentAt":${now - 6 * day}$owner}""")
+                is PhoneWearParseResult.Valid
+        )
+    }
+
     private fun assertThrows(block: () -> Unit) {
         val failed = try {
             block()

@@ -25,6 +25,23 @@ internal data class PhoneWearTrustedSource(
 )
 
 /**
+ * Whether a watch's own "unlink" message may release the binding: it must come from the pinned
+ * node and name exactly the phone's current account (owner and generation), or no account at all
+ * while the phone is signed out. Anything else is stale or foreign and is ignored.
+ */
+internal fun phoneWearWatchUnlinkAccepted(
+    pinnedNode: Boolean,
+    envelopeOwnerId: String?,
+    envelopeAccountGeneration: Long?,
+    binding: PhoneWearAccountBinding
+): Boolean {
+    if (!pinnedNode) return false
+    if (binding.signedOut) return envelopeOwnerId == null && envelopeAccountGeneration == null
+    return envelopeOwnerId == binding.ownerId &&
+        envelopeAccountGeneration == binding.accountGeneration
+}
+
+/**
  * Device-local authority for the Wear peer and account generation.
  *
  * Raw account identifiers are never placed on the wire or in this preference file. Account
