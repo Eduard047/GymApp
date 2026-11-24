@@ -219,6 +219,45 @@ class CloudAccountDeletionJournalTest {
         assertNull(storage.value)
     }
 
+    @Test
+    fun wearCleanupIsBestEffortAndRunsOnlyAfterEveryOwnedStoreCleared() = runBlocking {
+        val storage = MemoryJournalStorage()
+        val journal = CloudAccountDeletionJournal(storage)
+        assertTrue(
+            journal.markPending(
+                cloudSession(
+                    "00000000-0000-4000-8000-000000000001",
+                    "00000000-0000-4000-8000-000000000011"
+                )
+            )
+        )
+        val record = journal.pending().single()
+        var wearCalls = 0
+        suspend fun recover(garminCleared: Boolean) = recoverPendingCloudAccountDeletion(
+            record = record,
+            clearRoom = {},
+            clearBaseline = { true },
+            clearTrainingProfile = { true },
+            clearSyncStatus = { true },
+            clearCustomMedia = { true },
+            clearBackupShares = { true },
+            clearRestTimers = { true },
+            clearLiveState = { true },
+            clearGarminState = { garminCleared },
+            clearJournal = journal::clear,
+            clearWearState = {
+                wearCalls += 1
+                error("wear cleanup failed")
+            }
+        )
+
+        assertEquals(1, recover(garminCleared = false))
+        assertEquals(0, wearCalls)
+        assertEquals(0, recover(garminCleared = true))
+        assertEquals(1, wearCalls)
+        assertTrue(journal.pending().isEmpty())
+    }
+
     private fun cloudSession(
         userId: String,
         sessionGeneration: String

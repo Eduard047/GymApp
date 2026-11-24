@@ -1,6 +1,8 @@
 package com.example.gymapp.wearsync
 
 import android.content.SharedPreferences
+import com.example.gymapp.auth.AccountSession
+import com.example.gymapp.auth.databaseName
 import org.junit.Assert.assertEquals
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
 import org.junit.Assert.assertFalse
@@ -199,6 +201,81 @@ class PhoneWearBindingManagerTest {
         assertFalse(accepted(binding = signedOut))
         assertFalse(accepted(pinned = false, owner = null, generation = null, binding = signedOut))
     }
+
+    @Test
+    fun deletedLocalProfileReCreatedUnderTheSameNameInheritsNoWatchState() {
+        val prefs = InMemoryPreferences()
+        val manager = PhoneWearBindingManager(prefs)
+        val anna = AccountSession.Local("Synthetic Anna")
+        val databaseName = anna.databaseName()
+        val ownerId = PhoneWearBindingManager.localOwnerId(databaseName)
+        val first = manager.synchronizeSession(anna)
+        assertEquals(ownerId, first.ownerId)
+        assertTrue(manager.authorizeSource("watch-1", setOf("watch-1"), first))
+        assertTrue(manager.recordLinkProof("watch-1", first, 1_000L))
+        assertTrue(manager.cachePlan(ownerId, cachedPlan()))
+        val localIdKeys = prefs.all.keys.filter { it.startsWith("local_account_id_") }
+        assertEquals(1, localIdKeys.size)
+
+        // Deletion signs the profile out first, then clears its watch state.
+        manager.synchronizeSession(null)
+        val cleanup = manager.clearOwner(ownerId, databaseName)
+
+        assertTrue(cleanup.committed)
+        assertEquals("watch-1", cleanup.releasedNodeId)
+        assertNull(manager.pinnedSource())
+        assertTrue(manager.isUnlinkedNode("watch-1"))
+        assertFalse(prefs.contains("plan_cache_$ownerId"))
+        assertFalse(prefs.contains(localIdKeys.single()))
+
+        // Same name again: same owner id (watch compatibility), but a new generation, no pin,
+        // no link proof and no cached plan; opening the watch app does not re-pin it.
+        val second = manager.synchronizeSession(AccountSession.Local("Synthetic Anna"))
+        assertEquals(ownerId, second.ownerId)
+        assertTrue(second.accountGeneration > first.accountGeneration)
+        assertNull(manager.linkProofAt(second))
+        assertNull(manager.cachedPlan(ownerId, 2_000L))
+        assertFalse(manager.authorizeSource("watch-1", setOf("watch-1"), second))
+        assertNull(manager.pinnedSourceNodeId())
+    }
+
+    @Test
+    fun clearOwnerKeepsAWatchPinnedToAnotherOwner() {
+        val prefs = InMemoryPreferences()
+        val manager = PhoneWearBindingManager(prefs)
+        val deletedOwner = PhoneWearBindingManager.cloudOwnerId("00000000-0000-4000-8000-000000000001")
+        val other = binding()
+        assertTrue(manager.authorizeSource("watch-1", setOf("watch-1"), other))
+        assertTrue(manager.recordLinkProof("watch-1", other, 1_000L))
+        assertTrue(manager.cachePlan(other.ownerId, cachedPlan()))
+        assertTrue(manager.cachePlan(deletedOwner, cachedPlan()))
+
+        val cleanup = manager.clearOwner(deletedOwner)
+
+        assertTrue(cleanup.committed)
+        assertNull(cleanup.releasedNodeId)
+        assertEquals("watch-1", manager.pinnedSourceNodeId())
+        assertEquals(1_000L, manager.linkProofAt(other))
+        assertTrue(prefs.contains("plan_cache_${other.ownerId}"))
+        assertFalse(prefs.contains("plan_cache_$deletedOwner"))
+        // A malformed owner id touches nothing.
+        assertFalse(manager.clearOwner("not-an-owner").committed)
+        assertEquals("watch-1", manager.pinnedSourceNodeId())
+    }
+
+    private fun cachedPlan() = PhoneWearCachedPlan(
+        planId = "11111111-2222-4333-8444-555555555555",
+        createdAt = System.currentTimeMillis(),
+        sets = listOf(NamedWorkoutSetDraft(exerciseName = "Squat", weight = 50.0, reps = 5)),
+        exerciseCatalog = listOf("Squat"),
+        profile = PhoneWearPlanProfile(
+            split = "FULL_BODY",
+            workoutsPerWeek = 3,
+            goal = "STRENGTH",
+            calorieMode = "MAINTAIN"
+        ),
+        planSource = "smart_coach"
+    )
 
     private fun binding() = PhoneWearAccountBinding(
         ownerId = "a".repeat(64),

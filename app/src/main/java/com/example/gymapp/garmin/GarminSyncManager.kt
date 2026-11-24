@@ -89,6 +89,40 @@ internal fun garminCloudAccountLocalCleanupPlan(
     sessionGeneration: String
 ): GarminCloudAccountLocalCleanupPlan? {
     val accountBinding = canonicalCloudGarminAccountBinding(userId) ?: return null
+    return garminAccountLocalCleanupPlan(existingPreferences, accountBinding, sessionGeneration)
+}
+
+/** Preference key of the random Garmin account binding of the local profile [localIdentity]. */
+internal fun garminLocalAccountBindingKey(localIdentity: String): String =
+    garminStorageKey(ACCOUNT_BINDING_KEY_PREFIX, "local", localIdentity)
+
+/**
+ * Same owner-scoped keys as the cloud plan for a deleted local profile, plus the profile's own
+ * random account binding: once it is gone, a profile re-created under the same name draws a new
+ * binding and inherits neither the trusted watch, the pairing, the plans nor the transfer queue.
+ * Null when there is nothing to clear or when the stored state cannot be attributed safely.
+ */
+internal fun garminLocalAccountLocalCleanupPlan(
+    existingPreferences: Map<String, *>,
+    localIdentity: String
+): GarminCloudAccountLocalCleanupPlan? {
+    val bindingKey = garminLocalAccountBindingKey(localIdentity)
+    val accountBinding = existingPreferences[bindingKey] as? String ?: return null
+    if (!isValidGarminAccountBinding(accountBinding)) return null
+    val plan = garminAccountLocalCleanupPlan(
+        existingPreferences = existingPreferences,
+        accountBinding = accountBinding,
+        // Local profiles have no session generation: their transition epoch is "stable".
+        sessionGeneration = null
+    ) ?: return null
+    return plan.copy(preferenceKeys = plan.preferenceKeys + bindingKey)
+}
+
+private fun garminAccountLocalCleanupPlan(
+    existingPreferences: Map<String, *>,
+    accountBinding: String,
+    sessionGeneration: String?
+): GarminCloudAccountLocalCleanupPlan? {
     val authTarget = garminAuthTransitionTarget(accountBinding, sessionGeneration) ?: return null
     val trustedOwnerKey = garminStorageKey(TRUSTED_DEVICE_KEY_PREFIX, accountBinding)
     val keys = linkedSetOf(
@@ -1024,14 +1058,35 @@ class GarminSyncManager(
     internal fun clearCloudAccountLocalState(
         userId: String,
         sessionGeneration: String
+    ): Boolean = clearAccountLocalState { existing ->
+        garminCloudAccountLocalCleanupPlan(
+            existingPreferences = existing,
+            userId = userId,
+            sessionGeneration = sessionGeneration
+        )
+    }
+
+    /**
+     * A deleted local profile's Garmin state: trusted watch, pairing, plans, transfer queue and
+     * the profile's random account binding, so a profile re-created under the same name starts
+     * unpaired. True when there was nothing bound to clear.
+     */
+    internal fun clearLocalProfileLocalState(localIdentity: String): Boolean {
+        val bound = synchronized(accountBindingLock) {
+            preferences().contains(garminLocalAccountBindingKey(localIdentity))
+        }
+        if (!bound) return true
+        return clearAccountLocalState { existing ->
+            garminLocalAccountLocalCleanupPlan(existing, localIdentity)
+        }
+    }
+
+    private fun clearAccountLocalState(
+        resolve: (Map<String, *>) -> GarminCloudAccountLocalCleanupPlan?
     ): Boolean {
         val plan = synchronized(accountBindingLock) {
             val preferences = preferences()
-            val resolved = garminCloudAccountLocalCleanupPlan(
-                existingPreferences = preferences.all,
-                userId = userId,
-                sessionGeneration = sessionGeneration
-            ) ?: return@synchronized null
+            val resolved = resolve(preferences.all) ?: return@synchronized null
             if (!workoutTransferStore.clearAccount(resolved.accountBinding)) return@synchronized null
             val editor = preferences.edit()
             resolved.preferenceKeys.forEach(editor::remove)

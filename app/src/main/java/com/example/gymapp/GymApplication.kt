@@ -173,7 +173,14 @@ class GymApplication : Application() {
                                 record.sessionGeneration
                             )
                         },
-                        clearJournal = cloudAccountDeletionJournal::clear
+                        clearJournal = cloudAccountDeletionJournal::clear,
+                        clearWearState = {
+                            runGuarded("deleted account wear cleanup") {
+                                if (!phoneWearSyncManager.forgetDeletedCloudAccount(record.userId)) {
+                                    Log.w(TAG, "Deleted account wear cleanup not committed")
+                                }
+                            }
+                        }
                     )
                 }
             }
@@ -261,7 +268,20 @@ class GymApplication : Application() {
             clearPrivateBackupShareArtifacts(File(cacheDir, "backup-share"), owner)
         },
         clearRestTimers = restTimerController::clearLocalAccount,
-        finalizeIdentity = cloudAuthManager::finalizeLocalProfileDeletion
+        finalizeIdentity = cloudAuthManager::finalizeLocalProfileDeletion,
+        clearWatchState = { owner ->
+            // Best-effort and independent: a failure of one never skips the other.
+            runGuarded("deleted profile garmin cleanup") {
+                if (!garminSyncManager.clearLocalProfileLocalState(owner)) {
+                    Log.w(TAG, "Deleted profile Garmin cleanup not committed")
+                }
+            }
+            runGuarded("deleted profile wear cleanup") {
+                if (!phoneWearSyncManager.forgetDeletedLocalProfile(owner)) {
+                    Log.w(TAG, "Deleted profile wear cleanup not committed")
+                }
+            }
+        }
     )
 
     private fun materializeLocalDatabaseForAuthentication(databaseName: String): Boolean =

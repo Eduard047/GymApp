@@ -105,7 +105,11 @@ internal fun recoverPendingLocalProfileDeletion(
     clearCustomMedia: (String) -> Boolean,
     clearBackupShares: (String) -> Boolean,
     clearRestTimers: (String) -> Boolean,
-    finalizeIdentity: (PendingLocalProfileDeletion) -> Boolean
+    finalizeIdentity: (PendingLocalProfileDeletion) -> Boolean,
+    // Garmin + Wear residue of the profile (paired watches, their queues and cached plans).
+    // Best-effort: it runs only after the profile's data is gone and never blocks the deletion;
+    // it runs before finalizing so that a crash in between repeats it on the next launch.
+    clearWatchState: (String) -> Unit = {}
 ): Boolean {
     if (!clearLiveSidecar()) return false
     val cleanupSucceeded = listOf(
@@ -116,7 +120,9 @@ internal fun recoverPendingLocalProfileDeletion(
         clearBackupShares(record.logicalDatabaseName),
         clearRestTimers(record.logicalDatabaseName)
     ).all { it }
-    return cleanupSucceeded && finalizeIdentity(record)
+    if (!cleanupSucceeded) return false
+    runCatching { clearWatchState(record.logicalDatabaseName) }
+    return finalizeIdentity(record)
 }
 
 private const val KEY_PENDING = "pending_v1"

@@ -183,7 +183,10 @@ internal suspend fun recoverPendingCloudAccountDeletion(
     clearRestTimers: () -> Boolean,
     clearLiveState: () -> Boolean,
     clearGarminState: () -> Boolean,
-    clearJournal: (PendingCloudAccountDeletion) -> Boolean
+    clearJournal: (PendingCloudAccountDeletion) -> Boolean,
+    // Wear residue (cached plan, a watch pinned to the deleted owner). Best-effort: it never
+    // counts as a failure and runs before the journal is cleared, so a crash repeats it.
+    clearWearState: () -> Unit = {}
 ): Int {
     var failures = 0
     if (runCatching { clearRoom() }.isFailure) failures += 1
@@ -195,6 +198,7 @@ internal suspend fun recoverPendingCloudAccountDeletion(
     if (runCatching { check(clearRestTimers()) }.isFailure) failures += 1
     if (runCatching { check(clearLiveState()) }.isFailure) failures += 1
     if (runCatching { check(clearGarminState()) }.isFailure) failures += 1
+    if (failures == 0) runCatching { clearWearState() }
     if (failures == 0 && runCatching { check(clearJournal(record)) }.isFailure) {
         failures += 1
     }

@@ -77,4 +77,47 @@ class LocalProfileDeletionRecoveryTest {
         assertTrue(recovered)
         assertTrue(finalized)
     }
+
+    @Test
+    fun watchCleanupRunsAfterDataCleanupBeforeFinalizeAndNeverBlocksDeletion() {
+        val calls = mutableListOf<String>()
+        val recovered = recoverPendingLocalProfileDeletion(
+            record = record,
+            clearLiveSidecar = { calls += "sidecar"; true },
+            clearDatabase = { calls += "database"; true },
+            clearTrainingProfile = { true },
+            clearTrainingGuidance = { true },
+            clearCustomMedia = { true },
+            clearBackupShares = { true },
+            clearRestTimers = { calls += "timers"; true },
+            finalizeIdentity = { calls += "finalize"; true },
+            clearWatchState = { owner ->
+                calls += "watch:${owner == record.logicalDatabaseName}"
+                error("watch cleanup failed")
+            }
+        )
+
+        assertTrue(recovered)
+        assertEquals(listOf("sidecar", "database", "timers", "watch:true", "finalize"), calls)
+    }
+
+    @Test
+    fun watchCleanupWaitsUntilTheProfileDataIsGone() {
+        val calls = mutableListOf<String>()
+        val recovered = recoverPendingLocalProfileDeletion(
+            record = record,
+            clearLiveSidecar = { true },
+            clearDatabase = { false },
+            clearTrainingProfile = { true },
+            clearTrainingGuidance = { true },
+            clearCustomMedia = { true },
+            clearBackupShares = { true },
+            clearRestTimers = { true },
+            finalizeIdentity = { calls += "finalize"; true },
+            clearWatchState = { calls += "watch" }
+        )
+
+        assertFalse(recovered)
+        assertTrue(calls.isEmpty())
+    }
 }

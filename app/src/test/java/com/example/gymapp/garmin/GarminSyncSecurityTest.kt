@@ -1966,6 +1966,64 @@ class GarminSyncSecurityTest {
         )
     }
 
+    @Test
+    fun deletedLocalProfileCleanupDropsItsBindingSoASameNameProfileStartsUnpaired() {
+        val deletedIdentity = "local_v2_${"a".repeat(64)}"
+        val otherIdentity = "local_v2_${"b".repeat(64)}"
+        val device = "123456789"
+        val deletedBinding = newLocalGarminAccountBinding("00000000-0000-4000-8000-000000000001")
+        val otherBinding = newLocalGarminAccountBinding("00000000-0000-4000-8000-000000000002")
+        // Local profiles have no session generation: their transition epoch is "stable".
+        val deletedTarget = checkNotNull(garminAuthTransitionTarget(deletedBinding, null))
+        val deletedBindingKey = garminLocalAccountBindingKey(deletedIdentity)
+        val otherBindingKey = garminLocalAccountBindingKey(otherIdentity)
+        val deletedTrusted = garminStorageKey("trusted_device", deletedBinding)
+        val deletedDevicePlan = garminStorageKey("cached_plan", deletedBinding, device)
+        val deletedPairingAck = garminStorageKey("garmin_pairing_ack_v1", deletedBinding)
+        val deletedPairing = garminStorageKey("pairing_generation_v1", deletedTarget.key, device)
+        val otherTrusted = garminStorageKey("trusted_device", otherBinding)
+        val existing = linkedMapOf<String, Any>(
+            deletedBindingKey to deletedBinding,
+            otherBindingKey to otherBinding,
+            deletedTrusted to device,
+            deletedDevicePlan to "deleted plan",
+            deletedPairingAck to device,
+            deletedPairing to "deleted generation",
+            otherTrusted to device,
+            "trusted_physical_device_v2" to device,
+            "auth_transition_ready_v1" to deletedTarget.key
+        )
+
+        val plan = checkNotNull(garminLocalAccountLocalCleanupPlan(existing, deletedIdentity))
+
+        assertEquals(deletedBinding, plan.accountBinding)
+        assertEquals(deletedTarget.key, plan.authTransitionKey)
+        assertTrue(
+            plan.preferenceKeys.containsAll(
+                setOf(
+                    deletedBindingKey,
+                    deletedTrusted,
+                    deletedDevicePlan,
+                    deletedPairingAck,
+                    deletedPairing,
+                    "auth_transition_ready_v1"
+                )
+            )
+        )
+        assertFalse(otherBindingKey in plan.preferenceKeys)
+        assertFalse(otherTrusted in plan.preferenceKeys)
+        assertFalse("trusted_physical_device_v2" in plan.preferenceKeys)
+        // With its binding key gone, the same name resolves to no stored binding (a new one is drawn).
+        val remaining = existing - plan.preferenceKeys
+        assertNull(garminLocalAccountLocalCleanupPlan(remaining, deletedIdentity))
+        assertFalse(deletedBindingKey in remaining)
+        // Nothing bound, or an unreadable binding: nothing is attributed to the profile.
+        assertNull(garminLocalAccountLocalCleanupPlan(emptyMap<String, Any>(), deletedIdentity))
+        assertNull(
+            garminLocalAccountLocalCleanupPlan(mapOf(deletedBindingKey to "bad"), deletedIdentity)
+        )
+    }
+
     private fun validCommand(): Map<Any?, Any?> = mapOf(
         "type" to "create_workout",
         "requestId" to "request-1234567890",

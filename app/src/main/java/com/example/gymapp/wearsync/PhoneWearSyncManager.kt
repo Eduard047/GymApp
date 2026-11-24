@@ -190,6 +190,28 @@ internal class PhoneWearSyncManager(
         return cleared
     }
 
+    /**
+     * A deleted account's Wear residue: its cached plan, link proof and (local profile) per-profile
+     * id are removed, and a watch pinned to that owner is unlinked exactly as by "Unlink watch",
+     * so a profile re-created under the same name does not inherit the watch. The watch is told
+     * in the background; when out of range it learns it the next time it speaks
+     * ([replyUnlinkedIfBlocked]). Returns whether the local state was committed.
+     */
+    fun forgetDeletedOwner(ownerId: String, localDatabaseName: String? = null): Boolean {
+        val result = bindingManager.clearOwner(ownerId, localDatabaseName)
+        val nodeId = result.releasedNodeId ?: return result.committed
+        lastFullSyncCompletedAt.clear()
+        _pinReleases.update { it + 1 }
+        scope.launch { sendUnlinked(nodeId) }
+        return result.committed
+    }
+
+    fun forgetDeletedLocalProfile(databaseName: String): Boolean =
+        forgetDeletedOwner(PhoneWearBindingManager.localOwnerId(databaseName), databaseName)
+
+    fun forgetDeletedCloudAccount(userId: String): Boolean =
+        forgetDeletedOwner(PhoneWearBindingManager.cloudOwnerId(userId))
+
     /** True when [sourceNodeId] is the watch the user unlinked; it is told so again. */
     suspend fun replyUnlinkedIfBlocked(sourceNodeId: String): Boolean {
         if (!bindingManager.isUnlinkedNode(sourceNodeId)) return false

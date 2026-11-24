@@ -24,6 +24,12 @@ internal data class PhoneWearTrustedSource(
     val ownerId: String
 )
 
+/** Outcome of [PhoneWearBindingManager.clearOwner]; [releasedNodeId] is the unpinned watch, if any. */
+internal data class PhoneWearOwnerCleanup(
+    val committed: Boolean,
+    val releasedNodeId: String?
+)
+
 /**
  * Whether a watch's own "unlink" message may release the binding: it must come from the pinned
  * node and name exactly the phone's current account (owner and generation), or no account at all
@@ -304,16 +310,46 @@ internal class PhoneWearBindingManager(private val prefs: SharedPreferences) {
     }
 
     private fun ownerIdFor(session: AccountSession?): String {
-        val ownerIdentity = when (session) {
-            null -> SIGNED_OUT_OWNER
-            is AccountSession.Cloud -> "cloud:${session.userId}"
-            is AccountSession.Local -> "local:${session.databaseName()}"
+        return when (session) {
+            null -> sha256Hex(SIGNED_OUT_OWNER.toByteArray(Charsets.UTF_8))
+            is AccountSession.Cloud -> cloudOwnerId(session.userId)
+            is AccountSession.Local -> localOwnerId(session.databaseName())
         }
-        return sha256Hex(ownerIdentity.toByteArray(Charsets.UTF_8))
     }
 
+    /**
+     * Forgets what this phone keeps for a deleted account [ownerId]: its cached plan, a link proof
+     * naming it and, for a local profile ([localDatabaseName]), its per-profile id, so a profile
+     * re-created under the same name gets a new account generation. When the pinned watch belongs
+     * to that owner the pin is released exactly like the user's "Unlink watch"
+     * ([clearPinnedSource]) and the released node is returned in the result so the caller can tell
+     * the watch. Account generations and revisions stay monotonic and are never reset here.
+     */
+    fun clearOwner(ownerId: String, localDatabaseName: String? = null): PhoneWearOwnerCleanup =
+        synchronized(lock) {
+            if (!ownerIdPattern.matches(ownerId)) return PhoneWearOwnerCleanup(false, null)
+            val pinnedNode = prefs.getString(KEY_SOURCE_NODE_ID, null)?.takeIf(::isValidNodeId)
+            val releasePin = pinnedNode != null &&
+                prefs.getString(KEY_SOURCE_OWNER_ID, null) == ownerId
+            if (releasePin && !clearPinnedSource()) return PhoneWearOwnerCleanup(false, null)
+            val editor = prefs.edit().remove(KEY_PLAN_CACHE_PREFIX + ownerId)
+            if (prefs.getString(KEY_LINK_PROOF_OWNER_ID, null) == ownerId) {
+                editor.remove(KEY_LINK_PROOF_AT)
+                    .remove(KEY_LINK_PROOF_OWNER_ID)
+                    .remove(KEY_LINK_PROOF_GENERATION)
+            }
+            if (localDatabaseName != null) editor.remove(localAccountIdKey(localDatabaseName))
+            PhoneWearOwnerCleanup(
+                committed = editor.commit(),
+                releasedNodeId = pinnedNode.takeIf { releasePin }
+            )
+        }
+
+    private fun localAccountIdKey(normalizedName: String): String =
+        KEY_LOCAL_ACCOUNT_ID_PREFIX + sha256Hex(normalizedName.toByteArray(Charsets.UTF_8))
+
     private fun stableLocalAccountId(normalizedName: String): String {
-        val key = KEY_LOCAL_ACCOUNT_ID_PREFIX + sha256Hex(normalizedName.toByteArray(Charsets.UTF_8))
+        val key = localAccountIdKey(normalizedName)
         prefs.getString(key, null)?.takeIf { stored ->
             runCatching { UUID.fromString(stored).toString() == stored }.getOrDefault(false)
         }?.let { return it }
@@ -328,13 +364,22 @@ internal class PhoneWearBindingManager(private val prefs: SharedPreferences) {
         return value.isNotBlank() && value.length <= MAX_NODE_ID_LENGTH && value.none(Char::isISOControl)
     }
 
-    private fun sha256Hex(value: ByteArray): String {
-        return MessageDigest.getInstance("SHA-256")
-            .digest(value)
-            .joinToString(separator = "") { byte -> "%02x".format(byte) }
-    }
+    companion object {
+        /** Wear owner id of a cloud account; unchanged derivation (the watch stores it). */
+        fun cloudOwnerId(userId: String): String =
+            sha256Hex("cloud:$userId".toByteArray(Charsets.UTF_8))
 
-    private companion object {
+        /** Wear owner id of a local profile by its logical database name; unchanged derivation. */
+        fun localOwnerId(databaseName: String): String =
+            sha256Hex("local:$databaseName".toByteArray(Charsets.UTF_8))
+
+        private fun sha256Hex(value: ByteArray): String {
+            return MessageDigest.getInstance("SHA-256")
+                .digest(value)
+                .joinToString(separator = "") { byte -> "%02x".format(byte) }
+        }
+
+
         const val PREFS_NAME = "phone_wear_sync"
         const val KEY_SOURCE_NODE_ID = "source_node_id"
         const val KEY_SOURCE_OWNER_ID = "source_owner_id"
