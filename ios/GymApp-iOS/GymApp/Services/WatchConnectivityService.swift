@@ -581,6 +581,28 @@ final class WatchConnectivityService: NSObject, ObservableObject, WatchSessionTr
             return nack(message.requestId, .notReady)
         }
 
+        // A late arrival that a stored workout already holds (activity-only over a workout with
+        // sets, or the very same sets) is not stored again. The receipt is committed and the watch
+        // gets the same positive ack as a store, so its queue clears and a replay is a duplicate.
+        if Self.lateArrivalDecision(message, in: store) == .skip {
+            if let index = ledger.records.firstIndex(where: { $0.requestID == message.requestId }) {
+                ledger.records[index].state = .committed
+            }
+            do { try files.saveLedger(ledger, storageKey: storageKey) } catch {
+                return nack(message.requestId, .storage)
+            }
+            publishStatus(
+                gymText(
+                    "This Apple Watch workout is already saved on the phone, so it was not added again.",
+                    "Це тренування з Apple Watch уже збережено на телефоні, тому його не додано вдруге.",
+                    "Эта тренировка с Apple Watch уже сохранена на телефоне, поэтому она не добавлена повторно.",
+                    languageCode: gymCurrentLanguageCode(defaults: defaults)
+                ),
+                isError: false
+            )
+            return ack(message, binding: binding, status: .committed)
+        }
+
         let created: WorkoutSession?
         do {
             let date = Date(timeIntervalSince1970: TimeInterval(message.startedAtMillis / 1_000))
@@ -740,6 +762,21 @@ final class WatchConnectivityService: NSObject, ObservableObject, WatchSessionTr
             }
             return canonical(flat) == expectedSets
         }
+    }
+
+    /// `LateWatchArrivalRule` over the store's workouts, using the same start second as the write.
+    static func lateArrivalDecision(_ message: WatchWorkoutMessage, in store: WorkoutStore) -> LateWatchArrivalDecision {
+        // Both values are already inside the contract ranges (start ≤ now + 1 day, duration ≤ 7 days).
+        let startMillis = (message.startedAtMillis / 1_000) * 1_000
+        return LateWatchArrivalRule.decide(
+            startMillis: startMillis,
+            endMillis: startMillis + Int64(message.durationSeconds) * 1_000,
+            sets: message.sets.map { LateWatchArrivalSet(exerciseName: $0.exerciseName, weight: $0.weight, reps: $0.reps) },
+            stored: LateWatchArrivalRule.storedWorkouts(
+                store.workouts,
+                exerciseNames: Dictionary(store.exercises.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+            )
+        )
     }
 
     private struct CanonicalSet: Equatable {

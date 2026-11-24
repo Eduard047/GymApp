@@ -90,8 +90,9 @@ test("every rejecting path after the guard sends a nack with a fixed reason", ()
   const rejectedNacks = afterGuard.match(
     /sendNack\(for: rawMessage, reason: \.rejected, binding: binding, to: app\)/g,
   );
-  // conflicting replay, two replay-ledger saves, new-receipt save, post-commit save, catch.
-  assert.equal(rejectedNacks.length, 6);
+  // conflicting replay, two replay-ledger saves, new-receipt save, late-arrival skip save,
+  // post-commit save, catch.
+  assert.equal(rejectedNacks.length, 7);
   assert.equal(
     afterGuard.match(/reason: \.rateLimited/g).length,
     1,

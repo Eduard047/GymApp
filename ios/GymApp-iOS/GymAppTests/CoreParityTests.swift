@@ -19215,6 +19215,86 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(store.exercises.map(\.name), ["Жим лёжа"])
     }
 
+    func testGarminLateFreeActivityCoveredByAPhoneWorkoutIsAckedWithoutBeingStored() async throws {
+        let defaults = temporaryDefaults(named: "garmin-late-covered")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let account = AppAccountSession.local(id: "00000000-0000-4000-8000-000000000214", displayName: "Late")
+        try auth.installSessionForTesting(account)
+        let store = try WorkoutStore(accountStorageKey: account.storageKey,
+            directoryURL: try temporaryDirectory(named: "garmin-late-covered-workouts"))
+        _ = try store.addExercise(name: "Squat")
+        let transport = FakeGarminPhoneConnectIQTransport()
+        let id = UUID(uuidString: "11111111-2222-3333-4444-555555555558")!
+        let device = try XCTUnwrap(IQDevice(id: id, modelName: "Forerunner 55", friendlyName: "Late watch"))
+        transport.selectionResponse = [device]
+        transport.statuses[id] = .notConnected
+        let service = GarminPhoneSyncService(auth: auth, defaults: defaults, connectIQ: transport,
+            planStore: GarminPhonePlanStore(root: try temporaryDirectory(named: "garmin-late-covered-plans")))
+        service.bind(workoutStore: store)
+        service.selectDevices()
+        XCTAssertTrue(service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!))
+        let plan = GarminWorkoutPlan(source: "gymapp-ios", version: 1, title: "Late",
+            createdAt: "2026-09-08T10:00:00.000Z", startedAt: "2026-09-08T10:00:00.000Z", note: "",
+            exercises: [.init(name: "Squat", sets: [.init(weight: 100, reps: 5, orderIndex: 0)])])
+        try service.queuePlan(plan, deviceID: id.uuidString)
+        transport.statuses[id] = .connected
+        service.deviceStatusChanged(device, status: .connected)
+        let handshakeSent = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(handshakeSent)
+        let handshake = try XCTUnwrap(transport.sent.first)
+        service.receivedMessage(syncAcknowledgement(for: handshake.message), from: handshake.app)
+        let planSent = await waitUntil { transport.sent.count == 2 }
+        XCTAssertTrue(planSent)
+        let delivery = try XCTUnwrap(transport.sent.last)
+
+        // The phone workout with sets was saved first; the watch's free activity covers it.
+        let start = Int(Date().timeIntervalSince1970) - 3_600
+        let phone = try XCTUnwrap(store.createWorkout(
+            date: Date(timeIntervalSince1970: TimeInterval(start + 60)),
+            namedSets: [NamedWorkoutSetDraft(exerciseName: "Squat", weight: 100, reps: 5)],
+            durationSeconds: 1_500
+        ))
+        let free: [String: Any] = [
+            "type": "create_workout",
+            "bindingVersion": 2,
+            "workoutMode": "free",
+            "accountBinding": try XCTUnwrap(delivery.message["accountBinding"] as? String),
+            "deviceBinding": try XCTUnwrap(delivery.message["deviceBinding"] as? String),
+            "pairingGeneration": try XCTUnwrap(delivery.message["pairingGeneration"] as? String),
+            "requestId": "late-covered-free-1234567890",
+            "startedAtSeconds": start,
+            "durationSeconds": 1_800,
+            "gymCalories": 150.0,
+            "sets": [] as [Any]
+        ]
+        func acks() -> Int {
+            transport.sent.filter {
+                $0.message["type"] as? String == "ack" &&
+                    $0.message["requestId"] as? String == "late-covered-free-1234567890"
+            }.count
+        }
+        service.receivedMessage(free, from: delivery.app)
+        let acked = await waitUntil { acks() == 1 }
+        XCTAssertTrue(acked, "the watch gets the normal positive ack")
+        XCTAssertEqual(store.workouts.map(\.id), [phone.id])
+        XCTAssertTrue(store.activityOnlyCloudItems.isEmpty)
+
+        // Replay: the committed receipt answers again, still nothing stored.
+        service.receivedMessage(free, from: delivery.app)
+        let reacked = await waitUntil { acks() == 2 }
+        XCTAssertTrue(reacked)
+        XCTAssertEqual(store.workouts.map(\.id), [phone.id])
+
+        // A sets workout that differs from the phone workout is kept.
+        var different = free
+        different["workoutMode"] = "planned"
+        different["requestId"] = "late-different-sets-1234567890"
+        different["sets"] = [["exerciseName": "Squat", "weight": 100.0, "reps": 6]]
+        service.receivedMessage(different, from: delivery.app)
+        let stored = await waitUntil { store.workouts.count == 2 }
+        XCTAssertTrue(stored, "a workout that differs is never dropped")
+    }
+
     func testGarminStoredCyrillicDeliveryIsResentOnceAsLatinAfterUpgrade() async throws {
         let defaults = temporaryDefaults(named: "garmin-latin-upgrade-resend")
         let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)

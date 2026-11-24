@@ -2882,6 +2882,38 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             return false
         }
 
+        // A late arrival that a stored workout already holds (activity-only over a workout with
+        // sets, or the very same sets) is not stored again. The receipt is committed and the watch
+        // gets the same acknowledgement as a store, so its queue clears and a replay is idempotent.
+        if Self.lateArrivalDecision(
+            command,
+            sets: translatedWatchSets(command.sets, store: store),
+            in: store
+        ) == .skip {
+            updateReceipt(
+                requestID: command.requestID,
+                state: .committed,
+                ledger: &ledger
+            )
+            guard saveReceiptLedger(ledger, key: receiptKey) else {
+                // The pending receipt stays; the retry finds no stored workout, drops it and
+                // decides the same way again.
+                sendNack(for: rawMessage, reason: .rejected, binding: binding, to: app)
+                return false
+            }
+            sendAcknowledgement(for: command.requestID, binding: binding, to: app)
+            publishStatus(
+                gymText(
+                    "This Garmin workout is already saved on the phone, so it was not added again.",
+                    "Це тренування з Garmin уже збережено на телефоні, тому його не додано вдруге.",
+                    "Эта тренировка с Garmin уже сохранена на телефоне, поэтому она не добавлена повторно.",
+                    languageCode: gymCurrentLanguageCode(defaults: defaults)
+                ),
+                isError: false
+            )
+            return true
+        }
+
         do {
             let workoutDate = Date(timeIntervalSince1970: TimeInterval(command.startedAtSeconds))
             let note = workoutNote(command)
@@ -3237,6 +3269,28 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         sets: [NamedWorkoutSetDraft]
     ) -> Bool {
         Self.matchesPersistedWorkout(command, in: store, sets: sets)
+    }
+
+    /// `LateWatchArrivalRule` over the store's workouts. A free activity carries no sets; `sets`
+    /// are the already translated names that the write would store.
+    static func lateArrivalDecision(
+        _ command: GarminPhoneWorkoutCommand,
+        sets: [NamedWorkoutSetDraft],
+        in store: WorkoutStore
+    ) -> LateWatchArrivalDecision {
+        // Both values are bounded by the parser (start ≤ now + skew, duration ≤ the session maximum).
+        let startMillis = command.startedAtSeconds * 1_000
+        return LateWatchArrivalRule.decide(
+            startMillis: startMillis,
+            endMillis: startMillis + (command.durationSeconds ?? 0) * 1_000,
+            sets: command.mode == .free ? [] : sets.map {
+                LateWatchArrivalSet(exerciseName: $0.exerciseName, weight: $0.weight, reps: $0.reps)
+            },
+            stored: LateWatchArrivalRule.storedWorkouts(
+                store.workouts,
+                exerciseNames: Dictionary(store.exercises.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+            )
+        )
     }
 
     static func matchesPersistedWorkout(

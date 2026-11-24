@@ -304,6 +304,73 @@ final class WatchConnectivityServiceTests: XCTestCase {
         XCTAssertEqual(try fixture.files.loadLedger(storageKey: fixture.storageKey).records.map(\.state), [.committed])
     }
 
+    // MARK: Late arrival over an already saved phone workout
+
+    func testLateTimeOnlyWorkoutCoveredByAPhoneWorkoutIsAckedWithoutBeingStored() throws {
+        let fixture = try WatchSyncFixture(name: "late-time-only-covered")
+        // Phone workout with sets 1 minute into the watch's 40-minute window.
+        let phone = try XCTUnwrap(fixture.store.createWorkout(
+            date: Date(timeIntervalSince1970: 1_794_990_060),
+            namedSets: [NamedWorkoutSetDraft(exerciseName: "Bench Press", weight: 80, reps: 8)],
+            durationSeconds: 2_000
+        ))
+        let bytes = try WatchSyncTestSupport.caseBytes("workout-free-time-only")
+
+        XCTAssertEqual(fixture.service.receiveWorkout(bytes), .ack(.committed))
+        guard case .ack(let ack)? = fixture.transport.lastReply else { return XCTFail("no ack sent") }
+        XCTAssertEqual(ack.status, .committed)
+        XCTAssertEqual(fixture.store.workouts.map(\.id), [phone.id])
+        XCTAssertTrue(fixture.store.activityOnlyCloudItems.isEmpty, "no sidecar that cloud sync could resurrect")
+        XCTAssertEqual(try fixture.files.loadLedger(storageKey: fixture.storageKey).records.map(\.state), [.committed])
+
+        // Replay of a committed receipt: duplicate ack, still nothing stored.
+        XCTAssertEqual(fixture.service.receiveWorkout(bytes), .ack(.duplicate))
+        XCTAssertEqual(fixture.store.workouts.map(\.id), [phone.id])
+
+        // A receipt left pending (crash between decide and commit) decides the same way again.
+        var ledger = try fixture.files.loadLedger(storageKey: fixture.storageKey)
+        ledger.records[0].state = .pending
+        try fixture.files.saveLedger(ledger, storageKey: fixture.storageKey)
+        XCTAssertEqual(fixture.service.receiveWorkout(bytes), .ack(.committed))
+        XCTAssertEqual(fixture.store.workouts.map(\.id), [phone.id])
+        XCTAssertEqual(try fixture.files.loadLedger(storageKey: fixture.storageKey).records.map(\.state), [.committed])
+    }
+
+    func testLateWorkoutWithTheSameSetsAsAPhoneWorkoutIsAckedWithoutBeingStored() throws {
+        let fixture = try WatchSyncFixture(name: "late-same-sets")
+        let phone = try XCTUnwrap(fixture.store.createWorkout(
+            date: Date(timeIntervalSince1970: 1_794_996_030),
+            namedSets: [
+                NamedWorkoutSetDraft(exerciseName: "Жим лёжа", weight: 60, reps: 8),
+                NamedWorkoutSetDraft(exerciseName: "Жим лёжа", weight: 62.5, reps: 6)
+            ],
+            durationSeconds: 2_900
+        ))
+        XCTAssertEqual(
+            fixture.service.receiveWorkout(try WatchSyncTestSupport.caseBytes("workout-plan-imported")),
+            .ack(.committed)
+        )
+        XCTAssertEqual(fixture.store.workouts.map(\.id), [phone.id])
+        XCTAssertEqual(try fixture.files.loadLedger(storageKey: fixture.storageKey).records.map(\.state), [.committed])
+    }
+
+    func testLateWorkoutWithDifferentSetsKeepsBothWorkouts() throws {
+        let fixture = try WatchSyncFixture(name: "late-different-sets")
+        _ = try XCTUnwrap(fixture.store.createWorkout(
+            date: Date(timeIntervalSince1970: 1_794_996_030),
+            namedSets: [
+                NamedWorkoutSetDraft(exerciseName: "Жим лёжа", weight: 60, reps: 8),
+                NamedWorkoutSetDraft(exerciseName: "Жим лёжа", weight: 62.5, reps: 7)
+            ],
+            durationSeconds: 2_900
+        ))
+        XCTAssertEqual(
+            fixture.service.receiveWorkout(try WatchSyncTestSupport.caseBytes("workout-plan-imported")),
+            .ack(.committed)
+        )
+        XCTAssertEqual(fixture.store.workouts.count, 2, "a workout that differs is never dropped")
+    }
+
     func testRateLimit() throws {
         let fixture = try WatchSyncFixture(name: "rate")
         let records = (0 ..< WatchSync.maximumReceiptsPerHour).map { _ in
