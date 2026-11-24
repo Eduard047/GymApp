@@ -263,6 +263,21 @@ final class WorkoutLiveActivityController: ObservableObject {
         end(dismissalPolicy: .immediate)
     }
 
+    /// Sign-out or account switch: the activity carries no account, so a tap on
+    /// it would open the next account's workout. End this controller's activity
+    /// and every other one ActivityKit still runs (e.g. one adopted from a
+    /// previous process), and drop the old account's store references so its
+    /// Lock Screen buttons stop acting until `attach` binds the next account.
+    func endAllForAccountTransition() {
+        endImmediately()
+        for snapshot in requester.currentActivities() {
+            Task { await snapshot.handle.end(dismissalPolicy: .immediate) }
+        }
+        workoutStore = nil
+        activeWorkoutStore = nil
+        restTimers = nil
+    }
+
     private func start(draft: ActiveWorkoutDraft, state: WorkoutActivityAttributes.ContentState) {
         guard activity == nil else { return }
         let languageCode = gymCurrentLanguageCode()

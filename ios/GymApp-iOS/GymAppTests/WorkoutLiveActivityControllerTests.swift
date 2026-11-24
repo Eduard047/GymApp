@@ -1117,3 +1117,70 @@ final class WorkoutLiveActivityBridgeGuardTests: XCTestCase {
         XCTAssertNotNil(active.draft?.timing?.restingUntil, "rest must still be running")
     }
 }
+
+// MARK: - Account transition (sign-out / account switch)
+
+@MainActor
+final class WorkoutLiveActivityAccountTransitionTests: XCTestCase {
+    private func settle() {
+        let expectation = expectation(description: "detached ends run")
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 1)
+    }
+
+    func testAccountTransitionEndsOwnAndEveryOtherRunningActivity() {
+        let requester = FakeLiveActivityRequester()
+        let leftover = requester.seedExisting(workoutID: UUID())
+        let controller = WorkoutLiveActivityController(requester: requester)
+        let draft = Fixture.draft(exercises: [
+            Fixture.exercise(name: "Bench Press", sets: [Fixture.set(weight: 60, reps: 8, completed: false)])
+        ])
+        controller.sync(draft: draft)
+        let own = requester.nextHandle
+
+        controller.endAllForAccountTransition()
+        settle()
+
+        XCTAssertEqual(own.endCount, 1, "the old account's card must not survive the transition")
+        XCTAssertEqual(own.lastDismissalPolicy, .immediate)
+        XCTAssertEqual(leftover.endCount, 1, "an activity from a previous process must end too")
+        XCTAssertEqual(leftover.lastDismissalPolicy, .immediate)
+        XCTAssertEqual(requester.requestCount, 1, "the transition must not start a new activity")
+    }
+
+    func testAccountTransitionWithNothingRunningIsANoOp() {
+        let requester = FakeLiveActivityRequester()
+        let controller = WorkoutLiveActivityController(requester: requester)
+
+        controller.endAllForAccountTransition()
+        settle()
+
+        XCTAssertEqual(requester.requestCount, 0)
+    }
+
+    func testNextAccountDraftStartsAFreshActivityAfterTransition() {
+        let requester = FakeLiveActivityRequester()
+        let controller = WorkoutLiveActivityController(requester: requester)
+        let oldDraft = Fixture.draft(exercises: [
+            Fixture.exercise(name: "Bench Press", sets: [Fixture.set(weight: 60, reps: 8, completed: false)])
+        ])
+        controller.sync(draft: oldDraft)
+        let oldHandle = requester.nextHandle
+
+        controller.endAllForAccountTransition()
+        requester.nextHandle = FakeLiveActivityHandle()
+        let newDraft = Fixture.draft(exercises: [
+            Fixture.exercise(name: "Squat", sets: [Fixture.set(weight: 100, reps: 5, completed: false)])
+        ])
+        controller.sync(draft: newDraft)
+        settle()
+
+        XCTAssertEqual(oldHandle.endCount, 1)
+        XCTAssertEqual(requester.requestCount, 2)
+        XCTAssertEqual(requester.requestedAttributes.last?.workoutID, newDraft.id)
+        XCTAssertEqual(requester.nextHandle.endCount, 0)
+    }
+}

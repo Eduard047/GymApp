@@ -699,9 +699,16 @@ final class AppState: ObservableObject {
         return accountActivationGeneration
     }
 
+    /// Runs only when the account owner actually changes (sign-out, switch, deletion).
+    /// Rest notifications go with the timers (`bindToAccount` removes every pending and
+    /// delivered local notification); the Live Activity is ended here so a tap on the
+    /// old account's card cannot open the next account's workout. The draft subscription
+    /// is dropped so the old store cannot restart it; `publish` re-binds both.
     private func clearRestTimersForAccountTransition(to ownerFingerprint: String?) {
         restTimers.bindToAccount(ownerFingerprint: ownerFingerprint)
         restTimerOwnerFingerprint = ownerFingerprint
+        liveActivityDraftSubscription = nil
+        liveActivityController.endAllForAccountTransition()
     }
 
     private func prepareAccount(
