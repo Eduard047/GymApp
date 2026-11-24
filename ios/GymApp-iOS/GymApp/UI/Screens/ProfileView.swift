@@ -49,6 +49,9 @@ struct ProfileView: View {
     @State private var requestedNativePushAccessibilityTarget: NativePushProfileFocus?
     @State private var showsFriends = false
     @State private var showsHealthAppSheet = false
+#if DEBUG
+    @State private var qaShowsWatches = false
+#endif
     @State private var backupExpanded = false
     @State private var trainingProfile: TrainingProfile
     private let canAcceptWorkoutInvites: Bool
@@ -111,6 +114,11 @@ struct ProfileView: View {
             .onReceive(UIAuditRouter.shared.$pendingPresentation.compactMap { $0 }) { _ in
                 presentUIAuditRouteIfRequested(proxy)
             }
+            .task {
+                guard QAAuditSeed.scroll == "devices" else { return }
+                try? await Task.sleep(for: .milliseconds(1_500))
+                proxy.scrollTo("qa-devices", anchor: .center)
+            }
 #endif
         }
         .navigationDestination(isPresented: $showsFriends) {
@@ -143,6 +151,23 @@ struct ProfileView: View {
             HealthAppRecommendationSheet(languageCode: languageCode)
                 .gymSheetPresentation(.standard)
         }
+#if DEBUG
+        // QA audit (`-qaOpen watches|healthapp`): opens the pushed Watches screen or the HealthApp sheet.
+        .navigationDestination(isPresented: $qaShowsWatches) {
+            WatchesScreen(
+                garminCloud: garminCloud,
+                garminPhoneSync: garminPhoneSync,
+                healthImport: appState.healthImport
+            )
+            .gymTopBannerInset()
+        }
+        .task {
+            guard let open = QAAuditSeed.open else { return }
+            try? await Task.sleep(for: .milliseconds(900))
+            if open == "watches" { qaShowsWatches = true }
+            if open == "healthapp" { showsHealthAppSheet = true }
+        }
+#endif
         .alert(item: $activeAlert, content: makeAlert)
         .fileImporter(
             isPresented: $showsImporter,
@@ -274,6 +299,9 @@ struct ProfileView: View {
             ProfileGroup(title: gymText("Devices", "Пристрої", "Устройства", languageCode: languageCode)) {
                 watchesRow
             }
+#if DEBUG
+            .id("qa-devices")
+#endif
             ProfileGroup(title: gymText("App", "Застосунок", "Приложение", languageCode: languageCode)) {
                 languageRow
             }
@@ -1028,8 +1056,11 @@ private struct WatchesScreen: View {
     private let connectIQAppStoreURL = URL(
         string: "https://apps.apple.com/app/connect-iq-store/id1317652970"
     )!
+    /// The Garmin watch whose relink (erases its workout data) awaits confirmation.
+    @State private var pendingGarminRelinkDeviceID: String?
 
     var body: some View {
+        ScrollViewReader { qaProxy in
         GymBackground {
             ScrollView {
                 VStack(alignment: .leading, spacing: GymTheme.contentSpacing) {
@@ -1037,11 +1068,26 @@ private struct WatchesScreen: View {
                     // WATCHES-APPLE-WATCH-SLOT (stage 5): the Apple Watch card goes here,
                     // between the Garmin card and the health data card. No UI yet.
                     HealthDataCard(service: healthImport)
+                        .id("qa-health")
                 }
                 .padding(.horizontal, GymTheme.screenHorizontalInset)
                 .padding(.top, GymTheme.screenVerticalInset)
                 .padding(.bottom, GymTheme.screenBottomInset)
             }
+        }
+#if DEBUG
+        // QA audit (`-qaScroll health|bottom|garmin`): scroll positions for screenshots.
+        .task {
+            guard let target = QAAuditSeed.scroll else { return }
+            try? await Task.sleep(for: .milliseconds(1_500))
+            switch target {
+            case "health": qaProxy.scrollTo("qa-health", anchor: .top)
+            case "bottom": qaProxy.scrollTo("qa-health", anchor: .bottom)
+            case "garmin": qaProxy.scrollTo("qa-health", anchor: UnitPoint(x: 0.5, y: 2.2))
+            default: break
+            }
+        }
+#endif
         }
         .navigationTitle(gymText("Watches", "Годинники", "Часы", languageCode: languageCode))
         .navigationBarTitleDisplayMode(.inline)
@@ -1080,10 +1126,23 @@ private struct WatchesScreen: View {
                                 : gymText("Not connected now", "Зараз не підключено", "Сейчас не подключено", languageCode: languageCode),
                             connected: device.connected,
                             paired: device.paired,
-                            note: device.lite
+                            note: device.linkedToAnotherAccount
+                                ? garminLinkedToAnotherAccountTitle
+                                : device.lite
                                 ? GarminPhoneSyncProtocol.liteWatchMessage(languageCode: languageCode)
-                                : nil
+                                : nil,
+                            noteIsWarning: device.linkedToAnotherAccount
                         )
+                        if device.linkedToAnotherAccount {
+                            // The only path to a watch reset: an explicit, confirmed action.
+                            Button(role: .destructive) {
+                                pendingGarminRelinkDeviceID = device.id
+                            } label: {
+                                Text(garminRelinkActionTitle)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(GymSecondaryButtonStyle(destructive: true))
+                        }
                     }
                     if garminPhoneSync.devices.isEmpty, let device = selectedCloudDevice {
                         garminDeviceRow(
@@ -1116,6 +1175,43 @@ private struct WatchesScreen: View {
                 .buttonStyle(GymSecondaryButtonStyle())
             }
         }
+        .confirmationDialog(
+            garminLinkedToAnotherAccountTitle,
+            isPresented: Binding(
+                get: { pendingGarminRelinkDeviceID != nil },
+                set: { if !$0 { pendingGarminRelinkDeviceID = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingGarminRelinkDeviceID
+        ) { deviceID in
+            Button(garminRelinkActionTitle, role: .destructive) {
+                garminPhoneSync.confirmReset(deviceID: deviceID)
+            }
+            Button(
+                gymText("Cancel", "Скасувати", "Отменить", languageCode: languageCode),
+                role: .cancel
+            ) {}
+        } message: { _ in
+            Text(gymText(
+                "Relinking erases the workout data stored on the watch for that account. Finish and sync any workout on the watch first.",
+                "Повторне прив’язування зітре дані тренувань, збережені на годиннику для того акаунта. Спершу завершіть і синхронізуйте тренування на годиннику.",
+                "Повторная привязка сотрёт данные тренировок, сохранённые на часах для того аккаунта. Сначала завершите и синхронизируйте тренировку на часах.",
+                languageCode: languageCode
+            ))
+        }
+    }
+
+    private var garminLinkedToAnotherAccountTitle: String {
+        gymText(
+            "Watch linked to another account",
+            "Годинник прив’язано до іншого акаунта",
+            "Часы привязаны к другому аккаунту",
+            languageCode: languageCode
+        )
+    }
+
+    private var garminRelinkActionTitle: String {
+        gymText("Relink watch", "Прив’язати заново", "Привязать заново", languageCode: languageCode)
     }
 
     /// The single connect action: Garmin Connect opens for watch selection and,
@@ -1161,7 +1257,8 @@ private struct WatchesScreen: View {
         status: String,
         connected: Bool,
         paired: Bool,
-        note: String? = nil
+        note: String? = nil,
+        noteIsWarning: Bool = false
     ) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "applewatch")
@@ -1181,8 +1278,8 @@ private struct WatchesScreen: View {
                     .foregroundStyle(connected ? GymTheme.primary : GymTheme.textSecondary)
                 if let note {
                     Text(note)
-                        .font(.caption)
-                        .foregroundStyle(GymTheme.textSecondary)
+                        .font(noteIsWarning ? .caption.weight(.semibold) : .caption)
+                        .foregroundStyle(noteIsWarning ? GymTheme.error : GymTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

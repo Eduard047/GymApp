@@ -38,9 +38,17 @@ test("iOS Profile is the single Garmin connect action with Android-matching stat
   assert.match(profile, /"Connecting…", "Підключення…", "Подключение…"/);
   assert.match(profile, /"Connected now", "Зараз підключено", "Сейчас подключено"/);
   assert.match(profile, /"Paired", "Прив’язано", "Привязано"/);
-  assert.match(phone, /Couldn't connect\. Open the app on the watch and try again\./);
+  assert.match(phone, /Couldn’t connect\. Open the app on the watch and try again\./);
   assert.match(phone, /Не вдалося підключити\. Відкрийте застосунок на годиннику й повторіть\./);
   assert.match(phone, /Не удалось подключить\. Откройте приложение на часах и повторите\./);
+  // A connect never resets the watch: the first handshake is the preserving proof and
+  // the reset is staged only by the confirmed relink action on the Garmin card.
+  assert.doesNotMatch(phone, /\? \.proof : \.reset/);
+  assert.equal(phone.split("stageHandshake(.reset").length - 1, 1);
+  assert.match(phone, /func confirmReset\(deviceID: String\)[\s\S]{0,500}stageHandshake\(\.reset, binding: binding, to: app\)/);
+  assert.match(profile, /garminPhoneSync\.confirmReset\(deviceID: deviceID\)/);
+  assert.match(profile, /"Watch linked to another account",\s+"Годинник прив’язано до іншого акаунта",\s+"Часы привязаны к другому аккаунту"/);
+  assert.match(profile, /"Relink watch", "Прив’язати заново", "Привязать заново"/);
   // Returning from Garmin Connect sends the pairing sync at once.
   assert.match(
     phone,

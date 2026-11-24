@@ -769,3 +769,14 @@ private extension Data {
         SHA256.hash(data: self).map { String(format: "%02x", $0) }.joined()
     }
 }
+
+#if DEBUG
+extension WatchConnectivityService {
+    /// QA audit seed (`-qaWatches`): shows the "Send to Apple Watch" panel for screenshots. DEBUG only.
+    func applyQAPreset(_ preset: String) {
+        let shown = preset == "a" || preset == "b" || preset == "d"
+        isPaired = shown
+        isWatchAppInstalled = shown
+    }
+}
+#endif

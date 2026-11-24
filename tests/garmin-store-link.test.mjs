@@ -41,6 +41,8 @@ test("native clients open our Garmin listing with platform store fallbacks", asy
   assert.equal(quotedValueFollowing(iosProfile, "private let connectIQAppStoreURL"), CONNECT_IQ_APP_STORE_URL);
   assert.equal(iosProfile.includes("application.canOpenURL(connectIQSchemeURL)"), true);
   assert.equal(iosInfo.includes("<string>connectiq</string>"), true);
+  // The Connect IQ SDK probes Garmin Connect with this scheme before device selection.
+  assert.equal(iosInfo.includes("<string>gcm-ciq</string>"), true);
 
   assert.equal(androidLauncher.includes(OLD_QA_DOWNLOAD), false);
   assert.equal(androidScreen.includes(OLD_QA_DOWNLOAD), false);

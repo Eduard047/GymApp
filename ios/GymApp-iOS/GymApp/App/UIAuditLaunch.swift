@@ -191,6 +191,7 @@ extension AppState {
         if UIAuditLaunch.arguments.contains(UIAuditLaunch.seedFlag) {
             await seedUIAuditProfile()
         }
+        startQAAuditSeeds()
         if let route = UIAuditLaunch.requestedRoute() {
             if route.requiresSignedOut {
                 await leaveUIAuditProfileForAuthRoute(route)
@@ -265,6 +266,61 @@ extension AppState {
             UserDefaults.standard.set(hash, forKey: hashKey)
         } catch {
             UIAuditLaunch.log("seed import failed: \(gymErrorMessage(error)); launching normally")
+        }
+    }
+}
+
+// MARK: - QA audit 2026-11-24 (wearables): card-state presets and one imported workout
+
+/// DEBUG-only launch arguments for the wearables QA audit:
+///   -qaWatches a|b|c|d|e|f   forces the Garmin / Health data / Apple Watch states
+///   -qaOpen watches|healthapp opens the Watches screen or the HealthApp sheet from Profile
+///   -qaHealthImport 1        adds one Apple Health workout through the importer's own store call
+enum QAAuditSeed {
+    static var watchesPreset: String? { UIAuditLaunch.value(for: "-qaWatches") }
+    static var open: String? { UIAuditLaunch.value(for: "-qaOpen") }
+    static var wantsHealthImport: Bool { UIAuditLaunch.value(for: "-qaHealthImport") != nil }
+    /// -qaScroll devices|health|bottom|garmin: scrolls Profile / Watches / the plan editor for a screenshot.
+    static var scroll: String? { UIAuditLaunch.value(for: "-qaScroll") }
+}
+
+extension AppState {
+    func startQAAuditSeeds() {
+        if QAAuditSeed.wantsHealthImport { seedQAHealthImport() }
+        guard let preset = QAAuditSeed.watchesPreset else { return }
+        Task { @MainActor in
+            // Re-applied for ~15 s: a refresh on screen open would overwrite a single write.
+            for _ in 0..<60 {
+                healthImport.applyQAPreset(preset)
+                garminPhoneSync.applyQAPreset(preset)
+                watchSync.applyQAPreset(preset)
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
+    }
+
+    private func seedQAHealthImport() {
+        let language = UserDefaults.standard.string(forKey: "app-language") ?? "en"
+        let note = HealthImportRules.buildNote(
+            type: "traditionalStrengthTraining",
+            durationSeconds: 2_825,
+            gymCalories: 356,
+            averageHeartRate: 124,
+            maximumHeartRate: 158,
+            languageCode: language
+        )
+        guard !workoutStore.workouts.contains(where: { $0.note == note }) else { return }
+        do {
+            _ = try workoutStore.createImportedActivityWorkout(
+                date: Date().addingTimeInterval(-3_600),
+                note: note,
+                durationSeconds: 2_825,
+                gymCalories: 356,
+                averageHeartRate: 124,
+                maximumHeartRate: 158
+            )
+        } catch {
+            UIAuditLaunch.log("qa health import failed: \(gymErrorMessage(error))")
         }
     }
 }

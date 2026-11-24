@@ -467,6 +467,13 @@ struct AddWorkoutView: View {
                         }
                     }
                 }
+#if DEBUG
+                .task {
+                    guard QAAuditSeed.scroll == "garmin" else { return }
+                    try? await Task.sleep(for: .milliseconds(1_800))
+                    scrollProxy.scrollTo("qa-garmin-panel", anchor: .center)
+                }
+#endif
             }
         }
         .allowsHitTesting(!isSaving)
@@ -637,6 +644,8 @@ struct AddWorkoutView: View {
             onDraftChange(currentEditorDraftState)
 #if DEBUG
             presentUIAuditRouteIfRequested()
+            // QA audit (`-qaScroll garmin`): expands "More options" so the watch delivery panels show.
+            if QAAuditSeed.scroll == "garmin" || QAAuditSeed.scroll == "bottom" { secondaryOptionsExpanded = true }
 #endif
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -1293,6 +1302,9 @@ struct AddWorkoutView: View {
 
                     if isCloudAccount || garminPhone != nil, liveInviteRecipient == nil {
                         garminPanel
+#if DEBUG
+                            .id("qa-garmin-panel")
+#endif
                     }
 
                     if liveInviteRecipient == nil {

@@ -57,6 +57,11 @@ object UiAuditHooks {
     const val EXTRA_SEED = "uiAuditSeed"
     const val EXTRA_ROUTE = "uiAuditRoute"
     const val EXTRA_LANGUAGE = "uiAuditLanguage"
+    /** QA audit 2026-11-24: preset name for the Watches cards (see `forceWatchesState`). */
+    const val EXTRA_WATCHES = "uiAuditWatches"
+
+    @Volatile
+    private var watchesPreset: String? = null
 
     private const val TAG = "UiAudit"
     private const val AUDIT_PROFILE_NAME = "UI Audit"
@@ -358,6 +363,44 @@ object UiAuditHooks {
                 step("tutorial", "help row", string(nav, R.string.profile_help_title), scroll = true)
             }
         },
+        // QA audit 2026-11-24 (wearables): the Watches sub-screen of Profile, optionally with the card states
+        // forced by `uiAuditWatches`; `profile-watches` stays on the Profile root to show the row status line.
+        "watches" to { nav, app ->
+            if (auditRepository(app, "watches") != null) {
+                openTab(nav, AppDestination.Profile)
+                startWatchesPreset(nav, app)
+                step("watches", "watches row", string(nav, R.string.watches_title), scroll = true)
+            }
+        },
+        "profile-watches" to { nav, app ->
+            if (auditRepository(app, "profile-watches") != null) {
+                openTab(nav, AppDestination.Profile)
+                startWatchesPreset(nav, app)
+            }
+        },
+        // One Health Connect workout written through the importer's own persistence path (same note builder).
+        "health-imported" to { nav, app ->
+            val repository = auditRepository(app, "health-imported")
+            if (repository != null) {
+                seedHealthImport(app, repository)
+                openTab(nav, AppDestination.Workouts)
+            }
+        },
+        "health-imported-detail" to { nav, app ->
+            val repository = auditRepository(app, "health-imported-detail")
+            if (repository != null) {
+                seedHealthImport(app, repository)
+                val sessionId = repository.observeSessions().first()
+                    .filter { it.session.note.orEmpty().startsWith("Health Connect") }
+                    .maxByOrNull { it.session.date }?.session?.id
+                if (sessionId == null) {
+                    Log.w(TAG, "health-imported-detail: no imported workout")
+                } else {
+                    openTab(nav, AppDestination.Workouts)
+                    nav.navigate(AppDestination.workoutDetailRoute(sessionId))
+                }
+            }
+        },
         // Signed-out routes: run without the nav graph (it does not exist while signed out) on a fresh profile.
         "sign-in" to { _, app -> requireSignedOut(app, "sign-in") },
         "offline-profile-sheet" to { nav, app ->
@@ -371,7 +414,7 @@ object UiAuditHooks {
         val present = runCatching {
             intent != null && (
                 intent.hasExtra(EXTRA_SEED) || intent.hasExtra(EXTRA_ROUTE) ||
-                    intent.hasExtra(EXTRA_LANGUAGE)
+                    intent.hasExtra(EXTRA_LANGUAGE) || intent.hasExtra(EXTRA_WATCHES)
                 )
         }.getOrDefault(false)
         isActive = present
@@ -381,6 +424,7 @@ object UiAuditHooks {
         val route = runCatching { intent.getStringExtra(EXTRA_ROUTE) }.getOrNull()
         val language = runCatching { intent.getStringExtra(EXTRA_LANGUAGE) }.getOrNull()
         val app = activity.application as GymApplication
+        watchesPreset = runCatching { intent.getStringExtra(EXTRA_WATCHES) }.getOrNull()
 
         language?.let { applyLanguage(app, it) }
         val seedJob = seed?.takeIf { route !in signedOutRoutes }?.let { startSeed(app, it) }
@@ -420,6 +464,128 @@ object UiAuditHooks {
             launchSingleTop = true
             restoreState = false
         }
+    }
+
+    /** QA audit: keeps the requested preset applied for ~15 s (a screen refresh would overwrite a single write). */
+    private fun startWatchesPreset(nav: NavHostController, app: GymApplication) {
+        val preset = watchesPreset ?: return
+        scope.launch(Dispatchers.Main) {
+            repeat(100) {
+                runCatching { forceWatchesState(nav, app, preset) }
+                    .onFailure { Log.w(TAG, "watches preset $preset: ${it.javaClass.simpleName} ${it.message}") }
+                delay(150)
+            }
+        }
+    }
+
+    private fun forceWatchesState(nav: NavHostController, app: GymApplication, preset: String) {
+        val now = System.currentTimeMillis()
+        fun watch(name: String, connected: Boolean, trusted: Boolean, lite: Boolean = false, id: Long) =
+            com.example.gymapp.garmin.GarminDeviceSummary(name, connected, trusted, lite, id)
+        val garmin: com.example.gymapp.garmin.GarminDeviceUiState
+        val wear: com.example.gymapp.ui.viewmodel.WearWatchUiState
+        val health: com.example.gymapp.ui.viewmodel.HealthDataUiState
+        val available = com.example.gymapp.health.HealthConnectAvailability.AVAILABLE
+        when (preset) {
+            "a" -> {
+                garmin = com.example.gymapp.garmin.GarminDeviceUiState(
+                    sdkReady = true, canPair = true,
+                    devices = listOf(
+                        watch("Forerunner 965", connected = true, trusted = true, id = 1),
+                        watch("f\u0113nix 6S Pro Solar Edition", connected = true, trusted = false, id = 2),
+                        watch("Venu Sq 2 Music", connected = false, trusted = false, lite = true, id = 3)
+                    )
+                )
+                wear = com.example.gymapp.ui.viewmodel.WearWatchUiState(true, true, "Galaxy Watch7 Ultra (X9KD)", true)
+                health = com.example.gymapp.ui.viewmodel.HealthDataUiState(
+                    availability = available, connected = true, lastImportAtMillis = now - 5 * 60_000L, importedTotal = 21
+                )
+            }
+            "b" -> {
+                garmin = com.example.gymapp.garmin.GarminDeviceUiState(sdkReady = true, pairingResetPending = true)
+                wear = com.example.gymapp.ui.viewmodel.WearWatchUiState(true, true, null, false)
+                health = com.example.gymapp.ui.viewmodel.HealthDataUiState(
+                    availability = available, connected = true, lastImportAtMillis = now - 26 * 3_600_000L,
+                    importedTotal = 1, notice = com.example.gymapp.ui.viewmodel.HealthImportNotice.EMPTY
+                )
+            }
+            "c" -> {
+                garmin = com.example.gymapp.garmin.GarminDeviceUiState()
+                wear = com.example.gymapp.ui.viewmodel.WearWatchUiState(apiAvailable = true)
+                health = com.example.gymapp.ui.viewmodel.HealthDataUiState(
+                    availability = available, connected = true, running = true,
+                    lastImportAtMillis = now - 3_600_000L, importedTotal = 3
+                )
+            }
+            "d" -> {
+                garmin = com.example.gymapp.garmin.GarminDeviceUiState(
+                    sdkReady = true, canPair = true,
+                    devices = listOf(watch("Instinct 2X Solar Tactical", connected = true, trusted = false, id = 4))
+                )
+                wear = com.example.gymapp.ui.viewmodel.WearWatchUiState()
+                health = com.example.gymapp.ui.viewmodel.HealthDataUiState(
+                    availability = available, connected = true, lastImportAtMillis = now - 2 * 60_000L,
+                    importedTotal = 3, notice = com.example.gymapp.ui.viewmodel.HealthImportNotice.FAILED
+                )
+            }
+            "e" -> {
+                garmin = com.example.gymapp.garmin.GarminDeviceUiState(sdkReady = true)
+                wear = com.example.gymapp.ui.viewmodel.WearWatchUiState(apiAvailable = true)
+                health = com.example.gymapp.ui.viewmodel.HealthDataUiState(
+                    availability = com.example.gymapp.health.HealthConnectAvailability.UNAVAILABLE
+                )
+            }
+            "f" -> {
+                garmin = com.example.gymapp.garmin.GarminDeviceUiState(sdkReady = true)
+                wear = com.example.gymapp.ui.viewmodel.WearWatchUiState(apiAvailable = true)
+                health = com.example.gymapp.ui.viewmodel.HealthDataUiState(
+                    availability = com.example.gymapp.health.HealthConnectAvailability.PROVIDER_UPDATE_REQUIRED
+                )
+            }
+            else -> return
+        }
+        setFlow(app.garminSyncManager, "_deviceUiState", garmin)
+        val rootRoute = generateSequence(nav.currentBackStackEntry?.destination?.parent) { it.parent }
+            .mapNotNull { it.route }.firstOrNull { it.startsWith("gym-root-") } ?: return
+        val provider = androidx.lifecycle.ViewModelProvider(nav.getBackStackEntry(rootRoute))
+        setFlow(
+            provider["health-data", com.example.gymapp.ui.viewmodel.HealthDataViewModel::class.java], "_state", health
+        )
+        setFlow(
+            provider["wear-watch", com.example.gymapp.ui.viewmodel.WearWatchViewModel::class.java], "_state", wear
+        )
+    }
+
+    private fun <T> setFlow(owner: Any, field: String, value: T) {
+        val declared = owner.javaClass.getDeclaredField(field).apply { isAccessible = true }
+        @Suppress("UNCHECKED_CAST")
+        (declared.get(owner) as MutableStateFlow<T>).value = value
+    }
+
+    /** QA audit: one imported Health Connect workout (yesterday, 47:05, 356 kcal, HR 124/158), idempotent. */
+    private suspend fun seedHealthImport(app: GymApplication, repository: GymRepository) {
+        val language = app.languageManager.currentLanguage()
+        val start = System.currentTimeMillis() - 26 * 3_600_000L
+        val item = com.example.gymapp.data.repository.ActivityOnlyWorkoutItem(
+            workoutStartedAt = start - start % 60_000L,
+            durationSeconds = 2_825L,
+            gymCalories = 356.0,
+            averageHeartRate = 124,
+            maximumHeartRate = 158,
+            note = com.example.gymapp.health.HealthImportRules.note(
+                store = com.example.gymapp.health.HealthImportStore.HEALTH_CONNECT,
+                exerciseType = "STRENGTH_TRAINING",
+                durationSeconds = 2_825L,
+                kilocalories = 356L,
+                averageHeartRate = 124,
+                maximumHeartRate = 158,
+                language = language
+            )
+        )
+        val result = runCatching {
+            repository.importHealthActivity(item, "health_connect:qa-audit-${language.name.lowercase()}")
+        }
+        Log.i(TAG, "health import seed: ${result.getOrNull() ?: result.exceptionOrNull()?.javaClass?.simpleName}")
     }
 
     /** The repository of the "UI Audit" local profile, or null (logged) for any other session. */

@@ -548,3 +548,35 @@ private enum HealthImportFailureError: Error {
         }
     }
 }
+
+#if DEBUG
+extension HealthKitImportService {
+    /// QA audit seed (`-qaWatches`): forces the card state for screenshots. DEBUG only.
+    func applyQAPreset(_ preset: String) {
+        isAvailable = true
+        isImporting = false
+        failure = nil
+        lastSummary = nil
+        revokeRequiresSettings = false
+        switch preset {
+        case "a":
+            isConnected = true; importedTotal = 21; lastImportAt = Date().addingTimeInterval(-300)
+        case "b":
+            isConnected = true; importedTotal = 1; lastImportAt = Date().addingTimeInterval(-26 * 3_600)
+            lastSummary = HealthImportRunSummary()
+        case "c":
+            isConnected = true; importedTotal = 3; lastImportAt = Date().addingTimeInterval(-3_600)
+            isImporting = true
+        case "d":
+            isConnected = true; importedTotal = 3; lastImportAt = Date().addingTimeInterval(-120)
+            failure = .query
+        case "e":
+            isAvailable = false; isConnected = false
+        case "f":
+            isConnected = false; revokeRequiresSettings = true
+        default:
+            break
+        }
+    }
+}
+#endif

@@ -18207,10 +18207,42 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(
             service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
         )
-        let initialResetSent = await waitUntil { transport.sent.count == 1 }
-        XCTAssertTrue(initialResetSent)
-        let stagedReset = transport.sent[0]
+        let initialProofSent = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(initialProofSent)
+        let proof = transport.sent[0]
+        XCTAssertEqual(proof.message["resetWorkout"] as? Bool, false)
+
+        // The watch claims another account. The claim is untrusted: nothing
+        // destructive is sent, the row only offers the user-confirmed relink.
+        var foreignClaim = syncRequest(claiming: proof.message)
+        foreignClaim["accountBinding"] = String(repeating: "f", count: 64)
+        foreignClaim["pairingGeneration"] = String(repeating: "e", count: 64)
+        service.receivedMessage(foreignClaim, from: proof.app)
+        let relinkOffered = await waitUntil {
+            service.devices.first?.linkedToAnotherAccount == true
+        }
+        XCTAssertTrue(relinkOffered)
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(transport.sent.count, 1)
+        XCTAssertFalse(service.isConnecting)
+        XCTAssertEqual(service.devices.first?.paired, false)
+
+        service.confirmReset(deviceID: deviceID.uuidString.lowercased())
+        let stagedResetSent = await waitUntil { transport.sent.count == 2 }
+        XCTAssertTrue(stagedResetSent)
+        let stagedReset = transport.sent[1]
         XCTAssertEqual(stagedReset.message["resetWorkout"] as? Bool, true)
+        XCTAssertEqual(stagedReset.message["planNames"] as? [String], [])
+        XCTAssertEqual(stagedReset.message["exercises"] as? [String], [])
+        XCTAssertEqual(
+            stagedReset.message["accountBinding"] as? String,
+            proof.message["accountBinding"] as? String
+        )
+        XCTAssertGreaterThan(
+            try XCTUnwrap(stagedReset.message["syncRevision"] as? Int64),
+            try XCTUnwrap(proof.message["syncRevision"] as? Int64)
+        )
+        XCTAssertEqual(service.devices.first?.linkedToAnotherAccount, false)
 
         // request_sync has no reset transaction correlation. Even when its
         // account/device/generation look like the target, it cannot consume the
@@ -18219,9 +18251,9 @@ final class CoreParityTests: XCTestCase {
             syncRequest(claiming: stagedReset.message),
             from: stagedReset.app
         )
-        let targetClaimRetrySent = await waitUntil { transport.sent.count == 2 }
+        let targetClaimRetrySent = await waitUntil { transport.sent.count == 3 }
         XCTAssertTrue(targetClaimRetrySent)
-        let targetClaimRetry = transport.sent[1].message
+        let targetClaimRetry = transport.sent[2].message
         XCTAssertEqual(targetClaimRetry["resetWorkout"] as? Bool, true)
         XCTAssertEqual(
             targetClaimRetry["syncId"] as? String,
@@ -18233,25 +18265,161 @@ final class CoreParityTests: XCTestCase {
         )
 
         service.deviceCharacteristicsDiscovered(device)
-        let reconnectRetrySent = await waitUntil { transport.sent.count == 3 }
+        let reconnectRetrySent = await waitUntil { transport.sent.count == 4 }
         XCTAssertTrue(reconnectRetrySent)
         XCTAssertEqual(
-            transport.sent[2].message["syncId"] as? String,
+            transport.sent[3].message["syncId"] as? String,
             stagedReset.message["syncId"] as? String
         )
-        XCTAssertEqual(transport.sent[2].message["resetWorkout"] as? Bool, true)
+        XCTAssertEqual(transport.sent[3].message["resetWorkout"] as? Bool, true)
 
         service.receivedMessage(
             syncAcknowledgement(for: stagedReset.message),
             from: stagedReset.app
         )
-        let ordinarySyncSent = await waitUntil { transport.sent.count == 4 }
+        let ordinarySyncSent = await waitUntil { transport.sent.count == 5 }
         XCTAssertTrue(ordinarySyncSent)
-        XCTAssertEqual(transport.sent[3].message["resetWorkout"] as? Bool, false)
+        XCTAssertEqual(transport.sent[4].message["resetWorkout"] as? Bool, false)
         XCTAssertNotEqual(
-            transport.sent[3].message["syncId"] as? String,
+            transport.sent[4].message["syncId"] as? String,
             stagedReset.message["syncId"] as? String
         )
+        XCTAssertEqual(service.devices.first?.paired, true)
+    }
+
+    private struct GarminPhoneConnectFixture {
+        let service: GarminPhoneSyncService
+        let transport: FakeGarminPhoneConnectIQTransport
+        let device: IQDevice
+        let store: WorkoutStore
+    }
+
+    /// One account, one reachable watch, empty defaults: a first connect.
+    private func garminPhoneFirstConnect(
+        named name: String,
+        accountID: String,
+        deviceID: UUID
+    ) throws -> GarminPhoneConnectFixture {
+        let defaults = temporaryDefaults(named: name)
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let account = AppAccountSession.local(id: accountID, displayName: "First connect")
+        try auth.installSessionForTesting(account)
+        let store = try WorkoutStore(
+            accountStorageKey: account.storageKey,
+            directoryURL: try temporaryDirectory(named: name)
+        )
+        _ = try store.addExercise(name: "First connect exercise")
+        let transport = FakeGarminPhoneConnectIQTransport()
+        let device = try XCTUnwrap(
+            IQDevice(id: deviceID, modelName: "Venu 3", friendlyName: "First Watch")
+        )
+        transport.selectionResponse = [device]
+        transport.statuses[deviceID] = .connected
+        let service = GarminPhoneSyncService(auth: auth, defaults: defaults, connectIQ: transport)
+        service.bind(workoutStore: store)
+        service.selectDevices()
+        XCTAssertTrue(
+            service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
+        )
+        return GarminPhoneConnectFixture(
+            service: service, transport: transport, device: device, store: store
+        )
+    }
+
+    func testGarminFirstConnectSendsPreservingProofAndBrandNewWatchAdoptsIt() async throws {
+        let deviceID = UUID(uuidString: "21212121-3030-4040-5050-606060606061")!
+        let fixture = try garminPhoneFirstConnect(
+            named: "garmin-first-connect-proof",
+            accountID: "00000000-0000-4000-8000-000000000501",
+            deviceID: deviceID
+        )
+        defer { withExtendedLifetime(fixture.store) {} }
+        let transport = fixture.transport
+        let proofSent = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(proofSent)
+        let proof = transport.sent[0]
+        // No marker, no legacy counter, no confirmed binding: still no reset.
+        XCTAssertEqual(proof.message["resetWorkout"] as? Bool, false)
+        XCTAssertNotEqual(proof.message["repairPairing"] as? Bool, true)
+        XCTAssertEqual(proof.message["planNames"] as? [String], [])
+        XCTAssertEqual(proof.message["exercises"] as? [String], ["First connect exercise"])
+        XCTAssertEqual(fixture.service.devices.first?.paired, false)
+        XCTAssertEqual(fixture.service.devices.first?.linkedToAnotherAccount, false)
+        XCTAssertTrue(fixture.service.isConnecting)
+
+        // A brand-new (unbound) watch adopts the proof and answers with the
+        // exact acknowledgement: paired without any reset ever being sent.
+        fixture.service.receivedMessage(syncAcknowledgement(for: proof.message), from: proof.app)
+        let paired = await waitUntil { fixture.service.devices.first?.paired == true }
+        XCTAssertTrue(paired)
+        XCTAssertFalse(fixture.service.isConnecting)
+        XCTAssertFalse(transport.sent.contains { $0.message["resetWorkout"] as? Bool == true })
+    }
+
+    func testGarminFirstConnectSameOwnerWatchRequestsNeverReset() async throws {
+        let deviceID = UUID(uuidString: "21212121-3030-4040-5050-606060606062")!
+        let fixture = try garminPhoneFirstConnect(
+            named: "garmin-first-connect-same-owner",
+            accountID: "00000000-0000-4000-8000-000000000502",
+            deviceID: deviceID
+        )
+        defer { withExtendedLifetime(fixture.store) {} }
+        let transport = fixture.transport
+        let proofSent = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(proofSent)
+        let proof = transport.sent[0]
+
+        // Same account and device, no generation yet (legacy or cloud-linked
+        // watch): the very same proof is sent again.
+        var legacyRequest = syncRequest(claiming: proof.message)
+        legacyRequest.removeValue(forKey: "pairingGeneration")
+        fixture.service.receivedMessage(legacyRequest, from: proof.app)
+        let proofResent = await waitUntil { transport.sent.count == 2 }
+        XCTAssertTrue(proofResent)
+        XCTAssertEqual(transport.sent[1].message["syncId"] as? String, proof.message["syncId"] as? String)
+        XCTAssertEqual(transport.sent[1].message["resetWorkout"] as? Bool, false)
+
+        // Same account and device, another generation (reinstalled iPhone app):
+        // the pairing is repaired in place.
+        var otherGeneration = syncRequest(claiming: proof.message)
+        otherGeneration["pairingGeneration"] = String(repeating: "9", count: 64)
+        fixture.service.receivedMessage(otherGeneration, from: proof.app)
+        let repairSent = await waitUntil { transport.sent.count == 3 }
+        XCTAssertTrue(repairSent)
+        XCTAssertEqual(transport.sent[2].message["repairPairing"] as? Bool, true)
+        // A repair payload carries no resetWorkout key at all.
+        XCTAssertNotEqual(transport.sent[2].message["resetWorkout"] as? Bool, true)
+        XCTAssertEqual(fixture.service.devices.first?.linkedToAnotherAccount, false)
+        XCTAssertFalse(transport.sent.contains { $0.message["resetWorkout"] as? Bool == true })
+    }
+
+    func testGarminForeignClaimForAnotherDeviceBindingOffersNoRelinkAndUnofferedConfirmIsIgnored() async throws {
+        let deviceID = UUID(uuidString: "21212121-3030-4040-5050-606060606063")!
+        let fixture = try garminPhoneFirstConnect(
+            named: "garmin-first-connect-foreign-device",
+            accountID: "00000000-0000-4000-8000-000000000503",
+            deviceID: deviceID
+        )
+        defer { withExtendedLifetime(fixture.store) {} }
+        let transport = fixture.transport
+        let proofSent = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(proofSent)
+        let proof = transport.sent[0]
+
+        // A watch bound to another phone names another device binding.
+        var otherPhoneClaim = syncRequest(claiming: proof.message)
+        otherPhoneClaim["accountBinding"] = String(repeating: "f", count: 64)
+        otherPhoneClaim["deviceBinding"] = "99999999-2222-3333-4444-555555555555"
+        fixture.service.receivedMessage(otherPhoneClaim, from: proof.app)
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(fixture.service.devices.first?.linkedToAnotherAccount, false)
+
+        // Without the published state the destructive action does nothing.
+        fixture.service.confirmReset(deviceID: deviceID.uuidString.lowercased())
+        fixture.service.confirmReset(deviceID: "not-a-device")
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(transport.sent.count, 1)
+        XCTAssertFalse(transport.sent.contains { $0.message["resetWorkout"] as? Bool == true })
     }
 
     func testGarminPhoneDuplicateDeviceUUIDsInSelectionResponseAreRejected() throws {
@@ -18325,24 +18493,27 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(selectedSyncSent)
 
         let firstTransition = transport.sent[0]
-        XCTAssertEqual(firstTransition.message["resetWorkout"] as? Bool, true)
+        // A first connect is the preserving proof with the real catalog.
+        XCTAssertEqual(firstTransition.message["resetWorkout"] as? Bool, false)
         XCTAssertEqual(firstTransition.message["planNames"] as? [String], [])
-        XCTAssertEqual(firstTransition.message["exercises"] as? [String], [])
+        XCTAssertEqual(
+            firstTransition.message["exercises"] as? [String],
+            ["Garmin bootstrap exercise"]
+        )
         let firstRevision = try XCTUnwrap(firstTransition.message["syncRevision"] as? Int64)
         let firstAccountBinding = try XCTUnwrap(
             firstTransition.message["accountBinding"] as? String
         )
 
-        // A lost acknowledgement must retry the exact staged transition. The
-        // watch treats the duplicate revision/id as already applied, so it does
-        // not run destructive account-transition cleanup a second time.
+        // A lost acknowledgement must retry the exact staged proof; a first
+        // connect never asks the watch to reset.
         defaults.set(AppLanguage.russian.rawValue, forKey: "app-language")
         try? await Task.sleep(for: .milliseconds(20))
         service.deviceCharacteristicsDiscovered(device)
         let lostAckRetrySent = await waitUntil { transport.sent.count >= 2 }
         XCTAssertTrue(lostAckRetrySent)
         let lostAckRetry = transport.sent[1]
-        XCTAssertEqual(lostAckRetry.message["resetWorkout"] as? Bool, true)
+        XCTAssertEqual(lostAckRetry.message["resetWorkout"] as? Bool, false)
         XCTAssertEqual(
             lostAckRetry.message["syncId"] as? String,
             firstTransition.message["syncId"] as? String
@@ -18423,6 +18594,30 @@ final class CoreParityTests: XCTestCase {
         }
         XCTAssertTrue(accountTransitionSent)
 
+        // Account switch on one iPhone: the connect itself is only the
+        // preserving proof. Account A's data stays on the watch until the
+        // user confirms the relink.
+        let accountProof = try XCTUnwrap(transport.sent.last)
+        XCTAssertEqual(accountProof.message["resetWorkout"] as? Bool, false)
+        XCTAssertNotEqual(accountProof.message["accountBinding"] as? String, firstAccountBinding)
+        XCTAssertEqual(service.devices.first?.linkedToAnotherAccount, true)
+        XCTAssertEqual(service.devices.first?.paired, false)
+        XCTAssertFalse(service.isConnecting)
+        service.deviceCharacteristicsDiscovered(device)
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertFalse(transport.sent.contains { sent in
+            sent.message["accountBinding"] as? String != firstAccountBinding &&
+                sent.message["resetWorkout"] as? Bool == true
+        })
+
+        let beforeConfirmedRelink = transport.sent.count
+        service.confirmReset(deviceID: deviceID.uuidString.lowercased())
+        let confirmedRelinkSent = await waitUntil {
+            transport.sent.count > beforeConfirmedRelink
+        }
+        XCTAssertTrue(confirmedRelinkSent)
+        XCTAssertEqual(service.devices.first?.linkedToAnotherAccount, false)
+
         let accountTransition = try XCTUnwrap(transport.sent.last)
         XCTAssertEqual(accountTransition.message["resetWorkout"] as? Bool, true)
         XCTAssertEqual(accountTransition.message["planNames"] as? [String], [])
@@ -18437,7 +18632,7 @@ final class CoreParityTests: XCTestCase {
         )
         XCTAssertGreaterThan(
             try XCTUnwrap(accountTransition.message["syncRevision"] as? Int64),
-            firstRevision
+            try XCTUnwrap(accountProof.message["syncRevision"] as? Int64)
         )
 
         let countBeforeStaleAck = transport.sent.count
@@ -18468,7 +18663,9 @@ final class CoreParityTests: XCTestCase {
             transport.sent.count > beforeReturningToAccountA
         }
         XCTAssertTrue(returnTransitionSent)
-        XCTAssertEqual(transport.sent.last?.message["resetWorkout"] as? Bool, true)
+        // Returning to A is an account switch too: proof first, relink offered.
+        XCTAssertEqual(transport.sent.last?.message["resetWorkout"] as? Bool, false)
+        XCTAssertEqual(service.devices.first?.linkedToAnotherAccount, true)
         XCTAssertEqual(
             transport.sent.last?.message["accountBinding"] as? String,
             firstAccountBinding
@@ -18567,9 +18764,10 @@ final class CoreParityTests: XCTestCase {
         service.receivedMessage(crossDeviceRequest, from: proofRetry.app)
         try? await Task.sleep(for: .milliseconds(50))
         XCTAssertEqual(transport.sent.count, 2)
+        XCTAssertEqual(service.devices.first?.linkedToAnotherAccount, false)
 
-        // A same-device foreign claim is still untrusted when the phone has no
-        // separately persisted transition that names its exact prior binding.
+        // A same-device foreign claim is untrusted: it sends nothing and only
+        // offers the user-confirmed relink.
         service.receivedMessage(
             syncRequest(claiming: [
                 "bindingVersion": GarminPhoneWorkoutParser.bindingVersion,
@@ -18582,21 +18780,24 @@ final class CoreParityTests: XCTestCase {
         try? await Task.sleep(for: .milliseconds(50))
         XCTAssertEqual(transport.sent.count, 2)
         XCTAssertEqual(transport.sent.last?.message["resetWorkout"] as? Bool, false)
+        XCTAssertEqual(service.devices.first?.linkedToAnotherAccount, true)
 
+        // The exact acknowledgement of the proof still wins: the watch is ours.
         service.receivedMessage(
             syncAcknowledgement(for: proofRetry.message),
             from: proofRetry.app
         )
         let ordinaryASent = await waitUntil { transport.sent.count == 3 }
         XCTAssertTrue(ordinaryASent)
+        XCTAssertEqual(service.devices.first?.linkedToAnotherAccount, false)
         XCTAssertEqual(transport.sent[2].message["resetWorkout"] as? Bool, false)
         XCTAssertNotEqual(
             transport.sent[2].message["syncId"] as? String,
             proofA.message["syncId"] as? String
         )
 
-        // B receives an explicit staged transition, but its ACK is lost after
-        // the watch may already have applied it.
+        // B connects with a proof, confirms the relink, and the ACK of that
+        // explicit reset is lost after the watch may already have applied it.
         try auth.installSessionForTesting(accountB)
         let accountBActivated = await waitUntil { service.devices.isEmpty }
         XCTAssertTrue(accountBActivated)
@@ -18610,19 +18811,25 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(
             service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
         )
-        let resetBSent = await waitUntil { transport.sent.count == 4 }
+        let proofBSent = await waitUntil { transport.sent.count == 4 }
+        XCTAssertTrue(proofBSent)
+        XCTAssertEqual(transport.sent[3].message["accountBinding"] as? String, bindingB)
+        XCTAssertEqual(transport.sent[3].message["resetWorkout"] as? Bool, false)
+        XCTAssertEqual(service.devices.first?.linkedToAnotherAccount, true)
+        service.confirmReset(deviceID: deviceBinding)
+        let resetBSent = await waitUntil { transport.sent.count == 5 }
         XCTAssertTrue(resetBSent)
-        let resetB = transport.sent[3]
+        let resetB = transport.sent[4]
         XCTAssertEqual(resetB.message["accountBinding"] as? String, bindingB)
         XCTAssertEqual(resetB.message["resetWorkout"] as? Bool, true)
 
         // Returning to A cannot assume either that B applied or that it did not.
-        // It sends a preserving proof first, then an exact B claim from this
-        // physical watch authorizes a new explicit reset transition to A.
+        // It sends a preserving proof first; a B claim from this physical watch
+        // only offers the relink, and the user's confirmation stages the reset.
         try auth.installSessionForTesting(accountA)
         try? await Task.sleep(for: .milliseconds(50))
         service.bind(workoutStore: storeA)
-        let ambiguousAProofSent = await waitUntil { transport.sent.count >= 5 }
+        let ambiguousAProofSent = await waitUntil { transport.sent.count >= 6 }
         guard ambiguousAProofSent, let ambiguousAProof = transport.sent.last else {
             XCTFail("Returning to A did not send a preserving ownership proof")
             return
@@ -18648,9 +18855,16 @@ final class CoreParityTests: XCTestCase {
             syncRequest(claiming: resetB.message),
             from: ambiguousAProof.app
         )
-        let explicitResetASent = await waitUntil { transport.sent.count >= 6 }
+        let relinkToAOffered = await waitUntil {
+            service.devices.first?.linkedToAnotherAccount == true
+        }
+        XCTAssertTrue(relinkToAOffered)
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(transport.sent.count, beforeStaleBClaim)
+        service.confirmReset(deviceID: deviceBinding)
+        let explicitResetASent = await waitUntil { transport.sent.count > beforeStaleBClaim }
         guard explicitResetASent, let explicitResetA = transport.sent.last?.message else {
-            XCTFail("The proven B claim did not stage an explicit reset to A")
+            XCTFail("The confirmed relink did not stage an explicit reset to A")
             return
         }
         XCTAssertEqual(explicitResetA["accountBinding"] as? String, bindingA)
@@ -18730,8 +18944,8 @@ final class CoreParityTests: XCTestCase {
         let accountBTransitionSent = await waitUntil { transport.sent.count == 3 }
         XCTAssertTrue(accountBTransitionSent)
         // The missing A completion makes the physical owner ambiguous. B first
-        // sends a preserving proof; an authenticated request claiming A then
-        // escalates to a separately persisted explicit reset for B.
+        // sends a preserving proof; a request claiming A then only offers the
+        // relink, and the user's confirmation stages the explicit reset for B.
         XCTAssertEqual(transport.sent[2].message["resetWorkout"] as? Bool, false)
         XCTAssertNotEqual(
             transport.sent[2].message["accountBinding"] as? String,
@@ -18741,6 +18955,13 @@ final class CoreParityTests: XCTestCase {
             syncRequest(claiming: first),
             from: transport.sent[2].app
         )
+        let relinkOffered = await waitUntil {
+            service.devices.first?.linkedToAnotherAccount == true
+        }
+        XCTAssertTrue(relinkOffered)
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(transport.sent.count, 3)
+        service.confirmReset(deviceID: deviceID.uuidString.lowercased())
         let explicitBTransitionSent = await waitUntil { transport.sent.count == 4 }
         XCTAssertTrue(explicitBTransitionSent)
         XCTAssertEqual(transport.sent[3].message["resetWorkout"] as? Bool, true)
@@ -18781,7 +19002,7 @@ final class CoreParityTests: XCTestCase {
         let handshakeSent = await waitUntil { transport.sent.count == 1 }
         XCTAssertTrue(handshakeSent)
         let handshake = try XCTUnwrap(transport.sent.first)
-        XCTAssertEqual(handshake.message["resetWorkout"] as? Bool, true)
+        XCTAssertEqual(handshake.message["resetWorkout"] as? Bool, false)
         XCTAssertEqual(handshake.message["planNames"] as? [String], [])
         service.receivedMessage(syncAcknowledgement(for: handshake.message), from: handshake.app)
         let planSent = await waitUntil { transport.sent.count == 2 }
@@ -19171,20 +19392,27 @@ final class CoreParityTests: XCTestCase {
         let resent = await waitUntil { transport.sent.count == 2 }
         XCTAssertTrue(resent)
         XCTAssertEqual(service.devices.first?.lite, true)
-        let handshake = transport.sent[1].message
-        XCTAssertEqual(handshake["resetWorkout"] as? Bool, true)
-        XCTAssertEqual(handshake["planNames"] as? [String], [])
-        XCTAssertNil(handshake["exercises"])
-        service.receivedMessage(syncAcknowledgement(for: handshake), from: transport.sent[1].app)
-        let followUp = await waitUntil { transport.sent.count == 3 }
-        XCTAssertTrue(followUp)
-        let binding = transport.sent[2].message
+        // The matching request confirms the preserving proof, so the next
+        // message is already the ordinary binding-only sync: no reset, no plan.
+        let binding = transport.sent[1].message
+        XCTAssertEqual(binding["resetWorkout"] as? Bool, false)
         XCTAssertEqual(binding["planNames"] as? [String], [])
         XCTAssertEqual(binding["planWeights"] as? [Double], [])
         XCTAssertEqual(binding["planReps"] as? [Int], [])
         XCTAssertNil(binding["exercises"])
-        XCTAssertEqual(binding["accountBinding"] as? String, handshake["accountBinding"] as? String)
-        XCTAssertEqual(binding["pairingGeneration"] as? String, handshake["pairingGeneration"] as? String)
+        XCTAssertEqual(
+            binding["accountBinding"] as? String,
+            transport.sent[0].message["accountBinding"] as? String
+        )
+        XCTAssertEqual(
+            binding["pairingGeneration"] as? String,
+            transport.sent[0].message["pairingGeneration"] as? String
+        )
+        XCTAssertEqual(service.devices.first?.paired, true)
+        // Its acknowledgement must not release the saved plan either.
+        service.receivedMessage(syncAcknowledgement(for: binding), from: transport.sent[1].app)
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(transport.sent.count, 2)
         // The lite mark is not shown as a delivered plan.
         XCTAssertNotEqual(service.planDeliveryMessages[id.uuidString.lowercased()],
             gymText("Plan received by the watch.", "Годинник отримав план.", "Часы получили план.",

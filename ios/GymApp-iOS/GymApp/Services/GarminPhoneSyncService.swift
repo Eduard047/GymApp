@@ -13,6 +13,9 @@ struct GarminPhoneDeviceSummary: Identifiable, Equatable {
     var lite: Bool = false
     /// The watch acknowledged this iPhone's account/device/generation binding.
     var paired: Bool = false
+    /// The watch is linked to another GymApp account. Only the user can relink
+    /// it (`confirmReset(deviceID:)`), because relinking erases its workout data.
+    var linkedToAnotherAccount: Bool = false
 }
 
 struct GarminPhoneBinding: Codable, Equatable {
@@ -1950,6 +1953,9 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
     private var syncDeliveryTimeoutTasks: [UUID: Task<Void, Never>] = [:]
     private var pendingDeviceSelection: GarminDeviceSelectionTransaction?
     private var connectingTask: Task<Void, Never>?
+    /// Device bindings of selected watches that belong to another account.
+    /// In memory only: the next proof or watch request publishes it again.
+    private var devicesLinkedToAnotherAccount: Set<String> = []
 
     init(
         auth: AuthService,
@@ -2093,10 +2099,34 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         return true
     }
 
+    /// The only way a destructive reset is staged: the user confirmed relinking
+    /// a watch that is linked to another account. A connect, an account switch
+    /// and a watch claim never erase watch data on their own.
+    func confirmReset(deviceID: String) {
+        guard let id = UUID(uuidString: deviceID),
+              let app = apps[id],
+              let binding = binding(for: app.device),
+              devicesLinkedToAnotherAccount.contains(binding.device),
+              !isBindingConfirmed(binding) else {
+            return
+        }
+        stageHandshake(.reset, binding: binding, to: app)
+        guard pendingAuthTransition(binding)?.handshake == .reset else { return }
+        devicesLinkedToAnotherAccount.remove(binding.device)
+        refreshDeviceSummaries()
+        beginConnectingIfNeeded()
+    }
+
+    private func markLinkedToAnotherAccount(_ binding: GarminPhoneBinding) {
+        guard devicesLinkedToAnotherAccount.insert(binding.device).inserted else { return }
+        refreshDeviceSummaries()
+    }
+
     private func beginConnectingIfNeeded() {
         connectingTask?.cancel()
         connectingTask = nil
-        guard !rawDevices.isEmpty, !devices.allSatisfy(\.paired) else {
+        // A watch that waits for the relink decision is not connecting.
+        guard devices.contains(where: { !$0.paired && !$0.linkedToAnotherAccount }) else {
             isConnecting = false
             return
         }
@@ -2117,7 +2147,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         stopConnecting()
         publishStatus(
             gymText(
-                "Couldn't connect. Open the app on the watch and try again.",
+                "Couldn’t connect. Open the app on the watch and try again.",
                 "Не вдалося підключити. Відкрийте застосунок на годиннику й повторіть.",
                 "Не удалось подключить. Откройте приложение на часах и повторите.",
                 languageCode: normalizedLanguage(gymCurrentLanguageCode(defaults: defaults))
@@ -2148,6 +2178,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         apps.removeAll()
         rawDevices.removeAll()
         devices.removeAll()
+        devicesLinkedToAnotherAccount.removeAll()
         planDeliveryMessages.removeAll()
         syncDeliveryTimeoutTasks.values.forEach { $0.cancel() }
         syncDeliveryTimeoutTasks.removeAll()
@@ -2211,6 +2242,9 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         connectIQ.unregisterAllDeviceEvents(delegate: self)
         connectIQ.unregisterAllAppMessages(delegate: self)
         apps.removeAll()
+        devicesLinkedToAnotherAccount.formIntersection(
+            rawDevices.keys.map { $0.uuidString.lowercased() }
+        )
         for device in rawDevices.values {
             connectIQ.registerDeviceEvents(device, delegate: self)
             guard let app = IQApp(
@@ -2230,17 +2264,22 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         devices = rawDevices.values
             .map { device in
                 let connected = connectIQ.deviceStatus(device) == .connected
+                let deviceBinding = (device.uuid as UUID).uuidString.lowercased()
+                let paired = binding(for: device).map(isBindingConfirmed) ?? false
                 return GarminPhoneDeviceSummary(
-                    id: (device.uuid as UUID).uuidString.lowercased(),
+                    id: deviceBinding,
                     name: device.friendlyName,
                     model: device.modelName,
                     connected: connected,
-                    lite: isLiteWatch(deviceBinding: (device.uuid as UUID).uuidString.lowercased()),
-                    paired: binding(for: device).map(isBindingConfirmed) ?? false
+                    lite: isLiteWatch(deviceBinding: deviceBinding),
+                    paired: paired,
+                    linkedToAnotherAccount: !paired &&
+                        devicesLinkedToAnotherAccount.contains(deviceBinding)
                 )
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        if isConnecting, !devices.isEmpty, devices.allSatisfy(\.paired) {
+        if isConnecting, !devices.isEmpty,
+           devices.allSatisfy({ $0.paired || $0.linkedToAnotherAccount }) {
             stopConnecting()
         }
     }
@@ -2374,6 +2413,9 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             transition = nil
         } else if let existing = pendingAuthTransition(binding),
                   existing.binding == binding {
+            if existing.handshake != .reset, lastConfirmedAccountDiffers(binding) {
+                markLinkedToAnotherAccount(binding)
+            }
             transition = existing
         } else {
             guard let revision = nextSyncRevision(binding: binding) else {
@@ -2382,22 +2424,26 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                 return
             }
             let previousMarker = deviceHandshakeMarker(binding)
-            let handshake: GarminPhoneBindingHandshake =
-                shouldStartWithPreservingProof(
-                    binding,
-                    deviceMarker: previousMarker
-                ) ? .proof : .reset
+            // An unconfirmed binding always starts with the preserving proof
+            // (resetWorkout=false), exactly like Android's Connect: a bound
+            // watch keeps its running workout and its unsent workouts. When
+            // this iPhone itself last confirmed the watch for another account,
+            // the row offers the relink right away; the proof still goes out
+            // because an unbound watch adopts it without losing anything.
+            if lastConfirmedAccountDiffers(binding) {
+                markLinkedToAnotherAccount(binding)
+            }
             let pending = GarminPhonePendingAuthTransition(
                 binding: binding,
                 syncID: UUID().uuidString.lowercased(),
                 revision: revision,
                 language: currentLanguage,
-                exercises: handshake == .reset ? [] : currentExercises,
-                handshake: handshake
+                exercises: currentExercises,
+                handshake: .proof
             )
             guard savePendingAuthTransition(
                 pending,
-                resetAuthorizationFrom: handshake == .proof ? previousMarker : nil
+                resetAuthorizationFrom: previousMarker
             ) else {
                 syncInFlight.removeValue(forKey: deviceID)
                 publishStatus("The Garmin account transition could not be stored safely.", isError: true)
@@ -2619,21 +2665,19 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         if claim.lite { markLiteWatch(deviceBinding: claim.device) }
 
         if claim.account != binding.account {
-            guard let claimedGeneration = claim.pairingGeneration,
-                  resetAuthorization(
-                      for: binding,
-                      claimedPreviousBinding: GarminPhoneBinding(
-                          account: claim.account,
-                          device: claim.device,
-                          pairingGeneration: claimedGeneration
-                      )
-                  ) != nil else {
-                // A watch claim is untrusted. It can only select the destructive
-                // path when it exactly proves the previous side of a transition
-                // that the phone already staged and durably correlated.
+            // A watch claim is untrusted and never selects the destructive
+            // path. For an unconfirmed binding it only shows the user that the
+            // watch is linked to another account; `confirmReset(deviceID:)`
+            // is the single place that stages the reset.
+            guard !isBindingConfirmed(binding) else { return }
+            if pendingAuthTransition(binding)?.handshake == .reset {
+                // The user already confirmed the relink and the watch has not
+                // applied it yet: resend the exact staged transaction.
+                cancelSyncAttempt(deviceID: app.device.uuid as UUID)
+                sendSync(to: app)
                 return
             }
-            stageHandshake(.reset, binding: binding, to: app)
+            markLinkedToAnotherAccount(binding)
             return
         }
         guard claim.device == binding.device else { return }
@@ -3385,28 +3429,19 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             defaults.bool(forKey: key)
     }
 
-    private func shouldStartWithPreservingProof(
-        _ binding: GarminPhoneBinding,
-        deviceMarker: GarminPhoneDeviceHandshakeMarker?
-    ) -> Bool {
-        if deviceMarker != nil {
-            // An unacknowledged transition may or may not have reached the watch.
-            // Probe non-destructively; a bound watch request can then prove whether
-            // an explicit reset or pairing repair is actually required.
-            return true
-        }
-        guard defaults.string(forKey: currentDeviceBindingKey(binding)) == nil,
-              let legacy = defaults.object(
-                  forKey: legacySyncRevisionKey(binding)
-              ) as? NSNumber,
-              CFGetTypeID(legacy) != CFBooleanGetTypeID() else {
+    private func currentDeviceAccountKey(_ binding: GarminPhoneBinding) -> String {
+        "garmin-phone-current-account.v1.\(Data(binding.device.utf8).garminSHA256Hex)"
+    }
+
+    /// True when this iPhone itself last confirmed this watch for a different
+    /// account (an account switch on one phone). Unknown owners are not guessed:
+    /// they are learned from the watch's own request.
+    private func lastConfirmedAccountDiffers(_ binding: GarminPhoneBinding) -> Bool {
+        guard let account = defaults.string(forKey: currentDeviceAccountKey(binding)),
+              account.isGarminBinding else {
             return false
         }
-        // Released iOS persisted this counter before transport completion, so it
-        // is evidence of an attempted sync only. A reset=false proof preserves a
-        // same-owner active workout and never silently treats the attempt as ACKed.
-        return (1 ... GarminPhoneSyncProtocol.maximumSyncRevision)
-            .contains(legacy.int64Value)
+        return account != binding.account
     }
 
     private func confirmBinding(_ binding: GarminPhoneBinding) -> Bool {
@@ -3419,6 +3454,10 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         defaults.set(true, forKey: key)
         guard defaults.bool(forKey: key) else { return false }
         rememberStateKey(key, storageKey: activeStorageKey)
+        // Device-scoped like the current binding: lets the next account on this
+        // iPhone know the watch is linked elsewhere without asking the watch.
+        defaults.set(binding.account, forKey: currentDeviceAccountKey(binding))
+        devicesLinkedToAnotherAccount.remove(binding.device)
         return true
     }
 
@@ -3723,3 +3762,49 @@ private extension String {
         }
     }
 }
+
+#if DEBUG
+extension GarminPhoneSyncService {
+    /// QA audit seed (`-qaWatches`): forces the Garmin card rows for screenshots. DEBUG only.
+    func applyQAPreset(_ preset: String) {
+        let language = gymCurrentLanguageCode()
+        isConnecting = false
+        statusMessage = nil
+        statusIsError = false
+        switch preset {
+        case "a":
+            devices = [
+                GarminPhoneDeviceSummary(id: "qa1", name: "Forerunner 965", model: "Forerunner 965", connected: true, paired: true),
+                GarminPhoneDeviceSummary(id: "qa2", name: "f\u{0113}nix 6S Pro Solar Edition", model: "f\u{0113}nix 6S Pro Solar", connected: true),
+                GarminPhoneDeviceSummary(id: "qa3", name: "Venu Sq 2 Music", model: "Venu Sq 2", connected: false, lite: true)
+            ]
+        case "b":
+            devices = [
+                GarminPhoneDeviceSummary(id: "qa4", name: "Instinct 2X Solar Tactical", model: "Instinct 2X Solar", connected: false, paired: true)
+            ]
+            statusMessage = gymText(
+                "Couldn’t connect. Open the app on the watch and try again.",
+                "Не вдалося підключити. Відкрийте застосунок на годиннику й повторіть.",
+                "Не удалось подключить. Откройте приложение на часах и повторите.",
+                languageCode: language
+            )
+            statusIsError = true
+        case "c":
+            devices = []
+            isConnecting = true
+        case "d":
+            devices = [
+                GarminPhoneDeviceSummary(id: "qa4", name: "Instinct 2X Solar Tactical", model: "Instinct 2X Solar", connected: true)
+            ]
+            statusMessage = gymText(
+                "Plan saved on this iPhone. Open GymApp on the watch to receive it.",
+                "План збережено на iPhone. Відкрийте GymApp на годиннику, щоб отримати його.",
+                "План сохранён на iPhone. Откройте GymApp на часах, чтобы получить его.",
+                languageCode: language
+            )
+        default:
+            devices = []
+        }
+    }
+}
+#endif
