@@ -159,4 +159,40 @@ class WorkoutMathTest {
         window.close()
         assertNull(window.consume(1L))
     }
+
+    @Test
+    fun clampIndexKeepsStalePickerIndexInsideShrunkList() {
+        // Wheel saved at 110 of a 1..120 list, then the list shrinks back to 1..100.
+        val shrunk = WorkoutMath.repOptions(80)
+        assertEquals(99, WorkoutMath.clampIndex(110, shrunk.size))
+        assertEquals(100, WorkoutMath.optionAt(shrunk, 110))
+        assertEquals(0, WorkoutMath.clampIndex(-3, shrunk.size))
+        assertEquals(1, WorkoutMath.optionAt(shrunk, -3))
+        assertEquals(42, WorkoutMath.optionAt(shrunk, 41))
+        val weights = WorkoutMath.weightOptions(2.5)
+        assertEquals(weights.last(), WorkoutMath.optionAt(weights, weights.size + 50))
+    }
+
+    @Test
+    fun clampIndexHandlesEmptyList() {
+        assertEquals(0, WorkoutMath.clampIndex(5, 0))
+        assertEquals(0, WorkoutMath.clampIndex(0, -1))
+        assertNull(WorkoutMath.optionAt(emptyList<Int>(), 0))
+        assertNull(WorkoutMath.optionAt(emptyList<Double>(), 7))
+        assertEquals(0, WorkoutMath.closestIndex(emptyList(), 60.0))
+        assertEquals(0, WorkoutMath.repIndex(emptyList(), 8))
+    }
+
+    @Test
+    fun missingValueSelectsNearestOption() {
+        val weights = listOf(0.0, 2.5, 5.0, 7.5)
+        assertEquals(1, WorkoutMath.closestIndex(weights, 3.0))
+        assertEquals(2, WorkoutMath.closestIndex(weights, 4.0))
+        assertEquals(3, WorkoutMath.closestIndex(weights, 500.0))
+        assertEquals(0, WorkoutMath.closestIndex(weights, -1.0))
+        // Target above the shrunk reps list lands on its last entry.
+        val reps = WorkoutMath.repOptions(null)
+        assertEquals(reps.lastIndex, WorkoutMath.repIndex(reps, 120))
+        assertEquals(0, WorkoutMath.repIndex(reps, 0))
+    }
 }

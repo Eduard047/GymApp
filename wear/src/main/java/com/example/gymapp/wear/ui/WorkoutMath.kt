@@ -175,6 +175,15 @@ object WorkoutMath {
         return (reps.coerceIn(options.first(), options.last()) - options.first())
     }
 
+    /**
+     * [index] kept inside a list of [size] options (0 for an empty list). A saved picker can hold an
+     * index from a longer list (exercise switched, next target changed), so every read goes through this.
+     */
+    fun clampIndex(index: Int, size: Int): Int = if (size <= 0) 0 else index.coerceIn(0, size - 1)
+
+    /** Option at [index] clamped to the list; null only when the list is empty. */
+    fun <T> optionAt(options: List<T>, index: Int): T? = options.getOrNull(clampIndex(index, options.size))
+
     /** Decimals only when needed (up to 3, like the stored weight), locale separator: 60 / 62,5 / 1,25. */
     fun formatWeight(weight: Double, locale: Locale): String {
         val format = DecimalFormat("0.###", DecimalFormatSymbols.getInstance(locale))

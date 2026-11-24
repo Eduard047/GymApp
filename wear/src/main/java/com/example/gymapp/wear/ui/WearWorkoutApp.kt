@@ -920,6 +920,21 @@ private fun SetEntryScreen(
         initiallySelectedIndex = WorkoutMath.repIndex(repOptions, target.reps),
         shouldRepeatOptions = false
     )
+    // The picker states are saveable and outlive a change of their option lists (another exercise
+    // picked, next target changed). When the count differs, resize the wheel and move it to the
+    // target; reads below are clamped for the frame before this runs.
+    LaunchedEffect(weightOptions) {
+        if (weightOptions.isNotEmpty() && weightState.numberOfOptions != weightOptions.size) {
+            weightState.numberOfOptions = weightOptions.size
+            weightState.scrollToOption(WorkoutMath.closestIndex(weightOptions, target.weight))
+        }
+    }
+    LaunchedEffect(repOptions) {
+        if (repOptions.isNotEmpty() && repsState.numberOfOptions != repOptions.size) {
+            repsState.numberOfOptions = repOptions.size
+            repsState.scrollToOption(WorkoutMath.repIndex(repOptions, target.reps))
+        }
+    }
     var selectedColumn by remember { mutableIntStateOf(0) }
     val weightLabel = stringResource(R.string.label_weight)
     val repsLabel = stringResource(R.string.label_reps)
@@ -989,11 +1004,13 @@ private fun SetEntryScreen(
                         onSelected = { selectedColumn = 0 },
                         modifier = Modifier.width(weightWidth).height(rowHeight * 3),
                         contentDescription = {
-                            "$weightLabel, ${WorkoutMath.formatWeight(weightOptions[weightState.selectedOptionIndex], loc)} $kg"
+                            val weight = WorkoutMath.optionAt(weightOptions, weightState.selectedOptionIndex)
+                            "$weightLabel, ${weight?.let { WorkoutMath.formatWeight(it, loc) }.orEmpty()} $kg"
                         },
                         option = { index, columnSelected ->
+                            val weight = WorkoutMath.optionAt(weightOptions, index)
                             PickerValue(
-                                text = WorkoutMath.formatWeight(weightOptions[index], loc),
+                                text = weight?.let { WorkoutMath.formatWeight(it, loc) }.orEmpty(),
                                 current = index == weightState.selectedOptionIndex,
                                 columnSelected = columnSelected,
                                 rowHeight = rowHeight
@@ -1006,11 +1023,11 @@ private fun SetEntryScreen(
                         onSelected = { selectedColumn = 1 },
                         modifier = Modifier.width(repsWidth).height(rowHeight * 3),
                         contentDescription = {
-                            "$repsLabel, ${repOptions[repsState.selectedOptionIndex]}"
+                            "$repsLabel, ${WorkoutMath.optionAt(repOptions, repsState.selectedOptionIndex) ?: ""}"
                         },
                         option = { index, columnSelected ->
                             PickerValue(
-                                text = repOptions[index].toString(),
+                                text = WorkoutMath.optionAt(repOptions, index)?.toString().orEmpty(),
                                 current = index == repsState.selectedOptionIndex,
                                 columnSelected = columnSelected,
                                 rowHeight = rowHeight
@@ -1023,12 +1040,10 @@ private fun SetEntryScreen(
         }
         EdgeButton(
             onClick = {
-                if (exercise != null) {
-                    onSave(
-                        exercise,
-                        weightOptions[weightState.selectedOptionIndex],
-                        repOptions[repsState.selectedOptionIndex]
-                    )
+                val weight = WorkoutMath.optionAt(weightOptions, weightState.selectedOptionIndex)
+                val repsValue = WorkoutMath.optionAt(repOptions, repsState.selectedOptionIndex)
+                if (exercise != null && weight != null && repsValue != null) {
+                    onSave(exercise, weight, repsValue)
                 }
             },
             enabled = exercise != null,
