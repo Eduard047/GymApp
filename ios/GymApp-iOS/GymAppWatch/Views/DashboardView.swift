@@ -5,6 +5,7 @@ import SwiftUI
 struct DashboardView: View {
     @EnvironmentObject private var model: WatchAppModel
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     #if DEBUG
     @State private var showEntry = WatchDebugSeed.isScreen("set-entry", "picker")
     #else
@@ -22,12 +23,13 @@ struct DashboardView: View {
         }
     }
 
+    @ViewBuilder
     private func content(_ workout: WatchActiveWorkout, nowMillis: Int64) -> some View {
         let elapsedSeconds = WatchWorkoutModel.activeMillis(workout, nowMillis: nowMillis) / 1_000
         let elapsed = isLuminanceReduced
             ? WatchCrownSteps.formatDuration(seconds: elapsedSeconds - elapsedSeconds % 60).dropLast(3).description
             : WatchCrownSteps.formatDuration(seconds: elapsedSeconds)
-        return VStack(alignment: .leading, spacing: 4) {
+        let stack = VStack(alignment: .leading, spacing: 4) {
             HeartRateRow(health: model.health, elapsed: elapsed)
             if let remaining = WatchWorkoutModel.restRemainingSeconds(workout, nowMillis: nowMillis) {
                 resting(workout, remaining: remaining, nowMillis: nowMillis)
@@ -36,8 +38,19 @@ struct DashboardView: View {
             }
         }
         .foregroundStyle(isLuminanceReduced ? WatchTheme.textSecondary : WatchTheme.text)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .scenePadding(.horizontal)
+        if dynamicTypeSize.isAccessibilitySize {
+            // Accessibility text does not fit one fixed screen: scroll from the top (below the
+            // clock) instead of centring an overflowing stack; the action stays reachable.
+            ScrollView {
+                stack
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .scenePadding(.horizontal)
+            }
+        } else {
+            stack
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .scenePadding(.horizontal)
+        }
     }
 
     @ViewBuilder

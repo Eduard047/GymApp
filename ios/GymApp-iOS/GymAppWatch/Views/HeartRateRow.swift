@@ -14,6 +14,8 @@ struct HeartRateRow: View {
                 .monospacedDigit()
         }
         .font(.body.weight(.medium))
+        // Capped so the row stays one line under the system clock at accessibility sizes.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 
     @ViewBuilder private var heart: some View {

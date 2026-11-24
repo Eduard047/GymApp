@@ -3,9 +3,18 @@ import SwiftUI
 /// Unsent workouts: status per item, Send now, Discard (with the confirmation sheet).
 struct OutboxView: View {
     @EnvironmentObject private var model: WatchAppModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         List {
+            if dynamicTypeSize.isAccessibilitySize {
+                // The inline bar clips long titles at accessibility sizes: the title is a heading here.
+                Text(model.text(.queuedTitle))
+                    .font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                    .listRowBackground(Color.clear)
+            }
             ForEach(model.outbox, id: \.requestId) { item in
                 NavigationLink {
                     OutboxItemView(requestId: item.requestId)
@@ -24,7 +33,7 @@ struct OutboxView: View {
                 }
             }
         }
-        .navigationTitle(model.text(.queuedTitle))
+        .navigationTitle(dynamicTypeSize.isAccessibilitySize ? "" : model.text(.queuedTitle))
         .navigationBarTitleDisplayMode(.inline)
     }
 

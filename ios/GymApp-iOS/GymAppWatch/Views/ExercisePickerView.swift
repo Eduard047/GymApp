@@ -3,11 +3,20 @@ import SwiftUI
 /// Plan (plan order, done/total) then All exercises (synced catalog, alphabetical).
 struct ExercisePickerView: View {
     @EnvironmentObject private var model: WatchAppModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let onSelect: (String) -> Void
 
     var body: some View {
         ScrollViewReader { proxy in
             List {
+                if dynamicTypeSize.isAccessibilitySize {
+                    // The inline bar clips long titles at accessibility sizes: the title is a heading here.
+                    Text(model.text(.exercise))
+                        .font(.headline)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
+                        .listRowBackground(Color.clear)
+                }
                 if !progress.isEmpty {
                     Section(model.text(.sectionPlan)) {
                         ForEach(progress, id: \.name) { item in
@@ -50,7 +59,7 @@ struct ExercisePickerView: View {
                 }
             }
         }
-        .navigationTitle(model.text(.exercise))
+        .navigationTitle(dynamicTypeSize.isAccessibilitySize ? "" : model.text(.exercise))
         .containerBackground(WatchTheme.background, for: .navigation)
     }
 

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PauseView: View {
     @EnvironmentObject private var model: WatchAppModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let onResume: () -> Void
     #if DEBUG
     @State private var confirmDiscard = WatchDebugSeed.isScreen("discard")
@@ -57,12 +58,18 @@ struct PauseView: View {
 
     private var canFinish: Bool { !(model.workout?.sets.isEmpty ?? true) }
 
-    /// Icon centred against a label that may wrap to two lines (UK/RU).
+    /// Icon centred against a label that may wrap to two lines (UK/RU). At accessibility sizes the
+    /// icon is dropped so the words keep the full width and do not break mid-word.
+    @ViewBuilder
     private func pauseLabel(_ title: String, _ systemImage: String) -> some View {
-        HStack(alignment: .center, spacing: 6) {
-            Image(systemName: systemImage)
-                .accessibilityHidden(true)
-            Text(title)
+        if dynamicTypeSize.isAccessibilitySize {
+            WholeWordLabel(title: title)
+        } else {
+            HStack(alignment: .center, spacing: 6) {
+                Image(systemName: systemImage)
+                    .accessibilityHidden(true)
+                Text(title)
+            }
         }
     }
 
@@ -75,10 +82,12 @@ struct PauseView: View {
 }
 
 /// Custom sheet so the order and emphasis are fixed: Keep workout (the default) first, so the
-/// safe choice is visible without scrolling on every size; Discard below it.
+/// safe choice is visible without scrolling on every size; Discard below it. At accessibility
+/// sizes the body text moves below Keep so Keep still fits the first screen.
 struct DiscardConfirmView: View {
     @EnvironmentObject private var model: WatchAppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let onDiscard: () -> Void
 
     var body: some View {
@@ -88,23 +97,49 @@ struct DiscardConfirmView: View {
                     .font(.headline)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
-                Text(model.text(.discardBody))
-                    .font(.footnote)
-                    .foregroundStyle(WatchTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button(model.text(.keep)) { dismiss() }
+                if !dynamicTypeSize.isAccessibilitySize {
+                    bodyText
+                }
+                Button { dismiss() } label: { WholeWordLabel(title: model.text(.keep)) }
                     .buttonStyle(PrimaryButtonStyle())
                     .padding(.top, 2)
+                if dynamicTypeSize.isAccessibilitySize {
+                    bodyText
+                }
                 Button {
                     dismiss()
                     onDiscard()
                 } label: {
-                    Text(model.text(.discard)).multilineTextAlignment(.center)
+                    WholeWordLabel(title: model.text(.discard)).multilineTextAlignment(.center)
                 }
                 .buttonStyle(TonalButtonStyle(fill: WatchTheme.destructiveTonal, foreground: WatchTheme.destructive))
             }
             .scenePadding(.horizontal)
         }
         .presentationBackground(WatchTheme.background)
+    }
+
+    private var bodyText: some View {
+        Text(model.text(.discardBody))
+            .font(.footnote)
+            .foregroundStyle(WatchTheme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Button label that never breaks a word: at accessibility sizes a long UK/RU word no longer fits
+/// one line and gets hyphenated, so allow one line per word and shrink the text instead.
+private struct WholeWordLabel: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let title: String
+
+    var body: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            Text(title)
+                .lineLimit(max(1, title.split(separator: " ").count))
+                .minimumScaleFactor(0.6)
+        } else {
+            Text(title)
+        }
     }
 }

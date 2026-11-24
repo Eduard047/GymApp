@@ -14,6 +14,7 @@ private enum EntryField: Hashable {
 struct SetEntrySheet: View {
     @EnvironmentObject private var model: WatchAppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     #if DEBUG
     @State private var path: [EntryRoute] = WatchDebugSeed.isScreen("picker") ? [.picker] : []
     #else
@@ -25,7 +26,7 @@ struct SetEntrySheet: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            entry
+            entryContainer
                 .containerBackground(WatchTheme.background, for: .navigation)
                 .navigationDestination(for: EntryRoute.self) { _ in
                     ExercisePickerView { name in
@@ -50,6 +51,16 @@ struct SetEntrySheet: View {
     }
 
     private var exerciseName: String? { model.workout?.exerciseName }
+
+    /// Accessibility text makes the entry taller than the screen: scroll it so the exercise row
+    /// starts below the close button and Save stays inside the safe area.
+    @ViewBuilder private var entryContainer: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            ScrollView { entry }
+        } else {
+            entry
+        }
+    }
 
     private var entry: some View {
         VStack(spacing: 4) {
