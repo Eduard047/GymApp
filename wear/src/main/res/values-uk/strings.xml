@@ -50,8 +50,8 @@
     <string name="label_duration">Час</string>
     <string name="label_sets">Підходи</string>
     <string name="label_volume">Обсяг</string>
-    <string name="label_avg_hr">Сер. пульс</string>
-    <string name="label_max_hr">Макс. пульс</string>
+    <string name="label_avg_hr">Сер. ЧСС</string>
+    <string name="label_max_hr">Макс. ЧСС</string>
     <string name="value_bpm">%d уд/хв</string>
     <string name="value_kcal">%d ккал</string>
     <string name="calories">Калорії</string>
