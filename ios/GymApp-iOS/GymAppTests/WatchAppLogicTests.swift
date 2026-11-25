@@ -262,6 +262,10 @@ final class WatchOutboxPolicyTests: XCTestCase {
         // A save in progress is not interrupted; its item is dropped when it settles.
         let saving = WatchOutboxPolicy.accountDeleted(account, outbox: [], workout: live, isSaving: true)
         XCTAssertEqual(saving, .init(deleteRequestIds: [], discardWorkout: false, dropSavedItem: true))
+        // If that save then fails before its outbox write, the workout is discarded, not kept for Summary.
+        XCTAssertTrue(WatchOutboxPolicy.discardsAfterFailedSave(live, deletedWhileSaving: [account]))
+        XCTAssertFalse(WatchOutboxPolicy.discardsAfterFailedSave(live, deletedWhileSaving: [otherAccount]))
+        XCTAssertFalse(WatchOutboxPolicy.discardsAfterFailedSave(live, deletedWhileSaving: []))
 
         // Another owner's deletion keeps this owner's item and live workout.
         let otherDeleted = WatchOutboxPolicy.accountDeleted(otherAccount, outbox: [held, other], workout: live, isSaving: false)

@@ -114,9 +114,10 @@ test("watch uses the shared codec and the crash-safe finish order", async () => 
   assert.ok(order.every((index) => index >= 0), "all finish steps present");
   assert.deepEqual([...order].sort((a, b) => a - b), order, "outbox item is written before the Health save");
   const saveBody = save.slice(0, save.indexOf("func closeResult()"));
-  assert.equal(saveBody.match(/saveFailed\(\)/g)?.length, 2, "both early exits report the failure");
+  assert.equal(saveBody.match(/saveFailed\(current\)/g)?.length, 2, "both early exits report the failure");
   assert.doesNotMatch(saveBody, /phase = \.summary/, "no silent return to Summary");
-  assert.match(model, /private func saveFailed\(\) \{\s+phase = \.summary\s+summaryStatus = text\(\.saveFailed\)/);
+  // A failed save of an owner deleted on the phone mid-save discards the workout instead of keeping Save.
+  assert.match(model, /private func saveFailed\(_ current: WatchActiveWorkout\) \{\s+let ownerDeleted = WatchOutboxPolicy\.discardsAfterFailedSave\(current, deletedWhileSaving: deletedWhileSaving\)\s+deletedWhileSaving\.removeAll\(\)\s+if ownerDeleted \{\s+discardDeletedOwnersWorkout\(current\)\s+return\s+\}\s+phase = \.summary\s+summaryStatus = text\(\.saveFailed\)/);
   assert.match(model, /WatchSyncCodec\.decodeContext\(bytes\)/);
   // A context or reply of another protocol version is not dropped whole, and an
   // unsupported-version hold follows the phone's context version.

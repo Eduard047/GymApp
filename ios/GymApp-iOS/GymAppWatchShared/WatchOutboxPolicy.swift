@@ -193,6 +193,12 @@ enum WatchOutboxPolicy {
             dropSavedItem: ownsWorkout && isSaving
         )
     }
+
+    /// A save that failed before its outbox write normally returns to Summary. If the owner
+    /// was deleted on the phone during that save, the workout is discarded instead.
+    static func discardsAfterFailedSave(_ workout: WatchActiveWorkout, deletedWhileSaving: Set<String>) -> Bool {
+        deletedWhileSaving.contains(workout.accountBinding)
+    }
 }
 
 struct WatchAccountDeletionPlan: Equatable, Sendable {

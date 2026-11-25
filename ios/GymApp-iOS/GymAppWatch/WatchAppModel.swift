@@ -262,10 +262,29 @@ final class WatchAppModel: ObservableObject {
     }
 
     /// Save could not be completed: back to Summary with a message; Save stays available.
-    private func saveFailed() {
+    /// If the owner was deleted on the phone during the save, the workout is discarded instead.
+    private func saveFailed(_ current: WatchActiveWorkout) {
+        let ownerDeleted = WatchOutboxPolicy.discardsAfterFailedSave(current, deletedWhileSaving: deletedWhileSaving)
+        deletedWhileSaving.removeAll()
+        if ownerDeleted {
+            discardDeletedOwnersWorkout(current)
+            return
+        }
         phase = .summary
         summaryStatus = text(.saveFailed)
         WKInterfaceDevice.current().play(.failure)
+    }
+
+    /// Drops the deleted owner's live or summary workout silently: nothing is kept for them.
+    private func discardDeletedOwnersWorkout(_ current: WatchActiveWorkout) {
+        if current.heartRateEnabled { health.discard() }
+        restTask?.cancel()
+        activeStore.clear()
+        workout = nil
+        pauseStatus = nil
+        summaryStatus = nil
+        phase = .start
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.restNotificationID])
     }
 
     /// Crash-safe finish order: validate the message → end session and collection → read
@@ -300,7 +319,7 @@ final class WatchAppModel: ObservableObject {
         }
         // Checked before the Health session is ended: a workout that cannot be encoded stays open.
         guard let preflight = encoded(status, WorkoutSessionManager.Statistics()) else {
-            saveFailed()
+            saveFailed(current)
             return
         }
         summaryStatus = nil
@@ -325,7 +344,7 @@ final class WatchAppModel: ObservableObject {
             try outboxStore.save(item)
         } catch {
             savingRequestId = nil
-            saveFailed()
+            saveFailed(current)
             return
         }
         outbox.removeAll { $0.requestId == item.requestId }
@@ -468,14 +487,7 @@ final class WatchAppModel: ObservableObject {
         dropOutboxItems(plan.deleteRequestIds)
         if plan.dropSavedItem { deletedWhileSaving.insert(binding) }
         if plan.discardWorkout, let current = workout {
-            if current.heartRateEnabled { health.discard() }
-            restTask?.cancel()
-            activeStore.clear()
-            workout = nil
-            pauseStatus = nil
-            summaryStatus = nil
-            phase = .start
-            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.restNotificationID])
+            discardDeletedOwnersWorkout(current)
         }
         if context?.bound?.accountBinding == binding {
             // The unbound context may arrive later; never start new work for the deleted owner.
