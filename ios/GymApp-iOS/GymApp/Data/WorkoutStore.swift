@@ -52,59 +52,10 @@ public enum WorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
         }
     }
 
-    /// The message in the given app language. Raw system/persistence detail never
-    /// appears here; it stays on the associated values and in `debugDescription`.
-    func message(languageCode: String) -> String {
-        switch self {
-        case .corruptStore:
-            gymText(
-                "The local workout store is invalid.",
-                "Локальне сховище тренувань пошкоджене.",
-                "Локальное хранилище тренировок повреждено.",
-                languageCode: languageCode
-            )
-        case .invalidWorkout:
-            gymText(
-                "The workout is invalid.",
-                "Тренування містить некоректні дані.",
-                "Тренировка содержит некорректные данные.",
-                languageCode: languageCode
-            )
-        case .unsupportedBackupSchema:
-            gymText(
-                "This backup version is not supported.",
-                "Ця версія резервної копії не підтримується.",
-                "Эта версия резервной копии не поддерживается.",
-                languageCode: languageCode
-            )
-        case .malformedBackup:
-            gymText(
-                "The backup is invalid.",
-                "Резервна копія пошкоджена.",
-                "Резервная копия повреждена.",
-                languageCode: languageCode
-            )
-        case .importLimitExceeded:
-            gymText(
-                "The backup is too large to import.",
-                "Резервна копія завелика для імпорту.",
-                "Резервная копия слишком велика для импорта.",
-                languageCode: languageCode
-            )
-        case .persistenceFailure:
-            gymText(
-                "Workout data could not be saved.",
-                "Не вдалося зберегти дані тренувань.",
-                "Не удалось сохранить данные тренировок.",
-                languageCode: languageCode
-            )
-        default:
-            gymLocalized(englishDescription, languageCode: languageCode)
-        }
-    }
-
+    /// Stays English (the app-owned source); localized UI text comes from
+    /// `gymErrorMessage(_:languageCode:)`. Raw detail lives only in `debugDescription`.
     public var errorDescription: String? {
-        message(languageCode: gymCurrentLanguageCode())
+        englishDescription
     }
 }
 

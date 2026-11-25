@@ -20955,36 +20955,20 @@ final class CoreParityTests: XCTestCase {
             return nil
         })
 
-        // These extracted templates contain only placeholders, numbers, units, or
-        // compact workout notation. Their Ukrainian rendering intentionally equals
-        // the source template, so catalog fallback does not expose English prose.
-        let localeNeutralTemplates: Set<String> = [
-            "%@ / %@", "%@ %lld", "%@ %@ × %lld", "%@ • %@", "%@ XP", "%@, %@", "%@: %@",
-            "%@ – %@", "%lld", "+%lld XP", "+15", "+2.5", "0", "0:00", "−15",
-            "S%lld", "Z%lld %lld%@"
-        ]
-        // These must remain exact identities: DELETE is the server confirmation
-        // token, GymApp is the product name, and the remaining values are an email
-        // example or language self-names already suitable for Ukrainian UI.
-        let identityLiterals: Set<String> = [
-            "DELETE", "GymApp", "you@example.com", "Мова", "Русский", "Українська"
-        ]
+        // Locale-neutral templates (placeholders, numbers, compact S/Z notation) and
+        // identity literals (GymApp, language self-names, the email example) now carry
+        // explicit Ukrainian values. The only intentional fallback is DELETE: the typed
+        // server confirmation token, marked shouldTranslate:false.
+        let deleteEntry = try XCTUnwrap(strings["DELETE"] as? [String: Any])
+        XCTAssertEqual(deleteEntry["shouldTranslate"] as? Bool, false)
         // Built-in exercise labels use stable catalog identity plus the reviewed
         // Ukrainian names below, instead of Localizable.xcstrings lookup.
-        let catalogDrivenExerciseNames = Set(
-            BuiltInExerciseCatalog.definitions.map(\.englishName)
-        )
         for definition in BuiltInExerciseCatalog.definitions {
             XCTAssertFalse(definition.ukrainianName.trimmingCharacters(in: .whitespaces).isEmpty)
             XCTAssertNotEqual(definition.ukrainianName, definition.englishName)
         }
 
-        XCTAssertEqual(
-            missingUkrainianKeys,
-            localeNeutralTemplates
-                .union(identityLiterals)
-                .union(catalogDrivenExerciseNames)
-        )
+        XCTAssertEqual(missingUkrainianKeys, ["DELETE"])
     }
 
     private func missionSummary(
