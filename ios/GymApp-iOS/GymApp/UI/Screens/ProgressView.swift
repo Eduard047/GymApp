@@ -814,8 +814,8 @@ struct ExerciseProgressView: View {
                     spacing: 8
                 ) {
                     GymMetricTile(
-                        label: t("All-time PR", "Особистий рекорд", "Личный рекорд"),
-                        value: snapshot.allTimeBestWeight.map { "PR \(formatWeight($0))" } ?? "PR —",
+                        label: t("Best", "Найкращий", "Лучший"),
+                        value: snapshot.allTimeBestWeight.map { formatWeight($0) } ?? "—",
                         onHero: true
                     )
                     GymMetricTile(
