@@ -1,5 +1,6 @@
 package com.example.gymapp.data.repository
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -48,10 +49,157 @@ class WorkoutDataLimitsTest {
         }
 
         val boundedLargeArray = "[" + "0,".repeat(89_999) + "0]"
-        val excessiveValueGraph = "[" + List(4) { boundedLargeArray }.joinToString(",") + "]"
+        val arrayCount = WorkoutDataLimits.MAX_JSON_VALUE_COUNT / 90_000 + 1
+        val excessiveValueGraph = "[" +
+            List(arrayCount) { boundedLargeArray }.joinToString(",") + "]"
+        assertTrue(excessiveValueGraph.length <= WorkoutDataLimits.MAX_BACKUP_BYTES)
         assertThrows(IllegalArgumentException::class.java) {
             WorkoutDataLimits.requireSafeJsonEnvelope(excessiveValueGraph)
         }
+    }
+
+    @Test
+    fun valueCountPreflightAdmitsAndroidBackupAtEveryRowLimit() {
+        // Android/PWA shape at MAX_EXERCISES, MAX_SESSIONS and MAX_TOTAL_SETS with one set per
+        // block (the most blocks the set limit allows). Only the value count is under test, so
+        // the byte budget is raised to the preflight maximum.
+        val (raw, values) = rowLimitBackup(
+            weightsPerExercise = 16,
+            blockLoadProfileHeaders = false
+        )
+
+        assertEquals(837_028, values)
+        assertTrue(values <= WorkoutDataLimits.MAX_JSON_VALUE_COUNT)
+        WorkoutDataLimits.requireSafeJsonEnvelope(raw, maximumBytes = PREFLIGHT_MAX_BYTES)
+    }
+
+    @Test
+    fun valueCountPreflightRejectsWorstCaseShapeToBoundImportHeap() {
+        // Documented trade-off: 128 weights on every exercise plus a load-profile header on all
+        // 100k one-set blocks is a valid row-limit shape in theory, but admitting ~1.47M values
+        // would let a hostile file allocate that many org.json objects on import.
+        val (raw, values) = rowLimitBackup(
+            weightsPerExercise = ExerciseLoadProfile.MAX_WEIGHT_OPTIONS,
+            blockLoadProfileHeaders = true
+        )
+
+        assertTrue(values > WorkoutDataLimits.MAX_JSON_VALUE_COUNT)
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            WorkoutDataLimits.requireSafeJsonEnvelope(raw, maximumBytes = PREFLIGHT_MAX_BYTES)
+        }
+        assertEquals("Backup exceeds the JSON value limit.", error.message)
+    }
+
+    /** Builds a compact backup at every row limit and returns it with its JSON value count. */
+    private fun rowLimitBackup(
+        weightsPerExercise: Int,
+        blockLoadProfileHeaders: Boolean
+    ): Pair<String, Int> {
+        val blocksPerSession = WorkoutDataLimits.MAX_TOTAL_SETS / WorkoutDataLimits.MAX_SESSIONS
+        val weights = (0 until weightsPerExercise).joinToString(",")
+        var values = 0
+        val raw = StringBuilder(14 * 1_024 * 1_024)
+        raw.append("{\"schemaVersion\":2,\"exportedAt\":1,\"app\":\"GymApp\",")
+        raw.append("\"diagnostics\":false,\"catalogSeedVersion\":1,")
+        raw.append("\"owner\":{\"accountId\":null,\"userId\":null,\"email\":null,\"remote\":false},")
+        values += 1 + 5 + 5
+        raw.append("\"exercises\":[")
+        values += 1
+        repeat(WorkoutDataLimits.MAX_EXERCISES) { index ->
+            if (index > 0) raw.append(',')
+            raw.append("{\"name\":\"e$index\",\"catalogKey\":\"k\",\"favorite\":false,")
+            raw.append("\"loadProfile\":{\"direction\":\"a\",\"allowedWeightsKg\":[$weights]}}")
+            values += 7 + weightsPerExercise
+        }
+        raw.append("],\"sessions\":[")
+        values += 1
+        repeat(WorkoutDataLimits.MAX_SESSIONS) { sessionIndex ->
+            if (sessionIndex > 0) raw.append(',')
+            raw.append("{\"date\":1,\"note\":null,\"durationSeconds\":1,\"exercises\":[")
+            values += 5
+            repeat(blocksPerSession) { blockIndex ->
+                if (blockIndex > 0) raw.append(',')
+                raw.append("{\"name\":\"a\",\"catalogKey\":\"a\",")
+                if (blockLoadProfileHeaders) {
+                    raw.append("\"favorite\":false,")
+                    raw.append("\"loadProfile\":{\"direction\":\"a\",\"allowedWeightsKg\":[]},")
+                    values += 4
+                }
+                raw.append("\"sets\":[{\"weight\":0,\"reps\":1}]}")
+                values += 4 + 3
+            }
+            raw.append("]}")
+        }
+        raw.append("],\"summary\":{\"exerciseCount\":1,\"sessionCount\":1,\"setCount\":1,\"totalVolume\":0},")
+        values += 5
+        raw.append("\"extensions\":{\"pwa\":{\"version\":1,\"language\":\"en\",\"mappings\":{")
+        values += 5
+        val muscles = List(32) { "\"m\"" }.joinToString(",")
+        repeat(WorkoutDataLimits.MAX_EXERCISES) { index ->
+            if (index > 0) raw.append(',')
+            raw.append("\"e$index\":[$muscles]")
+            values += 1 + 32
+        }
+        raw.append("},\"profile\":{\"split\":\"a\",\"days\":3,\"goal\":\"a\",\"calories\":1}}}}")
+        values += 5
+        return raw.toString() to values
+    }
+
+    private companion object {
+        const val PREFLIGHT_MAX_BYTES = 16 * 1_024 * 1_024
+    }
+
+    @Test
+    fun manualBackupExportIsCompactAndRoundTrips() {
+        val root = JSONObject(
+            """
+            {
+              "schemaVersion": 2,
+              "exercises": [{"name": "Bench Press"}],
+              "sessions": [{
+                "date": 1700000000000,
+                "note": "line one\nline two",
+                "exercises": [{"name": "Bench Press", "sets": [{"weight": 60, "reps": 8}]}]
+              }]
+            }
+            """.trimIndent()
+        )
+
+        val exported = serializeBackupForExport(root)
+
+        assertFalse(exported.contains('\n'))
+        assertFalse(exported.contains("  "))
+        assertEquals(root.toString(), exported)
+        assertEquals(
+            "line one\nline two",
+            JSONObject(exported).getJSONArray("sessions").getJSONObject(0).getString("note")
+        )
+    }
+
+    @Test
+    fun legacyPrettyPrintedBackupStillPassesImportPreflightAndValidation() {
+        val pretty = JSONObject(
+            """
+            {
+              "schemaVersion": 2,
+              "exercises": [{"name": "Bench Press", "favorite": true}],
+              "sessions": [{
+                "date": 1700000000000,
+                "note": "Legs",
+                "exercises": [{"name": "Bench Press", "sets": [{"weight": 60, "reps": 8}]}]
+              }]
+            }
+            """.trimIndent()
+        ).toString(2)
+        assertTrue(pretty.contains('\n'))
+
+        WorkoutDataLimits.requireSafeJsonEnvelope(pretty)
+        val validated = BackupImportValidator.validate(JSONObject(pretty))
+
+        assertEquals(1, validated.exercises.size)
+        val set = validated.sessions.single().blocks.single().sets.single()
+        assertEquals(60.0, set.weight, 0.0)
+        assertEquals(8, set.reps)
     }
 
     @Test

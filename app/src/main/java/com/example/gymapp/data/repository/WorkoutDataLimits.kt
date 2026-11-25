@@ -16,13 +16,37 @@ object WorkoutDataLimits {
     // 2,000-exercise account ceiling. Bytes, depth, array entries, and total value count remain
     // independently bounded before org.json allocation.
     const val MAX_JSON_OBJECT_MEMBERS = 2_000
-    const val MAX_JSON_VALUE_COUNT = 350_000
     const val MAX_JSON_NUMBER_CHARS = 128
     const val MAX_EXERCISES = 2_000
     const val MAX_SESSIONS = 5_000
     const val MAX_EXERCISES_PER_SESSION = 100
     const val MAX_SETS_PER_EXERCISE = 100
     const val MAX_TOTAL_SETS = 100_000
+
+    /**
+     * Total JSON values (objects, arrays and primitives; member keys are not values) the
+     * allocation preflight accepts in one payload. It is a DoS bound for untrusted input: each
+     * value becomes a heap object once org.json parses it, so the cap bounds import memory
+     * independently of bytes, depth, array entries and object members.
+     *
+     * Derivation: the Android/PWA backup shape with every row limit reached at once and one set
+     * per block (the most blocks MAX_TOTAL_SETS allows):
+     * - root, owner, summary and PWA extension headers: 28;
+     * - 2,000 catalog exercises x 23 (object, name, catalogKey, favorite, loadProfile object,
+     *   direction, allowedWeightsKg array + 16 weights) = 46,000;
+     * - 2,000 PWA muscle mappings x 33 (array + 32 muscle ids) = 66,000;
+     * - 5,000 sessions x 5 (object, date, note, durationSeconds, exercises array) = 25,000;
+     * - 100,000 blocks x 4 (object, name, catalogKey, sets array) = 400,000;
+     * - 100,000 sets x 3 (object, weight, reps) = 300,000.
+     * That is 837,028 values; 900,000 leaves about 7% margin.
+     *
+     * Rejected on purpose to bound import heap: the same one-set history where every block also
+     * carries a load-profile header (favorite, loadProfile, direction, allowedWeightsKg: about
+     * 1.24M values), and 128 allowed weights on every exercise (about 1.47M). Accepting those
+     * would let a hostile 8 MiB file allocate roughly 1.5M org.json objects (100+ MB) on import,
+     * an OOM risk on low-end phones, for shapes no real account has.
+     */
+    const val MAX_JSON_VALUE_COUNT = 900_000
     const val MAX_EXERCISE_NAME_LENGTH = 160
     const val MAX_EXERCISE_NAME_BYTES = 640
     const val MAX_NOTE_LENGTH = 4_000

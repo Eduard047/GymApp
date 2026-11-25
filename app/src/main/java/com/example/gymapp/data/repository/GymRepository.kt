@@ -1334,14 +1334,12 @@ class GymRepository(
         includeDiagnostics: Boolean = false,
         owner: BackupOwner? = null
     ): String = withContext(Dispatchers.Default) {
-        val serialized = buildBackupJson(
-            includeDiagnostics = includeDiagnostics,
-            owner = owner
-        ).toString(2)
-        // Validate the exact representation retained by the UI and shared with other apps.
-        // Pretty-print whitespace can be material at the account-wide row limits.
-        WorkoutDataLimits.requireSafeJsonEnvelope(serialized)
-        serialized
+        serializeBackupForExport(
+            buildBackupJson(
+                includeDiagnostics = includeDiagnostics,
+                owner = owner
+            )
+        )
     }
 
     /**
@@ -5224,6 +5222,15 @@ private fun exerciseBackupJson(
             }
         }
 }
+
+/**
+ * The exact manual-backup text retained by the UI and shared with other apps. Compact on
+ * purpose: indentation more than doubles the file at the account-wide row limits and would push
+ * a valid history past the 8 MiB import limit on Android and iOS. Import still accepts older
+ * pretty-printed backups (JSON whitespace is insignificant).
+ */
+internal fun serializeBackupForExport(root: JSONObject): String =
+    root.toString().also { WorkoutDataLimits.requireSafeJsonEnvelope(it) }
 
 /** Trimmed note, or null when blank: the shape every saved workout note is stored in. */
 internal fun normalizedWorkoutNote(raw: String?): String? = raw?.trim()?.takeIf { it.isNotEmpty() }
