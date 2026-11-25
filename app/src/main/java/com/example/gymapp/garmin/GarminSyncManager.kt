@@ -24,6 +24,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -376,6 +377,11 @@ class GarminSyncManager(
         newBoundedGarminInboundChannel<QueuedGarminCommand>(MAX_GARMIN_PENDING_SYNC_REQUESTS)
     private val inboundAckCommands =
         newBoundedGarminInboundChannel<QueuedGarminCommand>(MAX_GARMIN_PENDING_ACK_COMMANDS)
+    // Conflated: at most one post-workout plan sync runs and at most one more waits, so a
+    // multi-workout drain never queues a full plan sync per workout.
+    private val postWorkoutSyncs = Channel<PostWorkoutSync>(Channel.CONFLATED)
+    // In memory only: after a process restart the user repeats Reset pairing, as before.
+    @Volatile private var stagedPairingReset: StagedPairingResetMessage? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val initializationLock = Any()
     private val accountBindingLock = Any()
@@ -425,6 +431,16 @@ class GarminSyncManager(
         val command: Map<Any?, Any?>
     )
 
+    private data class PostWorkoutSync(
+        val device: IQDevice,
+        val account: GarminAccountContext
+    )
+
+    private class StagedPairingResetMessage(
+        val reset: GarminStagedPairingReset,
+        val payload: Map<String, Any>
+    )
+
     private data class AcceptedGarminWorkout(
         val account: GarminAccountContext,
         val binding: GarminBinding,
@@ -467,6 +483,19 @@ class GarminSyncManager(
                     pushSync(queued.device, queued.command)
                 } catch (error: Exception) {
                     Log.i(TAG, "Rejected Garmin sync request after processing failure", error)
+                }
+            }
+        }
+        scope.launch {
+            // Outside the workout consumer: a plan sync can wait ~40 s for an ack the watch
+            // withholds while it is still uploading parts, which must not delay those parts.
+            for (queued in postWorkoutSyncs) {
+                try {
+                    if (isStillActive(queued.account)) {
+                        pushSyncForContext(queued.device, queued.account)
+                    }
+                } catch (error: Exception) {
+                    Log.i(TAG, "Garmin post-workout sync failed", error)
                 }
             }
         }
@@ -830,6 +859,16 @@ class GarminSyncManager(
                 binding = binding,
                 syncRevision = revision
             ) ?: return@outbound false
+            val staged = StagedPairingResetMessage(
+                reset = GarminStagedPairingReset(
+                    authTransitionKey = account.authTransitionKey,
+                    binding = binding,
+                    syncId = syncId,
+                    revision = revision
+                ),
+                payload = payload
+            )
+            stagedPairingReset = staged
 
             lastPlanSyncStatus = "Resetting secure Garmin pairing"
             val confirmed = sendAndConfirmSync(
@@ -861,6 +900,7 @@ class GarminSyncManager(
                 lastPlanSyncStatus = "Garmin reset acknowledged but local state was not saved"
                 return@outbound false
             }
+            if (stagedPairingReset === staged) stagedPairingReset = null
             lastPlanSyncStatus = "Secure Garmin pairing reset"
             pairingReleasedWithoutWatch = false
             refreshDeviceUiState()
@@ -1326,6 +1366,9 @@ class GarminSyncManager(
             Log.i(TAG, "Rejected Garmin sync request from an untrusted device")
             return
         }
+        if (resendStagedPairingResetIfRequested(device, account, sourceDeviceBinding, command)) {
+            return
+        }
         val advertisesGeneration = garminCommandAdvertisesPairingGeneration(command)
         val storedGenerationCapability =
             pairingGenerationSupported(account, sourceDeviceBinding)
@@ -1377,6 +1420,69 @@ class GarminSyncManager(
             generationSupportOverride = supportsGeneration,
             capabilityProofPending = capabilityProofPending
         )
+    }
+
+    private fun stagedResetMatches(
+        staged: StagedPairingResetMessage?,
+        account: GarminAccountContext,
+        sourceDeviceBinding: String,
+        command: Map<Any?, Any?>
+    ): Boolean = garminSyncRequestResendsStagedReset(
+        command = command,
+        staged = staged?.reset,
+        authTransitionKey = account.authTransitionKey,
+        trustedDeviceBinding = trustedDeviceBinding(account),
+        sourceDeviceBinding = sourceDeviceBinding,
+        pendingGeneration = pendingPairingGeneration(account, sourceDeviceBinding)
+    )
+
+    /**
+     * The pinned watch applied a staged reset but its sync_ack was lost: it now asks for a
+     * sync under the pending generation, which [activePairingGeneration] refuses. Resend the
+     * exact staged reset (same syncId and revision, so the watch replays nothing destructive)
+     * and finalise the pending generation only on its correlated sync_ack. Returns true when
+     * the request was consumed by this path.
+     */
+    private suspend fun resendStagedPairingResetIfRequested(
+        device: IQDevice,
+        account: GarminAccountContext,
+        sourceDeviceBinding: String,
+        command: Map<Any?, Any?>
+    ): Boolean {
+        val candidate = stagedPairingReset ?: return false
+        if (!stagedResetMatches(candidate, account, sourceDeviceBinding, command)) return false
+        val confirmed = pairingStateMutex.withLock {
+            outboundSyncMutex.withLock outbound@{
+                if (
+                    stagedPairingReset !== candidate ||
+                    !isStillActive(account) ||
+                    !stagedResetMatches(candidate, account, sourceDeviceBinding, command)
+                ) {
+                    return@outbound false
+                }
+                val reset = candidate.reset
+                lastPlanSyncStatus = "Confirming secure Garmin pairing reset"
+                val acknowledged = sendAndConfirmSync(
+                    device = device,
+                    payload = candidate.payload,
+                    syncId = reset.syncId,
+                    account = account,
+                    authTransitionKey = account.authTransitionKey,
+                    requireReadyAccount = true,
+                    binding = reset.binding,
+                    revision = reset.revision
+                )
+                if (!acknowledged || !isStillActive(account)) return@outbound false
+                if (!finalizePendingPairingGeneration(account, reset.binding)) return@outbound false
+                if (stagedPairingReset === candidate) stagedPairingReset = null
+                lastPlanSyncStatus = "Secure Garmin pairing reset"
+                pairingReleasedWithoutWatch = false
+                refreshDeviceUiState()
+                true
+            }
+        }
+        if (confirmed && isStillActive(account)) pushSyncForContext(device, account)
+        return true
     }
 
     private val workoutTransferStore by lazy {
@@ -1531,7 +1637,7 @@ class GarminSyncManager(
             )
         )
         if (isStillActive(accepted.account)) {
-            pushSyncForContext(device, accepted.account)
+            postWorkoutSyncs.trySend(PostWorkoutSync(device, accepted.account))
         }
         return true
     }

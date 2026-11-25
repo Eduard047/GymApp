@@ -135,4 +135,58 @@ class GarminWorkoutTransferTest {
         assertNotNull(GarminWorkoutTransfer.accept(null, copy, binding, now))
     }
 
+
+    private fun otherRequest(offset: Int, total: Int = 60) = frame(offset, total).apply {
+        @Suppress("UNCHECKED_CAST")
+        this["metadata"] = (this["metadata"] as Map<String, Any>).toMutableMap().apply {
+            this["requestId"] = "workout-transfer-test-002"
+        }
+    }
+
+    @Test fun firstFrameOfAnotherRequestReplacesRetainedStagingFromTheSameWatch() {
+        // Workout A was half received (or retained after a rejection) and is no longer the head.
+        var state = GarminWorkoutTransfer.accept(null, frame(0, 3), binding, now)!!.state
+        state = GarminWorkoutTransfer.accept(state, frame(1, 3), binding, now)!!.state
+        val replaced = GarminWorkoutTransfer.accept(state, otherRequest(0, 2), binding, now)!!
+        assertEquals(1, replaced.nextOffset)
+        assertTrue(replaced.state.contains("workout-transfer-test-002"))
+        assertFalse(replaced.state.contains("workout-transfer-test-001"))
+        assertNotNull(GarminWorkoutTransfer.accept(replaced.state, otherRequest(1, 2), binding, now)?.completeMessage)
+        // A continuation frame of another request never replaces anything.
+        assertNull(GarminWorkoutTransfer.accept(state, otherRequest(1, 3), binding, now))
+        // Another account or generation is still not this watch's staging to continue.
+        assertNull(GarminWorkoutTransfer.accept(state, otherRequest(0, 2), binding.copy(account = "c".repeat(64)), now))
+    }
+
+    @Test fun firstFrameOfTheSameRequestKeepsRetainedStaging() {
+        var state = GarminWorkoutTransfer.accept(null, frame(0, 3), binding, now)!!.state
+        state = GarminWorkoutTransfer.accept(state, frame(1, 3), binding, now)!!.state
+        val restart = frame(0, 3).apply { this["attemptId"] = "transfer-restart-0001" }
+        val resumed = GarminWorkoutTransfer.accept(state, restart, binding, now)!!
+        assertEquals(2, resumed.nextOffset)
+        assertEquals(state, resumed.state)
+        // Same request ID with changed metadata is still a conflict, not a replacement.
+        assertNull(GarminWorkoutTransfer.accept(state, frame(0, 4), binding, now))
+    }
+
+    @Test fun unreadableStoreFileIsDiscardedAndDoesNotBlockReceiveOrCleanup() {
+        val directory = kotlin.io.path.createTempDirectory("garmin-transfer-store-corrupt").toFile()
+        try {
+            val file = java.io.File(directory, "parts.json")
+            file.writeText("{\"version\":1,\"createdAt\":")
+            assertFalse(GarminWorkoutTransfer.isReadableState(file.readText()))
+            assertEquals(1, GarminWorkoutTransferStore(file).accept(frame(0, 2), binding, now)?.nextOffset)
+            assertTrue(GarminWorkoutTransfer.isReadableState(file.readText()))
+
+            // A corrupt file plus a frame that cannot start a transfer: the file is still removed.
+            file.writeBytes(byteArrayOf(0xC3.toByte(), 0x28))
+            assertNull(GarminWorkoutTransferStore(file).accept(frame(1, 2), binding, now))
+            assertFalse(file.exists())
+
+            // Account cleanup no longer aborts on an unreadable file.
+            file.writeText("not json")
+            assertTrue(GarminWorkoutTransferStore(file).clearAccount("c".repeat(64)))
+            assertFalse(file.exists())
+        } finally { directory.deleteRecursively() }
+    }
 }

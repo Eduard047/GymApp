@@ -392,6 +392,42 @@ internal fun garminSyncRequestBindingMismatch(
     return GarminSyncRequestBindingMismatch.None
 }
 
+/**
+ * A pairing reset the phone sent but whose sync_ack never arrived. Kept so the exact same
+ * syncId/revision can be resent: the watch's replay fence then treats it as a no-op and only
+ * re-emits the acknowledgement, never a second destructive reset.
+ */
+internal data class GarminStagedPairingReset(
+    val authTransitionKey: String,
+    val binding: GarminBinding,
+    val syncId: String,
+    val revision: Long
+)
+
+/**
+ * True when a request_sync from the pinned watch already presents the staged, still
+ * unconfirmed reset generation, so the phone should resend that exact staged reset. Only
+ * the correlated sync_ack to the resend may confirm it; the request itself confirms nothing.
+ */
+internal fun garminSyncRequestResendsStagedReset(
+    command: Map<Any?, Any?>,
+    staged: GarminStagedPairingReset?,
+    authTransitionKey: String,
+    trustedDeviceBinding: String?,
+    sourceDeviceBinding: String,
+    pendingGeneration: String?
+): Boolean {
+    if (staged == null || pendingGeneration == null) return false
+    if (staged.authTransitionKey != authTransitionKey) return false
+    if (trustedDeviceBinding == null || trustedDeviceBinding != sourceDeviceBinding) return false
+    if (staged.binding.device != sourceDeviceBinding) return false
+    if (staged.binding.pairingGeneration != pendingGeneration) return false
+    if (staged.revision !in 1L..MAX_GARMIN_SYNC_REVISION) return false
+    if (command["pairingGeneration"] !is String) return false
+    return garminSyncRequestBindingMismatch(command, staged.binding) ==
+        GarminSyncRequestBindingMismatch.None
+}
+
 internal fun garminSyncRequestCanRepairPairing(
     command: Map<Any?, Any?>,
     expected: GarminBinding

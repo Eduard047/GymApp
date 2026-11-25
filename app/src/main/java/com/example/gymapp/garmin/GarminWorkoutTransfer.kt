@@ -25,6 +25,13 @@ internal object GarminWorkoutTransfer {
         "plannedTargetSetCount", "completedPlannedSetCount"
     )
     private val setKeys = setOf("exerciseName", "weight", "reps")
+    private val stateKeys = setOf("version", "createdAt", "totalSets", "metadata", "sets", "intervals", "metrics")
+
+    /** Structural check only: false means the stored staging can never be continued. */
+    fun isReadableState(text: String): Boolean = runCatching {
+        val state = decode(text)
+        state.keys.all { it in stateKeys } && state["createdAt"] is Number && state["metadata"] is Map<*, *>
+    }.getOrDefault(false)
 
     fun stagedAccount(text: String): String? = runCatching {
         val metadata = decode(text)["metadata"] as? Map<*, *> ?: return null
@@ -78,15 +85,19 @@ internal object GarminWorkoutTransfer {
 
         val old = previous?.let { decode(it) }
         val state = if (old != null) {
-            require(old.keys.all { it in setOf("version", "createdAt", "totalSets", "metadata", "sets", "intervals", "metrics") })
+            require(old.keys.all { it in stateKeys })
             val clock = old["createdAt"] as? Number ?: error("Clock")
             require(clock.toDouble().isFinite() && clock.toDouble() % 1.0 == 0.0)
             val created = clock.toLong()
             require(created >= 0 && created <= nowMillis)
             @Suppress("UNCHECKED_CAST")
             val oldMetadata = old["metadata"] as? Map<Any?, Any?> ?: error("Metadata")
+            // The watch only ever sends its queue head. A first frame for another request ID
+            // from the same bound watch means the retained staging is no longer its head
+            // (discarded, or rejected and dropped by the user): start that request fresh.
             if (nowMillis - created > MAX_AGE_MILLIS ||
-                garminBindingDecision(oldMetadata, binding) != GarminBindingDecision.Bound) null else old
+                garminBindingDecision(oldMetadata, binding) != GarminBindingDecision.Bound ||
+                (offset == 0 && oldMetadata["requestId"] != metadata["requestId"])) null else old
         } else null
         val sets: MutableList<Any?>
         val intervals: MutableList<Any?>?

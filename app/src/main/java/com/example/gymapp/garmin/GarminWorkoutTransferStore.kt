@@ -11,7 +11,7 @@ internal class GarminWorkoutTransferStore(private val file: File) {
     @Synchronized
     fun accept(frame: Map<Any?, Any?>, binding: GarminBinding, nowMillis: Long): GarminTransferStep? =
         runCatching {
-            val previous = if (file.exists()) readBounded() else null
+            val previous = readablePreviousOrDiscard()
             val step = GarminWorkoutTransfer.accept(previous, frame, binding, nowMillis) ?: return null
             val parent = checkNotNull(file.parentFile)
             check(parent.isDirectory || parent.mkdirs())
@@ -35,11 +35,25 @@ internal class GarminWorkoutTransferStore(private val file: File) {
     fun clear(): Boolean = !file.exists() || file.delete()
 
     @Synchronized
-    fun clearAccount(accountBinding: String): Boolean = runCatching {
+    fun clearAccount(accountBinding: String): Boolean {
         if (!file.exists()) return true
-        val owner = GarminWorkoutTransfer.stagedAccount(readBounded()) ?: return false
-        owner != accountBinding || file.delete()
-    }.getOrDefault(false)
+        // An unreadable file has no provable owner; it can only block, so remove it.
+        val owner = runCatching { GarminWorkoutTransfer.stagedAccount(readBounded()) }.getOrNull()
+        return (owner != null && owner != accountBinding) || file.delete() || !file.exists()
+    }
+
+    /**
+     * The previously acknowledged staging, or null. A file that cannot be read or decoded
+     * can never be continued and would fail every frame, so it is deleted; the watch then
+     * restarts its transfer from offset 0.
+     */
+    private fun readablePreviousOrDiscard(): String? {
+        if (!file.exists()) return null
+        val text = runCatching { readBounded() }.getOrNull()
+        if (text != null && GarminWorkoutTransfer.isReadableState(text)) return text
+        file.delete()
+        return null
+    }
 
     private fun readBounded(): String = file.inputStream().use { input ->
         val bytes = ByteArrayOutputStream()
