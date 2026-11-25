@@ -1133,7 +1133,7 @@
     <string name="progress_stat_avg_weight">Средний максимум</string>
     <string name="progress_stat_total_reps">Всего повторений</string>
     <string name="progress_stat_total_volume">Общий объём</string>
-    <string name="progress_spotlight_all_time_best">Лучший результат</string>
+    <string name="progress_spotlight_all_time_best">Лучший</string>
     <string name="progress_spotlight_consistency">Регулярность</string>
     <string name="progress_peak_weight">Пиковый вес</string>
     <string name="progress_e1rm_chart_title">Расчётный 1ПМ</string>

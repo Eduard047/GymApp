@@ -1133,7 +1133,7 @@
     <string name="progress_stat_avg_weight">Середній максимум</string>
     <string name="progress_stat_total_reps">Загалом повторів</string>
     <string name="progress_stat_total_volume">Загальний обсяг</string>
-    <string name="progress_spotlight_all_time_best">Найкращий результат</string>
+    <string name="progress_spotlight_all_time_best">Найкращий</string>
     <string name="progress_spotlight_consistency">Регулярність</string>
     <string name="progress_peak_weight">Пікова вага</string>
     <string name="progress_e1rm_chart_title">Розрахунковий 1ПМ</string>

@@ -98,7 +98,7 @@ fun ExerciseSpotlightCard(
             ) {
                 MetricTile(
                     label = stringResource(R.string.progress_spotlight_all_time_best),
-                    value = spotlight.allTimeBestLabel,
+                    value = spotlight.allTimeBestWeightLabel,
                     modifier = Modifier.weight(1f),
                     onHero = true
                 )

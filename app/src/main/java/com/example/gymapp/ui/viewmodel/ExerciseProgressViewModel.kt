@@ -59,7 +59,8 @@ data class ExerciseProgressSpotlightUiModel(
     val latestVolumeLabel: String = "--",
     val latestVolumeCaption: String = "",
     val volumeDeltaLabel: String = "",
-    val allTimeBestLabel: String = "PR --",
+    /** Heaviest weight ever logged; the screen prefixes it with "Best" (not "PR": the first session is only a baseline). */
+    val allTimeBestWeightLabel: String = "\u2014",
     val consistencyLabel: String = ""
 )
 
@@ -230,38 +231,41 @@ internal class ExerciseProgressTextBuilder(
     fun buildSpotlight(
         exerciseName: String?,
         monthPoints: List<ExerciseProgressPoint>,
-        allTimePoints: List<ExerciseProgressPoint>
+        allTimePoints: List<ExerciseProgressPoint>,
+        previousMonthPoints: List<ExerciseProgressPoint>
     ): ExerciseProgressSpotlightUiModel {
-        if (monthPoints.isEmpty()) {
-            return ExerciseProgressSpotlightUiModel(
-                title = exerciseName ?: t(
-                    en = "No exercise data yet",
-                    uk = "Ще немає даних вправи"
-                )
-            )
-        }
-
-        val latest = monthPoints.last()
-        val previous = monthPoints.getOrNull(monthPoints.lastIndex - 1)
-        val allTimeBest = allTimePoints.maxOfOrNull { it.maxWeight } ?: latest.maxWeight
+        // Same as iOS ProgressView: the tiles show this month's best weight and total volume; the pills
+        // compare them with last month's best and total ("First month for ..." when last month is empty,
+        // "No ... in this month" when the selected month is empty). The all-time best ignores the month.
+        val monthBest = monthPoints.maxOfOrNull { it.maxWeight }
+        val previousMonthBest = previousMonthPoints.maxOfOrNull { it.maxWeight }
+        val monthVolume = monthPoints.takeIf { it.isNotEmpty() }?.sumOf { it.totalVolume }
+        val previousMonthVolume = previousMonthPoints.takeIf { it.isNotEmpty() }?.sumOf { it.totalVolume }
+        val allTimeBest = allTimePoints.maxOfOrNull { it.maxWeight }
 
         return ExerciseProgressSpotlightUiModel(
-            title = exerciseName ?: t(en = "Exercise spotlight", uk = "Фокус вправи"),
-            latestWeightLabel = formatWeight(latest.maxWeight),
-            latestWeightCaption = t(en = "Latest max", uk = "Останній макс"),
-            weightDeltaLabel = deltaLabel(
-                latest = latest.maxWeight,
-                previous = previous?.maxWeight,
-                unit = t(en = "kg", uk = "кг")
+            title = exerciseName ?: if (monthPoints.isEmpty()) {
+                t(en = "No exercise data yet", uk = "Ще немає даних вправи")
+            } else {
+                t(en = "Exercise spotlight", uk = "Фокус вправи")
+            },
+            latestWeightLabel = monthBest?.let(::formatWeight) ?: "\u2014",
+            latestWeightCaption = t3(en = "Month best", uk = "Найкраще за місяць", ru = "Лучшее за месяц"),
+            weightDeltaLabel = monthDeltaLabel(
+                current = monthBest,
+                previous = previousMonthBest,
+                unit = t3(en = "kg", uk = "кг", ru = "кг"),
+                metric = t3(en = "best weight", uk = "найкраща вага", ru = "лучший вес")
             ),
-            latestVolumeLabel = formatSessionVolume(latest.totalVolume.roundToInt().toDouble(), locale),
-            latestVolumeCaption = t(en = "Latest volume", uk = "Останній обсяг"),
-            volumeDeltaLabel = deltaLabel(
-                latest = latest.totalVolume,
-                previous = previous?.totalVolume,
-                unit = t(en = "volume", uk = "обсягу")
+            latestVolumeLabel = formatSessionVolume((monthVolume ?: 0.0).roundToInt().toDouble(), locale),
+            latestVolumeCaption = t3(en = "Month volume", uk = "Обсяг за місяць", ru = "Объём за месяц"),
+            volumeDeltaLabel = monthDeltaLabel(
+                current = monthVolume,
+                previous = previousMonthVolume,
+                unit = t3(en = "volume", uk = "обсягу", ru = "объёма"),
+                metric = t3(en = "volume", uk = "обсяг", ru = "объём")
             ),
-            allTimeBestLabel = "PR ${formatWeight(allTimeBest)}",
+            allTimeBestWeightLabel = allTimeBest?.let(::formatWeight) ?: "\u2014",
             consistencyLabel = when {
                 isUkrainian -> "${monthPoints.size} цього місяця"
                 isRussian -> "${monthPoints.size} в этом месяце"
@@ -367,20 +371,42 @@ internal class ExerciseProgressTextBuilder(
         }
     }
 
-    private fun deltaLabel(latest: Double, previous: Double?, unit: String): String {
+    /** Mirrors iOS ProgressView.deltaLabel(current:previous:unit:metric:) word for word. */
+    private fun monthDeltaLabel(current: Double?, previous: Double?, unit: String, metric: String): String {
+        if (current == null) {
+            return t3(
+                en = "No $metric in this month",
+                uk = "Немає показника «$metric» цього місяця",
+                ru = "Нет показателя «$metric» в этом месяце"
+            )
+        }
         if (previous == null) {
-            return t(en = "First session in range", uk = "Перша сесія у вибраному періоді")
+            return t3(
+                en = "First month for $metric",
+                uk = "Перший місяць для «$metric»",
+                ru = "Первый месяц для «$metric»"
+            )
         }
-        val delta = latest - previous
+        val delta = current - previous
         if (delta.absoluteValue < 0.05) {
-            return t(en = "Flat vs previous", uk = "Без змін від попередньої")
+            return t3(
+                en = "No change vs prior month",
+                uk = "Без змін до попереднього місяця",
+                ru = "Как в прошлом месяце"
+            )
         }
-        val prefix = if (delta > 0) "+" else "\u2212"
-        return when {
-            isUkrainian -> "$prefix${formatTrendValue(delta.absoluteValue)} $unit відносно попередньої"
-            isRussian -> "$prefix${formatTrendValue(delta.absoluteValue)} $unit относительно предыдущей"
-            else -> "$prefix${formatTrendValue(delta.absoluteValue)} $unit vs previous"
-        }
+        val value = "${if (delta > 0) "+" else "\u2212"}${formatTrendValue(delta.absoluteValue)} $unit"
+        return t3(
+            en = "$value vs prior month",
+            uk = "$value до попереднього місяця",
+            ru = "$value к прошлому месяцу"
+        )
+    }
+
+    private fun t3(en: String, uk: String, ru: String): String = when {
+        isUkrainian -> uk
+        isRussian -> ru
+        else -> en
     }
 
     private fun formatTrendValue(value: Double): String {
@@ -449,13 +475,17 @@ class ExerciseProgressViewModel(
         )
     }
 
+    /** Selected month's history paired with the month before it (the spotlight compares the two). */
     private val historyFlow = combine(selectedExerciseId, monthOffset) { exerciseId, offset ->
         exerciseId to offset
     }.flatMapLatest { (exerciseId, offset) ->
         if (exerciseId == null) {
-            flowOf(emptyList())
+            flowOf(emptyList<ExerciseHistoryEntry>() to emptyList())
         } else {
-            repository.observeExerciseHistoryForMonth(exerciseId, offset)
+            combine(
+                repository.observeExerciseHistoryForMonth(exerciseId, offset),
+                repository.observeExerciseHistoryForMonth(exerciseId, offset - 1)
+            ) { month, previousMonth -> month to previousMonth }
         }
     }
 
@@ -482,7 +512,8 @@ class ExerciseProgressViewModel(
         selectedExerciseId,
         localizedHistoryFlow,
         fullHistoryWithRecordsFlow
-    ) { offset, catalog, selectedId, (history, tag), (fullHistory, personalRecords) ->
+    ) { offset, catalog, selectedId, (histories, tag), (fullHistory, personalRecords) ->
+        val (history, previousMonthHistory) = histories
         val textBuilder = ExerciseProgressTextBuilder(tag, zoneId)
         val exerciseList = catalog.exercises
         val selectedExerciseName = exerciseList.firstOrNull { it.id == selectedId }?.name
@@ -510,7 +541,8 @@ class ExerciseProgressViewModel(
             spotlight = textBuilder.buildSpotlight(
                 exerciseName = selectedExerciseName,
                 monthPoints = progressPoints,
-                allTimePoints = allTimePoints
+                allTimePoints = allTimePoints,
+                previousMonthPoints = previousMonthHistory.toProgressPoints()
             ),
             trendChart = textBuilder.buildTrendChart(progressPoints),
             personalRecords = personalRecords

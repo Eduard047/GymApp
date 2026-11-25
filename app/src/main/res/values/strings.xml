@@ -1091,7 +1091,7 @@
     <string name="progress_stat_avg_weight">Average Max</string>
     <string name="progress_stat_total_reps">Total Reps</string>
     <string name="progress_stat_total_volume">Total Volume</string>
-    <string name="progress_spotlight_all_time_best">All-time best</string>
+    <string name="progress_spotlight_all_time_best">Best</string>
     <string name="progress_spotlight_consistency">Consistency</string>
     <string name="progress_peak_weight">Peak weight</string>
     <string name="progress_e1rm_chart_title">Estimated 1RM</string>
