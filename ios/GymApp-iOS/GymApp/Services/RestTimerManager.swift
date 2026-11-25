@@ -51,6 +51,18 @@ final class SystemRestNotificationCenterClient: RestNotificationCenterClient {
     }
 }
 
+/// The Settings "Rest end alert" switch (default on, stored on this device only, kept across
+/// accounts). Off: no rest-end local notification, no rest-end haptic in the app and none on the
+/// Apple Watch. The rest countdown itself (in the app and in the Live Activity) is unchanged.
+enum GymRestEndAlert {
+    nonisolated static let preferenceKey = "app-rest-end-alert-enabled"
+
+    /// Defaults to on when the preference was never written.
+    nonisolated static func isEnabled(defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: preferenceKey) as? Bool ?? true
+    }
+}
+
 /// Canonical rest bounds shared with Android (shared/rest-duration-v1.json restLimits).
 enum RestTimerLimits {
     nonisolated static let minimumSeconds = 5
@@ -306,6 +318,8 @@ final class RestTimerManager: ObservableObject {
         lifecycleGeneration: UInt64,
         ownerFingerprint: String
     ) async {
+        // "Rest end alert" off: no notification and no permission prompt for one.
+        guard restEndAlertEnabled else { return }
         let authorizationStatus = await notificationCenter.authorizationStatus()
         guard isCurrent(
             state,
@@ -322,7 +336,7 @@ final class RestTimerManager: ObservableObject {
             ) else { return }
         }
         notificationsDenied = !authorized
-        guard authorized else { return }
+        guard authorized, restEndAlertEnabled else { return }
         let remainingTime = state.endDate.timeIntervalSince(currentDateProvider())
         guard remainingTime.isFinite, remainingTime > 0 else { return }
 
@@ -349,15 +363,31 @@ final class RestTimerManager: ObservableObject {
         } catch {
             return
         }
-        guard isCurrent(
-            state,
-            lifecycleGeneration: lifecycleGeneration,
-            ownerFingerprint: ownerFingerprint
-        ) else {
+        guard restEndAlertEnabled,
+              isCurrent(
+                  state,
+                  lifecycleGeneration: lifecycleGeneration,
+                  ownerFingerprint: ownerFingerprint
+              ) else {
             notificationCenter.removePendingNotificationRequests(withIdentifiers: [request.identifier])
             notificationCenter.removeDeliveredNotifications(withIdentifiers: [request.identifier])
             return
         }
+    }
+
+    private var restEndAlertEnabled: Bool { GymRestEndAlert.isEnabled(defaults: defaults) }
+
+    /// Applies a change of the "Rest end alert" switch. Turning it off cancels the pending
+    /// rest-end notification of every running rest; the countdowns keep running. Turning it on
+    /// takes effect from the next rest (a running rest has no stored title to announce).
+    func restEndAlertSettingChanged() {
+        guard !restEndAlertEnabled else { return }
+        let identifiers = timers.values.flatMap { notificationIdentifiers(for: $0) }
+        if !identifiers.isEmpty {
+            notificationCenter.removePendingNotificationRequests(withIdentifiers: identifiers)
+        }
+        // Stale rest notifications of ended timers go too; live ones were removed above.
+        removeAllRestNotifications()
     }
 
     @discardableResult

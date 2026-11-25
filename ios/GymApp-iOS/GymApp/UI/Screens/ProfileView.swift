@@ -32,6 +32,7 @@ struct ProfileView: View {
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @AppStorage(GymHaptics.preferenceKey) private var hapticsEnabled = true
     @AppStorage(GymKeepAwake.preferenceKey) private var keepScreenOn = true
+    @AppStorage(GymRestEndAlert.preferenceKey) private var restEndAlertEnabled = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AccessibilityFocusState private var focusedProfilePushTarget: NativePushProfileFocus?
@@ -306,6 +307,8 @@ struct ProfileView: View {
                 keepScreenOnRow
                 settingsRowDivider
                 hapticsRow
+                settingsRowDivider
+                restEndAlertRow
             }
             ProfileGroup(title: gymText("Devices", "Пристрої", "Устройства", languageCode: languageCode)) {
                 watchesRow
@@ -476,6 +479,59 @@ struct ProfileView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 6)
         .frame(minHeight: 48)
+    }
+
+    /// "Rest end alert" switch (device-only, default on): off drops the rest-end
+    /// notification and haptic on this iPhone and on the Apple Watch; the rest
+    /// countdown and the Live Activity stay.
+    private var restEndAlertRow: some View {
+        let title = gymText(
+            "Rest end alert",
+            "Сигнал кінця відпочинку",
+            "Сигнал конца отдыха",
+            languageCode: languageCode
+        )
+        let subtitle = gymText(
+            "Vibration, sound and a notification when rest is over",
+            "Вібрація, звук і сповіщення, коли відпочинок закінчився",
+            "Вибрация, звук и уведомление, когда отдых закончился",
+            languageCode: languageCode
+        )
+        let label = VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.body)
+                .foregroundStyle(GymTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(subtitle)
+                .font(.subheadline)
+                .foregroundStyle(GymTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                // The label gets the full width; the switch sits on its own line.
+                VStack(alignment: .leading, spacing: 8) {
+                    label
+                    Toggle(isOn: $restEndAlertEnabled) { label }
+                        .labelsHidden()
+                        .tint(GymTheme.primaryAction)
+                        .accessibilityLabel(title)
+                        .accessibilityHint(subtitle)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    Toggle(isOn: $restEndAlertEnabled) { label }
+                        .tint(GymTheme.primaryAction)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+        .frame(minHeight: 48)
+        .onChange(of: restEndAlertEnabled) { _, _ in
+            appState.restTimers.restEndAlertSettingChanged()
+            appState.watchSync.publishContext()
+        }
     }
 
     /// In-app "Keep screen on in workouts" switch: holds the screen awake

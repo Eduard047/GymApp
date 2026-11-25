@@ -60,7 +60,9 @@ data class ParsedBindingState(
 data class ParsedFullSyncPayload(
     val envelope: WatchSyncEnvelope,
     val sessions: List<SyncedSessionPayload>,
-    val exerciseCatalog: List<String>
+    val exerciseCatalog: List<String>,
+    /** The phone's "Rest end alert" switch; true when the phone did not send it (older phones). */
+    val restEndAlert: Boolean = true
 )
 
 data class ParsedWorkoutPlanPayload(
@@ -68,7 +70,9 @@ data class ParsedWorkoutPlanPayload(
     val expiresAt: Long,
     val sets: List<WearWorkoutSetDraft>,
     val exerciseCatalog: List<String>,
-    val meta: SyncedWorkoutPlanMeta
+    val meta: SyncedWorkoutPlanMeta,
+    /** The phone's "Rest end alert" switch; true when the phone did not send it (older phones). */
+    val restEndAlert: Boolean = true
 )
 
 data class ParsedMutationAck(
@@ -241,7 +245,8 @@ object WatchSyncJson {
                 expiresAt = expiresAt,
                 sets = sets,
                 exerciseCatalog = parseExerciseCatalog(root),
-                meta = meta
+                meta = meta,
+                restEndAlert = parseRestEndAlert(root)
             )
         }
     }
@@ -318,7 +323,8 @@ object WatchSyncJson {
             ParsedFullSyncPayload(
                 envelope = envelope,
                 sessions = sessions,
-                exerciseCatalog = parseExerciseCatalog(root)
+                exerciseCatalog = parseExerciseCatalog(root),
+                restEndAlert = parseRestEndAlert(root)
             )
         }
     }
@@ -441,6 +447,14 @@ object WatchSyncJson {
             authorityEpoch = root.requiredAuthorityEpoch()
         )
     }
+
+    /**
+     * The optional `restEndAlert` boolean (the phone's "Rest end alert" switch). Absent, null or not a
+     * boolean reads as true, so an older phone, or a malformed value, keeps the rest-end vibration and
+     * never costs the rest of the sync.
+     */
+    internal fun parseRestEndAlert(root: JSONObject): Boolean =
+        (root.opt(SyncPaths.KEY_REST_END_ALERT) as? Boolean) ?: true
 
     private fun parseExerciseCatalog(root: JSONObject): List<String> {
         if (!root.has("exerciseCatalog") || root.isNull("exerciseCatalog")) return emptyList()

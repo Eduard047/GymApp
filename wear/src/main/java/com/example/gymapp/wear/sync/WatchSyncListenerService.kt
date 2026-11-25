@@ -148,6 +148,7 @@ class WatchSyncListenerService : WearableListenerService() {
         }
         app.repository.replaceSessionsFromSync(payload.sessions)
         WatchExerciseCatalogStorage.save(applicationContext, payload.exerciseCatalog)
+        WatchSettingsStorage.setRestEndAlert(applicationContext, payload.restEndAlert)
         WatchSyncBindingStorage.acceptFullSync(
             context = applicationContext,
             sourceNodeId = sourceNodeId,
@@ -180,6 +181,7 @@ class WatchSyncListenerService : WearableListenerService() {
         WatchSyncStageStorage.stagePlan(applicationContext, envelope)
         WatchPlanStorage.save(applicationContext, rawPayload)
         WatchExerciseCatalogStorage.save(applicationContext, payload.exerciseCatalog)
+        WatchSettingsStorage.setRestEndAlert(applicationContext, payload.restEndAlert)
         WatchSyncBindingStorage.acceptPlan(applicationContext, envelope.revision)
         WatchSyncStageStorage.clearPlanIfMatches(applicationContext, envelope)
     }

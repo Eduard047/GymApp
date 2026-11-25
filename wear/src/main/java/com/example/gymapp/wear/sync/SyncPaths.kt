@@ -2,6 +2,8 @@ package com.example.gymapp.wear.sync
 
 object SyncPaths {
     const val PROTOCOL_VERSION = 1
+    /** Optional boolean in plan and full-sync messages: the phone's "Rest end alert" switch (absent = on). */
+    const val KEY_REST_END_ALERT = "restEndAlert"
     const val MAX_MESSAGE_BYTES = 100 * 1024
     const val MAX_WORKOUT_SETS = 100
     const val MAX_DURATION_SECONDS = 86_400L

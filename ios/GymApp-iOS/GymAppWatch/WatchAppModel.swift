@@ -115,7 +115,7 @@ final class WatchAppModel: ObservableObject {
         if let workout, WatchWorkoutModel.restRemainingSeconds(workout, nowMillis: Self.nowMillis()) == nil,
            workout.restEndsAtMillis != nil {
             // The rest ended while the app was suspended (no workout session): still signal it.
-            if !health.isRunning, !WatchWorkoutModel.isPaused(workout) {
+            if restEndAlert, !health.isRunning, !WatchWorkoutModel.isPaused(workout) {
                 WKInterfaceDevice.current().play(.notification)
             }
             mutate { WatchWorkoutModel.skipRest(&$0) }
@@ -173,8 +173,12 @@ final class WatchAppModel: ObservableObject {
             let running = await health.start(requestId: started.requestId, startDate: Self.date(now))
             if !running { mutate { $0.heartRateEnabled = false } }
         }
-        if workout?.heartRateEnabled == false { await requestRestAlertPermission() }
+        if workout?.heartRateEnabled == false, restEndAlert { await requestRestAlertPermission() }
     }
+
+    /// The phone's "Rest end alert" switch (absent in the context = on). Off: no rest-end
+    /// haptic and no rest-end notification; the rest countdown still runs and ends.
+    private var restEndAlert: Bool { context?.bound?.restEndAlert ?? true }
 
     /// Without a workout session the app is suspended with the wrist down, so the rest
     /// end is announced by a local notification. Asked only on that path.
@@ -453,8 +457,11 @@ final class WatchAppModel: ObservableObject {
         } else {
             return
         }
+        let restEndAlertChanged = (context?.bound?.restEndAlert ?? true) != (merged.bound?.restEndAlert ?? true)
         context = merged
         phoneProtocolVersion = max(WatchSync.protocolVersion, header.protocolVersion)
+        // A switched "Rest end alert" applies to a running rest at once (drops or re-adds its notification).
+        if restEndAlertChanged { scheduleRestEnd() }
         #if DEBUG
         WatchDebugSeed.log("context bound=\(merged.bound != nil) account=\(merged.bound?.accountBinding.prefix(8) ?? "-") revision=\(merged.bound?.planRevision ?? 0) plan=\(merged.bound?.plan.count ?? 0) exercises=\(merged.bound?.exercises.count ?? 0)")
         #endif
@@ -591,7 +598,8 @@ final class WatchAppModel: ObservableObject {
         let now = Self.nowMillis()
         // Without a workout session the app is suspended with the wrist down and the timer
         // below never fires: a local notification carries the rest-end signal instead.
-        if let seconds = WatchWorkoutModel.restNotificationDelaySeconds(workout, sessionRunning: health.isRunning, nowMillis: now) {
+        if restEndAlert,
+           let seconds = WatchWorkoutModel.restNotificationDelaySeconds(workout, sessionRunning: health.isRunning, nowMillis: now) {
             let content = UNMutableNotificationContent()
             content.title = text(.restDone)
             content.sound = .default
@@ -605,7 +613,7 @@ final class WatchAppModel: ObservableObject {
         restTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000)
             guard !Task.isCancelled, let self, self.workout?.restEndsAtMillis == end else { return }
-            WKInterfaceDevice.current().play(.notification)
+            if self.restEndAlert { WKInterfaceDevice.current().play(.notification) }
             AccessibilityNotification.Announcement(self.text(.restDone)).post()
             self.mutate { WatchWorkoutModel.skipRest(&$0) }
         }

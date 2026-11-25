@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.SystemClock
+import com.example.gymapp.wear.sync.WatchSettingsStorage
 
 /**
  * The "rest finished" vibration outside the ViewModel: an alarm wakes [RestEndReceiver] at the
@@ -28,6 +29,12 @@ object RestEndAlarm {
     /** True when a vibration for [token] is still owed: it is the scheduled one, not yet claimed. */
     internal fun shouldDeliver(scheduledToken: Long?, token: Long): Boolean =
         token > 0L && scheduledToken == token
+
+    /**
+     * Whether a claimed rest end vibrates: only while the phone's "Rest end alert" switch is on (default
+     * on). The claim itself always happens, so the countdown ends the same way with the switch off.
+     */
+    internal fun shouldVibrate(claimed: Boolean, restEndAlert: Boolean): Boolean = claimed && restEndAlert
 
     /**
      * (Re)arms the alarm for the rest ending at [token] (wall clock), [remainingMs] from now.
@@ -74,7 +81,8 @@ object RestEndAlarm {
 
     /**
      * The rest ending at [token] is over: vibrates when this rest's vibration has not been
-     * given yet. Returns true when it vibrated. Called by the receiver and by the ticker.
+     * given yet and the phone's "Rest end alert" switch is on. Returns true when it vibrated.
+     * Called by the receiver and by the ticker.
      */
     fun deliver(context: Context, token: Long): Boolean {
         val app = context.applicationContext
@@ -94,6 +102,7 @@ object RestEndAlarm {
         if (!claimed) return false
         // The ticker got there first: the alarm has nothing left to do.
         cancelAlarm(app)
+        if (!shouldVibrate(claimed, WatchSettingsStorage.restEndAlert(app))) return false
         WearHaptics.restFinished(app)
         return true
     }

@@ -190,6 +190,13 @@ internal fun shouldFireInAppRestEndHaptic(notificationsEnabled: Boolean, channel
 internal fun restAlertsMuted(notificationsEnabled: Boolean, channelBlocked: Boolean): Boolean =
     shouldFireInAppRestEndHaptic(notificationsEnabled, channelBlocked)
 
+/**
+ * The in-app rest-end haptic fires only when the user keeps the "Rest end alert" switch on and the
+ * finished notification cannot vibrate ([alertsMuted]). With the switch off the end of a rest is silent.
+ */
+internal fun inAppRestEndHapticAllowed(restEndAlertEnabled: Boolean, alertsMuted: Boolean): Boolean =
+    restEndAlertEnabled && alertsMuted
+
 /** Status messages that report success rather than a problem (shown in the info tone). */
 internal fun activeWorkoutMessageIsSuccess(messageResourceId: Int): Boolean =
     messageResourceId == com.example.gymapp.R.string.active_workout_exercise_saved ||

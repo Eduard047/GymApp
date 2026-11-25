@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -70,6 +71,18 @@ internal class PhoneWearSyncManager(
                     // account's plan, history and catalog and keeps its own unsent work on hold.
                     runCatching { pushToPinnedSource(active.session, active.binding) }
                         .onFailure { error -> if (error is CancellationException) throw error }
+                }
+        }
+        scope.launch {
+            // The "Rest end alert" switch rides on every full sync and plan; a change is pushed to the
+            // linked watch right away (a watch out of range gets it with its next sync request).
+            application.restEndAlertPreference.enabled
+                .drop(1) // StateFlow is already distinct; skip the value read at start.
+                .collectLatest {
+                    runCatching {
+                        val (session, binding) = currentSessionAndBinding()
+                        pushToPinnedSource(session, binding)
+                    }.onFailure { error -> if (error is CancellationException) throw error }
                 }
         }
     }
@@ -342,7 +355,8 @@ internal class PhoneWearSyncManager(
                     sets = plan.sets,
                     exerciseCatalog = plan.exerciseCatalog,
                     profile = plan.profile,
-                    planSource = plan.planSource
+                    planSource = plan.planSource,
+                    restEndAlert = application.restEndAlertPreference.enabled.value
                 )
             } catch (_: IllegalArgumentException) {
                 // Not valid for the watch: it never will be, so it is not kept for a resend.
@@ -411,7 +425,8 @@ internal class PhoneWearSyncManager(
             binding = binding,
             revision = revision,
             sessions = sessions,
-            exerciseCatalog = catalog
+            exerciseCatalog = catalog,
+            restEndAlert = application.restEndAlertPreference.enabled.value
         )
         if (!isCurrent(binding)) return@withLock
         sendMessage(sourceNodeId, PhoneWearPaths.FULL_SYNC_PAYLOAD, payload)

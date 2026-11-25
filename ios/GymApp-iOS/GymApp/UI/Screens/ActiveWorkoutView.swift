@@ -3368,7 +3368,11 @@ struct ActiveWorkoutView: View {
               scenePhase == .active,
               currentDraft?.timing?.restingUntil == deadline,
               Date().timeIntervalSince(deadline) < 1.5 else { return }
-        restEndFeedbackTrigger &+= 1
+        // "Rest end alert" off: no rest-end haptic (the VoiceOver announcement below stays,
+        // it is the spoken form of the visible countdown reaching zero, not an alert).
+        if GymRestEndAlert.isEnabled() {
+            restEndFeedbackTrigger &+= 1
+        }
         // Same one-time transition as the haptic: not for a skipped/stopped rest or one that already ended.
         announce(gymLocalized("Rest complete", languageCode: gymCurrentLanguageCode()))
     }

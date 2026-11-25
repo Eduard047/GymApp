@@ -1295,6 +1295,8 @@
     <string name="language_button">Язык</string>
     <string name="settings_haptics_title">Тактильный отклик</string>
     <string name="keep_awake_setting_title">Не гасить экран на тренировке</string>
+    <string name="rest_end_alert_setting_title">Сигнал конца отдыха</string>
+    <string name="rest_end_alert_setting_subtitle">Вибрация, звук и уведомление, когда отдых закончился</string>
     <string name="analytics_consent_title">Помочь измерять рекламу?</string>
     <string name="analytics_consent_body">GymApp может измерять, какая реклама приводит людей, которые действительно начинают тренироваться. Для этого используются идентификатор приложения и два события: создание аккаунта и первая завершённая тренировка. Данные тренировок и email не передаются. Это можно изменить в любой момент в настройках.</string>
     <string name="analytics_consent_allow">Разрешить</string>

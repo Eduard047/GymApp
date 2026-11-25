@@ -203,6 +203,7 @@ import com.example.gymapp.ui.components.exerciseReorderViewport
 import com.example.gymapp.ui.components.rememberExerciseReorderState
 import com.example.gymapp.ui.components.rememberGymHaptics
 import com.example.gymapp.util.rememberKeepScreenOnPreference
+import com.example.gymapp.util.rememberRestEndAlertPreference
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutAddExerciseCatalog
 import com.example.gymapp.ui.viewmodel.activeWorkoutExerciseCanBeReplaced
@@ -310,6 +311,7 @@ fun ActiveWorkoutScreen(
     // Hold the screen awake while this screen is composed and the "Keep screen on" switch is on; the
     // flag is cleared again when the screen leaves or the switch is turned off.
     val keepScreenOn by rememberKeepScreenOnPreference().enabled.collectAsState()
+    val restEndAlertEnabled by rememberRestEndAlertPreference().enabled.collectAsState()
     val hostView = LocalView.current
     DisposableEffect(hostView, keepScreenOn) {
         hostView.keepScreenOn = keepScreenOn
@@ -409,7 +411,10 @@ fun ActiveWorkoutScreen(
         if (endedNaturally) {
             // No in-app RestEnd haptic while RestTimerService's finished notification can vibrate (also in
             // the foreground): a second buzz would stack on it. With notifications off, nothing else will.
-            if (restAlertsCurrentlyMuted(appContext)) gymHaptics.perform(GymHapticEvent.RestEnd)
+            // With the in-app "Rest end alert" switch off there is no buzz at all.
+            if (inAppRestEndHapticAllowed(restEndAlertEnabled, restAlertsCurrentlyMuted(appContext))) {
+                gymHaptics.perform(GymHapticEvent.RestEnd)
+            }
             // Screen readers get the same cue the sighted tint gives (a no-op when none is running).
             @Suppress("DEPRECATION")
             rootView.announceForAccessibility(restOverAnnouncement)
@@ -2423,7 +2428,10 @@ private fun CompletedSetRow(
                 }
             }
         )
-        if (isLatestCompleted && restSecondsRemaining > 0) RestAlertsOffHint()
+        // With the in-app "Rest end alert" switch off the user chose a silent rest end, so the
+        // system-notifications hint is neither shown nor burned.
+        val restEndAlertEnabled by rememberRestEndAlertPreference().enabled.collectAsState()
+        if (isLatestCompleted && restSecondsRemaining > 0 && restEndAlertEnabled) RestAlertsOffHint()
     }
 }
 

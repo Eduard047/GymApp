@@ -415,6 +415,42 @@ class PhoneWearProtocolTest {
     }
 
     @Test
+    fun restEndAlertRidesOnPlanAndFullSyncOnlyWhenGiven() {
+        val binding = PhoneWearAccountBinding(ownerId = ownerId, accountGeneration = 4L, signedOut = false, authorityEpoch = TEST_EPOCH)
+        fun plan(alert: Boolean?) = JSONObject(
+            PhoneWearProtocol.buildWorkoutPlan(
+                binding = binding,
+                revision = 1L,
+                sets = listOf(NamedWorkoutSetDraft("Bench Press", 80.0, 8)),
+                exerciseCatalog = emptyList(),
+                profile = null,
+                planSource = "smart_coach",
+                now = now,
+                messageId = operationId,
+                restEndAlert = alert
+            ).toString(Charsets.UTF_8)
+        )
+        fun full(alert: Boolean?) = JSONObject(
+            PhoneWearProtocol.buildBoundedFullSync(
+                binding = binding,
+                revision = 2L,
+                sessions = emptyList(),
+                exerciseCatalog = emptyList(),
+                now = now,
+                messageId = operationId,
+                restEndAlert = alert
+            ).toString(Charsets.UTF_8)
+        )
+        assertEquals("restEndAlert", PhoneWearPaths.KEY_REST_END_ALERT)
+        assertEquals(false, plan(false).get("restEndAlert"))
+        assertEquals(true, plan(true).get("restEndAlert"))
+        assertFalse(plan(null).has("restEndAlert"))
+        assertEquals(false, full(false).get("restEndAlert"))
+        assertEquals(true, full(true).get("restEndAlert"))
+        assertFalse(full(null).has("restEndAlert"))
+    }
+
+    @Test
     fun workoutPlanKeepsUnicodeNamesAndUsesBoundedWatchEnvelope() {
         val binding = PhoneWearAccountBinding(ownerId = ownerId, accountGeneration = 4L, signedOut = false, authorityEpoch = TEST_EPOCH)
         val payload = PhoneWearProtocol.buildWorkoutPlan(

@@ -55,6 +55,39 @@ class WatchSyncJsonTest {
     }
 
     @Test
+    fun restEndAlertFromPhoneDefaultsOnWhenAbsentOrMalformed() {
+        val now = System.currentTimeMillis()
+        fun plan(alert: Any?) = envelope(sentAt = now)
+            .put("expiresAt", now + 60_000L)
+            .put(
+                "sets",
+                JSONArray().put(JSONObject().put("exerciseName", "Squat").put("weight", 100.0).put("reps", 5))
+            )
+            .apply { if (alert != null) put("restEndAlert", alert) }
+            .toString()
+        fun fullSync(alert: Any?) = envelope(revision = 4L)
+            .put("sessions", JSONArray())
+            .put("exerciseCatalog", JSONArray())
+            .apply { if (alert != null) put("restEndAlert", alert) }
+            .toString()
+
+        fun planAlert(alert: Any?) =
+            (WatchSyncJson.parseWorkoutPlanPayload(plan(alert)) as WatchSyncParseResult.Valid).value.restEndAlert
+        fun fullAlert(alert: Any?) =
+            (WatchSyncJson.parseFullSyncPayload(fullSync(alert)) as WatchSyncParseResult.Valid).value.restEndAlert
+
+        assertEquals(true, planAlert(true))
+        assertEquals(false, planAlert(false))
+        assertEquals(true, planAlert(null))
+        assertEquals(true, planAlert("false"))
+        assertEquals(true, fullAlert(true))
+        assertEquals(false, fullAlert(false))
+        assertEquals(true, fullAlert(null))
+        assertEquals(true, fullAlert(0))
+        assertEquals("restEndAlert", SyncPaths.KEY_REST_END_ALERT)
+    }
+
+    @Test
     fun malformedFullSyncIsRejectedInsteadOfBecomingEmptyHistory() {
         val result = WatchSyncJson.parseFullSyncPayload("{not-json")
 

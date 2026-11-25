@@ -511,6 +511,85 @@ final class RestTimerSecurityTests: XCTestCase {
         return manager.timers[id]!
     }
 
+    // MARK: Rest end alert
+
+    func testRestEndAlertDefaultsOnAndOnSchedulesTheNotification() async {
+        let defaults = temporaryDefaults()
+        XCTAssertTrue(GymRestEndAlert.isEnabled(defaults: defaults))
+        let notifications = RecordingRestNotificationCenter()
+        notifications.authorizationStatusValue = .authorized
+        let manager = RestTimerManager(notificationCenter: notifications, defaults: defaults)
+        manager.bindToAccount(ownerFingerprint: RestTimerManager.ownerFingerprint(for: "local_account-a"))
+
+        defaults.set(true, forKey: GymRestEndAlert.preferenceKey)
+        await manager.start(id: "bench", seconds: 60, title: "Bench").value
+
+        XCTAssertEqual(notifications.pendingIdentifiers.count, 1)
+        XCTAssertTrue(notifications.pendingIdentifiers.allSatisfy {
+            $0.hasPrefix(RestTimerManager.notificationIdentifierPrefix)
+        })
+        XCTAssertEqual(notifications.addedTriggerIntervals.count, 1)
+    }
+
+    func testRestEndAlertOffSchedulesNoNotificationAndAsksNoPermissionButKeepsTheCountdown() async {
+        let defaults = temporaryDefaults()
+        defaults.set(false, forKey: GymRestEndAlert.preferenceKey)
+        XCTAssertFalse(GymRestEndAlert.isEnabled(defaults: defaults))
+        let notifications = RecordingRestNotificationCenter()
+        notifications.authorizationStatusValue = .notDetermined
+        notifications.requestAuthorizationResult = true
+        let manager = RestTimerManager(notificationCenter: notifications, defaults: defaults)
+        manager.bindToAccount(ownerFingerprint: RestTimerManager.ownerFingerprint(for: "local_account-a"))
+
+        await manager.start(id: "bench", seconds: 60, title: "Bench").value
+        XCTAssertTrue(manager.synchronize(id: "squat", deadline: Date().addingTimeInterval(90), title: "Squat"))
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertTrue(notifications.pendingIdentifiers.isEmpty)
+        XCTAssertTrue(notifications.addedTriggerIntervals.isEmpty)
+        XCTAssertFalse(notifications.authorizationRequestIsSuspended)
+        XCTAssertFalse(manager.notificationsDenied)
+        // The countdown itself still runs (rest row and Live Activity read it).
+        XCTAssertGreaterThan(manager.remaining(for: "bench"), 0)
+        XCTAssertNotNil(manager.timers["squat"])
+    }
+
+    func testTurningRestEndAlertOffCancelsTheRunningRestsNotification() async {
+        let defaults = temporaryDefaults()
+        let notifications = RecordingRestNotificationCenter()
+        notifications.authorizationStatusValue = .authorized
+        let manager = RestTimerManager(notificationCenter: notifications, defaults: defaults)
+        manager.bindToAccount(ownerFingerprint: RestTimerManager.ownerFingerprint(for: "local_account-a"))
+        await manager.start(id: "bench", seconds: 60, title: "Bench").value
+        XCTAssertEqual(notifications.pendingIdentifiers.count, 1)
+
+        defaults.set(false, forKey: GymRestEndAlert.preferenceKey)
+        manager.restEndAlertSettingChanged()
+        await manager.pendingNotificationCleanup?.value
+
+        XCTAssertTrue(notifications.pendingIdentifiers.isEmpty)
+        XCTAssertNotNil(manager.timers["bench"], "the rest keeps counting down")
+    }
+
+    func testRestEndAlertSwitchedOffWhileSchedulingDropsTheAddedRequest() async {
+        let defaults = temporaryDefaults()
+        let notifications = RecordingRestNotificationCenter()
+        notifications.authorizationStatusValue = .authorized
+        notifications.suspendAdds = true
+        let manager = RestTimerManager(notificationCenter: notifications, defaults: defaults)
+        manager.bindToAccount(ownerFingerprint: RestTimerManager.ownerFingerprint(for: "local_account-a"))
+        let start = manager.start(id: "bench", seconds: 60, title: "Bench")
+        let suspended = await waitUntil { notifications.addIsSuspended }
+        XCTAssertTrue(suspended)
+
+        defaults.set(false, forKey: GymRestEndAlert.preferenceKey)
+        notifications.resumeAdd()
+        await start.value
+
+        XCTAssertTrue(notifications.pendingIdentifiers.isEmpty)
+    }
+
     private func temporaryDefaults() -> UserDefaults {
         let suiteName = "GymAppTests.RestTimerSecurity.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

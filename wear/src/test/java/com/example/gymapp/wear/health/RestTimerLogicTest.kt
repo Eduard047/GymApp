@@ -128,4 +128,13 @@ class RestTimerLogicTest {
         assertFalse(RestEndAlarm.shouldDeliver(scheduledToken = 43L, token = 42L))
         assertFalse(RestEndAlarm.shouldDeliver(scheduledToken = 0L, token = 0L))
     }
+
+    @Test
+    fun restEndVibratesOnlyWhenClaimedAndThePhoneSwitchIsOn() {
+        assertTrue(RestEndAlarm.shouldVibrate(claimed = true, restEndAlert = true))
+        assertFalse(RestEndAlarm.shouldVibrate(claimed = true, restEndAlert = false))
+        assertFalse(RestEndAlarm.shouldVibrate(claimed = false, restEndAlert = true))
+        assertFalse(RestEndAlarm.shouldVibrate(claimed = false, restEndAlert = false))
+        assertTrue(com.example.gymapp.wear.sync.WatchSettingsStorage.DEFAULT_REST_END_ALERT)
+    }
 }

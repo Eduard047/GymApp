@@ -103,6 +103,40 @@ struct WatchBoundContext: Codable, Equatable, Sendable {
     let planRevision: Int64
     let plan: [WatchPlanExercise]
     let exercises: [String]
+    /// The phone's "Rest end alert" switch. On the wire `restEndAlert` is optional and sent
+    /// only as `false`; absent means true.
+    let restEndAlert: Bool
+
+    init(
+        accountBinding: String,
+        language: String,
+        planRevision: Int64,
+        plan: [WatchPlanExercise],
+        exercises: [String],
+        restEndAlert: Bool = true
+    ) {
+        self.accountBinding = accountBinding
+        self.language = language
+        self.planRevision = planRevision
+        self.plan = plan
+        self.exercises = exercises
+        self.restEndAlert = restEndAlert
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case accountBinding, language, planRevision, plan, exercises, restEndAlert
+    }
+
+    /// A context cached by an older build has no `restEndAlert`: it reads as on.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        accountBinding = try container.decode(String.self, forKey: .accountBinding)
+        language = try container.decode(String.self, forKey: .language)
+        planRevision = try container.decode(Int64.self, forKey: .planRevision)
+        plan = try container.decode([WatchPlanExercise].self, forKey: .plan)
+        exercises = try container.decode([String].self, forKey: .exercises)
+        restEndAlert = try container.decodeIfPresent(Bool.self, forKey: .restEndAlert) ?? true
+    }
 }
 
 /// Phone -> watch application context. `bound == nil` means `unbound`.
@@ -272,6 +306,8 @@ enum WatchSyncCodec {
                 ]
             }
             object["exercises"] = bound.exercises
+            // Additive: sent only when off, so the default context stays byte-identical.
+            if !bound.restEndAlert { object["restEndAlert"] = false }
         } else {
             object["state"] = "unbound"
         }
@@ -474,7 +510,10 @@ enum WatchSyncCodec {
             guard Set(object.keys) == required else { return .failure(.invalid) }
             return .success(.init(sentAtMillis: sentAt, bound: nil))
         case "bound":
-            guard Set(object.keys) == required.union(["accountBinding", "language", "planRevision", "plan", "exercises"]),
+            let boundKeys = required.union(["accountBinding", "language", "planRevision", "plan", "exercises"])
+            let keys = Set(object.keys)
+            guard keys == boundKeys || keys == boundKeys.union(["restEndAlert"]),
+                  let restEndAlert = strictBool(object["restEndAlert"], absent: true),
                   let binding = object["accountBinding"] as? String,
                   WatchSync.isValidHash(binding),
                   let language = object["language"] as? String,
@@ -535,12 +574,21 @@ enum WatchSyncCodec {
                     language: language,
                     planRevision: revision,
                     plan: plan,
-                    exercises: names
+                    exercises: names,
+                    restEndAlert: restEndAlert
                 )
             ))
         default:
             return .failure(.invalid)
         }
+    }
+
+    /// A JSON boolean only (not 0/1); `absent` when the key is missing, nil when invalid.
+    private static func strictBool(_ value: Any?, absent: Bool) -> Bool? {
+        guard let value else { return absent }
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+        return number.boolValue
     }
 
     private static func strictWorkout(

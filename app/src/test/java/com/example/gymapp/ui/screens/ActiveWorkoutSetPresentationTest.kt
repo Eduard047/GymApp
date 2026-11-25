@@ -232,4 +232,12 @@ class ActiveWorkoutSetPresentationTest {
         )
         assertFalse(restAlertsMuted(notificationsEnabled = true, channelBlocked = false))
     }
+
+    @Test
+    fun restEndAlertSwitchOffSilencesTheInAppHaptic() {
+        assertTrue(inAppRestEndHapticAllowed(restEndAlertEnabled = true, alertsMuted = true))
+        assertFalse(inAppRestEndHapticAllowed(restEndAlertEnabled = true, alertsMuted = false))
+        assertFalse(inAppRestEndHapticAllowed(restEndAlertEnabled = false, alertsMuted = true))
+        assertFalse(inAppRestEndHapticAllowed(restEndAlertEnabled = false, alertsMuted = false))
+    }
 }

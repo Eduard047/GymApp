@@ -9,7 +9,7 @@ final class WatchSyncGoldenTests: XCTestCase {
     func testEveryGoldenCase() throws {
         let contract = try WatchSyncTestSupport.loadContract()
         let cases = try XCTUnwrap(contract["cases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 22)
+        XCTAssertEqual(cases.count, 24)
         let byID = Dictionary(uniqueKeysWithValues: cases.map { ($0["id"] as! String, $0) })
         for item in cases {
             let id = item["id"] as! String
@@ -34,6 +34,9 @@ final class WatchSyncGoldenTests: XCTestCase {
                     let reencoded = try WatchSyncCodec.encode(decoded)
                     XCTAssertEqual(WatchSyncCodec.decodeContext(reencoded), decoded, id)
                     XCTAssertEqual(decoded.bound == nil, expect["watchDropsPlan"] as? Bool ?? false, id)
+                    if let restEndAlert = expect["restEndAlert"] as? Bool {
+                        XCTAssertEqual(decoded.bound?.restEndAlert, restEndAlert, id)
+                    }
                 }
                 continue
             }
@@ -49,6 +52,79 @@ final class WatchSyncGoldenTests: XCTestCase {
         let context = try XCTUnwrap(WatchSyncCodec.decodeContext(bytes))
         XCTAssertEqual(context.bound?.plan.map(\.name), ["Жим лёжа", "Присед"])
         XCTAssertEqual(context.bound?.plan.first?.sets.last, WatchPlanSet(weight: 62.5, reps: 6))
+    }
+
+    func testRestEndAlertDecodesTrueFalseAndAbsentAndIsSentOnlyWhenOff() throws {
+        func bound(_ restEndAlert: Bool) -> WatchContextMessage {
+            WatchContextMessage(sentAtMillis: 1_795_000_000_000, bound: WatchBoundContext(
+                accountBinding: WatchSyncTestSupport.activeAccount,
+                language: "en",
+                planRevision: 2,
+                plan: [],
+                exercises: ["Bench press"],
+                restEndAlert: restEndAlert
+            ))
+        }
+        // On (default): the key is not sent, so the context keeps its old exact key set.
+        let onBytes = try WatchSyncCodec.encode(bound(true))
+        let onObject = try XCTUnwrap(JSONSerialization.jsonObject(with: onBytes) as? [String: Any])
+        XCTAssertNil(onObject["restEndAlert"])
+        XCTAssertEqual(WatchSyncCodec.decodeContext(onBytes)?.bound?.restEndAlert, true)
+        // Off: sent as JSON false and decoded as false.
+        let offBytes = try WatchSyncCodec.encode(bound(false))
+        XCTAssertTrue(String(decoding: offBytes, as: UTF8.self).contains(#""restEndAlert":false"#))
+        XCTAssertEqual(WatchSyncCodec.decodeContext(offBytes)?.bound?.restEndAlert, false)
+        // Explicit true is accepted; a number or string is not a boolean.
+        var object = onObject
+        object["restEndAlert"] = true
+        XCTAssertEqual(WatchSyncCodec.decodeContext(try JSONSerialization.data(withJSONObject: object))?.bound?.restEndAlert, true)
+        object["restEndAlert"] = 1
+        XCTAssertNil(WatchSyncCodec.decodeContext(try JSONSerialization.data(withJSONObject: object)))
+        object["restEndAlert"] = "false"
+        XCTAssertNil(WatchSyncCodec.decodeContext(try JSONSerialization.data(withJSONObject: object)))
+        // Never on the unbound context.
+        var unbound = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: try WatchSyncCodec.encode(WatchContextMessage(sentAtMillis: 1, bound: nil))
+        ) as? [String: Any])
+        unbound["restEndAlert"] = false
+        XCTAssertNil(WatchSyncCodec.decodeContext(try JSONSerialization.data(withJSONObject: unbound)))
+    }
+
+    func testCachedContextWithoutRestEndAlertReadsAsOn() throws {
+        let legacy = Data(#"{"accountBinding":"\#(WatchSyncTestSupport.activeAccount)","language":"en","planRevision":3,"plan":[],"exercises":[]}"#.utf8)
+        let decoded = try JSONDecoder().decode(WatchBoundContext.self, from: legacy)
+        XCTAssertTrue(decoded.restEndAlert)
+        let off = WatchBoundContext(
+            accountBinding: WatchSyncTestSupport.activeAccount, language: "en", planRevision: 3,
+            plan: [], exercises: [], restEndAlert: false
+        )
+        XCTAssertEqual(try JSONDecoder().decode(WatchBoundContext.self, from: JSONEncoder().encode(off)), off)
+    }
+
+    func testOlderRevisionKeepsTheCachedPlanButTakesTheRestEndAlertSwitch() {
+        let cached = WatchContextMessage(sentAtMillis: 10, bound: WatchBoundContext(
+            accountBinding: WatchSyncTestSupport.activeAccount, language: "en", planRevision: 5,
+            plan: [WatchPlanExercise(name: "Squat", restSeconds: 90, sets: [WatchPlanSet(weight: 100, reps: 5)])],
+            exercises: ["Squat"]
+        ))
+        let incoming = WatchContextMessage(sentAtMillis: 20, bound: WatchBoundContext(
+            accountBinding: WatchSyncTestSupport.activeAccount, language: "en", planRevision: 4,
+            plan: [], exercises: ["Squat"], restEndAlert: false
+        ))
+        let merged = WatchContextMerge.merge(cached: cached, incoming: incoming)
+        XCTAssertEqual(merged.bound?.plan, cached.bound?.plan)
+        XCTAssertEqual(merged.bound?.restEndAlert, false)
+    }
+
+    func testPhoneContextCarriesTheRestEndAlertSwitchAndResendsOnChange() throws {
+        let fixture = try WatchSyncFixture(name: "rest-alert")
+        fixture.service.publishContext()
+        XCTAssertEqual(fixture.transport.lastContext?.bound?.restEndAlert, true)
+        let sent = fixture.transport.contexts.count
+        fixture.defaults.set(false, forKey: GymRestEndAlert.preferenceKey)
+        fixture.service.publishContext()
+        XCTAssertEqual(fixture.transport.contexts.count, sent + 1, "a changed switch is re-sent")
+        XCTAssertEqual(fixture.transport.lastContext?.bound?.restEndAlert, false)
     }
 
     func testRequestIDAndHashFormats() {

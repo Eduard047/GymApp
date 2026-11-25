@@ -9,6 +9,7 @@ enum WatchContextMerge {
     /// - a non-empty plan sent later than the cached context means the phone's revision
     ///   counter restarted (its plan file was cleared): the incoming plan wins;
     /// - anything else is an older message and keeps the cached plan.
+    /// The device settings (`restEndAlert`) always come from the incoming context.
     static func merge(cached: WatchContextMessage?, incoming: WatchContextMessage) -> WatchContextMessage {
         guard let cached,
               let current = cached.bound,
@@ -27,7 +28,8 @@ enum WatchContextMerge {
                 language: next.language,
                 planRevision: current.planRevision,
                 plan: current.plan,
-                exercises: next.exercises
+                exercises: next.exercises,
+                restEndAlert: next.restEndAlert
             )
         )
     }

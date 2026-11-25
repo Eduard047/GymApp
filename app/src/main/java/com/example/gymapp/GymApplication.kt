@@ -65,6 +65,9 @@ class GymApplication : Application() {
     val conversionAnalytics: ConversionAnalytics by lazy { ConversionAnalytics(this) }
     val hapticsPreference: HapticsPreference by lazy { HapticsPreference(this) }
     val keepScreenOnPreference: KeepScreenOnPreference by lazy { KeepScreenOnPreference(this) }
+    val restEndAlertPreference: com.example.gymapp.util.RestEndAlertPreference by lazy {
+        com.example.gymapp.util.RestEndAlertPreference(this)
+    }
     val trainingProfileManager: TrainingProfileManager by lazy { TrainingProfileManager(this) }
     val trainingGuidanceManager: TrainingGuidanceManager by lazy { TrainingGuidanceManager(this) }
     val restTimerController: RestTimerController by lazy { RestTimerController(this) }

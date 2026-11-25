@@ -1229,6 +1229,8 @@
     <string name="language_button">Language</string>
     <string name="settings_haptics_title">Haptics</string>
     <string name="keep_awake_setting_title">Keep screen on in workouts</string>
+    <string name="rest_end_alert_setting_title">Rest end alert</string>
+    <string name="rest_end_alert_setting_subtitle">Vibration, sound and a notification when rest is over</string>
     <string name="analytics_consent_title">Help measure our ads?</string>
     <string name="analytics_consent_body">GymApp can measure which ads bring people who actually start training. This uses an app identifier and two events: account created and first workout finished. No workout data or email is sent. You can change this any time in Settings.</string>
     <string name="analytics_consent_allow">Allow</string>

@@ -955,7 +955,7 @@ class WearWorkoutViewModel(
                     restEndsAtWallMs = null
                     if (token != null) {
                         RestEndAlarm.deliver(appContext, token)
-                    } else {
+                    } else if (WatchSettingsStorage.restEndAlert(appContext)) {
                         WearHaptics.restFinished(appContext)
                     }
                     restWakeLock.release()

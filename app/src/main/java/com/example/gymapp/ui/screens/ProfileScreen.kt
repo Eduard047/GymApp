@@ -85,6 +85,7 @@ import androidx.compose.ui.semantics.Role
 import com.example.gymapp.ui.components.rememberConversionAnalytics
 import com.example.gymapp.util.rememberHapticsPreference
 import com.example.gymapp.util.rememberKeepScreenOnPreference
+import com.example.gymapp.util.rememberRestEndAlertPreference
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -794,6 +795,7 @@ private fun LazyListScope.profileRootContent(
                 )
             }
             row { ProfileKeepScreenOnRow() }
+            row { ProfileRestEndAlertRow() }
             row { ProfileHapticsRow() }
         }
     }
@@ -946,6 +948,26 @@ private fun ProfileKeepScreenOnRow() {
     val enabled by preference.enabled.collectAsState()
     GroupedRow(
         title = stringResource(R.string.keep_awake_setting_title),
+        modifier = Modifier.toggleable(
+            value = enabled,
+            role = Role.Switch,
+            onValueChange = preference::setEnabled
+        ),
+        trailing = { Switch(checked = enabled, onCheckedChange = null, colors = gymSwitchColors()) }
+    )
+}
+
+/**
+ * Rest-end-alert row: a device-local switch (default on) for the notification, sound, vibration and
+ * haptic at the end of a rest, on this phone and a paired Wear OS watch. The whole row is the toggle.
+ */
+@Composable
+private fun ProfileRestEndAlertRow() {
+    val preference = rememberRestEndAlertPreference()
+    val enabled by preference.enabled.collectAsState()
+    GroupedRow(
+        title = stringResource(R.string.rest_end_alert_setting_title),
+        subtitle = stringResource(R.string.rest_end_alert_setting_subtitle),
         modifier = Modifier.toggleable(
             value = enabled,
             role = Role.Switch,

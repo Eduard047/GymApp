@@ -519,7 +519,8 @@ final class WatchConnectivityService: NSObject, ObservableObject, WatchSessionTr
                 language: Self.normalizedLanguage(gymCurrentLanguageCode(defaults: defaults)),
                 planRevision: stored?.planRevision ?? 1,
                 plan: plan,
-                exercises: catalog
+                exercises: catalog,
+                restEndAlert: GymRestEndAlert.isEnabled(defaults: defaults)
             )
         )
     }

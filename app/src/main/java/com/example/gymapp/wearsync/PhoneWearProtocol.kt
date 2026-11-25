@@ -13,6 +13,11 @@ import org.json.JSONObject
 
 internal object PhoneWearPaths {
     const val PROTOCOL_VERSION = 1
+    /**
+     * Optional boolean in plan and full-sync messages: this phone's device-local "Rest end alert" switch.
+     * Watches built before it ignore the key; newer watches read its absence as on.
+     */
+    const val KEY_REST_END_ALERT = "restEndAlert"
     const val MAX_MESSAGE_BYTES = 100 * 1024
     const val MAX_WORKOUT_SETS = 100
     const val MAX_SYNC_SESSIONS = 500
@@ -203,7 +208,8 @@ internal object PhoneWearProtocol {
         profile: PhoneWearPlanProfile?,
         planSource: String,
         now: Long = System.currentTimeMillis(),
-        messageId: String = UUID.randomUUID().toString()
+        messageId: String = UUID.randomUUID().toString(),
+        restEndAlert: Boolean? = null
     ): ByteArray {
         requireValidBinding(binding)
         require(!binding.signedOut) { "Signed-out accounts have no plan" }
@@ -251,6 +257,7 @@ internal object PhoneWearProtocol {
                 .put("sets", setsJson)
                 .put("exerciseCatalog", JSONArray(encodedCatalog.take(catalogCount)))
             if (profileJson != null) root.put("trainingProfile", profileJson)
+            if (restEndAlert != null) root.put(PhoneWearPaths.KEY_REST_END_ALERT, restEndAlert)
             return root
         }
 
@@ -329,7 +336,8 @@ internal object PhoneWearProtocol {
         sessions: List<PhoneWearOutboundSession>,
         exerciseCatalog: List<String>,
         now: Long = System.currentTimeMillis(),
-        messageId: String = UUID.randomUUID().toString()
+        messageId: String = UUID.randomUUID().toString(),
+        restEndAlert: Boolean? = null
     ): ByteArray {
         requireValidBinding(binding)
         require(revision in 1L..PhoneWearPaths.MAX_PROTOCOL_COUNTER)
@@ -361,7 +369,7 @@ internal object PhoneWearProtocol {
             .toList()
 
         fun buildRoot(sessionCount: Int, catalogCount: Int): JSONObject {
-            return JSONObject()
+            val root = JSONObject()
                 .put("protocolVersion", PhoneWearPaths.PROTOCOL_VERSION)
                 .put("ownerId", binding.ownerId)
                 .put("accountGeneration", binding.accountGeneration)
@@ -371,6 +379,8 @@ internal object PhoneWearProtocol {
                 .put("sentAt", now)
                 .put("sessions", JSONArray(encodedSessions.take(sessionCount)))
                 .put("exerciseCatalog", JSONArray(encodedCatalog.take(catalogCount)))
+            if (restEndAlert != null) root.put(PhoneWearPaths.KEY_REST_END_ALERT, restEndAlert)
+            return root
         }
 
         fun largestFittingPrefix(maximum: Int, rootForCount: (Int) -> JSONObject): Int {

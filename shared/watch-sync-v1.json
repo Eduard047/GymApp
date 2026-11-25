@@ -43,14 +43,15 @@
   "messages": {
     "context": {
       "requiredKeys": ["type", "protocolVersion", "state", "sentAtMillis"],
-      "optionalKeys": ["accountBinding", "language", "planRevision", "plan", "exercises"],
+      "optionalKeys": ["accountBinding", "language", "planRevision", "plan", "exercises", "restEndAlert"],
       "type": "context",
       "states": {
         "unbound": "Phone signed out or deleting/switching. Only type, protocolVersion, state, sentAtMillis. Watch drops the cached plan and catalog, keeps the outbox, disables Start.",
         "bound": "accountBinding, language, planRevision required; plan (array, may be empty = no plan) and exercises (array) required."
       },
       "planExercise": { "keys": ["name", "restSeconds", "sets"], "set": { "keys": ["weight", "reps"] } },
-      "exercises": "Free-workout picker catalog: unique trimmed names, plan names first, then library names (GarminPhoneSyncProtocol.exerciseCatalog without Latin conversion)."
+      "exercises": "Free-workout picker catalog: unique trimmed names, plan names first, then library names (GarminPhoneSyncProtocol.exerciseCatalog without Latin conversion).",
+      "restEndAlert": "Optional, bound only, JSON boolean. The phone's device-local Settings switch \"Rest end alert\" (default on). Absent means true; the phone sends it only as false, so the default context keeps its exact earlier key set. false: the watch plays no rest-end haptic and schedules no rest-end notification; the rest countdown still runs and ends. A non-boolean value (for example 0) makes the context invalid. Always taken from the incoming context (also when the cached plan is kept). Watch builds without this field reject a context that carries it and keep their cached context."
     },
     "workout": {
       "requiredKeys": ["type", "protocolVersion", "requestId", "accountBinding", "mode", "startedAtMillis", "endedAtMillis", "durationSeconds", "sets", "healthKit"],
@@ -138,7 +139,29 @@
         ],
         "exercises": ["Жим лёжа", "Присед", "Тяга штанги"]
       },
-      "expect": { "valid": true }
+      "expect": { "valid": true, "restEndAlert": true }
+    },
+    {
+      "id": "context-bound-rest-end-alert-off",
+      "direction": "phoneToWatch",
+      "message": {
+        "type": "context", "protocolVersion": 1, "state": "bound", "sentAtMillis": 1795000000000,
+        "accountBinding": "1111111111111111111111111111111111111111111111111111111111111111",
+        "language": "en", "planRevision": 3, "plan": [], "exercises": ["Bench press"],
+        "restEndAlert": false
+      },
+      "expect": { "valid": true, "restEndAlert": false }
+    },
+    {
+      "id": "context-bound-rest-end-alert-not-boolean-rejected",
+      "direction": "phoneToWatch",
+      "message": {
+        "type": "context", "protocolVersion": 1, "state": "bound", "sentAtMillis": 1795000000000,
+        "accountBinding": "1111111111111111111111111111111111111111111111111111111111111111",
+        "language": "en", "planRevision": 3, "plan": [], "exercises": ["Bench press"],
+        "restEndAlert": 0
+      },
+      "expect": { "valid": false }
     },
     {
       "id": "context-unbound",

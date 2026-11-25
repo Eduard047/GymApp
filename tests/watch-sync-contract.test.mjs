@@ -91,3 +91,33 @@ test("watch sync contract: cases are unique and well-formed", () => {
     assert.ok(contract.cases.some((item) => item.expect.reason === reason), `no case for ${reason}`);
   }
 });
+
+test("watch sync contract: restEndAlert is an optional bound-only boolean, absent = true", () => {
+  const context = contract.messages.context;
+  assert.ok(context.optionalKeys.includes("restEndAlert"));
+  assert.ok(!context.requiredKeys.includes("restEndAlert"));
+  assert.equal(typeof context.restEndAlert, "string");
+  const boundKeys = [...context.requiredKeys, "accountBinding", "language", "planRevision", "plan", "exercises"];
+  const contexts = contract.cases.filter((item) => item.message?.type === "context");
+  for (const item of contexts) {
+    if (!("restEndAlert" in item.expect)) continue;
+    assert.equal(item.expect.valid, true, item.id);
+    assert.equal(item.message.state, "bound", item.id);
+    const expected = "restEndAlert" in item.message ? item.message.restEndAlert : true;
+    assert.equal(item.expect.restEndAlert, expected, item.id);
+  }
+  // The default (on) context carries no restEndAlert, so its key set is unchanged for old watches.
+  const absent = contexts.find((item) => item.expect.valid && item.message.state === "bound" && !("restEndAlert" in item.message));
+  assert.ok(absent, "no bound context without restEndAlert");
+  assert.deepEqual(Object.keys(absent.message).sort(), [...boundKeys].sort());
+  assert.equal(absent.expect.restEndAlert, true);
+  // Off is sent as a JSON boolean false; a non-boolean value is rejected.
+  const off = contexts.find((item) => item.message.restEndAlert === false);
+  assert.ok(off && off.expect.valid === true && off.expect.restEndAlert === false);
+  const nonBoolean = contexts.filter((item) => "restEndAlert" in item.message && typeof item.message.restEndAlert !== "boolean");
+  assert.ok(nonBoolean.length > 0);
+  for (const item of nonBoolean) assert.equal(item.expect.valid, false, item.id);
+  // The unbound context never carries it.
+  const unbound = contexts.filter((item) => item.message.state === "unbound" && item.expect.valid);
+  for (const item of unbound) assert.ok(!("restEndAlert" in item.message), item.id);
+});

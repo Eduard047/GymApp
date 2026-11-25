@@ -23,7 +23,9 @@ import androidx.core.content.ContextCompat
 import com.example.gymapp.MainActivity
 import com.example.gymapp.R
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
+import com.example.gymapp.util.RestEndAlertPreference
 import com.example.gymapp.util.RestTimerState
+import com.example.gymapp.util.restEndAlertAllowed
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -153,7 +155,7 @@ class RestTimerService : Service() {
         RestTimerState.update(0)
         stopForeground(STOP_FOREGROUND_REMOVE)
         cancelNotification(NOTIFICATION_RUNNING_ID)
-        if (!finishedAlertPosted.getAndSet(true)) {
+        if (shouldPostFinishedAlert(finishedAlertPosted, RestEndAlertPreference.isEnabled(this))) {
             notifySafely(NOTIFICATION_FINISHED_ID, buildFinishedNotification(this))
         }
         // The activity may be gone while the process lives on: refresh the ongoing workout
@@ -361,9 +363,20 @@ class RestTimerService : Service() {
             RestTimerState.update(0)
             val notifications = NotificationManagerCompat.from(context)
             notifications.cancel(NOTIFICATION_RUNNING_ID)
-            if (!finishedAlertPosted.getAndSet(true)) {
+            if (shouldPostFinishedAlert(finishedAlertPosted, RestEndAlertPreference.isEnabled(context))) {
                 notifySafely(context, NOTIFICATION_FINISHED_ID, buildFinishedNotification(context))
             }
+        }
+
+        /**
+         * Claims the one finished alert of a rest for the caller (countdown or backstop alarm). The claim
+         * is taken even when the user turned the rest end alert off, so the countdown still stops at the
+         * alarm, but then nothing is posted: no notification, sound or vibration. The ongoing workout
+         * notification refresh after the rest does not go through here and always runs.
+         */
+        internal fun shouldPostFinishedAlert(posted: AtomicBoolean, alertEnabled: Boolean): Boolean {
+            val firstClaim = !posted.getAndSet(true)
+            return firstClaim && restEndAlertAllowed(alertEnabled)
         }
 
         private fun buildFinishedNotification(baseContext: Context): Notification {
@@ -494,7 +507,10 @@ class RestTimerService : Service() {
     }
 }
 
-/** Posts the "rest finished" alert for a rest that outlived the short foreground service. */
+/**
+ * Posts the "rest finished" alert for a rest that outlived the short foreground service (skipped when the
+ * user turned the rest end alert off) and always refreshes the ongoing workout notification.
+ */
 class RestTimerAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         // Preference reads and the notification build stay off the main thread.
