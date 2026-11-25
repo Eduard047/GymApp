@@ -77,7 +77,12 @@ enum GarminPhoneWorkoutTransfer {
             let created = TimeInterval(milliseconds) / 1000
             try check(created <= now.timeIntervalSince1970)
             guard let oldMetadata = old["metadata"] as? [String: Any] else { throw Invalid.state }
-            if now.timeIntervalSince1970 - created <= maximumAge &&
+            // The watch only sends its queue head, so a new request at offset 0
+            // supersedes a stale (half-received or rejected) transfer from the same
+            // watch. The same request id keeps the retained state.
+            let superseded = offset == 0 &&
+                oldMetadata["requestId"] as? String != metadata["requestId"] as? String
+            if !superseded && now.timeIntervalSince1970 - created <= maximumAge &&
                 oldMetadata["accountBinding"] as? String == binding.account &&
                 oldMetadata["deviceBinding"] as? String == binding.device &&
                 oldMetadata["pairingGeneration"] as? String == binding.pairingGeneration { retained = old }

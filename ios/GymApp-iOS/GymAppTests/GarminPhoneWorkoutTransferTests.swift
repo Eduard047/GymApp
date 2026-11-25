@@ -145,4 +145,36 @@ final class GarminPhoneWorkoutTransferTests: XCTestCase {
         XCTAssertEqual(GarminPhoneWorkoutTransfer.accept(previous: first.state, raw: next(0), binding: nextBinding, now: now)?.nextOffset, 1)
     }
 
+    func testNewRequestAtOffsetZeroReplacesStaleTransferButSameRequestKeepsIt() throws {
+        func other(_ offset: Int, total: Int = 3) -> [String: Any] {
+            var value = frame(offset, total: total)
+            var metadata = value["metadata"] as! [String: Any]
+            metadata["requestId"] = "workout-transfer-test-002"
+            value["metadata"] = metadata
+            return value
+        }
+        // A half-received transfer (2 of 60 sets) and a complete but rejected one.
+        var stale = try XCTUnwrap(GarminPhoneWorkoutTransfer.accept(previous: nil, raw: frame(0), binding: binding, now: now)).state
+        stale = try XCTUnwrap(GarminPhoneWorkoutTransfer.accept(previous: stale, raw: frame(1), binding: binding, now: now)).state
+        let rejected = try XCTUnwrap(GarminPhoneWorkoutTransfer.accept(previous: nil, raw: frame(0, total: 1), binding: binding, now: now))
+        XCTAssertNotNil(rejected.completeMessage)
+        for previous in [stale, rejected.state] {
+            // A later offset of another request never continues the old staging.
+            XCTAssertNil(GarminPhoneWorkoutTransfer.accept(previous: previous, raw: other(1), binding: binding, now: now))
+            let replaced = try XCTUnwrap(GarminPhoneWorkoutTransfer.accept(previous: previous, raw: other(0), binding: binding, now: now))
+            XCTAssertEqual(replaced.nextOffset, 1)
+            XCTAssertNil(replaced.completeMessage)
+            let state = try XCTUnwrap(JSONSerialization.jsonObject(with: replaced.state) as? [String: Any])
+            XCTAssertEqual((state["metadata"] as? [String: Any])?["requestId"] as? String, "workout-transfer-test-002")
+            XCTAssertEqual((state["sets"] as? [Any])?.count, 1)
+            XCTAssertNotNil(GarminPhoneWorkoutTransfer.accept(previous: replaced.state, raw: other(1), binding: binding, now: now))
+            XCTAssertNil(GarminPhoneWorkoutTransfer.accept(previous: replaced.state, raw: frame(1), binding: binding, now: now))
+        }
+        // The same request id at offset 0 keeps the retained rows: an identical
+        // replay changes nothing and a changed shape is still rejected.
+        XCTAssertEqual(GarminPhoneWorkoutTransfer.accept(previous: stale, raw: frame(0), binding: binding, now: now)?.state, stale)
+        XCTAssertEqual(GarminPhoneWorkoutTransfer.accept(previous: stale, raw: frame(0), binding: binding, now: now)?.nextOffset, 2)
+        XCTAssertNil(GarminPhoneWorkoutTransfer.accept(previous: stale, raw: frame(0, total: 59), binding: binding, now: now))
+    }
+
 }

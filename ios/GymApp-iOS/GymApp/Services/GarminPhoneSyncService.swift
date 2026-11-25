@@ -2810,6 +2810,15 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             publishStatus("A malformed or unbound Garmin workout was rejected.", isError: true)
             return false
         }
+        // Like workout_part (and Android), only a confirmed pairing may upload. The
+        // watch keeps the workout queued and retries once the pairing is confirmed.
+        // Native difference: iOS confirms every user-selected watch separately,
+        // while Android pins exactly one watch per account.
+        guard isBindingConfirmed(binding) else {
+            publishStatus("A malformed or unbound Garmin workout was rejected.", isError: true)
+            sendNack(for: rawMessage, reason: .rejected, binding: binding, to: app)
+            return false
+        }
         guard let command = GarminPhoneWorkoutParser.parse(
             rawMessage,
             expectedBinding: binding

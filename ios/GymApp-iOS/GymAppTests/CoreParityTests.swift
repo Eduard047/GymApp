@@ -18582,6 +18582,53 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(transport.sent.contains { $0.message["resetWorkout"] as? Bool == true })
     }
 
+    func testGarminCreateWorkoutFromUnconfirmedPairingIsNackedUntilConfirmed() async throws {
+        let deviceID = UUID(uuidString: "21212121-3030-4040-5050-606060606064")!
+        let fixture = try garminPhoneFirstConnect(
+            named: "garmin-unconfirmed-create-workout",
+            accountID: "00000000-0000-4000-8000-000000000504",
+            deviceID: deviceID
+        )
+        defer { withExtendedLifetime(fixture.store) {} }
+        let transport = fixture.transport
+        let proofSent = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(proofSent)
+        let proof = transport.sent[0]
+        XCTAssertEqual(fixture.service.devices.first?.paired, false)
+        let workout: [String: Any] = [
+            "type": "create_workout", "bindingVersion": 2, "workoutMode": "planned",
+            "requestId": "workout-unconfirmed-001",
+            "accountBinding": proof.message["accountBinding"] as Any,
+            "deviceBinding": proof.message["deviceBinding"] as Any,
+            "pairingGeneration": proof.message["pairingGeneration"] as Any,
+            "startedAtSeconds": Int64(Date().timeIntervalSince1970) - 3600,
+            "durationSeconds": 3600, "gymCalories": 60.0,
+            "sets": [["exerciseName": "First connect exercise", "weight": 50.0, "reps": 8]]
+        ]
+
+        // Unconfirmed pairing: a nack, nothing stored, never an ack.
+        fixture.service.receivedMessage(workout, from: proof.app)
+        let nackSent = await waitUntil { transport.sent.count == 2 }
+        XCTAssertTrue(nackSent)
+        XCTAssertEqual(transport.sent[1].message["type"] as? String, "nack")
+        XCTAssertEqual(transport.sent[1].message["reason"] as? String, "rejected")
+        XCTAssertEqual(transport.sent[1].message["requestId"] as? String, "workout-unconfirmed-001")
+        XCTAssertTrue(fixture.store.workouts.isEmpty)
+
+        // Once the watch confirms the pairing the same workout is accepted.
+        fixture.service.receivedMessage(syncAcknowledgement(for: proof.message), from: proof.app)
+        let paired = await waitUntil { fixture.service.devices.first?.paired == true }
+        XCTAssertTrue(paired)
+        let before = transport.sent.count
+        fixture.service.receivedMessage(workout, from: proof.app)
+        let ackSent = await waitUntil {
+            transport.sent.dropFirst(before).contains { $0.message["type"] as? String == "ack" }
+        }
+        XCTAssertTrue(ackSent)
+        XCTAssertFalse(transport.sent.dropFirst(before).contains { $0.message["type"] as? String == "nack" })
+        XCTAssertEqual(fixture.store.workouts.count, 1)
+    }
+
     func testGarminPhoneDuplicateDeviceUUIDsInSelectionResponseAreRejected() throws {
         let defaults = temporaryDefaults(named: "garmin-phone-duplicate-uuid")
         let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)

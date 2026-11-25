@@ -87,12 +87,17 @@ test("every rejecting path after the guard sends a nack with a fixed reason", ()
     afterGuard,
     /\} catch \{[\s\S]*sendNack\(for: rawMessage, reason: \.rejected, binding: binding, to: app\)\s*return false\s*\}\s*\}$/,
   );
+  // Unconfirmed pairing (matches workout_part and Android's pinned-watch check).
+  assert.match(
+    afterGuard,
+    /guard isBindingConfirmed\(binding\) else \{[^}]*sendNack\(for: rawMessage, reason: \.rejected, binding: binding, to: app\)\s*return false\s*\}/,
+  );
   const rejectedNacks = afterGuard.match(
     /sendNack\(for: rawMessage, reason: \.rejected, binding: binding, to: app\)/g,
   );
-  // conflicting replay, two replay-ledger saves, new-receipt save, late-arrival skip save,
-  // post-commit save, catch.
-  assert.equal(rejectedNacks.length, 7);
+  // unconfirmed pairing, conflicting replay, two replay-ledger saves, new-receipt save,
+  // late-arrival skip save, post-commit save, catch.
+  assert.equal(rejectedNacks.length, 8);
   assert.equal(
     afterGuard.match(/reason: \.rateLimited/g).length,
     1,
