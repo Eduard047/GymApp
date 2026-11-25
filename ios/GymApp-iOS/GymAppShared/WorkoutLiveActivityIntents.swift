@@ -36,6 +36,7 @@ private let liveActivityIntentLog = Logger(subsystem: "com.setforge.gymapp.ios",
 /// in the app target); there is no second, divergent copy of the draft.
 struct RecordCurrentSetIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "Record current set"
+    static let isDiscoverable = false
 
     @Parameter(title: "Workout ID")
     var workoutIDString: String
@@ -60,6 +61,10 @@ struct RecordCurrentSetIntent: LiveActivityIntent {
         }
         let expectedSetID = UUID(uuidString: setIDString)
         liveActivityIntentLog.info("RecordCurrentSetIntent.perform invoked")
+        guard await LiveActivityActionBridge.waitUntilReady() else {
+            liveActivityIntentLog.info("RecordCurrentSetIntent: no account bound in time, ignored")
+            return .result()
+        }
         LiveActivityActionBridge.recordCurrentSet?(workoutID, expectedSetID)
         return .result()
     }
@@ -69,6 +74,7 @@ struct RecordCurrentSetIntent: LiveActivityIntent {
 /// Same in-process, no-foreground execution as `RecordCurrentSetIntent`.
 struct SkipRestIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "Skip rest"
+    static let isDiscoverable = false
 
     @Parameter(title: "Workout ID")
     var workoutIDString: String
@@ -94,6 +100,10 @@ struct SkipRestIntent: LiveActivityIntent {
             return .result()
         }
         liveActivityIntentLog.info("SkipRestIntent.perform invoked")
+        guard await LiveActivityActionBridge.waitUntilReady() else {
+            liveActivityIntentLog.info("SkipRestIntent: no account bound in time, ignored")
+            return .result()
+        }
         LiveActivityActionBridge.skipRest?(workoutID, Date(timeIntervalSince1970: restEndsAtInterval))
         return .result()
     }

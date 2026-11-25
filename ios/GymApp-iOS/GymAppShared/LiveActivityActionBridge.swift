@@ -40,4 +40,25 @@ public enum LiveActivityActionBridge {
     /// can never cascade into ending a *later* rest period it was never
     /// shown for.
     @MainActor public static var skipRest: (@MainActor (_ workoutID: UUID, _ expectedRestEndsAt: Date) -> Void)?
+
+    /// `true` once the app has bound an account's stores (not just the
+    /// launch-time placeholder). A cold background launch for a button tap
+    /// runs `perform()` before the restored account is published; the
+    /// intents wait on this instead of acting on the placeholder store.
+    @MainActor public static var isReady: (@MainActor () -> Bool)?
+
+    /// Waits (bounded) until `isReady` reports `true`. Returns `false` on
+    /// timeout, in which case the caller must no-op.
+    @MainActor
+    public static func waitUntilReady(
+        timeout: TimeInterval = 5,
+        pollInterval: TimeInterval = 0.1
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            if isReady?() == true { return true }
+            guard Date() < deadline, !Task.isCancelled else { return false }
+            try? await Task.sleep(nanoseconds: UInt64(max(pollInterval, 0.01) * 1_000_000_000))
+        }
+    }
 }

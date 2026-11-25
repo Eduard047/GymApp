@@ -83,7 +83,11 @@ private struct LiveActivityProgressStyle: ProgressViewStyle {
 struct WorkoutLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: WorkoutActivityAttributes.self) { context in
-            LockScreenLiveActivityView(attributes: context.attributes, state: context.state)
+            LockScreenLiveActivityView(
+                attributes: context.attributes,
+                state: context.state,
+                restEndsAt: context.state.activeRestEndsAt(isStale: context.isStale)
+            )
                 .activityBackgroundTint(LiveActivityColor.surface)
                 // Lock Screen / banner tap: the island's widgetURL below does not apply here.
                 // Keep in sync with `ActiveWorkoutDeepLink` in the app target.
@@ -103,8 +107,8 @@ struct WorkoutLiveActivityWidget: Widget {
                 }
                 .contentMargins(.leading, 4)
                 DynamicIslandExpandedRegion(.trailing) {
-                    if context.state.isResting, let restEndsAt = context.state.restEndsAt {
-                        Text(timerInterval: Date()...restEndsAt, countsDown: true)
+                    if let restEndsAt = context.state.activeRestEndsAt(isStale: context.isStale) {
+                        Text(timerInterval: WorkoutActivityAttributes.restTimerRange(endsAt: restEndsAt), countsDown: true)
                             .font(.title3)
                             .fontWeight(.semibold)
                             .monospacedDigit()
@@ -154,7 +158,7 @@ struct WorkoutLiveActivityWidget: Widget {
                                 .accessibilityLabel(context.state.resolvedRecordSetButtonTitle)
                                 .buttonStyle(LiveActivityCapsuleButtonStyle(prominent: true))
                             }
-                            if context.state.isResting, let restEndsAt = context.state.restEndsAt {
+                            if let restEndsAt = context.state.activeRestEndsAt(isStale: context.isStale) {
                                 Button(intent: SkipRestIntent(
                                     workoutID: context.attributes.workoutID,
                                     restEndsAt: restEndsAt
@@ -172,8 +176,8 @@ struct WorkoutLiveActivityWidget: Widget {
                 Image(systemName: "figure.strengthtraining.traditional")
                     .foregroundStyle(LiveActivityColor.mark)
             } compactTrailing: {
-                if context.state.isResting, let restEndsAt = context.state.restEndsAt {
-                    Text(timerInterval: Date()...restEndsAt, countsDown: true)
+                if let restEndsAt = context.state.activeRestEndsAt(isStale: context.isStale) {
+                    Text(timerInterval: WorkoutActivityAttributes.restTimerRange(endsAt: restEndsAt), countsDown: true)
                         .monospacedDigit()
                         .font(.caption2)
                         .frame(width: 40)
@@ -182,8 +186,8 @@ struct WorkoutLiveActivityWidget: Widget {
                         .font(.caption2)
                 }
             } minimal: {
-                if context.state.isResting, let restEndsAt = context.state.restEndsAt {
-                    Text(timerInterval: Date()...restEndsAt, countsDown: true)
+                if let restEndsAt = context.state.activeRestEndsAt(isStale: context.isStale) {
+                    Text(timerInterval: WorkoutActivityAttributes.restTimerRange(endsAt: restEndsAt), countsDown: true)
                         .monospacedDigit()
                         .font(.caption2)
                 } else {
@@ -199,6 +203,12 @@ struct WorkoutLiveActivityWidget: Widget {
 private struct LockScreenLiveActivityView: View {
     let attributes: WorkoutActivityAttributes
     let state: WorkoutActivityAttributes.ContentState
+    /// `nil` when not resting, or when the activity went stale at rest end.
+    let restEndsAt: Date?
+
+    /// Countdown size: 40 pt at the default text size, scaled with Dynamic
+    /// Type but capped so the card stays inside the 160 pt Lock Screen budget.
+    @ScaledMetric(relativeTo: .largeTitle) private var timerFontSize: CGFloat = 34
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -208,9 +218,12 @@ private struct LockScreenLiveActivityView: View {
                         .font(.headline)
                         .foregroundStyle(LiveActivityColor.text)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                     Text(state.setProgressLabel ?? "\(state.resolvedSetLabel(fallback: attributes.setLabel)) \(state.setIndex)/\(state.setCount)")
                         .font(.subheadline)
                         .foregroundStyle(LiveActivityColor.textMuted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
                 Spacer()
                 Image(systemName: "figure.strengthtraining.traditional")
@@ -219,16 +232,20 @@ private struct LockScreenLiveActivityView: View {
                     .accessibilityHidden(true)
             }
 
-            if state.isResting, let restEndsAt = state.restEndsAt {
-                Text(timerInterval: Date()...restEndsAt, countsDown: true)
-                    .font(.system(size: 40, weight: .bold, design: .rounded))
+            if let restEndsAt {
+                Text(timerInterval: WorkoutActivityAttributes.restTimerRange(endsAt: restEndsAt), countsDown: true)
+                    .font(.system(size: min(timerFontSize, 40), weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(LiveActivityColor.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             } else {
                 Text("\(state.resolvedNextLabel(fallback: attributes.nextLabel)) \(state.nextSetSummary)")
                     .font(.title3)
                     .fontWeight(.semibold)
                     .foregroundStyle(LiveActivityColor.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
 
             ProgressView(value: state.progress)
@@ -245,7 +262,7 @@ private struct LockScreenLiveActivityView: View {
                     .buttonStyle(LiveActivityCapsuleButtonStyle(prominent: true))
                     .accessibilityLabel(state.resolvedRecordSetButtonTitle)
                 }
-                if state.isResting, let restEndsAt = state.restEndsAt {
+                if let restEndsAt {
                     Button(intent: SkipRestIntent(
                         workoutID: attributes.workoutID,
                         restEndsAt: restEndsAt

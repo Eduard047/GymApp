@@ -151,6 +151,23 @@ public struct WorkoutActivityAttributes: ActivityAttributes {
             guard totalSets > 0 else { return 0 }
             return min(1, max(0, Double(completedSets) / Double(totalSets)))
         }
+
+        /// The rest end date to draw a countdown for, or `nil` to draw the
+        /// next-set layout. A stale activity (its `staleDate` = rest end has
+        /// passed while the app was suspended) or an already-elapsed rest is
+        /// shown as not resting, so the card never sits on 0:00 / "Skip rest".
+        public func activeRestEndsAt(isStale: Bool, now: Date = Date()) -> Date? {
+            guard isResting, !isStale, let restEndsAt, restEndsAt > now else { return nil }
+            return restEndsAt
+        }
+    }
+
+    /// Countdown range for `Text(timerInterval:)`. A `ClosedRange` traps
+    /// when its lower bound exceeds the upper one, so the start is clamped
+    /// to the end: a render after the rest ended shows 0:00 instead of
+    /// crashing the widget extension.
+    public static func restTimerRange(now: Date = Date(), endsAt: Date) -> ClosedRange<Date> {
+        min(now, endsAt)...endsAt
     }
 
     /// Stable identifier of the workout this Live Activity represents.

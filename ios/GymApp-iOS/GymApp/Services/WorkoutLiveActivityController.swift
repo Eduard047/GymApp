@@ -105,6 +105,22 @@ final class WorkoutLiveActivityController: ObservableObject {
     private weak var activeWorkoutStore: ActiveWorkoutStore?
     private weak var restTimers: RestTimerManager?
 
+    /// `true` while the attached stores are only the launch-time placeholder
+    /// (`AppState.init` opens the `"signed-out"` store before the restored
+    /// account is prepared and `publish`ed). In that window the controller
+    /// must not adopt, end, start or act on any activity: the activity
+    /// still on the Lock Screen belongs to the account that is about to be
+    /// published, and ending it here (draft `nil`) would kill the card and
+    /// drop a background "Record set" tap. A real owner change still ends
+    /// everything through `endAllForAccountTransition()`.
+    private(set) var isAwaitingAccount = false
+
+    /// Whether the Lock Screen buttons can act now: an account-bound store
+    /// is attached. `LiveActivityActionBridge.waitUntilReady` polls this.
+    var isReadyForActions: Bool {
+        !isAwaitingAccount && workoutStore != nil && activeWorkoutStore != nil
+    }
+
     /// Test/override hook for "is the active draft attached to a live room".
     /// When `nil` (the production default) the controller reads the persisted
     /// live-workout sidecar itself (`isDraftAttachedToLiveRoom`), so the answer
@@ -136,17 +152,24 @@ final class WorkoutLiveActivityController: ObservableObject {
     /// extension's App Intent buttons through `LiveActivityActionBridge`.
     /// Safe to call again (e.g. after an account switch): any activity
     /// started under the previous account is ended immediately first.
+    ///
+    /// - Parameter accountBound: `false` for the launch-time placeholder
+    ///   store (before the restored account is published). The stores and
+    ///   bridge are registered, but no activity is adopted, ended or started
+    ///   and the bridge's actions wait for the account-bound attach.
     func attach(
         workoutStore: WorkoutStore,
         activeWorkoutStore: ActiveWorkoutStore,
-        restTimers: RestTimerManager
+        restTimers: RestTimerManager,
+        accountBound: Bool = true
     ) {
-        if self.workoutStore !== workoutStore {
+        if accountBound, !isAwaitingAccount, self.workoutStore !== workoutStore {
             endImmediately()
         }
         self.workoutStore = workoutStore
         self.activeWorkoutStore = activeWorkoutStore
         self.restTimers = restTimers
+        isAwaitingAccount = !accountBound
 
         LiveActivityActionBridge.recordCurrentSet = { [weak self] workoutID, expectedSetID in
             self?.recordCurrentSet(workoutID: workoutID, expectedSetID: expectedSetID)
@@ -154,7 +177,14 @@ final class WorkoutLiveActivityController: ObservableObject {
         LiveActivityActionBridge.skipRest = { [weak self] workoutID, expectedRestEndsAt in
             self?.skipRest(workoutID: workoutID, expectedRestEndsAt: expectedRestEndsAt)
         }
+        LiveActivityActionBridge.isReady = { [weak self] in
+            self?.isReadyForActions ?? false
+        }
 
+        guard accountBound else {
+            liveActivityControllerLog.info("attach: placeholder store, deferring adoption until an account is bound")
+            return
+        }
         adoptRunningActivities(draft: activeWorkoutStore.draft)
         sync(draft: activeWorkoutStore.draft)
     }
@@ -176,6 +206,7 @@ final class WorkoutLiveActivityController: ObservableObject {
     /// to the foreground, so an activity left running through a relaunch or
     /// update is picked back up as soon as the app can act on it.
     func adoptRunningActivities(draft: ActiveWorkoutDraft?) {
+        guard !isAwaitingAccount else { return }
         let snapshots = requester.currentActivities()
         guard !snapshots.isEmpty else { return }
         liveActivityControllerLog.info(
@@ -204,7 +235,7 @@ final class WorkoutLiveActivityController: ObservableObject {
                 workoutStore: workoutStore,
                 canRecord: !isDraftAttachedToLiveRoom()
             ),
-            staleDate: nil
+            staleDate: Self.staleDate(for: draft)
         )
         Task { await adopted.handle.update(content) }
     }
@@ -214,6 +245,7 @@ final class WorkoutLiveActivityController: ObservableObject {
     /// activity immediately, matching a finish or a discard: a lingering Lock
     /// Screen card for a workout that is already over would be misleading.
     func sync(draft: ActiveWorkoutDraft?) {
+        guard !isAwaitingAccount else { return }
         guard let draft else {
             endImmediately()
             return
@@ -225,7 +257,7 @@ final class WorkoutLiveActivityController: ObservableObject {
             canRecord: !isDraftAttachedToLiveRoom()
         )
         if let activity {
-            let content = ActivityContent(state: state, staleDate: nil)
+            let content = ActivityContent(state: state, staleDate: state.restEndsAt)
             Task { await activity.update(content) }
         } else {
             start(draft: draft, state: state)
@@ -247,7 +279,7 @@ final class WorkoutLiveActivityController: ObservableObject {
             languageCode: languageCode,
             canRecord: !isDraftAttachedToLiveRoom()
         )
-        let content = ActivityContent(state: state, staleDate: nil)
+        let content = ActivityContent(state: state, staleDate: state.restEndsAt)
         Task { await activity.update(content) }
     }
 
@@ -276,6 +308,7 @@ final class WorkoutLiveActivityController: ObservableObject {
         workoutStore = nil
         activeWorkoutStore = nil
         restTimers = nil
+        isAwaitingAccount = false
     }
 
     private func start(draft: ActiveWorkoutDraft, state: WorkoutActivityAttributes.ContentState) {
@@ -290,7 +323,7 @@ final class WorkoutLiveActivityController: ObservableObject {
         do {
             activity = try requester.request(
                 attributes: attributes,
-                content: ActivityContent(state: state, staleDate: nil)
+                content: ActivityContent(state: state, staleDate: state.restEndsAt)
             )
         } catch {
             activity = nil
@@ -311,6 +344,10 @@ final class WorkoutLiveActivityController: ObservableObject {
     ///   tap no longer matches the (now different) current set and becomes
     ///   a no-op instead of recording whatever is next.
     private func recordCurrentSet(workoutID: UUID, expectedSetID: UUID?) {
+        guard !isAwaitingAccount else {
+            liveActivityControllerLog.info("recordCurrentSet: no-op (no account bound yet)")
+            return
+        }
         guard let activeWorkoutStore, let workoutStore else { return }
         guard let draft = activeWorkoutStore.draft, draft.id == workoutID else {
             // The persisted active draft no longer matches what this Live
@@ -380,6 +417,10 @@ final class WorkoutLiveActivityController: ObservableObject {
     ///   against a genuinely later rest period (those differ by tens of
     ///   seconds or more in practice).
     private func skipRest(workoutID: UUID, expectedRestEndsAt: Date) {
+        guard !isAwaitingAccount else {
+            liveActivityControllerLog.info("skipRest: no-op (no account bound yet)")
+            return
+        }
         guard let activeWorkoutStore else { return }
         guard let draft = activeWorkoutStore.draft, draft.id == workoutID else {
             liveActivityControllerLog.info("skipRest: workoutID mismatch, ending stale activity")
@@ -412,6 +453,13 @@ final class WorkoutLiveActivityController: ObservableObject {
     }
 
     // MARK: - Pure mapping (unit-testable without ActivityKit)
+
+    /// The activity goes stale when the rest it shows ends: nothing pushes an
+    /// update at that moment while the app is suspended, so the widget uses
+    /// `context.isStale` to drop the "resting" layout. `nil` when not resting.
+    static func staleDate(for draft: ActiveWorkoutDraft, now: Date = Date()) -> Date? {
+        draft.timing?.restingUntil.flatMap { $0 > now ? $0 : nil }
+    }
 
     /// The current (next-to-record) exercise/set: the first uncompleted set
     /// across all exercises, mirroring `ActiveWorkoutView.currentSetID(in:)`.

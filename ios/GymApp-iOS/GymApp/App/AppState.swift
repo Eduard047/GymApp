@@ -308,7 +308,10 @@ final class AppState: ObservableObject {
             discardPersistedState: hadPendingDeletion
         )
         observeStore()
-        bindLiveActivityController()
+        // Placeholder store only: the restored account is published later
+        // by `prepareAccount`, and only that attach may adopt or end the
+        // activity still on the Lock Screen.
+        bindLiveActivityController(accountBound: false)
         observeLiveActivityLanguage()
 
         if openedStore.quarantinedFileURL != nil {
@@ -3036,11 +3039,12 @@ final class AppState: ObservableObject {
     /// again whenever `publish(store:activeStorageKey:)` runs, so the Live
     /// Activity always mirrors whichever `ActiveWorkoutStore` instance is
     /// currently live for the signed-in account.
-    private func bindLiveActivityController() {
+    private func bindLiveActivityController(accountBound: Bool = true) {
         liveActivityController.attach(
             workoutStore: workoutStore,
             activeWorkoutStore: activeWorkoutStore,
-            restTimers: restTimers
+            restTimers: restTimers,
+            accountBound: accountBound
         )
         liveActivityDraftSubscription = activeWorkoutStore.$draft
             .sink { [weak self] draft in

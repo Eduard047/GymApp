@@ -33,6 +33,7 @@ private final class FakeLiveActivityRequester: LiveActivityRequesting {
     /// keep observing it after handing it to the controller.
     var nextHandle = FakeLiveActivityHandle()
     private(set) var requestCount = 0
+    private(set) var requestedStaleDates: [Date?] = []
     /// Activities ActivityKit already "knows about" before the controller
     /// runs — simulating one a previous process started and left running
     /// through a relaunch/update. Seeded by the test via `seedExisting`.
@@ -57,6 +58,7 @@ private final class FakeLiveActivityRequester: LiveActivityRequesting {
     ) throws -> LiveActivityHandle {
         requestCount += 1
         requestedAttributes.append(attributes)
+        requestedStaleDates.append(content.staleDate)
         nextHandle.updates.append(content.state)
         return nextHandle
     }
@@ -1182,5 +1184,221 @@ final class WorkoutLiveActivityAccountTransitionTests: XCTestCase {
         XCTAssertEqual(requester.requestCount, 2)
         XCTAssertEqual(requester.requestedAttributes.last?.workoutID, newDraft.id)
         XCTAssertEqual(requester.nextHandle.endCount, 0)
+    }
+}
+
+// MARK: - Cold launch: placeholder store must not touch the running activity
+
+@MainActor
+private final class ReadyFlag {
+    var value = false
+}
+
+@MainActor
+final class WorkoutLiveActivityColdLaunchTests: XCTestCase {
+    private var directory: URL!
+
+    override func setUpWithError() throws {
+        directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GymApp-live-activity-coldlaunch-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: directory)
+        LiveActivityActionBridge.recordCurrentSet = nil
+        LiveActivityActionBridge.skipRest = nil
+        LiveActivityActionBridge.isReady = nil
+        super.tearDown()
+    }
+
+    private func settle() {
+        let expectation = expectation(description: "detached handle calls run")
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 1)
+    }
+
+    private func inertRestTimers() -> RestTimerManager {
+        RestTimerManager(defaults: UserDefaults(suiteName: "gym-live-activity-cold-\(UUID().uuidString)")!)
+    }
+
+    private func store(account: String) throws -> (WorkoutStore, ActiveWorkoutStore) {
+        let history = try WorkoutStore(accountStorageKey: account, directoryURL: directory)
+        let active = ActiveWorkoutStore(
+            accountStorageKey: history.accountStorageKey,
+            workoutStorageURL: history.storageURL
+        )
+        return (history, active)
+    }
+
+    func testPlaceholderAttachNeitherAdoptsNorEndsAndBridgeWaits() throws {
+        let requester = FakeLiveActivityRequester()
+        let (accountHistory, accountActive) = try store(account: "cold-launch-account")
+        let exercise = try accountHistory.addExercise(name: "Cold Launch Bench \(UUID().uuidString)")
+        let setID = UUID()
+        let draft = try accountActive.start(
+            workoutDate: Date(),
+            note: nil,
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: exercise.id,
+                    exerciseName: exercise.name,
+                    exerciseCatalogKey: exercise.catalogKey,
+                    sets: [ActiveWorkoutSet(id: setID, weight: 60, reps: 8)]
+                )
+            ],
+            workoutStore: accountHistory,
+            now: Date()
+        )
+        let running = requester.seedExisting(workoutID: draft.id)
+        let (placeholderHistory, placeholderActive) = try store(account: "signed-out")
+        XCTAssertNil(placeholderActive.draft)
+
+        let controller = WorkoutLiveActivityController(requester: requester)
+        controller.attach(
+            workoutStore: placeholderHistory,
+            activeWorkoutStore: placeholderActive,
+            restTimers: inertRestTimers(),
+            accountBound: false
+        )
+        // Foreground activation before `publish` and the placeholder draft
+        // subscription must not end it either.
+        controller.adoptRunningActivities(draft: placeholderActive.draft)
+        controller.sync(draft: nil)
+        settle()
+
+        XCTAssertEqual(running.endCount, 0, "the placeholder store must not end the running activity")
+        XCTAssertTrue(running.updates.isEmpty)
+        XCTAssertEqual(requester.requestCount, 0)
+        XCTAssertFalse(controller.isReadyForActions)
+        XCTAssertEqual(LiveActivityActionBridge.isReady?(), false)
+
+        // A tap arriving now is a no-op on the placeholder, never a stale-end.
+        LiveActivityActionBridge.recordCurrentSet?(draft.id, setID)
+        settle()
+        XCTAssertEqual(running.endCount, 0)
+        XCTAssertNil(accountActive.draft?.exercises.first?.sets.first?.completedAt)
+
+        // The restored account is published: adopt the same activity.
+        controller.attach(
+            workoutStore: accountHistory,
+            activeWorkoutStore: accountActive,
+            restTimers: inertRestTimers()
+        )
+        settle()
+        XCTAssertTrue(controller.isReadyForActions)
+        XCTAssertEqual(LiveActivityActionBridge.isReady?(), true)
+        XCTAssertEqual(running.endCount, 0, "the account's own activity must be adopted, not ended")
+        XCTAssertEqual(requester.requestCount, 0, "adopted, not re-requested")
+        XCTAssertEqual(running.updates.last?.currentSetID, setID)
+
+        LiveActivityActionBridge.recordCurrentSet?(draft.id, setID)
+        XCTAssertNotNil(accountActive.draft?.exercises.first?.sets.first?.completedAt)
+    }
+
+    func testRealOwnerChangeStillEndsEveryActivityAfterColdLaunch() throws {
+        let requester = FakeLiveActivityRequester()
+        let leftover = requester.seedExisting(workoutID: UUID())
+        let (placeholderHistory, placeholderActive) = try store(account: "signed-out")
+        let controller = WorkoutLiveActivityController(requester: requester)
+        controller.attach(
+            workoutStore: placeholderHistory,
+            activeWorkoutStore: placeholderActive,
+            restTimers: inertRestTimers(),
+            accountBound: false
+        )
+        settle()
+        XCTAssertEqual(leftover.endCount, 0)
+
+        controller.endAllForAccountTransition()
+        settle()
+
+        XCTAssertEqual(leftover.endCount, 1, "an account transition must still end every activity")
+        XCTAssertEqual(leftover.lastDismissalPolicy, .immediate)
+        XCTAssertFalse(controller.isReadyForActions, "buttons wait for the next account")
+        XCTAssertFalse(controller.isAwaitingAccount)
+    }
+
+    func testBoundAttachWithoutDraftEndsOrphansAsBefore() throws {
+        let requester = FakeLiveActivityRequester()
+        let orphan = requester.seedExisting(workoutID: UUID())
+        let (history, active) = try store(account: "signed-out")
+        let controller = WorkoutLiveActivityController(requester: requester)
+        controller.attach(workoutStore: history, activeWorkoutStore: active, restTimers: inertRestTimers())
+        settle()
+        XCTAssertEqual(orphan.endCount, 1)
+    }
+
+    func testWaitUntilReadyTimesOutAndSucceedsOnceReady() async {
+        LiveActivityActionBridge.isReady = nil
+        let timedOut = await LiveActivityActionBridge.waitUntilReady(timeout: 0.15, pollInterval: 0.02)
+        XCTAssertFalse(timedOut, "no app binding must time out into a no-op")
+
+        let flag = ReadyFlag()
+        LiveActivityActionBridge.isReady = { flag.value }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 60_000_000)
+            flag.value = true
+        }
+        let becameReady = await LiveActivityActionBridge.waitUntilReady(timeout: 2, pollInterval: 0.02)
+        XCTAssertTrue(becameReady)
+    }
+}
+
+// MARK: - Rest countdown range / stale state
+
+@MainActor
+final class WorkoutLiveActivityRestRangeTests: XCTestCase {
+    func testRestTimerRangeClampsWhenRestAlreadyEnded() {
+        let endsAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let range = WorkoutActivityAttributes.restTimerRange(now: endsAt.addingTimeInterval(30), endsAt: endsAt)
+        XCTAssertEqual(range.lowerBound, endsAt)
+        XCTAssertEqual(range.upperBound, endsAt)
+    }
+
+    func testRestTimerRangeStartsAtNowWhileResting() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let endsAt = now.addingTimeInterval(90)
+        let range = WorkoutActivityAttributes.restTimerRange(now: now, endsAt: endsAt)
+        XCTAssertEqual(range.lowerBound, now)
+        XCTAssertEqual(range.upperBound, endsAt)
+    }
+
+    func testActiveRestEndsAtHidesStaleOrElapsedRest() {
+        let now = Date()
+        let draft = Fixture.draft(
+            exercises: [Fixture.exercise(name: "Squat", sets: [
+                Fixture.set(weight: 100, reps: 5, completed: true),
+                Fixture.set(weight: 100, reps: 5, completed: false)
+            ])],
+            restingUntil: now.addingTimeInterval(60)
+        )
+        let state = WorkoutLiveActivityController.contentState(for: draft, workoutStore: nil, now: now)
+        XCTAssertNotNil(state.activeRestEndsAt(isStale: false, now: now))
+        XCTAssertNil(state.activeRestEndsAt(isStale: true, now: now), "stale card must show the next-set layout")
+        XCTAssertNil(state.activeRestEndsAt(isStale: false, now: now.addingTimeInterval(61)))
+    }
+
+    func testRestingActivityIsRequestedWithStaleDateAtRestEnd() {
+        let requester = FakeLiveActivityRequester()
+        let restEnd = Date().addingTimeInterval(90)
+        let resting = Fixture.draft(
+            exercises: [Fixture.exercise(name: "Row", sets: [
+                Fixture.set(weight: 50, reps: 10, completed: true),
+                Fixture.set(weight: 50, reps: 10, completed: false)
+            ])],
+            restingUntil: restEnd
+        )
+        let controller = WorkoutLiveActivityController(requester: requester)
+        controller.sync(draft: resting)
+        XCTAssertEqual(requester.requestedStaleDates.count, 1)
+        XCTAssertEqual(requester.requestedStaleDates.first ?? nil, restEnd)
+        XCTAssertEqual(WorkoutLiveActivityController.staleDate(for: resting), restEnd)
+
+        let notResting = Fixture.draft(exercises: resting.exercises)
+        XCTAssertNil(WorkoutLiveActivityController.staleDate(for: notResting))
     }
 }
