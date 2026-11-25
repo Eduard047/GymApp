@@ -118,6 +118,47 @@ enum WatchAccountBinding {
     }
 }
 
+/// Bindings of deleted accounts whose `account-deleted` notice has not reached WatchConnectivity
+/// yet. Written before the account's watch data is cleared, so an interrupted deletion (finished
+/// by startup recovery) or a watch that is not reachable still gets the notice later.
+enum WatchDeletedAccountNotices {
+    static let defaultsKey = "watch-phone-deleted-accounts.v1"
+    static let maximumEntries = 16
+
+    /// The binding an account had, without creating one: cloud is derived from the storage key,
+    /// local is read from its stored key (nil when the account never had a watch binding).
+    static func binding(storageKey: String, defaults: UserDefaults) -> String? {
+        if storageKey.hasPrefix("cloud_") {
+            let userID = String(storageKey.dropFirst("cloud_".count))
+            guard UUID(uuidString: userID)?.uuidString.lowercased() == userID.lowercased() else { return nil }
+            return Data("gymapp-watch-account/v1\u{0}\(userID.lowercased())".utf8).watchSHA256Hex
+        }
+        guard let stored = defaults.string(forKey: WatchAccountBinding.localKey(storageKey: storageKey)),
+              WatchSync.isValidHash(stored) else { return nil }
+        return stored
+    }
+
+    static func pending(defaults: UserDefaults) -> [String] {
+        (defaults.stringArray(forKey: defaultsKey) ?? []).filter(WatchSync.isValidHash)
+    }
+
+    static func remember(storageKey: String, defaults: UserDefaults) {
+        guard let binding = binding(storageKey: storageKey, defaults: defaults) else { return }
+        var list = pending(defaults: defaults).filter { $0 != binding }
+        list.append(binding)
+        defaults.set(Array(list.suffix(maximumEntries)), forKey: defaultsKey)
+    }
+
+    static func remove(_ bindings: Set<String>, defaults: UserDefaults) {
+        let list = pending(defaults: defaults).filter { !bindings.contains($0) }
+        if list.isEmpty {
+            defaults.removeObject(forKey: defaultsKey)
+        } else {
+            defaults.set(list, forKey: defaultsKey)
+        }
+    }
+}
+
 // MARK: - Protected per-account files
 
 struct WatchStoredPlan: Codable, Equatable {
@@ -399,18 +440,43 @@ final class WatchConnectivityService: NSObject, ObservableObject, WatchSessionTr
 
     // MARK: Account lifecycle
 
+    /// Account deletion only (not sign-out): the binding is recorded before it is cleared, the
+    /// plain unbound context goes out as before, and the queued `account-deleted` notice tells
+    /// the watch to drop that owner's unsent work.
     func clearLocalData(storageKey: String) {
+        WatchDeletedAccountNotices.remember(storageKey: storageKey, defaults: defaults)
         try? files.clear(storageKey: storageKey)
         defaults.removeObject(forKey: WatchAccountBinding.localKey(storageKey: storageKey))
         if activeStorageKey == storageKey || auth.session == nil {
             lastContextKey = nil
             sendContext(.init(sentAtMillis: nowMillis(), bound: nil))
         }
+        sendDeletionNotices()
     }
 
+    /// Startup recovery of an interrupted deletion: records the notice (sent once the watch
+    /// session is up) before the binding key is removed.
     static func clearStoredData(defaults: UserDefaults, storageKey: String, fileRoot: URL? = nil) {
+        WatchDeletedAccountNotices.remember(storageKey: storageKey, defaults: defaults)
         try? WatchSyncFileStore(root: fileRoot).clear(storageKey: storageKey)
         defaults.removeObject(forKey: WatchAccountBinding.localKey(storageKey: storageKey))
+    }
+
+    /// Hands pending `account-deleted` notices to WatchConnectivity's queue (delivered even when
+    /// the watch is away). Kept until a paired watch with the app installed can take them.
+    func sendDeletionNotices() {
+        let pending = WatchDeletedAccountNotices.pending(defaults: defaults)
+        guard !pending.isEmpty, let transport, transport.isActivated,
+              transport.isPaired, transport.isWatchAppInstalled else { return }
+        var sent = Set<String>()
+        for binding in pending {
+            guard let bytes = try? WatchSyncCodec.encode(
+                WatchAccountDeletedMessage(accountBinding: binding, sentAtMillis: nowMillis())
+            ) else { continue }
+            transport.transferUserInfo(WatchSyncCodec.envelope(bytes))
+            sent.insert(binding)
+        }
+        WatchDeletedAccountNotices.remove(sent, defaults: defaults)
     }
 
     private func activate(_ session: AppAccountSession?) {
@@ -495,6 +561,7 @@ final class WatchConnectivityService: NSObject, ObservableObject, WatchSessionTr
     func watchTransportStateDidChange() {
         refreshWatchState()
         publishContext()
+        sendDeletionNotices()
     }
 
     func watchTransportDidReceive(envelopeBytes: Data) {

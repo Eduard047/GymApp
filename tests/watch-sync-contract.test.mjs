@@ -11,7 +11,7 @@ test("watch sync contract: transport and formats", () => {
   assert.equal(t.envelopeKey, "gymappWatchSync");
   assert.equal(t.maximumEnvelopeBytes, 65536);
   assert.equal(t.context, "updateApplicationContext");
-  for (const key of ["workout", "ack", "nack"]) assert.equal(t[key], "transferUserInfo");
+  for (const key of ["workout", "ack", "nack", "account-deleted"]) assert.equal(t[key], "transferUserInfo");
   const requestId = new RegExp(contract.formats.requestId);
   assert.ok(requestId.test("aw-0f8fad5b-d9cb-469f-a165-70867728950e"));
   assert.ok(!requestId.test("aw-0F8FAD5B-D9CB-469F-A165-70867728950E"));
@@ -63,7 +63,11 @@ test("watch sync contract: cases are unique and well-formed", () => {
     const e = item.expect;
     if (item.direction === "phoneToWatch") {
       assert.equal(typeof e.valid, "boolean", item.id);
-      assert.equal(item.message.type, "context", item.id);
+      assert.ok(["context", "account-deleted"].includes(item.message.type), item.id);
+      if (item.message.type === "account-deleted" && e.valid) {
+        assert.deepEqual(Object.keys(item.message).sort(), [...contract.messages["account-deleted"].keys].sort(), item.id);
+        assert.ok(new RegExp(contract.formats.accountBinding).test(item.message.accountBinding), item.id);
+      }
     } else {
       assert.ok(["ack", "nack", "drop"].includes(e.result), item.id);
       if (e.result === "nack") assert.ok(reasons.has(e.reason), item.id);
@@ -80,6 +84,9 @@ test("watch sync contract: cases are unique and well-formed", () => {
       }
     }
   }
+  // Old watches decode the unbound context by its exact key set: deletion must not add context keys.
+  assert.deepEqual(contract.messages.context.requiredKeys, ["type", "protocolVersion", "state", "sentAtMillis"]);
+  assert.ok(contract.cases.some((item) => item.message?.type === "account-deleted" && item.expect.valid === true));
   for (const reason of ["foreign-account", "not-ready", "unsupported-version", "malformed", "conflict"]) {
     assert.ok(contract.cases.some((item) => item.expect.reason === reason), `no case for ${reason}`);
   }

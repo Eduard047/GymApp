@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import GymApp
 
@@ -8,13 +9,24 @@ final class WatchSyncGoldenTests: XCTestCase {
     func testEveryGoldenCase() throws {
         let contract = try WatchSyncTestSupport.loadContract()
         let cases = try XCTUnwrap(contract["cases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 20)
+        XCTAssertEqual(cases.count, 22)
         let byID = Dictionary(uniqueKeysWithValues: cases.map { ($0["id"] as! String, $0) })
         for item in cases {
             let id = item["id"] as! String
             let expect = try XCTUnwrap(item["expect"] as? [String: Any], id)
             if item["direction"] as? String == "phoneToWatch" {
-                let bytes = try WatchSyncTestSupport.bytes(try WatchSyncTestSupport.message(for: item, byID: byID))
+                let message = try WatchSyncTestSupport.message(for: item, byID: byID)
+                let bytes = try WatchSyncTestSupport.bytes(message)
+                if message["type"] as? String == "account-deleted" {
+                    let deleted = WatchSyncCodec.decodeAccountDeleted(bytes)
+                    XCTAssertEqual(deleted != nil, expect["valid"] as? Bool, id)
+                    XCTAssertNil(WatchSyncCodec.decodeContext(bytes), id)
+                    XCTAssertNil(WatchSyncCodec.decodeReplyTolerant(bytes), id)
+                    if let deleted {
+                        XCTAssertEqual(WatchSyncCodec.decodeAccountDeleted(try WatchSyncCodec.encode(deleted)), deleted, id)
+                    }
+                    continue
+                }
                 let decoded = WatchSyncCodec.decodeContext(bytes)
                 XCTAssertEqual(decoded != nil, expect["valid"] as? Bool, id)
                 if let decoded {
@@ -75,6 +87,28 @@ final class WatchSyncGoldenTests: XCTestCase {
             let nack = WatchNackMessage(requestId: ack.requestId, reason: reason)
             XCTAssertEqual(WatchSyncCodec.decodeReply(try WatchSyncCodec.encode(nack)), .nack(nack))
         }
+    }
+
+    func testAccountDeletedRoundTripAndOldWatchTolerance() throws {
+        let deleted = WatchAccountDeletedMessage(accountBinding: WatchSyncTestSupport.activeAccount, sentAtMillis: 1_795_000_000_000)
+        let bytes = try WatchSyncCodec.encode(deleted)
+        XCTAssertEqual(WatchSyncCodec.messageType(of: bytes), "account-deleted")
+        XCTAssertEqual(WatchSyncCodec.decodeAccountDeleted(bytes), deleted)
+        // Watches without the message route userInfo to the reply decoder: it must be ignored.
+        XCTAssertNil(WatchSyncCodec.decodeReply(bytes))
+        XCTAssertNil(WatchSyncCodec.decodeReplyTolerant(bytes))
+        XCTAssertNil(WatchSyncCodec.decodeContext(bytes))
+        // An unknown userInfo type is ignored by this watch as well.
+        XCTAssertNil(WatchSyncCodec.decodeAccountDeleted(Data(#"{"type":"future-thing","protocolVersion":1}"#.utf8)))
+        XCTAssertNil(WatchSyncCodec.decodeReplyTolerant(Data(#"{"type":"future-thing","protocolVersion":2,"requestId":"aw-0f8fad5b-d9cb-469f-a165-70867728950e"}"#.utf8)))
+        // Invalid binding or version 0: rejected; newer phone with extra keys: binding still read.
+        XCTAssertThrowsError(try WatchSyncCodec.encode(WatchAccountDeletedMessage(accountBinding: "ABC", sentAtMillis: 1)))
+        let bad = #"{"type":"account-deleted","protocolVersion":1,"accountBinding":"XYZ","sentAtMillis":1}"#
+        XCTAssertNil(WatchSyncCodec.decodeAccountDeleted(Data(bad.utf8)))
+        let old = #"{"type":"account-deleted","protocolVersion":0,"accountBinding":"\#(WatchSyncTestSupport.activeAccount)","sentAtMillis":1}"#
+        XCTAssertNil(WatchSyncCodec.decodeAccountDeleted(Data(old.utf8)))
+        let newer = #"{"type":"account-deleted","protocolVersion":2,"accountBinding":"\#(WatchSyncTestSupport.activeAccount)","extra":true}"#
+        XCTAssertEqual(WatchSyncCodec.decodeAccountDeleted(Data(newer.utf8))?.accountBinding, WatchSyncTestSupport.activeAccount)
     }
 
     private func runPhoneCase(_ item: [String: Any], byID: [String: [String: Any]], expect: [String: Any]) throws {
@@ -566,6 +600,51 @@ final class WatchConnectivityServiceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.files.directory(storageKey: fixture.storageKey).path))
         XCTAssertNil(fixture.defaults.string(forKey: WatchAccountBinding.localKey(storageKey: fixture.storageKey)))
         XCTAssertNil(fixture.transport.lastContext?.bound)
+    }
+
+    func testDeletionSendsAccountDeletedNoticeWithTheDeletedBindingAndAPlainUnboundContext() throws {
+        let fixture = try WatchSyncFixture(name: "delete-notice")
+        let binding = try XCTUnwrap(fixture.defaults.string(forKey: WatchAccountBinding.localKey(storageKey: fixture.storageKey)))
+        fixture.transport.userInfos.removeAll()
+        fixture.service.clearLocalData(storageKey: fixture.storageKey)
+        let notices = fixture.transport.userInfos.compactMap { WatchSyncCodec.envelopeBytes(from: $0) }
+            .compactMap(WatchSyncCodec.decodeAccountDeleted)
+        XCTAssertEqual(notices.map(\.accountBinding), [binding])
+        // The context stays the exact v1 unbound shape old watches decode.
+        let context = try XCTUnwrap(fixture.transport.contexts.last.flatMap(WatchSyncCodec.envelopeBytes(from:)))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: context) as? [String: Any])
+        XCTAssertEqual(Set(object.keys), ["type", "protocolVersion", "state", "sentAtMillis"])
+        XCTAssertTrue(WatchDeletedAccountNotices.pending(defaults: fixture.defaults).isEmpty)
+    }
+
+    func testDeletionNoticeWaitsForAWatchAndSurvivesRecovery() throws {
+        let fixture = try WatchSyncFixture(name: "delete-recovery")
+        let binding = try XCTUnwrap(fixture.defaults.string(forKey: WatchAccountBinding.localKey(storageKey: fixture.storageKey)))
+        // Startup recovery runs before the service exists: the binding is recorded before its key is removed.
+        WatchConnectivityService.clearStoredData(defaults: fixture.defaults, storageKey: fixture.storageKey, fileRoot: fixture.root.appendingPathComponent("WatchSync", isDirectory: true))
+        XCTAssertNil(fixture.defaults.string(forKey: WatchAccountBinding.localKey(storageKey: fixture.storageKey)))
+        XCTAssertEqual(WatchDeletedAccountNotices.pending(defaults: fixture.defaults), [binding])
+        fixture.transport.userInfos.removeAll()
+        fixture.transport.isPaired = false
+        fixture.service.watchTransportStateDidChange()
+        XCTAssertTrue(fixture.transport.userInfos.isEmpty)
+        XCTAssertEqual(WatchDeletedAccountNotices.pending(defaults: fixture.defaults), [binding])
+        fixture.transport.isPaired = true
+        fixture.service.watchTransportStateDidChange()
+        let notices = fixture.transport.userInfos.compactMap { WatchSyncCodec.envelopeBytes(from: $0) }
+            .compactMap(WatchSyncCodec.decodeAccountDeleted)
+        XCTAssertEqual(notices.map(\.accountBinding), [binding])
+        XCTAssertTrue(WatchDeletedAccountNotices.pending(defaults: fixture.defaults).isEmpty)
+    }
+
+    func testCloudDeletionBindingIsDerivedFromTheStorageKey() {
+        let defaults = UserDefaults(suiteName: "watch-delete-cloud")!
+        defer { defaults.removePersistentDomain(forName: "watch-delete-cloud") }
+        let userID = "0f8fad5b-d9cb-469f-a165-70867728950e"
+        let expected = SHA256.hash(data: Data("gymapp-watch-account/v1\u{0}\(userID)".utf8)).map { String(format: "%02x", $0) }.joined()
+        XCTAssertEqual(WatchDeletedAccountNotices.binding(storageKey: "cloud_\(userID)", defaults: defaults), expected)
+        XCTAssertNil(WatchDeletedAccountNotices.binding(storageKey: "cloud_not-a-uuid", defaults: defaults))
+        XCTAssertNil(WatchDeletedAccountNotices.binding(storageKey: "local_never-bound", defaults: defaults))
     }
 }
 

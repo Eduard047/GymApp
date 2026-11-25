@@ -244,6 +244,34 @@ final class WatchOutboxPolicyTests: XCTestCase {
         WatchContextMessage(sentAtMillis: now, bound: boundContext(plan: plan, binding: binding))
     }
 
+    func testAccountDeletedDropsOnlyTheDeletedOwnersWork() throws {
+        let mine = try item()
+        let held = WatchOutboxPolicy.markSent(mine, nowMillis: now)
+        var other = try item()
+        other = WatchOutboxItem(
+            requestId: "aw-7c9e6679-7425-40de-944b-e07fc1f90ae7", accountBinding: otherAccount, envelope: other.envelope,
+            status: .held, reason: "foreign-account", attempts: 1, nextAttemptAtMillis: now, heldProtocolVersion: nil,
+            everSent: true, createdAtMillis: now, summary: other.summary
+        )
+        let live = try XCTUnwrap(WatchWorkoutModel.start(mode: .free, context: boundContext(plan: plan),
+                                                         requestId: "aw-16fd2706-8baf-433b-82eb-8c7fada847da",
+                                                         nowMillis: start, heartRateEnabled: false))
+        let deleted = WatchOutboxPolicy.accountDeleted(account, outbox: [held, other], workout: live, isSaving: false)
+        XCTAssertEqual(deleted, .init(deleteRequestIds: [held.requestId], discardWorkout: true, dropSavedItem: false))
+
+        // A save in progress is not interrupted; its item is dropped when it settles.
+        let saving = WatchOutboxPolicy.accountDeleted(account, outbox: [], workout: live, isSaving: true)
+        XCTAssertEqual(saving, .init(deleteRequestIds: [], discardWorkout: false, dropSavedItem: true))
+
+        // Another owner's deletion keeps this owner's item and live workout.
+        let otherDeleted = WatchOutboxPolicy.accountDeleted(otherAccount, outbox: [held, other], workout: live, isSaving: false)
+        XCTAssertEqual(otherDeleted, .init(deleteRequestIds: [other.requestId], discardWorkout: false, dropSavedItem: false))
+
+        // An invalid binding drops nothing.
+        XCTAssertEqual(WatchOutboxPolicy.accountDeleted("x", outbox: [held], workout: live, isSaving: false),
+                       .init(deleteRequestIds: [], discardWorkout: false, dropSavedItem: false))
+    }
+
     func testOnlyMatchingAckDeletesAndResendIsByteIdentical() throws {
         let queued = try item()
         let sent = WatchOutboxPolicy.markSent(queued, nowMillis: now)

@@ -205,6 +205,13 @@ struct WatchContextHeader: Equatable, Sendable {
     let accountBinding: String?
 }
 
+/// Phone -> watch (transferUserInfo, queued): the account with this binding was deleted on
+/// the phone. The watch drops that owner's unsent work; the unbound context is sent as before.
+struct WatchAccountDeletedMessage: Equatable, Sendable {
+    let accountBinding: String
+    let sentAtMillis: Int64
+}
+
 /// Phone reply as seen by the watch.
 enum WatchReply: Equatable, Sendable {
     case ack(WatchAckMessage)
@@ -326,7 +333,36 @@ enum WatchSyncCodec {
         ])
     }
 
+    static func encode(_ deleted: WatchAccountDeletedMessage) throws -> Data {
+        guard WatchSync.isValidHash(deleted.accountBinding),
+              (0 ... WatchSync.maximumSafeInteger).contains(deleted.sentAtMillis) else { throw EncodeError.invalid }
+        return try serialize([
+            "type": "account-deleted",
+            "protocolVersion": WatchSync.protocolVersion,
+            "accountBinding": deleted.accountBinding,
+            "sentAtMillis": NSNumber(value: deleted.sentAtMillis)
+        ])
+    }
+
     // MARK: Decode
+
+    /// Watch-side decode of `account-deleted`: exact keys for this protocol version; from a newer
+    /// phone only `accountBinding` is read, so a deletion is still honoured.
+    static func decodeAccountDeleted(_ bytes: Data) -> WatchAccountDeletedMessage? {
+        guard bytes.count <= WatchSync.maximumEnvelopeBytes,
+              let object = jsonObject(bytes),
+              object["type"] as? String == "account-deleted",
+              let version = integer(object["protocolVersion"]),
+              version >= Int64(WatchSync.protocolVersion),
+              let binding = object["accountBinding"] as? String,
+              WatchSync.isValidHash(binding) else { return nil }
+        let sentAt = integer(object["sentAtMillis"])
+        if version == Int64(WatchSync.protocolVersion) {
+            guard Set(object.keys) == ["type", "protocolVersion", "accountBinding", "sentAtMillis"],
+                  let sentAt, sentAt >= 0 else { return nil }
+        }
+        return .init(accountBinding: binding, sentAtMillis: max(0, sentAt ?? 0))
+    }
 
     static func decodeContext(_ bytes: Data) -> WatchContextMessage? {
         if case .success(let value) = decodeContextResult(bytes) { return value }

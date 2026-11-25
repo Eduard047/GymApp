@@ -174,4 +174,32 @@ enum WatchOutboxPolicy {
     static func canStartWorkout(itemCount: Int) -> Bool {
         itemCount < WatchSync.maximumOutboxItems
     }
+
+    /// What the watch drops after an `account-deleted` message: only that owner's work.
+    /// A workout being saved is not discarded mid-save; its item is dropped once the save settles.
+    static func accountDeleted(
+        _ accountBinding: String,
+        outbox: [WatchOutboxItem],
+        workout: WatchActiveWorkout?,
+        isSaving: Bool
+    ) -> WatchAccountDeletionPlan {
+        guard WatchSync.isValidHash(accountBinding) else {
+            return .init(deleteRequestIds: [], discardWorkout: false, dropSavedItem: false)
+        }
+        let ownsWorkout = workout?.accountBinding == accountBinding
+        return .init(
+            deleteRequestIds: outbox.filter { $0.accountBinding == accountBinding }.map(\.requestId),
+            discardWorkout: ownsWorkout && !isSaving,
+            dropSavedItem: ownsWorkout && isSaving
+        )
+    }
+}
+
+struct WatchAccountDeletionPlan: Equatable, Sendable {
+    /// Outbox items of the deleted owner (every status).
+    let deleteRequestIds: [String]
+    /// The live or summary workout belongs to the deleted owner: discard it silently.
+    let discardWorkout: Bool
+    /// The workout being saved belongs to the deleted owner: drop its item when the save settles.
+    let dropSavedItem: Bool
 }

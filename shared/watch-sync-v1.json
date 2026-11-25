@@ -8,7 +8,8 @@
     "context": "updateApplicationContext",
     "workout": "transferUserInfo",
     "ack": "transferUserInfo",
-    "nack": "transferUserInfo"
+    "nack": "transferUserInfo",
+    "account-deleted": "transferUserInfo"
   },
   "formats": {
     "requestId": "^aw-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
@@ -75,6 +76,15 @@
     "nack": {
       "keys": ["type", "protocolVersion", "requestId", "reason"],
       "type": "nack"
+    },
+    "account-deleted": {
+      "keys": ["type", "protocolVersion", "accountBinding", "sentAtMillis"],
+      "type": "account-deleted",
+      "rules": [
+        "Phone -> watch, sent only when an account or local profile is deleted (never on sign-out or account switch), in addition to the unchanged unbound context. The context keeps its exact v1 key set.",
+        "accountBinding is the deleted account's binding. The phone records it durably before clearing the account's watch data and sends it once WatchConnectivity is active with a paired watch that has the app (also after startup recovery of an interrupted deletion).",
+        "Watch: exact keys for protocolVersion 1; from a newer phone only accountBinding is read. Watches without this message ignore it (unknown userInfo type)."
+      ]
     }
   },
   "nackReasons": {
@@ -88,7 +98,8 @@
     "hold: keep the item and do not send it until a context arrives whose accountBinding equals the item's (foreign-account) or whose protocolVersion is greater than the last one seen (unsupported-version).",
     "deterministic: keep the item, mark it failed and show it under Unsent workouts; only an explicit user Discard (with a confirmation step) deletes it.",
     "Items are sent only while the latest context is bound to the item's accountBinding.",
-    "The item stores the exact encoded envelope; resends are byte-identical so the phone digest matches."
+    "The item stores the exact encoded envelope; resends are byte-identical so the phone digest matches.",
+    "account-deleted: delete every outbox item whose accountBinding equals the message's, whatever its status; silently discard a live or summary workout of that binding (no Health save); a workout being saved for that binding has its item dropped when the save settles. Items and workouts of other bindings are kept."
   ],
   "phoneRules": [
     "Decision order: envelope bytes/JSON/shape -> protocolVersion -> ready account -> accountBinding -> ledger(requestId) -> rate limit -> write.",
@@ -139,6 +150,18 @@
       "id": "context-unbound-with-account-rejected",
       "direction": "phoneToWatch",
       "message": { "type": "context", "protocolVersion": 1, "state": "unbound", "sentAtMillis": 1795000000000, "accountBinding": "1111111111111111111111111111111111111111111111111111111111111111" },
+      "expect": { "valid": false }
+    },
+    {
+      "id": "account-deleted-notice",
+      "direction": "phoneToWatch",
+      "message": { "type": "account-deleted", "protocolVersion": 1, "accountBinding": "1111111111111111111111111111111111111111111111111111111111111111", "sentAtMillis": 1795000000000 },
+      "expect": { "valid": true }
+    },
+    {
+      "id": "account-deleted-extra-key-rejected",
+      "direction": "phoneToWatch",
+      "message": { "type": "account-deleted", "protocolVersion": 1, "accountBinding": "1111111111111111111111111111111111111111111111111111111111111111", "sentAtMillis": 1795000000000, "state": "unbound" },
       "expect": { "valid": false }
     },
     {

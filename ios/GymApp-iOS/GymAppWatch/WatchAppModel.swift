@@ -59,6 +59,8 @@ final class WatchAppModel: ObservableObject {
     private var resultTask: Task<Void, Never>?
     /// The item being finished: it is not flushed until its Health save has settled.
     private var savingRequestId: String?
+    /// Owners deleted on the phone while a save was running: their item is dropped once it settles.
+    private var deletedWhileSaving: Set<String> = []
     private var recoveringHealth = false
     #if DEBUG
     private var debugSeedApplied = false
@@ -99,7 +101,7 @@ final class WatchAppModel: ObservableObject {
         guard !launched else { return }
         launched = true
         client.onContextBytes = { [weak self] bytes in self?.handleContext(bytes) }
-        client.onReplyBytes = { [weak self] bytes in self?.handleReply(bytes) }
+        client.onReplyBytes = { [weak self] bytes in self?.handleUserInfo(bytes) }
         client.onActivated = { [weak self] in self?.flushOutbox() }
         client.activate()
         #if DEBUG
@@ -346,6 +348,16 @@ final class WatchAppModel: ObservableObject {
         activeStore.clear()
         workout = nil
         pauseStatus = nil
+        if deletedWhileSaving.contains(item.accountBinding) {
+            // The owner was deleted on the phone during the save: nothing is kept for them.
+            deletedWhileSaving.removeAll()
+            dropOutboxItems([item.requestId])
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.restNotificationID])
+            phase = .start
+            flushOutbox()
+            return
+        }
+        deletedWhileSaving.removeAll()
         resultRequestId = finished.requestId
         flushOutbox()
         resultTask?.cancel()
@@ -437,6 +449,51 @@ final class WatchAppModel: ObservableObject {
         applyDebugSeed()
         #endif
         flushOutbox()
+    }
+
+    /// Phone -> watch userInfo: an `account-deleted` notice or an ack/nack. Unknown types are ignored.
+    private func handleUserInfo(_ bytes: Data) {
+        if WatchSyncCodec.messageType(of: bytes) == "account-deleted" {
+            if let deleted = WatchSyncCodec.decodeAccountDeleted(bytes) { handleAccountDeleted(deleted) }
+            return
+        }
+        handleReply(bytes)
+    }
+
+    /// The phone deleted this owner: drop their unsent workouts and live workout silently.
+    /// Other owners' items are kept.
+    func handleAccountDeleted(_ deleted: WatchAccountDeletedMessage) {
+        let binding = deleted.accountBinding
+        let plan = WatchOutboxPolicy.accountDeleted(binding, outbox: outbox, workout: workout, isSaving: isSaving)
+        dropOutboxItems(plan.deleteRequestIds)
+        if plan.dropSavedItem { deletedWhileSaving.insert(binding) }
+        if plan.discardWorkout, let current = workout {
+            if current.heartRateEnabled { health.discard() }
+            restTask?.cancel()
+            activeStore.clear()
+            workout = nil
+            pauseStatus = nil
+            summaryStatus = nil
+            phase = .start
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.restNotificationID])
+        }
+        if context?.bound?.accountBinding == binding {
+            // The unbound context may arrive later; never start new work for the deleted owner.
+            context = planStore.replace(.init(sentAtMillis: Self.nowMillis(), bound: nil))
+        }
+        scheduleRetry()
+    }
+
+    private func dropOutboxItems(_ requestIds: [String]) {
+        guard !requestIds.isEmpty else { return }
+        let ids = Set(requestIds)
+        for id in ids { try? outboxStore.delete(requestId: id) }
+        outbox.removeAll { ids.contains($0.requestId) }
+        if let resultRequestId, ids.contains(resultRequestId) {
+            resultTask?.cancel()
+            self.resultRequestId = nil
+            if case .result = phase, workout == nil { phase = .start }
+        }
     }
 
     private func handleReply(_ bytes: Data) {
