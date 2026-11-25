@@ -9,6 +9,7 @@ import android.graphics.pdf.PdfDocument
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.ui.draw.rotate
@@ -1277,6 +1278,7 @@ fun ExerciseListScreen(
                 exerciseName = uiState.editingExerciseName,
                 rawExerciseName = editingExercise.name,
                 hasInputError = uiState.hasInputError,
+                errorKind = uiState.newExerciseError,
                 onExerciseNameChange = onRenameExerciseNameChange,
                 onSave = onSaveRenameExercise,
                 onDismiss = requestRenameClose
@@ -1977,6 +1979,7 @@ private fun RenameExerciseBottomSheetContent(
     exerciseName: String,
     rawExerciseName: String,
     hasInputError: Boolean,
+    errorKind: NewExerciseError?,
     onExerciseNameChange: (String) -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit
@@ -2012,7 +2015,7 @@ private fun RenameExerciseBottomSheetContent(
         )
         if (hasInputError) {
             Text(
-                text = stringResource(R.string.message_exercise_error),
+                text = stringResource(renameExerciseErrorMessageRes(errorKind)),
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodyMedium
             )
@@ -3068,3 +3071,11 @@ internal fun formatHistoryVolume(volume: Double, locale: Locale): String =
         minimumFractionDigits = 0
         maximumFractionDigits = 1
     }.format(volume)
+
+/** Rename sheet error text: a taken name says so (iOS `duplicateExerciseName`); anything else stays generic. */
+@StringRes
+internal fun renameExerciseErrorMessageRes(errorKind: NewExerciseError?): Int =
+    when (errorKind) {
+        NewExerciseError.Duplicate -> R.string.exercise_picker_create_error_duplicate
+        else -> R.string.message_exercise_error
+    }

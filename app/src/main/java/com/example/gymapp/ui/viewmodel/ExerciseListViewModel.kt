@@ -634,22 +634,26 @@ class ExerciseListViewModel(
         editingExercise.value = exercise
         editingExerciseName.value = exercise.name
         hasInputError.value = false
+        newExerciseError.value = null
     }
 
     fun updateEditingExerciseName(value: String) {
         editingExerciseName.value = value
         hasInputError.value = false
+        newExerciseError.value = null
     }
 
     fun closeRenameExercise() {
         editingExercise.value = null
         editingExerciseName.value = ""
+        newExerciseError.value = null
     }
 
     fun saveRenameExercise() {
         val exercise = editingExercise.value ?: return
         val candidate = editingExerciseName.value.trim()
         if (candidate.isEmpty()) {
+            newExerciseError.value = NewExerciseError.Invalid
             hasInputError.value = true
             return
         }
@@ -660,7 +664,10 @@ class ExerciseListViewModel(
             }.onSuccess {
                 closeRenameExercise()
                 hasInputError.value = false
-            }.onFailure {
+            }.onFailure { failure ->
+                if (failure is CancellationException) throw failure
+                // Same mapping as addExercise, so a taken name says so instead of a generic error.
+                newExerciseError.value = newExerciseErrorFor(failure)
                 hasInputError.value = true
             }
         }

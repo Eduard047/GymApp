@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
+import android.os.Build
 import androidx.collection.LruCache
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.catalog.normalizeExerciseIdentityName
@@ -106,6 +107,10 @@ object ExerciseMediaStore {
     private const val MaxSavedDimension = 1_024
     private const val BundledBitmapCacheBytes = 8 * 1_024 * 1_024
     private val allowedTypes = setOf("image/jpeg", "image/png", "image/webp")
+    // HEIC/HEIF (default camera format on many phones and synced iPhone photos) decode through
+    // BitmapFactory from API 28; the photo is re-encoded to the same JPEG as every other input.
+    private val heifTypes = setOf("image/heic", "image/heif")
+    private const val HeifMinSdk = 28
     // Bundled exercise frames are public, immutable application assets. Keeping only these
     // bitmaps in a small process cache avoids retaining account-owned custom media after logout.
     private val bundledBitmapCache = object : LruCache<String, Bitmap>(BundledBitmapCacheBytes) {
@@ -187,6 +192,12 @@ object ExerciseMediaStore {
         return decoded
     }
 
+    /** Whether a picked image's MIME type can be decoded and saved on this API level. */
+    internal fun isAcceptedInputType(mime: String?, sdkInt: Int): Boolean {
+        val normalized = mime?.trim()?.lowercase() ?: return false
+        return normalized in allowedTypes || (normalized in heifTypes && sdkInt >= HeifMinSdk)
+    }
+
     internal fun bundledFrameCacheKey(
         path: String,
         requestedWidth: Int,
@@ -195,7 +206,7 @@ object ExerciseMediaStore {
 
     fun saveCustom(context: Context, ownerKey: String, exerciseId: Long, uri: Uri) {
         val mime = context.contentResolver.getType(uri)?.lowercase()
-        require(mime in allowedTypes) { "unsupported_type" }
+        require(isAcceptedInputType(mime, Build.VERSION.SDK_INT)) { "unsupported_type" }
         val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
             val output = ByteArrayOutputStream()
             val buffer = ByteArray(16 * 1024)

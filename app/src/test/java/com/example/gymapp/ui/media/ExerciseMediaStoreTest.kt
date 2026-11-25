@@ -254,4 +254,22 @@ class ExerciseMediaStoreTest {
         ExerciseMediaStore.notifyMediaRemapped()
         assertEquals(before + 1, ExerciseMediaStore.mediaRevision.value)
     }
+
+    @Test
+    fun heicAndHeifAreAcceptedFromApi28AndNormalized() {
+        assertTrue(ExerciseMediaStore.isAcceptedInputType("image/heic", 28))
+        assertTrue(ExerciseMediaStore.isAcceptedInputType("IMAGE/HEIF", 34))
+        assertFalse(ExerciseMediaStore.isAcceptedInputType("image/heic", 27))
+        assertFalse(ExerciseMediaStore.isAcceptedInputType("image/heif", 24))
+    }
+
+    @Test
+    fun jpegPngWebpStayAcceptedAndOtherTypesAreRejected() {
+        listOf("image/jpeg", "image/png", "image/webp").forEach { mime ->
+            assertTrue(mime, ExerciseMediaStore.isAcceptedInputType(mime, 24))
+        }
+        assertFalse(ExerciseMediaStore.isAcceptedInputType("image/gif", 34))
+        assertFalse(ExerciseMediaStore.isAcceptedInputType("image/svg+xml", 34))
+        assertFalse(ExerciseMediaStore.isAcceptedInputType(null, 34))
+    }
 }

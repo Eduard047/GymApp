@@ -672,17 +672,17 @@ class GymRepository(
             "Exercise name is outside the supported length."
         }
 
-        require(
-            exerciseDao.getExercisesSnapshot().none { existing ->
-                existing.id != exercise.id && exerciseNamesConflict(existing.name, cleanedName)
-            }
-        )
-
         val oldKey = exercise.name.toExerciseMappingKey()
         val newKey = cleanedName.toExerciseMappingKey()
         val now = System.currentTimeMillis()
 
         database.withTransaction {
+            // Checked inside the transaction (like addExercise) so a concurrent add, import or
+            // cloud replace cannot slip a conflicting name in between the check and the update.
+            val conflict = exerciseDao.getExercisesSnapshot().any { existing ->
+                existing.id != exercise.id && exerciseNamesConflict(existing.name, cleanedName)
+            }
+            if (conflict) throw DuplicateExerciseNameException()
             val oldMappings = muscleMappingDao.getForExercise(oldKey)
             exerciseDao.update(exercise.copy(name = cleanedName))
 
@@ -5185,7 +5185,10 @@ private fun String.toExerciseMappingKey(): String {
     return normalizedExerciseName()
 }
 
-/** Thrown by [GymRepository.addExercise] when the name resolves to an existing exercise identity. */
+/**
+ * Thrown by [GymRepository.addExercise] and [GymRepository.renameExercise] when the name resolves
+ * to an existing exercise identity.
+ */
 internal class DuplicateExerciseNameException :
     IllegalArgumentException("An exercise with this name already exists.")
 

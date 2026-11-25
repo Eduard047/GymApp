@@ -14,6 +14,7 @@ import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
@@ -422,12 +423,27 @@ class RestTimerService : Service() {
             val pendingIntent = finishedAlarmIntent(context)
             // Exact alarms need a permission the app does not request, so fall back to the
             // closest allowed time when it is missing.
+            // Trigger on the elapsed-realtime clock so a manual or network wall-clock change during
+            // the rest does not move the alert. The deadline stays wall-clock for the notification.
+            // Known limit: elapsed alarms do not survive a reboot (no BOOT_COMPLETED receiver).
+            val triggerAt = elapsedTriggerAt(
+                nowElapsedMillis = SystemClock.elapsedRealtime(),
+                nowWallMillis = System.currentTimeMillis(),
+                deadlineWallMillis = endsAt
+            )
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()) {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, endsAt, pendingIntent)
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
             } else {
-                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, endsAt, pendingIntent)
+                alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
             }
         }
+
+        /** Converts a wall-clock deadline into an elapsed-realtime trigger; a past deadline fires now. */
+        internal fun elapsedTriggerAt(
+            nowElapsedMillis: Long,
+            nowWallMillis: Long,
+            deadlineWallMillis: Long
+        ): Long = nowElapsedMillis + (deadlineWallMillis - nowWallMillis).coerceAtLeast(0L)
 
         private fun cancelFinishedAlarm(context: Context) {
             context.getSystemService(AlarmManager::class.java)?.cancel(finishedAlarmIntent(context))
