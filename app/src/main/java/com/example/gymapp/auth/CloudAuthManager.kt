@@ -463,6 +463,30 @@ internal fun isSuccessfulCloudAccountDeletionResponse(response: String): Boolean
     keys == setOf("deleted") && json.opt("deleted") == true
 }.getOrDefault(false)
 
+/**
+ * Persists a session returned by an email callback. A recovery session must never be durable
+ * without the forced password-change flag, so the flag is committed synchronously first: a crash
+ * before the session is saved leaves only the flag, which [restoredNeedsPasswordUpdate] ignores
+ * while no cloud session exists. Other callbacks clear the flag only after the session is saved.
+ */
+internal fun persistAuthCallbackSessionInOrder(
+    isRecovery: Boolean,
+    commitPasswordUpdateFlag: (needsPasswordUpdate: Boolean) -> Boolean,
+    persistSession: () -> Unit
+) {
+    if (isRecovery) {
+        check(commitPasswordUpdateFlag(true)) { "Password recovery state could not be committed." }
+        persistSession()
+    } else {
+        persistSession()
+        commitPasswordUpdateFlag(false)
+    }
+}
+
+/** A stored password-update flag applies only to a restored cloud session. */
+internal fun restoredNeedsPasswordUpdate(hasCloudSession: Boolean, storedFlag: Boolean): Boolean =
+    hasCloudSession && storedFlag
+
 internal fun passwordUpdateBody(
     newPassword: String,
     currentPassword: String? = null,
@@ -797,8 +821,10 @@ class CloudAuthManager internal constructor(
             session = initialSession,
             message = initialSessionRead.recoveryMessage,
             messageIsError = initialSessionRead.recoveryMessage != null,
-            needsPasswordUpdate = initialSession is AccountSession.Cloud &&
-                prefs.getBoolean(NEEDS_PASSWORD_UPDATE_KEY, false)
+            needsPasswordUpdate = restoredNeedsPasswordUpdate(
+                hasCloudSession = initialSession is AccountSession.Cloud,
+                storedFlag = prefs.getBoolean(NEEDS_PASSWORD_UPDATE_KEY, false)
+            )
         )
     )
     val authState: StateFlow<AuthUiState> = _authState.asStateFlow()
@@ -1335,9 +1361,14 @@ class CloudAuthManager internal constructor(
             requireNoPendingLocalProfileDeletion()
             authMutationVersion += 1
             remoteStateRevisions.clear()
-            persist(session)
+            persistAuthCallbackSessionInOrder(
+                isRecovery = isRecovery,
+                commitPasswordUpdateFlag = { needsUpdate ->
+                    prefs.edit().putBoolean(NEEDS_PASSWORD_UPDATE_KEY, needsUpdate).commit()
+                },
+                persistSession = { persist(session) }
+            )
             clearPendingAuthTransaction(pendingKey, validTransaction.state)
-            prefs.edit().putBoolean(NEEDS_PASSWORD_UPDATE_KEY, isRecovery).apply()
             _authState.value = AuthUiState(
                 session = session,
                 messageIsError = false,

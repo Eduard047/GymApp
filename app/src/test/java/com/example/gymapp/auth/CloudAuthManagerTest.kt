@@ -505,6 +505,71 @@ class CloudAuthManagerTest {
     }
 
     @Test
+    fun recoveryFlagIsCommittedBeforeTheRecoverySessionIsSaved() {
+        val events = mutableListOf<String>()
+        persistAuthCallbackSessionInOrder(
+            isRecovery = true,
+            commitPasswordUpdateFlag = { events += "flag=$it"; true },
+            persistSession = { events += "session" }
+        )
+        assertEquals(listOf("flag=true", "session"), events)
+    }
+
+    @Test
+    fun recoverySessionIsNotSavedWhenTheFlagCannotBeCommitted() {
+        val events = mutableListOf<String>()
+        assertThrows(IllegalStateException::class.java) {
+            persistAuthCallbackSessionInOrder(
+                isRecovery = true,
+                commitPasswordUpdateFlag = { events += "flag=$it"; false },
+                persistSession = { events += "session" }
+            )
+        }
+        assertEquals(listOf("flag=true"), events)
+    }
+
+    @Test
+    fun crashBetweenFlagAndRecoverySessionLeavesAHarmlessFlag() {
+        // Simulate process death after the flag commit: the session never becomes durable.
+        var storedFlag = false
+        val storedSession = false
+        runCatching {
+            persistAuthCallbackSessionInOrder(
+                isRecovery = true,
+                commitPasswordUpdateFlag = { storedFlag = it; true },
+                persistSession = { error("process died") }
+            )
+        }
+        assertTrue(storedFlag)
+        assertFalse(storedSession)
+        assertFalse(restoredNeedsPasswordUpdate(hasCloudSession = storedSession, storedFlag = storedFlag))
+    }
+
+    @Test
+    fun restoredRecoverySessionStillRequiresAPasswordUpdate() {
+        var storedFlag = false
+        var storedSession = false
+        persistAuthCallbackSessionInOrder(
+            isRecovery = true,
+            commitPasswordUpdateFlag = { storedFlag = it; true },
+            persistSession = { storedSession = true }
+        )
+        assertTrue(restoredNeedsPasswordUpdate(hasCloudSession = storedSession, storedFlag = storedFlag))
+        assertFalse(restoredNeedsPasswordUpdate(hasCloudSession = true, storedFlag = false))
+    }
+
+    @Test
+    fun signupCallbackClearsTheFlagOnlyAfterTheSessionIsSaved() {
+        val events = mutableListOf<String>()
+        persistAuthCallbackSessionInOrder(
+            isRecovery = false,
+            commitPasswordUpdateFlag = { events += "flag=$it"; true },
+            persistSession = { events += "session" }
+        )
+        assertEquals(listOf("session", "flag=false"), events)
+    }
+
+    @Test
     fun signupPurposeIsClassifiedAsEmailConfirmation() {
         assertEquals(
             AuthCallbackKind.EmailConfirmation,
