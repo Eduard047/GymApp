@@ -1224,6 +1224,211 @@ final class ActivityOnlyWorkoutCloudSidecarTests: XCTestCase {
         XCTAssertTrue((durationRequest["p_items"] as? [[String: Any]])?.isEmpty == true)
     }
 
+    /// A same-user re-activation (sign-out then sign-in as the same account) while an
+    /// autosave's activity-only request is in flight keeps the storage key and user ID.
+    /// The stale task must not record baselines or upload from the old store.
+    func testSameUserReactivationDropsInFlightAutosaveFromOldStore() async throws {
+        let harness = try makeInFlightAutosaveHarness(named: "same-user-reactivation")
+        defer { harness.tearDown() }
+        let appState = harness.appState
+        let ready = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(ready)
+        let oldStore = appState.workoutStore
+
+        harness.recorder.holdNextActivitySync()
+        _ = try oldStore.createActivityWorkout(
+            date: Date(gymEpochMilliseconds: 1_760_000_000_000),
+            note: "In-flight activity",
+            durationSeconds: 900
+        )
+        appState.saveBeforeBackgrounding()
+        let held = await waitUntil { harness.recorder.heldSyncStarted }
+        XCTAssertTrue(held)
+
+        await appState.activate(harness.accountSession)
+        let reactivated = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(reactivated)
+        let newStore = appState.workoutStore
+        XCTAssertFalse(newStore === oldStore)
+        // Only the new activation's store has this exercise, so every upload it sends
+        // carries it; an upload from the stale old-store task would not.
+        let writesAfterReactivation = harness.recorder.coreStateWriteCount
+        _ = try newStore.addExercise(name: "New activation marker")
+
+        harness.recorder.releaseHeldSync()
+        let delivered = await waitUntil { harness.recorder.heldSyncDelivered }
+        XCTAssertTrue(delivered)
+        let newUploadSynced = await waitUntil {
+            guard harness.recorder.coreStateBodies.dropFirst(writesAfterReactivation)
+                .contains(where: { $0.contains("New activation marker") }),
+                  case .synced = appState.cloudSyncStatus else { return false }
+            return true
+        }
+        XCTAssertTrue(newUploadSynced)
+        // Give any stale task time to run past its post-await guards.
+        try await Task.sleep(for: .milliseconds(500))
+
+        let laterBodies = Array(
+            harness.recorder.coreStateBodies.dropFirst(writesAfterReactivation)
+        )
+        XCTAssertFalse(laterBodies.isEmpty)
+        XCTAssertTrue(
+            laterBodies.allSatisfy { $0.contains("New activation marker") },
+            "A core upload from the stale old store reached the cloud"
+        )
+        XCTAssertTrue(appState.workoutStore === newStore)
+        XCTAssertNil(newStore.loadPendingActivityOnlyCloudSync(ownerUserID: harness.ownerID))
+    }
+
+    func testNormalAutosaveStillRecordsCleanCheckpoint() async throws {
+        let harness = try makeInFlightAutosaveHarness(named: "normal-autosave-checkpoint")
+        defer { harness.tearDown() }
+        let appState = harness.appState
+        let ready = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(ready)
+        let writesBefore = harness.recorder.coreStateWriteCount
+
+        _ = try appState.workoutStore.createActivityWorkout(
+            date: Date(gymEpochMilliseconds: 1_760_000_000_000),
+            note: "Normal activity",
+            durationSeconds: 900
+        )
+        appState.saveBeforeBackgrounding()
+        let synced = await waitUntil {
+            guard harness.recorder.coreStateWriteCount > writesBefore,
+                  case .synced = appState.cloudSyncStatus else { return false }
+            return true
+        }
+        XCTAssertTrue(synced)
+        XCTAssertEqual(harness.recorder.activitySyncCount, 1)
+        let checkpoint = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try XCTUnwrap(harness.checkpointData()))
+                as? [String: Any]
+        )
+        XCTAssertEqual(checkpoint["dirty"] as? Bool, false)
+        XCTAssertEqual(checkpoint["pending"] as? Bool, false)
+        XCTAssertNotEqual(checkpoint["activityDirty"] as? Bool, true)
+        XCTAssertNotNil(appState.workoutStore.loadActivityOnlyCloudBaseline(
+            ownerUserID: harness.ownerID
+        ))
+    }
+
+    private struct InFlightAutosaveHarness {
+        let appState: AppState
+        let accountSession: AppAccountSession
+        let ownerID: String
+        let defaults: UserDefaults
+        let recorder: InFlightActivityRecorder
+        let urlSession: URLSession
+
+        func checkpointData() -> Data? {
+            defaults.data(forKey: "gymapp.cloud-sync-checkpoint.v1." + accountSession.storageKey)
+        }
+
+        func tearDown() {
+            recorder.releaseHeldSync()
+            ActivitySidecarURLProtocol.handler = nil
+            ActivitySidecarURLProtocol.deliversAsynchronously = false
+            urlSession.invalidateAndCancel()
+        }
+    }
+
+    private func makeInFlightAutosaveHarness(named name: String) throws -> InFlightAutosaveHarness {
+        let directory = try temporaryDirectory(named: name)
+        let defaults = temporaryDefaults(named: name)
+        let ownerID = "11111111-2222-4333-8444-666666666666"
+        let cloud = CloudAccountSession(
+            userID: ownerID,
+            email: "owner@example.com",
+            displayName: "Owner",
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            expiresAt: Date().addingTimeInterval(3_600)
+        )
+        let accountSession = AppAccountSession.cloud(cloud)
+        let seeded = try WorkoutStore(
+            accountStorageKey: accountSession.storageKey,
+            directoryURL: directory
+        )
+        _ = try seeded.seedBuiltInExercises()
+        _ = try seeded.seedDefaultMuscleMappings()
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ActivitySidecarURLProtocol.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: ActivitySidecarKeychainStore(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let recorder = InFlightActivityRecorder()
+        ActivitySidecarURLProtocol.deliversAsynchronously = true
+        ActivitySidecarURLProtocol.handler = { request in
+            switch (request.url?.path, request.httpMethod) {
+            case ("/rest/v1/user_states", "GET"):
+                return try ActivitySidecarURLProtocol.response(
+                    for: request,
+                    json: recorder.coreStateReadJSON()
+                )
+            case ("/rest/v1/user_states", "POST"), ("/rest/v1/user_states", "PATCH"):
+                let revision = try recorder.recordCoreStateWrite(
+                    try XCTUnwrap(request.httpBody),
+                    method: request.httpMethod ?? ""
+                )
+                return try ActivitySidecarURLProtocol.response(
+                    for: request,
+                    json: #"[{"updated_at":"\#(revision)"}]"#
+                )
+            case ("/rest/v1/rpc/garmin_read_activity_only_workouts", "POST"):
+                return try ActivitySidecarURLProtocol.response(
+                    for: request,
+                    json: try recorder.activityReadJSON()
+                )
+            case ("/rest/v1/rpc/garmin_sync_activity_only_workouts", "POST"):
+                return try ActivitySidecarURLProtocol.response(
+                    for: request,
+                    json: try recorder.activitySync(try XCTUnwrap(request.httpBody))
+                )
+            case ("/rest/v1/profiles", "POST"):
+                return try ActivitySidecarURLProtocol.response(for: request, json: "{}")
+            case ("/rest/v1/rpc/social_sync_workout_durations", "POST"):
+                return try ActivitySidecarURLProtocol.response(
+                    for: request,
+                    json: #"{"version":2,"syncedCount":0,"changedCount":0}"#
+                )
+            default:
+                XCTFail(
+                    "Unexpected in-flight request: \(request.httpMethod ?? "nil") " +
+                        "\(request.url?.path ?? "nil")"
+                )
+                return try ActivitySidecarURLProtocol.response(
+                    for: request,
+                    statusCode: 404,
+                    json: "{}"
+                )
+            }
+        }
+
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            cloudURLSession: urlSession,
+            garminBindingStore: GarminDeviceBindingStore(
+                keychain: ActivitySidecarKeychainStore()
+            )
+        )
+        try auth.installSessionForTesting(accountSession)
+        return InFlightAutosaveHarness(
+            appState: appState,
+            accountSession: accountSession,
+            ownerID: ownerID,
+            defaults: defaults,
+            recorder: recorder,
+            urlSession: urlSession
+        )
+    }
+
     func testStaleManualSyncReplaysPendingBeforeCoreLoadAndFinishesSidecarInOnePress() async throws {
         let directory = try temporaryDirectory(named: "manual-stale-order")
         let defaults = temporaryDefaults(named: "manual-stale-order")
@@ -1753,6 +1958,7 @@ private final class ActivitySidecarKeychainStore: KeychainStoring {
 private final class ActivitySidecarURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var handler:
         ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    nonisolated(unsafe) static var deliversAsynchronously = false
 
     override class func canInit(with request: URLRequest) -> Bool {
         request.url?.host == "owrcbsrectdgaotndtxy.supabase.co"
@@ -1765,6 +1971,15 @@ private final class ActivitySidecarURLProtocol: URLProtocol, @unchecked Sendable
             client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL))
             return
         }
+        guard Self.deliversAsynchronously else {
+            respond(using: handler)
+            return
+        }
+        // Lets a test hold one request without blocking the loading thread of others.
+        DispatchQueue.global().async { self.respond(using: handler) }
+    }
+
+    private func respond(using handler: (URLRequest) throws -> (HTTPURLResponse, Data)) {
         do {
             let request = try Self.materializedRequest(request)
             let (response, data) = try handler(request)
@@ -1810,5 +2025,97 @@ private final class ActivitySidecarURLProtocol: URLProtocol, @unchecked Sendable
         copy.httpBodyStream = nil
         copy.httpBody = data
         return copy
+    }
+}
+
+/// Thread-safe fake cloud state for the in-flight autosave tests. One activity-only
+/// sync request can be held open until the test releases it.
+private final class InFlightActivityRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private let gate = DispatchSemaphore(value: 0)
+    private var holdNext = false
+    private var released = false
+    private var heldStarted_ = false
+    private var heldDelivered_ = false
+    private var coreWrites = 0
+    private var coreBodies: [String] = []
+    private var coreState: Any?
+    private var coreRevision = "2026-11-25T10:00:00.000000Z"
+    private var activityRevision: Int64 = 0
+    private var remoteItems: [[String: Any]] = []
+    private var activitySyncs = 0
+
+    var heldSyncStarted: Bool { lock.withLock { heldStarted_ } }
+    var heldSyncDelivered: Bool { lock.withLock { heldDelivered_ } }
+    var coreStateWriteCount: Int { lock.withLock { coreWrites } }
+    var coreStateBodies: [String] { lock.withLock { coreBodies } }
+    var activitySyncCount: Int { lock.withLock { activitySyncs } }
+
+    func holdNextActivitySync() { lock.withLock { holdNext = true } }
+
+    func releaseHeldSync() {
+        let shouldSignal: Bool = lock.withLock {
+            guard heldStarted_, !released else { return false }
+            released = true
+            return true
+        }
+        if shouldSignal { gate.signal() }
+    }
+
+    func coreStateReadJSON() throws -> String {
+        try lock.withLock {
+            guard let coreState else { return "[]" }
+            let data = try JSONSerialization.data(withJSONObject: [[
+                "state": coreState,
+                "updated_at": coreRevision
+            ]])
+            return String(decoding: data, as: UTF8.self)
+        }
+    }
+
+    func recordCoreStateWrite(_ body: Data, method: String) throws -> String {
+        let object = try JSONSerialization.jsonObject(with: body)
+        let state: Any? = (object as? [[String: Any]])?.first?["state"] ??
+            (object as? [String: Any])?["state"]
+        return lock.withLock {
+            coreWrites += 1
+            coreBodies.append(String(decoding: body, as: UTF8.self))
+            if let state { coreState = state }
+            coreRevision = String(format: "2026-11-25T10:00:%02d.000000Z", min(coreWrites, 59))
+            return coreRevision
+        }
+    }
+
+    func activityReadJSON() throws -> String {
+        try lock.withLock {
+            let data = try JSONSerialization.data(withJSONObject: [
+                "version": 1,
+                "revision": activityRevision,
+                "items": remoteItems
+            ], options: [.sortedKeys])
+            return String(decoding: data, as: UTF8.self)
+        }
+    }
+
+    func activitySync(_ body: Data) throws -> String {
+        let shouldHold: Bool = lock.withLock {
+            activitySyncs += 1
+            guard holdNext else { return false }
+            holdNext = false
+            heldStarted_ = true
+            return true
+        }
+        if shouldHold {
+            _ = gate.wait(timeout: .now() + 15)
+        }
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let items = try XCTUnwrap(object["p_items"] as? [[String: Any]])
+        return lock.withLock {
+            remoteItems = items
+            activityRevision += 1
+            if shouldHold { heldDelivered_ = true }
+            return #"{"version":1,"status":"synced","revision":\#(activityRevision),"#
+                + #""syncedCount":\#(items.count),"changedCount":\#(items.count),"replayed":false}"#
+        }
     }
 }

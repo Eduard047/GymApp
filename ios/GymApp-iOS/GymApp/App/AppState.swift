@@ -1595,13 +1595,20 @@ final class AppState: ObservableObject {
         saveGeneration: UInt64? = nil
     ) async {
         let storageKey = session.storageKey
+        // Reconciliation always targets the published store; capture its activation
+        // so a same-user re-login during any await below is detected.
+        let fence = CloudOwnerFence(
+            generation: accountActivationGeneration,
+            storeWasPublished: true
+        )
         do {
             let activityItemsBeforeCore = try store.activityOnlyCloudSnapshotItems()
             let preparedPendingActivityReport = try await
                 replayPendingActivityOnlySyncIfNeeded(
                     store: store,
                     storageKey: storageKey,
-                    userID: userID
+                    userID: userID,
+                    fence: fence
                 )
             if let preparedPendingActivityReport {
                 try recordActivityOnlyCloudBaseline(
@@ -1620,12 +1627,12 @@ final class AppState: ObservableObject {
                 }
                 return try await self.cloudSync.loadRemoteState(expectedUserID: userID)
             }
-            guard isAccountReady,
-                  workoutStore === store,
-                  auth.session?.storageKey == storageKey,
-                  auth.session?.cloud?.userID == userID else {
-                throw AuthServiceError.sessionChanged
-            }
+            try ensureReconcileOwnerIsCurrent(
+                store: store,
+                storageKey: storageKey,
+                userID: userID,
+                fence: fence
+            )
 
             guard let remoteData else {
                 // The reload established a current "missing" revision. Recreating the row is
@@ -1638,9 +1645,16 @@ final class AppState: ObservableObject {
                         expectedStorageKey: storageKey,
                         expectedUserID: userID,
                         preparedActivityReport: preparedPendingActivityReport,
-                        activityPendingAlreadyReplayed: true
+                        activityPendingAlreadyReplayed: true,
+                        fence: fence
                     )
                 }
+                try ensureReconcileOwnerIsCurrent(
+                    store: store,
+                    storageKey: storageKey,
+                    userID: userID,
+                    fence: fence
+                )
                 cloudWritableAccountStorageKey = storageKey
                 cloudReconciliationRequiredStorageKey = nil
                 if announce { show(message: "Cloud data is up to date.", isError: false) }
@@ -1677,7 +1691,14 @@ final class AppState: ObservableObject {
                     store: store,
                     storageKey: storageKey,
                     userID: userID,
-                    preparedPendingReport: preparedPendingActivityReport
+                    preparedPendingReport: preparedPendingActivityReport,
+                    fence: fence
+                )
+                try ensureReconcileOwnerIsCurrent(
+                    store: store,
+                    storageKey: storageKey,
+                    userID: userID,
+                    fence: fence
                 )
                 cloudWritableAccountStorageKey = storageKey
                 cloudReconciliationRequiredStorageKey = nil
@@ -1696,9 +1717,16 @@ final class AppState: ObservableObject {
                         expectedStorageKey: storageKey,
                         expectedUserID: userID,
                         preparedActivityReport: preparedPendingActivityReport,
-                        activityPendingAlreadyReplayed: true
+                        activityPendingAlreadyReplayed: true,
+                        fence: fence
                     )
                 }
+                try ensureReconcileOwnerIsCurrent(
+                    store: store,
+                    storageKey: storageKey,
+                    userID: userID,
+                    fence: fence
+                )
                 cloudWritableAccountStorageKey = storageKey
                 cloudReconciliationRequiredStorageKey = nil
                 if announce { show(message: "Cloud data is up to date.", isError: false) }
@@ -1728,7 +1756,14 @@ final class AppState: ObservableObject {
                     store: store,
                     storageKey: storageKey,
                     userID: userID,
-                    preparedPendingReport: preparedPendingActivityReport
+                    preparedPendingReport: preparedPendingActivityReport,
+                    fence: fence
+                )
+                try ensureReconcileOwnerIsCurrent(
+                    store: store,
+                    storageKey: storageKey,
+                    userID: userID,
+                    fence: fence
                 )
                 cloudWritableAccountStorageKey = storageKey
                 cloudReconciliationRequiredStorageKey = nil
@@ -1761,9 +1796,16 @@ final class AppState: ObservableObject {
                         expectedStorageKey: storageKey,
                         expectedUserID: userID,
                         preparedActivityReport: preparedPendingActivityReport,
-                        activityPendingAlreadyReplayed: true
+                        activityPendingAlreadyReplayed: true,
+                        fence: fence
                     )
                 }
+                try ensureReconcileOwnerIsCurrent(
+                    store: store,
+                    storageKey: storageKey,
+                    userID: userID,
+                    fence: fence
+                )
                 cloudWritableAccountStorageKey = storageKey
                 cloudReconciliationRequiredStorageKey = nil
                 if announce {
@@ -3208,12 +3250,54 @@ final class AppState: ObservableObject {
         return !report.clean
     }
 
+    /// Identifies the account activation a cloud write belongs to. A sign-out and
+    /// sign-in as the same user keeps the storage key and user ID but starts a new
+    /// activation (and a new store), so post-await guards must also compare these.
+    struct CloudOwnerFence {
+        let generation: UInt64
+        let storeWasPublished: Bool
+    }
+
+    private func cloudOwnerFence(for store: WorkoutStore) -> CloudOwnerFence {
+        CloudOwnerFence(
+            generation: accountActivationGeneration,
+            storeWasPublished: workoutStore === store
+        )
+    }
+
+    private func cloudOwnerFenceIsCurrent(
+        _ fence: CloudOwnerFence,
+        store: WorkoutStore
+    ) -> Bool {
+        accountActivationGeneration == fence.generation &&
+            (!fence.storeWasPublished || workoutStore === store)
+    }
+
     private func ensureCurrentActivityOnlyOwner(
         store: WorkoutStore,
         storageKey: String,
-        userID: String
+        userID: String,
+        fence: CloudOwnerFence
     ) throws {
-        guard store.accountStorageKey == storageKey,
+        guard cloudOwnerFenceIsCurrent(fence, store: store),
+              store.accountStorageKey == storageKey,
+              auth.session?.storageKey == storageKey,
+              auth.session?.cloud?.userID == userID else {
+            throw AuthServiceError.sessionChanged
+        }
+    }
+
+    /// Re-checks the owner of a stale/manual reconciliation after an await, before it
+    /// records anything or marks the account cloud-writable.
+    private func ensureReconcileOwnerIsCurrent(
+        store: WorkoutStore,
+        storageKey: String,
+        userID: String,
+        fence: CloudOwnerFence
+    ) throws {
+        guard isAccountReady,
+              cloudOwnerFenceIsCurrent(fence, store: store),
+              workoutStore === store,
               auth.session?.storageKey == storageKey,
               auth.session?.cloud?.userID == userID else {
             throw AuthServiceError.sessionChanged
@@ -3224,7 +3308,8 @@ final class AppState: ObservableObject {
         _ pending: PendingActivityOnlyWorkoutCloudSync,
         store: WorkoutStore,
         storageKey: String,
-        userID: String
+        userID: String,
+        fence: CloudOwnerFence
     ) async throws -> ActivityOnlyWorkoutCloudSyncResult {
         guard let requestID = pending.requestUUID else {
             throw CloudSyncError.invalidPayload
@@ -3249,7 +3334,8 @@ final class AppState: ObservableObject {
                 try ensureCurrentActivityOnlyOwner(
                     store: store,
                     storageKey: storageKey,
-                    userID: userID
+                    userID: userID,
+                    fence: fence
                 )
             }
         }
@@ -3262,12 +3348,15 @@ final class AppState: ObservableObject {
     private func replayPendingActivityOnlySyncIfNeeded(
         store: WorkoutStore,
         storageKey: String,
-        userID: String
+        userID: String,
+        fence: CloudOwnerFence? = nil
     ) async throws -> ActivityOnlyCloudSyncReport? {
+        let fence = fence ?? cloudOwnerFence(for: store)
         try ensureCurrentActivityOnlyOwner(
             store: store,
             storageKey: storageKey,
-            userID: userID
+            userID: userID,
+            fence: fence
         )
         try migrateLegacyActivityOnlyCloudPreferences(
             into: store,
@@ -3282,12 +3371,14 @@ final class AppState: ObservableObject {
             pending,
             store: store,
             storageKey: storageKey,
-            userID: userID
+            userID: userID,
+            fence: fence
         )
         try ensureCurrentActivityOnlyOwner(
             store: store,
             storageKey: storageKey,
-            userID: userID
+            userID: userID,
+            fence: fence
         )
         switch result {
         case .unavailable, .rateLimited:
@@ -3352,8 +3443,10 @@ final class AppState: ObservableObject {
         store: WorkoutStore,
         storageKey: String,
         userID: String,
-        pendingAlreadyReplayed: Bool = false
+        pendingAlreadyReplayed: Bool = false,
+        fence: CloudOwnerFence? = nil
     ) async throws -> ActivityOnlyCloudSyncReport {
+        let fence = fence ?? cloudOwnerFence(for: store)
         func currentLocalItems() throws -> [ActivityOnlyWorkoutCloudItem] {
             try store.activityOnlyCloudSnapshotItems()
         }
@@ -3374,14 +3467,16 @@ final class AppState: ObservableObject {
         try ensureCurrentActivityOnlyOwner(
             store: store,
             storageKey: storageKey,
-            userID: userID
+            userID: userID,
+            fence: fence
         )
 
         if !pendingAlreadyReplayed,
            let pendingReport = try await replayPendingActivityOnlySyncIfNeeded(
             store: store,
             storageKey: storageKey,
-            userID: userID
+            userID: userID,
+            fence: fence
            ) {
             return try report(pendingReport.localItems, clean: false)
         }
@@ -3397,7 +3492,8 @@ final class AppState: ObservableObject {
             try ensureCurrentActivityOnlyOwner(
                 store: store,
                 storageKey: storageKey,
-                userID: userID
+                userID: userID,
+                fence: fence
             )
             guard case .snapshot(let snapshot) = readResult else {
                 return try report(try currentLocalItems(), clean: false)
@@ -3422,7 +3518,8 @@ final class AppState: ObservableObject {
             try ensureCurrentActivityOnlyOwner(
                 store: store,
                 storageKey: storageKey,
-                userID: userID
+                userID: userID,
+                fence: fence
             )
             let mergedLocalItems = try currentLocalItems()
             guard reconciled.outbound != snapshot.items else {
@@ -3439,12 +3536,14 @@ final class AppState: ObservableObject {
                 pending,
                 store: store,
                 storageKey: storageKey,
-                userID: userID
+                userID: userID,
+                fence: fence
             )
             try ensureCurrentActivityOnlyOwner(
                 store: store,
                 storageKey: storageKey,
-                userID: userID
+                userID: userID,
+                fence: fence
             )
             switch result {
             case .synced:
@@ -3486,7 +3585,8 @@ final class AppState: ObservableObject {
         store: WorkoutStore,
         storageKey: String,
         userID: String,
-        preparedPendingReport: ActivityOnlyCloudSyncReport?
+        preparedPendingReport: ActivityOnlyCloudSyncReport?,
+        fence: CloudOwnerFence? = nil
     ) async throws {
         let report: ActivityOnlyCloudSyncReport
         if let preparedPendingReport {
@@ -3496,7 +3596,8 @@ final class AppState: ObservableObject {
                 store: store,
                 storageKey: storageKey,
                 userID: userID,
-                pendingAlreadyReplayed: true
+                pendingAlreadyReplayed: true,
+                fence: fence
             )
         }
         let currentItems = try store.activityOnlyCloudSnapshotItems()
@@ -3515,9 +3616,12 @@ final class AppState: ObservableObject {
         expectedStorageKey: String,
         expectedUserID: String,
         preparedActivityReport: ActivityOnlyCloudSyncReport? = nil,
-        activityPendingAlreadyReplayed: Bool = false
+        activityPendingAlreadyReplayed: Bool = false,
+        fence: CloudOwnerFence? = nil
     ) async throws {
-        guard store.accountStorageKey == expectedStorageKey,
+        let fence = fence ?? cloudOwnerFence(for: store)
+        guard cloudOwnerFenceIsCurrent(fence, store: store),
+              store.accountStorageKey == expectedStorageKey,
               auth.session?.storageKey == expectedStorageKey,
               auth.session?.cloud?.userID == expectedUserID,
               owner.accountID == expectedUserID,
@@ -3532,7 +3636,8 @@ final class AppState: ObservableObject {
                 store: store,
                 storageKey: expectedStorageKey,
                 userID: expectedUserID,
-                pendingAlreadyReplayed: activityPendingAlreadyReplayed
+                pendingAlreadyReplayed: activityPendingAlreadyReplayed,
+                fence: fence
             )
         }
         let profile = store.syncProfileStats()
@@ -3551,7 +3656,9 @@ final class AppState: ObservableObject {
             workoutDurations: workoutDurations,
             expectedUserID: expectedUserID
         )
-        guard auth.session?.storageKey == expectedStorageKey,
+        guard cloudOwnerFenceIsCurrent(fence, store: store),
+              store.accountStorageKey == expectedStorageKey,
+              auth.session?.storageKey == expectedStorageKey,
               auth.session?.cloud?.userID == expectedUserID else {
             throw AuthServiceError.sessionChanged
         }
