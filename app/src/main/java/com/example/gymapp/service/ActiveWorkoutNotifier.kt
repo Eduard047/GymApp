@@ -351,18 +351,64 @@ class ActiveWorkoutNotificationReceiver : BroadcastReceiver() {
         }
         // Refresh right away in case no app screen is observing the workout.
         val updated = repository.getActiveWorkoutSnapshot() ?: return
-        ActiveWorkoutNotifier.show(
+        postActiveWorkoutNotification(
             context,
-            activeWorkoutNotificationContent(
-                sessionStartedAt = updated.activeWorkout.startedAt,
-                revision = updated.activeWorkout.revision,
-                exercises = updated.notificationExercises(),
-                restEndsAt = timer.activeWorkoutTimerSnapshot.value
-                    ?.takeIf { it.accountKey == accountKey && it.sessionStartedAt == updated.activeWorkout.startedAt }
-                    ?.restEndsAt,
-                nowMillis = System.currentTimeMillis(),
-                isLiveWorkout = isLiveWorkout(context, session, updated)
-            )
+            session,
+            updated,
+            restEndsAt = timer.activeWorkoutTimerSnapshot.value
+                ?.takeIf { it.accountKey == accountKey && it.sessionStartedAt == updated.activeWorkout.startedAt }
+                ?.restEndsAt
         )
+    }
+}
+
+private fun postActiveWorkoutNotification(
+    context: Context,
+    session: AccountSession,
+    details: ActiveWorkoutDetails,
+    restEndsAt: Long?
+) {
+    ActiveWorkoutNotifier.show(
+        context,
+        activeWorkoutNotificationContent(
+            sessionStartedAt = details.activeWorkout.startedAt,
+            revision = details.activeWorkout.revision,
+            exercises = details.notificationExercises(),
+            restEndsAt = restEndsAt,
+            nowMillis = System.currentTimeMillis(),
+            isLiveWorkout = isLiveWorkout(context, session, details)
+        )
+    )
+}
+
+/**
+ * Reposts the ongoing workout notification once a rest ended in the timer service or its
+ * backstop alarm. The app screen only refreshes it while it is composed, so after the process
+ * died the notification would otherwise stay on "Resting" with a countdown running past zero.
+ * Uses the same account and session checks as the notification buttons and does nothing when
+ * no account is signed in or the rest belonged to another account. Disk I/O: call off the main
+ * thread.
+ */
+internal suspend fun refreshActiveWorkoutNotificationAfterRest(context: Context) {
+    val app = context.gymApplication
+    val session = app.cloudAuthManager.authState.value.session ?: return
+    val accountKey = restTimerAccountKey(session) ?: return
+    val repository = app.repositoryFor(session)
+    val details = repository.getActiveWorkoutSnapshot()
+    val timer = app.restTimerController.activeWorkoutTimerSnapshot.value
+    when (
+        val refresh = restEndedNotificationRefresh(
+            currentAccountKey = accountKey,
+            timerAccountKey = timer?.accountKey,
+            timerSessionStartedAt = timer?.sessionStartedAt,
+            timerRestEndsAt = timer?.restEndsAt,
+            activeWorkoutStartedAt = details?.activeWorkout?.startedAt,
+            nowMillis = System.currentTimeMillis()
+        )
+    ) {
+        RestEndedNotificationRefresh.Skip -> Unit
+        RestEndedNotificationRefresh.Cancel -> ActiveWorkoutNotifier.cancel(context)
+        is RestEndedNotificationRefresh.Post ->
+            details?.let { postActiveWorkoutNotification(context, session, it, refresh.restEndsAt) }
     }
 }

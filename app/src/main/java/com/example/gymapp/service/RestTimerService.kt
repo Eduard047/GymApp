@@ -152,6 +152,16 @@ class RestTimerService : Service() {
         if (!finishedAlertPosted.getAndSet(true)) {
             notifySafely(NOTIFICATION_FINISHED_ID, buildFinishedNotification(this))
         }
+        // The activity may be gone while the process lives on: refresh the ongoing workout
+        // notification here too. Not in serviceScope, which stopSelf() cancels right away.
+        val appContext = applicationContext
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                refreshActiveWorkoutNotificationAfterRest(appContext)
+            } catch (_: Exception) {
+                // A failed refresh leaves the previous notification; the app reposts it when opened.
+            }
+        }
         stopSelf()
     }
 
@@ -478,6 +488,13 @@ class RestTimerAlarmReceiver : BroadcastReceiver() {
                 RestTimerService.postFinished(appContext)
             } catch (_: Exception) {
                 // A failed alert must not crash the receiver; the app shows the current state.
+            }
+            try {
+                // The process may have died mid-rest: switch the ongoing workout notification from
+                // the rest countdown to the next set, since no app screen refreshes it now.
+                refreshActiveWorkoutNotificationAfterRest(appContext)
+            } catch (_: Exception) {
+                // A failed refresh leaves the previous notification; the app reposts it when opened.
             } finally {
                 pending.finish()
             }
