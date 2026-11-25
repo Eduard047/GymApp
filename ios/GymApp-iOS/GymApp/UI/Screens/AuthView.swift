@@ -609,7 +609,7 @@ public struct AuthView: View {
                     Text(AuthCompactCopy.profileName(languageCode: languageCode))
                         .font(.subheadline.weight(.semibold))
                     TextField(
-                        AuthCompactCopy.localPlaceholder,
+                        AuthCompactCopy.localPlaceholder(languageCode: languageCode),
                         text: $offlineDisplayName
                     )
                     .textContentType(.nickname)
@@ -821,7 +821,9 @@ public struct AuthView: View {
 }
 
 enum AuthCompactCopy {
-    static let localPlaceholder = "Local"
+    static func localPlaceholder(languageCode: String) -> String {
+        gymDefaultLocalProfileName(languageCode: languageCode)
+    }
 
     static func offlineTitle(languageCode: String) -> String {
         gymText("Offline profile", "Офлайн-профіль", "Офлайн-профиль", languageCode: languageCode)

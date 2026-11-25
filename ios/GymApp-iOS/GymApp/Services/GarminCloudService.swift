@@ -1,6 +1,7 @@
 import Combine
 import CryptoKit
 import Foundation
+import os
 import Security
 
 struct GarminPlanSet: Codable, Hashable, Sendable {
@@ -616,6 +617,7 @@ enum GarminCloudError: LocalizedError {
 
 @MainActor
 final class GarminCloudService: ObservableObject {
+    private static let transitionLog = Logger(subsystem: "com.setforge.gymapp.ios", category: "GarminCloudService")
     private static let maximumAccessTokenBytes = 16 * 1_024
     private static let maximumRequestBodyBytes = 96 * 1_024
     private static let maximumResponseBodyBytes = 256 * 1_024
@@ -662,7 +664,12 @@ final class GarminCloudService: ObservableObject {
                             // synchronously before clearing auth. This fallback
                             // still strips valid pending bearer material when a
                             // lower-level AuthService account switch occurs.
-                            transitionError = error.localizedDescription
+                            // The raw Keychain/system text goes to the log only;
+                            // the banner shows app-owned, localized copy.
+                            Self.transitionLog.error(
+                                "Garmin pending pairing cleanup failed on account switch: \(String(describing: error), privacy: .private)"
+                            )
+                            transitionError = GarminCloudError.pendingRevocation.errorDescription
                         }
                     }
                     self.observedSessionUserID = nextUserID

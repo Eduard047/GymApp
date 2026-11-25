@@ -1324,7 +1324,10 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(AuthCompactCopy.continueOffline(languageCode: "ru"), "Продолжить офлайн")
         XCTAssertEqual(AuthCompactCopy.cancel(languageCode: "ru"), "Отмена")
         XCTAssertEqual(AuthCompactCopy.savedProfiles(languageCode: "ru"), "Сохранённые профили")
-        XCTAssertEqual(AuthCompactCopy.localPlaceholder, "Local")
+        XCTAssertEqual(AuthCompactCopy.localPlaceholder(languageCode: "en"), "Local")
+        XCTAssertEqual(AuthCompactCopy.localPlaceholder(languageCode: "uk"), "Локальний")
+        XCTAssertEqual(AuthCompactCopy.localPlaceholder(languageCode: "ru"), "Локальный")
+        XCTAssertEqual(gymDefaultLocalProfileName(languageCode: "uk"), "Локальний")
 
         XCTAssertEqual(gymLocalized("Sign up", languageCode: "uk"), "Зареєструватися")
         XCTAssertEqual(gymLocalized("Repeat email", languageCode: "ru"), "Повторите email")

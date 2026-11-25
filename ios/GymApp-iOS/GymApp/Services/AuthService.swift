@@ -814,7 +814,7 @@ final class AuthService: ObservableObject {
         guard session == nil else { throw AuthServiceError.sessionChanged }
         try PendingAccountDeletionStore.requireReadable(defaults: defaults)
         let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanName = try validatedDisplayName(trimmed.isEmpty ? "Local" : trimmed, fallbackEmail: "local@gym.app")
+        let cleanName = try validatedDisplayName(trimmed.isEmpty ? gymDefaultLocalProfileName() : trimmed, fallbackEmail: "local@gym.app")
         guard !storedLocalProfiles.contains(where: {
             Self.localProfileNameKey($0.displayName) == Self.localProfileNameKey(cleanName)
         }) else {
@@ -1871,4 +1871,10 @@ private extension String {
         let result = String(mapped)
         return result.isEmpty ? "default" : result
     }
+}
+
+/// Name saved for an offline profile when the user leaves the field empty, in the app
+/// language (Android `auth_local_default_name`: Local / Локальний / Локальный).
+func gymDefaultLocalProfileName(languageCode: String = gymCurrentLanguageCode()) -> String {
+    gymText("Local", "Локальний", "Локальный", languageCode: languageCode)
 }

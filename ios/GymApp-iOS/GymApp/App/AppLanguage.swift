@@ -634,7 +634,7 @@ func gymSafeEnglishErrorMessage(_ error: Error) -> String {
              .invalidWeight,
              .invalidReps,
              .backupOwnerMismatch:
-            return storeError.errorDescription ?? gymGenericErrorMessage
+            return storeError.englishDescription
         }
     }
 

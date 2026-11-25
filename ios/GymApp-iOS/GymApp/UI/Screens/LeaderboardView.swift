@@ -90,6 +90,40 @@ private struct FinishedLiveWorkoutView: View {
     }
 }
 
+/// "3 exercises" / "3 вправи" / "3 упражнения": number plus the agreeing noun form.
+func socialExerciseCountText(_ count: Int, languageCode: String) -> String {
+    let noun = gymPlural(
+        count,
+        en: ("exercise", "exercises"),
+        uk: ("вправа", "вправи", "вправ"),
+        ru: ("упражнение", "упражнения", "упражнений"),
+        languageCode: languageCode
+    )
+    return "\(count) \(noun)"
+}
+
+func socialSetCountText(_ count: Int, languageCode: String) -> String {
+    let noun = gymPlural(
+        count,
+        en: ("set", "sets"),
+        uk: ("підхід", "підходи", "підходів"),
+        ru: ("подход", "подхода", "подходов"),
+        languageCode: languageCode
+    )
+    return "\(count) \(noun)"
+}
+
+func socialWorkoutCountText(_ count: Int, languageCode: String) -> String {
+    let noun = gymPlural(
+        count,
+        en: ("workout", "workouts"),
+        uk: ("тренування", "тренування", "тренувань"),
+        ru: ("тренировка", "тренировки", "тренировок"),
+        languageCode: languageCode
+    )
+    return "\(count) \(noun)"
+}
+
 enum SocialActivityPresentationState: Equatable {
     case privateData
     case temporarilyUnavailable
@@ -806,7 +840,7 @@ struct FriendsView: View {
                 Text(name).font(.headline)
                 Text(state).font(.caption.bold()).foregroundStyle(GymTheme.primary)
                 Text(
-                    "\(summary.exerciseCount) \(t("exercises", "вправ", "упражнений")) · \(summary.setCount) \(t("sets", "підходів", "подходов"))"
+                    "\(socialExerciseCountText(summary.exerciseCount, languageCode: languageCode)) · \(socialSetCountText(summary.setCount, languageCode: languageCode))"
                 )
                 .font(.caption)
                 .foregroundStyle(GymTheme.textSecondary)
@@ -843,7 +877,7 @@ struct FriendsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(invite.displayName).font(.headline)
                     Text(
-                        "\(invite.summary.exerciseCount) \(t("exercises", "вправ", "упражнений")) · \(invite.summary.setCount) \(t("sets", "підходів", "подходов"))"
+                        "\(socialExerciseCountText(invite.summary.exerciseCount, languageCode: languageCode)) · \(socialSetCountText(invite.summary.setCount, languageCode: languageCode))"
                     )
                     .font(.caption)
                     .foregroundStyle(GymTheme.textSecondary)
@@ -1095,7 +1129,7 @@ struct FriendsView: View {
                             .background(GymTheme.primary.opacity(0.14), in: Capsule())
                     }
                 }
-                Text("\(t("Level", "Рівень", "Уровень")) \(item.level) · \(item.workouts) \(t("workouts", "тренувань", "тренировок"))")
+                Text("\(t("Level", "Рівень", "Уровень")) \(item.level) · \(socialWorkoutCountText(item.workouts, languageCode: languageCode))")
                     .font(.caption)
                     .foregroundStyle(GymTheme.textSecondary)
             }
@@ -2125,7 +2159,7 @@ private struct FriendDetailView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(gymExerciseName(record.name, catalogKey: record.catalogKey, languageCode: languageCode))
                                     .font(.headline)
-                                Text("\(record.workoutCount) \(t("workouts", "тренувань", "тренировок")) · \(formatDay(record.lastWorkoutDay))")
+                                Text("\(socialWorkoutCountText(record.workoutCount, languageCode: languageCode)) · \(formatDay(record.lastWorkoutDay))")
                                     .font(.caption)
                                     .foregroundStyle(GymTheme.textSecondary)
                             }
@@ -2626,7 +2660,7 @@ private struct FriendWorkoutPickerSheet: View {
                                             Text(gymShortDateTime(workout.date))
                                                 .font(.headline)
                                                 .foregroundStyle(GymTheme.textPrimary)
-                                            Text("\(workout.exercises.count) \(t("exercises", "вправ", "упражнений"))")
+                                            Text(socialExerciseCountText(workout.exercises.count, languageCode: gymCurrentLanguageCode()))
                                                 .font(.caption)
                                                 .foregroundStyle(GymTheme.textSecondary)
                                         }

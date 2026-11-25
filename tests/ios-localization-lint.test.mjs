@@ -396,3 +396,30 @@ test("status messages shown in banners have Ukrainian and Russian catalog values
   }
   assert.deepEqual(violations, []);
 });
+
+test("every translatable String Catalog key has a Ukrainian value", () => {
+  // Keys marked shouldTranslate:false (for example the typed "DELETE" confirmation
+  // word) are exempt; every other key must resolve in the Ukrainian app language too.
+  const missing = Object.entries(catalog.strings)
+    .filter(([, entry]) => entry.shouldTranslate !== false)
+    .filter(([, entry]) => typeof entry.localizations?.uk?.stringUnit?.value !== "string")
+    .map(([key]) => key);
+  assert.deepEqual(missing, []);
+});
+
+test("raw localizedDescription text is never assigned to message, status, banner or error fields", () => {
+  // Raw system/Keychain/persistence text is English-only and may carry private detail;
+  // user-visible fields get app-owned copy (gymErrorMessage, typed errorDescription).
+  // A `localizedDescription(languageCode:)` method call is app-owned and allowed.
+  const assignment = /\b\w*(?:[Mm]essage|[Ss]tatus|[Bb]anner|[Ee]rror|[Tt]ext)\s*=\s*[^=\n][^\n]*\blocalizedDescription\b(?!\s*\()/g;
+  const bannerArgument = /\b(?:show|publishStatus|GymStatusBanner)\s*\([^)\n]*\blocalizedDescription\b(?!\s*\()/g;
+  const violations = [];
+  for (const { file, source, code } of scanned) {
+    for (const pattern of [assignment, bannerArgument]) {
+      for (const match of code.matchAll(pattern)) {
+        violations.push(`${file}:${lineOf(source, match.index)} ${match[0].trim()}`);
+      }
+    }
+  }
+  assert.deepEqual(violations, []);
+});

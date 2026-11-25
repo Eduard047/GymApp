@@ -25,48 +25,104 @@ public enum WorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
     case importLimitExceeded(String)
     case persistenceFailure(String)
 
-    public var errorDescription: String? {
+    /// App-owned English source of the message, without raw system detail. The UI path
+    /// (`gymSafeEnglishErrorMessage` → `gymLocalized`) localizes it at render time.
+    public var englishDescription: String {
         switch self {
-        case .invalidAccountStorageKey:
-            return "The account storage key is empty or too long."
-        case let .corruptStore(message):
-            return "The local workout store is invalid: \(message)"
-        case .storageAccountMismatch:
-            return "The local workout file belongs to another account."
-        case .invalidExerciseName:
-            return "Enter a valid exercise name."
-        case .duplicateExerciseName:
-            return "An exercise with this name already exists."
-        case .exerciseLimitReached:
-            return "You've reached the exercise limit."
-        case .exerciseNotFound:
-            return "The exercise no longer exists."
-        case .exerciseInUse:
-            return "The exercise is used by saved workouts."
-        case .builtInExerciseReadOnly:
-            return "Built-in exercises cannot be renamed."
-        case .workoutNotFound:
-            return "The workout no longer exists."
-        case .workoutExerciseNotFound:
-            return "The exercise entry no longer exists in this workout."
-        case .setNotFound:
-            return "The set no longer exists."
-        case let .invalidWorkout(message):
-            return "The workout is invalid: \(message)"
-        case .invalidWeight:
-            return "Weight must be a finite non-negative number."
-        case .invalidReps:
-            return "Repetitions must be between 1 and 10,000."
-        case let .unsupportedBackupSchema(version):
-            return "Backup schema version \(version) is not supported."
-        case let .malformedBackup(message):
-            return "The backup is invalid: \(message)"
-        case .backupOwnerMismatch:
-            return "This backup belongs to another account."
+        case .invalidAccountStorageKey: "The account storage key is empty or too long."
+        case .corruptStore: "The local workout store is invalid."
+        case .storageAccountMismatch: "The local workout file belongs to another account."
+        case .invalidExerciseName: "Enter a valid exercise name."
+        case .duplicateExerciseName: "An exercise with this name already exists."
+        case .exerciseLimitReached: "You've reached the exercise limit."
+        case .exerciseNotFound: "The exercise no longer exists."
+        case .exerciseInUse: "The exercise is used by saved workouts."
+        case .builtInExerciseReadOnly: "Built-in exercises cannot be renamed."
+        case .workoutNotFound: "The workout no longer exists."
+        case .workoutExerciseNotFound: "The exercise entry no longer exists in this workout."
+        case .setNotFound: "The set no longer exists."
+        case .invalidWorkout: "The workout is invalid."
+        case .invalidWeight: "Weight must be a finite non-negative number."
+        case .invalidReps: "Repetitions must be between 1 and 10,000."
+        case .unsupportedBackupSchema: "This backup version is not supported."
+        case .malformedBackup: "The backup is invalid."
+        case .backupOwnerMismatch: "This backup belongs to another account."
+        case .importLimitExceeded: "The backup is too large to import."
+        case .persistenceFailure: "Workout data could not be saved."
+        }
+    }
+
+    /// The message in the given app language. Raw system/persistence detail never
+    /// appears here; it stays on the associated values and in `debugDescription`.
+    func message(languageCode: String) -> String {
+        switch self {
+        case .corruptStore:
+            gymText(
+                "The local workout store is invalid.",
+                "Локальне сховище тренувань пошкоджене.",
+                "Локальное хранилище тренировок повреждено.",
+                languageCode: languageCode
+            )
+        case .invalidWorkout:
+            gymText(
+                "The workout is invalid.",
+                "Тренування містить некоректні дані.",
+                "Тренировка содержит некорректные данные.",
+                languageCode: languageCode
+            )
+        case .unsupportedBackupSchema:
+            gymText(
+                "This backup version is not supported.",
+                "Ця версія резервної копії не підтримується.",
+                "Эта версия резервной копии не поддерживается.",
+                languageCode: languageCode
+            )
+        case .malformedBackup:
+            gymText(
+                "The backup is invalid.",
+                "Резервна копія пошкоджена.",
+                "Резервная копия повреждена.",
+                languageCode: languageCode
+            )
+        case .importLimitExceeded:
+            gymText(
+                "The backup is too large to import.",
+                "Резервна копія завелика для імпорту.",
+                "Резервная копия слишком велика для импорта.",
+                languageCode: languageCode
+            )
+        case .persistenceFailure:
+            gymText(
+                "Workout data could not be saved.",
+                "Не вдалося зберегти дані тренувань.",
+                "Не удалось сохранить данные тренировок.",
+                languageCode: languageCode
+            )
+        default:
+            gymLocalized(englishDescription, languageCode: languageCode)
+        }
+    }
+
+    public var errorDescription: String? {
+        message(languageCode: gymCurrentLanguageCode())
+    }
+}
+
+extension WorkoutStoreError: CustomDebugStringConvertible {
+    /// Diagnostic text for logs only, including the raw detail the UI never shows.
+    public var debugDescription: String {
+        switch self {
+        case let .corruptStore(detail),
+             let .invalidWorkout(detail),
+             let .malformedBackup(detail),
+             let .persistenceFailure(detail):
+            "\(englishDescription) \(detail)"
         case let .importLimitExceeded(limit):
-            return "The backup exceeds the allowed \(limit) limit."
-        case let .persistenceFailure(message):
-            return "Workout data could not be saved: \(message)"
+            "\(englishDescription) Limit: \(limit)."
+        case let .unsupportedBackupSchema(version):
+            "\(englishDescription) Schema version: \(version)."
+        default:
+            englishDescription
         }
     }
 }
