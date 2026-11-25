@@ -10,8 +10,8 @@ protocol RestNotificationCenterClient: AnyObject {
     func add(_ request: UNNotificationRequest) async throws
     func removePendingNotificationRequests(withIdentifiers identifiers: [String])
     func removeDeliveredNotifications(withIdentifiers identifiers: [String])
-    func removeAllPendingNotificationRequests()
-    func removeAllDeliveredNotifications()
+    func pendingNotificationIdentifiers() async -> [String]
+    func deliveredNotificationIdentifiers() async -> [String]
 }
 
 @MainActor
@@ -42,12 +42,12 @@ final class SystemRestNotificationCenterClient: RestNotificationCenterClient {
         center.removeDeliveredNotifications(withIdentifiers: identifiers)
     }
 
-    func removeAllPendingNotificationRequests() {
-        center.removeAllPendingNotificationRequests()
+    func pendingNotificationIdentifiers() async -> [String] {
+        await center.pendingNotificationRequests().map(\.identifier)
     }
 
-    func removeAllDeliveredNotifications() {
-        center.removeAllDeliveredNotifications()
+    func deliveredNotificationIdentifiers() async -> [String] {
+        await center.deliveredNotifications().map(\.request.identifier)
     }
 }
 
@@ -103,6 +103,12 @@ final class RestTimerManager: ObservableObject {
     private var notificationLifecycleGeneration: UInt64 = 0
     private var hasBoundAccount = false
     private var activeOwnerFingerprint: String?
+    /// The latest prefix-scoped notification sweep; tests await it.
+    private(set) var pendingNotificationCleanup: Task<Void, Never>?
+
+    /// Every rest-timer notification identifier starts with this prefix. Account cleanup removes
+    /// only these, never friend/live-workout pushes or other app notifications.
+    nonisolated static let notificationIdentifierPrefix = "gymapp.rest."
 
     private static let persistenceVersion = 2
     private static let maxPersistedBytes = 512 * 1_024
@@ -366,20 +372,48 @@ final class RestTimerManager: ObservableObject {
     func cancelAll() {
         notificationLifecycleGeneration &+= 1
         timers.removeAll()
-        notificationCenter.removeAllPendingNotificationRequests()
-        notificationCenter.removeAllDeliveredNotifications()
+        removeAllRestNotifications()
         persist()
     }
 
     private func notificationID(for state: RestTimerState) -> String {
         let deadline = String(state.endDate.timeIntervalSinceReferenceDate.bitPattern, radix: 16)
-        return "gymapp.rest.\(state.id).\(deadline)"
+        return "\(Self.notificationIdentifierPrefix)\(state.id).\(deadline)"
     }
 
-    private func legacyNotificationID(_ id: String) -> String { "gymapp.rest.\(id)" }
+    private func legacyNotificationID(_ id: String) -> String {
+        "\(Self.notificationIdentifierPrefix)\(id)"
+    }
 
     private func notificationIdentifiers(for state: RestTimerState) -> [String] {
         [notificationID(for: state), legacyNotificationID(state.id)]
+    }
+
+    /// Removes every pending/delivered rest-timer notification except those of timers that are
+    /// live when the sweep runs (a replacement timer started right after cleanup keeps its alert).
+    @discardableResult
+    private func removeAllRestNotifications() -> Task<Void, Never> {
+        let previous = pendingNotificationCleanup
+        let task = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            let pending = await notificationCenter.pendingNotificationIdentifiers()
+            let delivered = await notificationCenter.deliveredNotificationIdentifiers()
+            let live = Set(timers.values.flatMap { self.notificationIdentifiers(for: $0) })
+            let isStaleRestNotification: (String) -> Bool = {
+                $0.hasPrefix(Self.notificationIdentifierPrefix) && !live.contains($0)
+            }
+            let stalePending = pending.filter(isStaleRestNotification)
+            let staleDelivered = delivered.filter(isStaleRestNotification)
+            if !stalePending.isEmpty {
+                notificationCenter.removePendingNotificationRequests(withIdentifiers: stalePending)
+            }
+            if !staleDelivered.isEmpty {
+                notificationCenter.removeDeliveredNotifications(withIdentifiers: staleDelivered)
+            }
+        }
+        pendingNotificationCleanup = task
+        return task
     }
 
     private func isCurrent(
@@ -417,8 +451,7 @@ final class RestTimerManager: ObservableObject {
             notificationLifecycleGeneration &+= 1
         }
         timers.removeAll()
-        notificationCenter.removeAllPendingNotificationRequests()
-        notificationCenter.removeAllDeliveredNotifications()
+        removeAllRestNotifications()
         defaults.removeObject(forKey: persistenceKey)
     }
 

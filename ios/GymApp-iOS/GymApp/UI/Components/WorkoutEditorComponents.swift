@@ -997,7 +997,12 @@ struct ExerciseMediaSheet: View {
                     guard let data = try await item.loadTransferable(type: Data.self) else {
                         throw ExerciseMediaStore.MediaError.invalidImage
                     }
-                    try ExerciseMediaStore.saveCustomImage(data, ownerKey: ownerKey, exerciseID: exerciseID)
+                    // Decode, resize, encode, and write off the main actor so the sheet never hitches.
+                    let ownerKey = ownerKey
+                    let exerciseID = exerciseID
+                    try await Task.detached(priority: .userInitiated) {
+                        try ExerciseMediaStore.saveCustomImage(data, ownerKey: ownerKey, exerciseID: exerciseID)
+                    }.value
                     customImage = ExerciseMediaStore.customImage(ownerKey: ownerKey, exerciseID: exerciseID)
                     errorMessage = nil
                 } catch {

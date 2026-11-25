@@ -3606,6 +3606,6 @@ private final class SilentActiveWorkoutRestNotifications: RestNotificationCenter
     func add(_ request: UNNotificationRequest) async throws {}
     func removePendingNotificationRequests(withIdentifiers identifiers: [String]) {}
     func removeDeliveredNotifications(withIdentifiers identifiers: [String]) {}
-    func removeAllPendingNotificationRequests() {}
-    func removeAllDeliveredNotifications() {}
+    func pendingNotificationIdentifiers() async -> [String] { [] }
+    func deliveredNotificationIdentifiers() async -> [String] { [] }
 }

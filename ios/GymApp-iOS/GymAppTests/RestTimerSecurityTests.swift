@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class RestTimerSecurityTests: XCTestCase {
-    func testAccountCleanupRemovesNotificationsAfterExpiredTimerMetadataWasPruned() throws {
+    func testAccountCleanupRemovesNotificationsAfterExpiredTimerMetadataWasPruned() async throws {
         let defaults = temporaryDefaults()
         let expired = RestTimerState(
             id: "private-exercise",
@@ -25,9 +25,9 @@ final class RestTimerSecurityTests: XCTestCase {
         manager.bindToAccount(
             ownerFingerprint: RestTimerManager.ownerFingerprint(for: "local_account-a")
         )
+        await manager.pendingNotificationCleanup?.value
 
-        XCTAssertEqual(notifications.removeAllPendingCallCount, 1)
-        XCTAssertEqual(notifications.removeAllDeliveredCallCount, 1)
+        XCTAssertEqual(notifications.restCleanupSweepCount, 1)
         XCTAssertTrue(manager.timers.isEmpty)
         XCTAssertNil(defaults.data(forKey: "rest-timers-v1"))
     }
@@ -70,11 +70,11 @@ final class RestTimerSecurityTests: XCTestCase {
 
         let accountReady = await waitUntil { appState.isAccountReady }
         XCTAssertTrue(accountReady)
+        await manager.pendingNotificationCleanup?.value
         XCTAssertTrue(manager.timers.isEmpty)
         XCTAssertTrue(notifications.pendingIdentifiers.isEmpty)
         XCTAssertTrue(notifications.deliveredIdentifiers.isEmpty)
-        XCTAssertEqual(notifications.removeAllPendingCallCount, 1)
-        XCTAssertEqual(notifications.removeAllDeliveredCallCount, 1)
+        XCTAssertEqual(notifications.restCleanupSweepCount, 1)
         XCTAssertNil(timerDefaults.data(forKey: "rest-timers-v1"))
     }
 
@@ -117,11 +117,11 @@ final class RestTimerSecurityTests: XCTestCase {
 
         let accountReady = await waitUntil { appState.isAccountReady }
         XCTAssertTrue(accountReady)
+        await manager.pendingNotificationCleanup?.value
         XCTAssertTrue(manager.timers.isEmpty)
         XCTAssertTrue(notifications.pendingIdentifiers.isEmpty)
         XCTAssertTrue(notifications.deliveredIdentifiers.isEmpty)
-        XCTAssertEqual(notifications.removeAllPendingCallCount, 1)
-        XCTAssertEqual(notifications.removeAllDeliveredCallCount, 1)
+        XCTAssertEqual(notifications.restCleanupSweepCount, 1)
         XCTAssertNil(timerDefaults.data(forKey: "rest-timers-v1"))
     }
 
@@ -169,16 +169,14 @@ final class RestTimerSecurityTests: XCTestCase {
         let initialAccountReady = await waitUntil { appState.isAccountReady }
         XCTAssertTrue(initialAccountReady)
         XCTAssertNotNil(manager.timers[active.id])
-        XCTAssertEqual(notifications.removeAllPendingCallCount, 0)
-        XCTAssertEqual(notifications.removeAllDeliveredCallCount, 0)
+        XCTAssertEqual(notifications.restCleanupSweepCount, 0)
 
         appState.retryAccountActivation()
 
         let retriedAccountReady = await waitUntil { appState.isAccountReady }
         XCTAssertTrue(retriedAccountReady)
         XCTAssertNotNil(manager.timers[active.id], "Retrying the same account must preserve its active timer.")
-        XCTAssertEqual(notifications.removeAllPendingCallCount, 0)
-        XCTAssertEqual(notifications.removeAllDeliveredCallCount, 0)
+        XCTAssertEqual(notifications.restCleanupSweepCount, 0)
 
         try auth.installSessionForTesting(accountB)
 
@@ -186,9 +184,9 @@ final class RestTimerSecurityTests: XCTestCase {
             appState.isAccountReady && appState.activeAccountStorageKey == accountB.storageKey
         }
         XCTAssertTrue(replacementAccountReady)
+        await manager.pendingNotificationCleanup?.value
         XCTAssertTrue(manager.timers.isEmpty)
-        XCTAssertEqual(notifications.removeAllPendingCallCount, 1)
-        XCTAssertEqual(notifications.removeAllDeliveredCallCount, 1)
+        XCTAssertEqual(notifications.restCleanupSweepCount, 1)
         XCTAssertNil(timerDefaults.data(forKey: "rest-timers-v1"))
     }
 
@@ -229,14 +227,50 @@ final class RestTimerSecurityTests: XCTestCase {
         XCTAssertEqual(manager.timers[active.id], active)
 
         await appState.signOut()
+        await manager.pendingNotificationCleanup?.value
 
         XCTAssertNil(auth.session)
         XCTAssertTrue(manager.timers.isEmpty)
         XCTAssertTrue(notifications.pendingIdentifiers.isEmpty)
         XCTAssertTrue(notifications.deliveredIdentifiers.isEmpty)
-        XCTAssertEqual(notifications.removeAllPendingCallCount, 1)
-        XCTAssertEqual(notifications.removeAllDeliveredCallCount, 1)
+        XCTAssertEqual(notifications.restCleanupSweepCount, 1)
         XCTAssertNil(timerDefaults.data(forKey: "rest-timers-v1"))
+    }
+
+    func testColdLaunchAndAccountSwitchRemoveOnlyRestNotifications() async {
+        let defaults = temporaryDefaults()
+        let notifications = RecordingRestNotificationCenter()
+        notifications.seedDelivered(identifier: "gymapp.push.v1.friend-invite")
+        notifications.seedPending(identifier: "gymapp.push.v1.live-workout")
+        notifications.seedDelivered(identifier: "gymapp.rest.stale-exercise.4000")
+        notifications.seedPending(identifier: "gymapp.rest.stale-exercise")
+        let manager = RestTimerManager(
+            notificationCenter: notifications,
+            defaults: defaults
+        )
+
+        // Cold launch with no persisted timer: the normal case.
+        manager.bindToAccount(
+            ownerFingerprint: RestTimerManager.ownerFingerprint(for: "local_account-a")
+        )
+        await manager.pendingNotificationCleanup?.value
+
+        XCTAssertEqual(notifications.restCleanupSweepCount, 1)
+        XCTAssertEqual(notifications.deliveredIdentifiers, ["gymapp.push.v1.friend-invite"])
+        XCTAssertEqual(notifications.pendingIdentifiers, ["gymapp.push.v1.live-workout"])
+        XCTAssertTrue(notifications.removedIdentifiers.allSatisfy { $0.hasPrefix("gymapp.rest.") })
+
+        // Account switch: the previous account's rest alert goes, other pushes stay.
+        notifications.seedDelivered(identifier: "gymapp.rest.account-a-exercise.4100")
+        manager.bindToAccount(
+            ownerFingerprint: RestTimerManager.ownerFingerprint(for: "local_account-b")
+        )
+        await manager.pendingNotificationCleanup?.value
+
+        XCTAssertEqual(notifications.restCleanupSweepCount, 2)
+        XCTAssertEqual(notifications.deliveredIdentifiers, ["gymapp.push.v1.friend-invite"])
+        XCTAssertEqual(notifications.pendingIdentifiers, ["gymapp.push.v1.live-workout"])
+        XCTAssertTrue(notifications.removedIdentifiers.allSatisfy { $0.hasPrefix("gymapp.rest.") })
     }
 
     func testCleanupInvalidatesAnInFlightOldScheduleWithoutRemovingReplacementTimer() async {
@@ -260,6 +294,7 @@ final class RestTimerSecurityTests: XCTestCase {
         XCTAssertTrue(addSuspended)
 
         manager.cancelAll()
+        await manager.pendingNotificationCleanup?.value
         notifications.suspendAdds = false
         await manager.start(
             id: "private-exercise",
@@ -512,8 +547,8 @@ private final class RecordingRestNotificationCenter: RestNotificationCenterClien
     var requestAuthorizationResult = false
     var suspendAuthorizationRequests = false
     var suspendAdds = false
-    private(set) var removeAllPendingCallCount = 0
-    private(set) var removeAllDeliveredCallCount = 0
+    private(set) var restCleanupSweepCount = 0
+    private(set) var removedIdentifiers: [String] = []
     private(set) var pendingIdentifiers = Set<String>()
     private(set) var deliveredIdentifiers = Set<String>()
     private(set) var addedTriggerIntervals: [TimeInterval] = []
@@ -552,21 +587,23 @@ private final class RecordingRestNotificationCenter: RestNotificationCenterClien
     }
 
     func removePendingNotificationRequests(withIdentifiers identifiers: [String]) {
+        removedIdentifiers.append(contentsOf: identifiers)
         pendingIdentifiers.subtract(identifiers)
     }
 
     func removeDeliveredNotifications(withIdentifiers identifiers: [String]) {
+        removedIdentifiers.append(contentsOf: identifiers)
         deliveredIdentifiers.subtract(identifiers)
     }
 
-    func removeAllPendingNotificationRequests() {
-        removeAllPendingCallCount += 1
-        pendingIdentifiers.removeAll()
+    /// Each prefix-scoped cleanup sweep reads pending requests exactly once.
+    func pendingNotificationIdentifiers() async -> [String] {
+        restCleanupSweepCount += 1
+        return Array(pendingIdentifiers)
     }
 
-    func removeAllDeliveredNotifications() {
-        removeAllDeliveredCallCount += 1
-        deliveredIdentifiers.removeAll()
+    func deliveredNotificationIdentifiers() async -> [String] {
+        Array(deliveredIdentifiers)
     }
 
     func seedPending(identifier: String) {

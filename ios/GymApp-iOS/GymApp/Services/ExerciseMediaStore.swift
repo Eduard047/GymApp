@@ -215,29 +215,7 @@ enum ExerciseMediaStore {
         mediaDirectoryURL: URL? = nil,
         fileManager: FileManager = .default
     ) throws {
-        guard data.count <= maximumInputBytes,
-              let image = UIImage(data: data),
-              let cgImage = image.cgImage else {
-            throw MediaError.invalidImage
-        }
-        let width = CGFloat(cgImage.width)
-        let height = CGFloat(cgImage.height)
-        guard width >= 32, height >= 32,
-              width <= maximumDimension, height <= maximumDimension,
-              width * height <= maximumPixels else {
-            throw MediaError.invalidImage
-        }
-
-        let scale = min(1, maximumSavedDimension / max(width, height))
-        let size = CGSize(width: width * scale, height: height * scale)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let normalized = renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: size))
-        }
-        guard let encoded = normalized.jpegData(compressionQuality: 0.82),
-              encoded.count <= maximumOutputBytes else {
-            throw MediaError.invalidImage
-        }
+        let encoded = try normalizedCustomImageData(data)
 
         let root = try rootDirectoryURL(
             mediaDirectoryURL: mediaDirectoryURL,
@@ -272,6 +250,49 @@ enum ExerciseMediaStore {
             customThumbnailCache.removeAll()
             throw MediaError.persistenceFailure
         }
+    }
+
+    /// Decodes, orients upright, downsamples to at most `maximumSavedDimension` real pixels
+    /// (scale 1, independent of the screen) and re-encodes as JPEG without source metadata.
+    /// Pure CPU work with no shared state, so callers may run it off the main actor.
+    nonisolated static func normalizedCustomImageData(_ data: Data) throws -> Data {
+        guard data.count <= maximumInputBytes,
+              let source = CGImageSourceCreateWithData(
+                data as CFData,
+                [kCGImageSourceShouldCache: false] as CFDictionary
+              ),
+              CGImageSourceGetCount(source) > 0,
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let pixelWidth = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+              let pixelHeight = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue else {
+            throw MediaError.invalidImage
+        }
+        let width = CGFloat(pixelWidth)
+        let height = CGFloat(pixelHeight)
+        guard width >= 32, height >= 32,
+              width <= maximumDimension, height <= maximumDimension,
+              width * height <= maximumPixels else {
+            throw MediaError.invalidImage
+        }
+
+        let targetLongSide = Int(min(maximumSavedDimension, max(width, height)))
+        let thumbnailOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: targetLongSide
+        ]
+        guard let normalized = CGImageSourceCreateThumbnailAtIndex(
+            source,
+            0,
+            thumbnailOptions as CFDictionary
+        ),
+            let encoded = UIImage(cgImage: normalized, scale: 1, orientation: .up)
+                .jpegData(compressionQuality: 0.82),
+            encoded.count <= maximumOutputBytes else {
+            throw MediaError.invalidImage
+        }
+        return encoded
     }
 
     /// "Remove photo" / "Restore built-in preview" is offered whenever a custom photo exists,
