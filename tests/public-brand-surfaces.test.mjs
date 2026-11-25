@@ -152,7 +152,7 @@ test("Apple Ads install attribution is disclosed consistently on iPhone surfaces
   ]) {
     assert.match(privacy, text);
   }
-  assert.match(privacy, /Effective November 16, 2026 · Чинна з 16 листопада 2026 року · Действует с 16 ноября 2026 года/);
+  assert.match(privacy, /Effective November 25, 2026 · Чинна з 25 листопада 2026 року · Действует с 25 ноября 2026 года/);
   const manifest = await readFile("ios/GymApp-iOS/GymApp/Resources/PrivacyInfo.xcprivacy", "utf8");
   assert.match(manifest, /<key>NSPrivacyTracking<\/key>\s*<false\/>/);
   assert.match(
