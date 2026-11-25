@@ -1591,7 +1591,7 @@ class ActiveWorkoutViewModel(
         val updates = (parsed as ParsedActiveWorkoutSetBatch.Valid).updates
         operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
         viewModelScope.launch {
-            val outcome = runCatching {
+            val outcome = runCatchingUnlessCancelled {
                 persistActiveWorkoutMutationAndReconcileRest(
                     persist = {
                         repository.saveActiveWorkoutExercise(
@@ -1665,7 +1665,7 @@ class ActiveWorkoutViewModel(
         }
         operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
         viewModelScope.launch {
-            val result = runCatching { repository.applyActiveWorkoutAdaptation(snapshot, candidate) }
+            val result = runCatchingUnlessCancelled { repository.applyActiveWorkoutAdaptation(snapshot, candidate) }
                 .getOrDefault(ApplyActiveWorkoutAdaptationResult.Stale)
             operationState.update {
                 it.copy(
@@ -1773,7 +1773,7 @@ class ActiveWorkoutViewModel(
         val ownsRest = workout.activeWorkout.undoableSetId == setId
         operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
         viewModelScope.launch {
-            val outcome = runCatching {
+            val outcome = runCatchingUnlessCancelled {
                 persistActiveWorkoutMutationAndReconcileRest(
                     persist = { repository.deleteActiveWorkoutSet(setId, revision) },
                     isCommitted = { it is DeleteActiveWorkoutSetResult.Deleted },
@@ -1828,7 +1828,7 @@ class ActiveWorkoutViewModel(
         val revision = snapshot.activeWorkout.revision
         operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
         viewModelScope.launch {
-            val result = runCatching {
+            val result = runCatchingUnlessCancelled {
                 repository.restoreDeletedPendingActiveWorkoutSet(
                     exerciseId = deleted.exerciseId,
                     set = deleted.set,
@@ -1881,7 +1881,7 @@ class ActiveWorkoutViewModel(
         val revision = checkNotNull(snapshot).activeWorkout.revision
         operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
         viewModelScope.launch {
-            val result = runCatching { repository.addActiveWorkoutExercise(exerciseId, revision) }.getOrNull()
+            val result = runCatchingUnlessCancelled { repository.addActiveWorkoutExercise(exerciseId, revision) }.getOrNull()
             operationState.update {
                 val message = if (result == null) {
                     R.string.active_workout_changed
@@ -1919,7 +1919,7 @@ class ActiveWorkoutViewModel(
         operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
         viewModelScope.launch {
             var refusal: ActiveWorkoutEditBlock? = null
-            val result = runCatching {
+            val result = runCatchingUnlessCancelled {
                 // Looked up in the database, not in the picker catalog: an exercise created a moment
                 // ago in the picker may not have reached the catalog flow yet.
                 val snapshot = details.value
@@ -1932,12 +1932,12 @@ class ActiveWorkoutViewModel(
                 )
                 if (block != ActiveWorkoutEditBlock.Allowed) {
                     refusal = block
-                    return@runCatching null
+                    return@runCatchingUnlessCancelled null
                 }
                 val workout = checkNotNull(snapshot)
                 val oldSets = workout.exercises.first { it.activeWorkoutExercise.id == exerciseId }.sets
                     .map { SetSeed(weight = it.weight, reps = it.reps) }
-                val history = runCatching { allExerciseHistoryFlow.first() }.getOrDefault(emptyList())
+                val history = runCatchingUnlessCancelled { allExerciseHistoryFlow.first() }.getOrDefault(emptyList())
                 val sets = activeWorkoutReplacementSets(oldSets, history, newExerciseId)
                     .map { WorkoutSetDraft(weight = it.weight, reps = it.reps) }
                 repository.replaceActiveWorkoutExercise(
@@ -2052,7 +2052,7 @@ class ActiveWorkoutViewModel(
         val revision = snapshot.activeWorkout.revision
         operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
         viewModelScope.launch {
-            val result = runCatching { repository.updateActiveWorkoutNote(raw, revision) }.getOrNull()
+            val result = runCatchingUnlessCancelled { repository.updateActiveWorkoutNote(raw, revision) }.getOrNull()
             operationState.update { it.copy(isRecordingAll = false, messageSetId = null) }
             onResult(activeWorkoutNoteOutcomeMessage(result))
         }
@@ -2092,7 +2092,7 @@ class ActiveWorkoutViewModel(
         }
         operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
         viewModelScope.launch {
-            val outcome = runCatching {
+            val outcome = runCatchingUnlessCancelled {
                 persistActiveWorkoutMutationAndReconcileRest(
                     persist = { repository.removeActiveWorkoutExercise(exerciseId, revision) },
                     isCommitted = { it is RemoveActiveWorkoutExerciseResult.Removed },
@@ -2156,7 +2156,7 @@ class ActiveWorkoutViewModel(
             val result = if (latest.exercises != request.catalog || latest.history != request.history || latest.loadProfiles != request.profiles ||
                 request.trainingProfile != currentTrainingProfile() || request.mappings != adaptationMappings.value ||
                 liveSync?.activeLiveUiState?.value?.activeRoomId != null) ApplyActiveWorkoutAdaptationResult.Stale
-            else runCatching { repository.applyActiveWorkoutAdaptation(request.source, candidate) }.getOrDefault(ApplyActiveWorkoutAdaptationResult.Stale)
+            else runCatchingUnlessCancelled { repository.applyActiveWorkoutAdaptation(request.source, candidate) }.getOrDefault(ApplyActiveWorkoutAdaptationResult.Stale)
             if (result is ApplyActiveWorkoutAdaptationResult.Applied) {
                 inputs.value = candidate.exercises.flatMap { it.sets }.associate { set ->
                     set.id to ActiveWorkoutInput(formatActiveWeight(set.weight), set.reps.toString())

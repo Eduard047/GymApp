@@ -48,7 +48,9 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.InputStream
+import java.util.concurrent.atomic.AtomicBoolean
 
 data class ExerciseListUiState(
     val isLoading: Boolean = false,
@@ -257,6 +259,29 @@ private data class ExerciseConfigurationState(
     val loadEditor: ExerciseLoadEditorState
 )
 
+/** Upper bound for logout's final cloud upload; logout never waits longer than this. */
+internal const val LOGOUT_CLOUD_FLUSH_TIMEOUT_MILLIS = 5_000L
+
+/**
+ * Tries [flush] for at most [timeoutMillis], then always runs [logout]: a failed, slow, or
+ * cancelled flush never blocks or skips signing out.
+ */
+internal suspend fun runLogoutAfterBoundedCloudFlush(
+    flush: (suspend () -> Unit)?,
+    timeoutMillis: Long,
+    logout: suspend () -> Unit
+) {
+    try {
+        if (flush != null) {
+            withTimeoutOrNull(timeoutMillis) {
+                runCatchingUnlessCancelled { flush() }
+            }
+        }
+    } finally {
+        withContext(NonCancellable) { logout() }
+    }
+}
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class ExerciseListViewModel(
     private val repository: GymRepository,
@@ -264,6 +289,7 @@ class ExerciseListViewModel(
     // (ownerKey, exerciseId) -> deleted. Runs off the main thread after the exercise row is gone.
     private val deleteCustomExerciseMedia: ((String, Long) -> Boolean)? = null
 ) : ViewModel() {
+    private val logoutInProgress = AtomicBoolean(false)
     private val newExerciseName = MutableStateFlow("")
     private val hasInputError = MutableStateFlow(false)
     private val newExerciseError = MutableStateFlow<NewExerciseError?>(null)
@@ -898,12 +924,24 @@ class ExerciseListViewModel(
         }
     }
 
-    fun logout() {
+    fun logout(flushPendingCloudSave: (suspend () -> Unit)? = null) {
         val manager = authManager ?: return
-        // Logout commits several SharedPreferences files; keep that disk I/O off the UI thread.
+        // A second tap during the bounded flush must not start another upload or logout.
+        if (!logoutInProgress.compareAndSet(false, true)) return
         // ATOMIC: once the user tapped logout it runs even if this ViewModel is cleared first.
-        viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
-            manager.logout()
+        // The flush runs on the main dispatcher like the autosave it reuses.
+        viewModelScope.launch(start = CoroutineStart.ATOMIC) {
+            try {
+                runLogoutAfterBoundedCloudFlush(
+                    flush = flushPendingCloudSave,
+                    timeoutMillis = LOGOUT_CLOUD_FLUSH_TIMEOUT_MILLIS,
+                    // Logout commits several SharedPreferences files; keep that disk I/O off
+                    // the UI thread.
+                    logout = { withContext(Dispatchers.IO) { manager.logout() } }
+                )
+            } finally {
+                logoutInProgress.set(false)
+            }
         }
     }
 

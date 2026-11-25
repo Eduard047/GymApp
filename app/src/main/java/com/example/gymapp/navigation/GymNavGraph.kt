@@ -242,6 +242,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -268,6 +269,22 @@ internal fun shouldEnableCloudAutosave(
 ): Boolean = pullSucceeded &&
     canonicalRoundTripSafe &&
     isSameCloudSessionGeneration(pulledSession, activeSession)
+
+/**
+ * Logout uploads the pending autosave first only while autosave is armed for the exact session
+ * that is still active and has an unsent change. A conflict or failed save disarms autosave
+ * (the pull generation is cleared), so logout then never uploads over unresolved remote data.
+ */
+internal fun shouldFlushCloudAutosaveBeforeLogout(
+    session: AccountSession.Cloud,
+    activeSession: AccountSession?,
+    autosaveArmedGeneration: String?,
+    syncPhase: CloudSyncPhase?,
+    authLoading: Boolean
+): Boolean = !authLoading &&
+    syncPhase == CloudSyncPhase.Pending &&
+    autosaveArmedGeneration == session.sessionGeneration &&
+    isSameCloudSessionGeneration(session, activeSession)
 
 internal fun isSameCloudSessionGeneration(
     expected: AccountSession.Cloud,
@@ -2108,6 +2125,80 @@ internal fun GymAppRoot(
         }
     }
 
+    // Serializes the debounced autosave and the logout flush, so they never race two CAS writes.
+    val cloudAutosaveMutex = remember { Mutex() }
+
+    suspend fun uploadCloudAutosaveSnapshot(session: AccountSession.Cloud) {
+        val owner = BackupOwner(
+            accountId = session.userId,
+            userId = session.userId,
+            email = session.email,
+            remote = true
+        )
+        val snapshotTakenAt = System.currentTimeMillis()
+        val canonicalState = repository.buildCloudBackupJson(owner = owner)
+        val state = attachSharedCloudExtensions(
+            canonicalCore = canonicalState,
+            extensions = sharedCloudExtensions
+        )
+        val stateDigest = withContext(Dispatchers.Default) {
+            checkNotNull(canonicalWorkoutPayloadDigest(state))
+        }
+        val stats = repository.getSyncProfileStats()
+        authManager.saveRemoteState(
+            session = session,
+            state = state,
+            xp = stats.xp,
+            level = stats.level,
+            workouts = stats.workouts,
+            workoutDurations = workoutDurationSyncItems(canonicalState)
+        )
+        check(isSameCloudSessionGeneration(
+            session,
+            authManager.authState.value.session
+        )) { "Cloud account changed while confirming the sync baseline." }
+        check(cloudSyncBaselineStore.write(session.userId, stateDigest)) {
+            "Could not persist the cloud sync baseline. Automatic upload is paused."
+        }
+        recordWorkoutMergeBaselineFromState(
+            session = session,
+            state = state,
+            digest = stateDigest,
+            forgetChangesThrough = snapshotTakenAt
+        )
+        activityOnlyCloudBaseline?.let { baseline ->
+            activityOnlyCloudBaseline = syncActivityOnlyFromBaseline(
+                session = session,
+                baseline = baseline
+            )
+        }
+        check(isSameCloudSessionGeneration(
+            session,
+            authManager.authState.value.session
+        )) { "Cloud account changed while confirming the sync baseline." }
+        recordCloudSyncSuccess(session)
+    }
+
+    /**
+     * Logout's best-effort final upload (iOS parity). It waits for an in-flight autosave, then
+     * re-checks under the lock, so a save that already succeeded or failed is not repeated. The
+     * caller bounds it with a timeout and signs out whatever happens here.
+     */
+    suspend fun flushCloudAutosaveBeforeLogout(session: AccountSession.Cloud) {
+        cloudAutosaveMutex.withLock {
+            if (shouldFlushCloudAutosaveBeforeLogout(
+                    session = session,
+                    activeSession = authManager.authState.value.session,
+                    autosaveArmedGeneration = cloudPullGeneration,
+                    syncPhase = cloudSyncStatus?.phase,
+                    authLoading = authManager.authState.value.isLoading
+                )
+            ) {
+                uploadCloudAutosaveSnapshot(session)
+            }
+        }
+    }
+
     LaunchedEffect(cloudSession?.sessionGeneration, cloudPullGeneration) {
         val session = cloudSession ?: return@LaunchedEffect
         if (cloudPullGeneration != session.sessionGeneration) return@LaunchedEffect
@@ -2128,95 +2219,50 @@ internal fun GymAppRoot(
             .debounce(1_500)
             .collect {
                 if (authManager.authState.value.isLoading) return@collect
-                runCatching {
-                    val owner = BackupOwner(
-                        accountId = session.userId,
-                        userId = session.userId,
-                        email = session.email,
-                        remote = true
-                    )
-                    val snapshotTakenAt = System.currentTimeMillis()
-                    val canonicalState = repository.buildCloudBackupJson(owner = owner)
-                    val state = attachSharedCloudExtensions(
-                        canonicalCore = canonicalState,
-                        extensions = sharedCloudExtensions
-                    )
-                    val stateDigest = withContext(Dispatchers.Default) {
-                        checkNotNull(canonicalWorkoutPayloadDigest(state))
-                    }
-                    val stats = repository.getSyncProfileStats()
-                    authManager.saveRemoteState(
-                        session = session,
-                        state = state,
-                        xp = stats.xp,
-                        level = stats.level,
-                        workouts = stats.workouts,
-                        workoutDurations = workoutDurationSyncItems(canonicalState)
-                    )
-                    check(isSameCloudSessionGeneration(
-                        session,
-                        authManager.authState.value.session
-                    )) { "Cloud account changed while confirming the sync baseline." }
-                    check(cloudSyncBaselineStore.write(session.userId, stateDigest)) {
-                        "Could not persist the cloud sync baseline. Automatic upload is paused."
-                    }
-                    recordWorkoutMergeBaselineFromState(
-                        session = session,
-                        state = state,
-                        digest = stateDigest,
-                        forgetChangesThrough = snapshotTakenAt
-                    )
-                    activityOnlyCloudBaseline?.let { baseline ->
-                        activityOnlyCloudBaseline = syncActivityOnlyFromBaseline(
-                            session = session,
-                            baseline = baseline
-                        )
-                    }
-                    check(isSameCloudSessionGeneration(
-                        session,
-                        authManager.authState.value.session
-                    )) { "Cloud account changed while confirming the sync baseline." }
-                    recordCloudSyncSuccess(session)
-                }.onFailure { throwable ->
-                    if (throwable is CancellationException) throw throwable
-                    cloudPullGeneration = null
-                    if (isSameCloudSessionGeneration(
-                            session,
-                            authManager.authState.value.session
-                        )
-                    ) {
-                        val message = authErrorText(throwable, R.string.cloud_sync_save_failed)
-                        if (message.resourceId == R.string.cloud_sync_conflict &&
-                            staleCloudSaveRetries < MAX_STALE_CLOUD_SAVE_RETRIES
+                cloudAutosaveMutex.withLock {
+                    runCatching {
+                        uploadCloudAutosaveSnapshot(session)
+                    }.onFailure { throwable ->
+                        if (throwable is CancellationException) throw throwable
+                        cloudPullGeneration = null
+                        if (isSameCloudSessionGeneration(
+                                session,
+                                authManager.authState.value.session
+                            )
                         ) {
-                            // Another device wrote first: reload the row, merge it workout by
-                            // workout against the stored baseline, and upload again.
-                            staleCloudSaveRetries += 1
-                            cloudSyncRetryVersion += 1
-                            return@onFailure
-                        }
-                        cloudSyncRetryMode = cloudSyncRetryModeForSaveFailure(message)
-                        if (cloudSyncRetryMode == CloudSyncRetryMode.ResumeAutosave) {
-                            cloudAutoRetryDelayMillis(
-                                message = message,
-                                attempt = cloudAutoRetryAttempts,
-                                networkFailure = isTransientNetworkFailure(throwable)
-                            )?.let { delayMs ->
-                                cloudAutoRetryAttempts += 1
-                                cloudAutoRetryMode = CloudSyncRetryMode.ResumeAutosave
-                                cloudAutoRetryDelayMs = delayMs
+                            val message = authErrorText(throwable, R.string.cloud_sync_save_failed)
+                            if (message.resourceId == R.string.cloud_sync_conflict &&
+                                staleCloudSaveRetries < MAX_STALE_CLOUD_SAVE_RETRIES
+                            ) {
+                                // Another device wrote first: reload the row, merge it workout by
+                                // workout against the stored baseline, and upload again.
+                                staleCloudSaveRetries += 1
+                                cloudSyncRetryVersion += 1
+                                return@onFailure
                             }
+                            cloudSyncRetryMode = cloudSyncRetryModeForSaveFailure(message)
+                            if (cloudSyncRetryMode == CloudSyncRetryMode.ResumeAutosave) {
+                                cloudAutoRetryDelayMillis(
+                                    message = message,
+                                    attempt = cloudAutoRetryAttempts,
+                                    networkFailure = isTransientNetworkFailure(throwable)
+                                )?.let { delayMs ->
+                                    cloudAutoRetryAttempts += 1
+                                    cloudAutoRetryMode = CloudSyncRetryMode.ResumeAutosave
+                                    cloudAutoRetryDelayMs = delayMs
+                                }
+                            }
+                            updateCloudSyncPhase(
+                                session,
+                                if (message.resourceId == R.string.cloud_sync_conflict) {
+                                    CloudSyncPhase.Conflict
+                                } else {
+                                    CloudSyncPhase.Error
+                                },
+                                message
+                            )
+                            authManager.setMessage(message)
                         }
-                        updateCloudSyncPhase(
-                            session,
-                            if (message.resourceId == R.string.cloud_sync_conflict) {
-                                CloudSyncPhase.Conflict
-                            } else {
-                                CloudSyncPhase.Error
-                            },
-                            message
-                        )
-                        authManager.setMessage(message)
                     }
                 }
             }
@@ -4575,7 +4621,12 @@ internal fun GymAppRoot(
                                             deletionInProgress = accountDeletionInProgress
                                         )
                                     ) {
-                                        profileViewModel.logout()
+                                        val logoutSession = cloudSession
+                                        profileViewModel.logout(
+                                            flushPendingCloudSave = logoutSession?.let { session ->
+                                                suspend { flushCloudAutosaveBeforeLogout(session) }
+                                            }
+                                        )
                                     }
                                 },
                                 isAccountActionLoading = !accountActionsEnabled(
