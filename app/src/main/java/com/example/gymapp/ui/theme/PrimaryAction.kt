@@ -74,18 +74,24 @@ fun Button(
     interactionSource: MutableInteractionSource? = null,
     content: @Composable RowScope.() -> Unit
 ) {
-    androidx.compose.material3.Button(
-        onClick = onClick,
-        modifier = modifier,
-        enabled = enabled,
-        shape = shape,
-        colors = colors,
-        elevation = elevation,
-        border = border,
-        contentPadding = contentPadding,
-        interactionSource = interactionSource,
-        content = content
-    )
+    // A label that wraps to two lines stays centred, as in [TintedButton].
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.material3.LocalTextStyle provides androidx.compose.material3.LocalTextStyle.current
+            .copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    ) {
+        androidx.compose.material3.Button(
+            onClick = onClick,
+            modifier = modifier,
+            enabled = enabled,
+            shape = shape,
+            colors = colors,
+            elevation = elevation,
+            border = border,
+            contentPadding = contentPadding,
+            interactionSource = interactionSource,
+            content = content
+        )
+    }
 }
 
 /** Colors of a [TintedButton]: accent 15% fill with an accent label (disabled: 7% fill, 38% label). */

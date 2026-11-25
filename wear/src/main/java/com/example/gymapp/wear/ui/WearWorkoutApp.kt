@@ -946,8 +946,9 @@ private fun SetEntryScreen(
     // Vertical budget (spec §4.4): slim exercise chip, unit labels sitting directly on their
     // wheel, then exactly three option rows so each column reads as a wheel. The chip starts
     // below the scaffold's time text. 227dp round: 22 + 30 chip + 16 labels + 90 wheels above the
-    // 56dp edge button; 192dp: 22 + 26 + 15 + 75 above the 46dp one.
-    val topInset = 22.dp
+    // 56dp edge button; 192dp: 22 + 26 + 15 + 75 above the 46dp one. At a large text size the
+    // curved time text grows, so on a round screen the chip moves down to stay clear of it.
+    val topInset = if (isLargeText() && LocalConfiguration.current.isScreenRound) 28.dp else 22.dp
     val chipHeight = if (large) 30.dp else 26.dp
     val rowHeight = if (large) 30.dp else 25.dp
     val weightWidth = 76.dp
@@ -1097,15 +1098,28 @@ private fun ExerciseChip(
                 .padding(start = 12.dp, end = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.labelMedium,
-                color = if (placeholder) WatchColors.TextSecondary else WatchColors.Text,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).clearAndSetSemantics { }
-            )
+            val labelColor = if (placeholder) WatchColors.TextSecondary else WatchColors.Text
+            if (isLargeText()) {
+                // At a large text size the name steps down instead of ending after two letters
+                // ("Жим га…").
+                FitText(
+                    text = text,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = labelColor,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f).clearAndSetSemantics { }
+                )
+            } else {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = labelColor,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).clearAndSetSemantics { }
+                )
+            }
             Icon(
                 WatchIcons.Chevron,
                 contentDescription = null,
