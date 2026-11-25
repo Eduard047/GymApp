@@ -195,4 +195,61 @@ class WorkoutMathTest {
         assertEquals(reps.lastIndex, WorkoutMath.repIndex(reps, 120))
         assertEquals(0, WorkoutMath.repIndex(reps, 0))
     }
+
+    @Test
+    fun pickerTargetIndexFollowsTheNewExerciseTarget() {
+        // Leg Press 450 kg x 150 -> Biceps Curl 12.5 kg x 10: same weight grid, shorter reps list.
+        val weights = WorkoutMath.weightOptions(2.5, 450.0)
+        assertEquals(450.0, weights[WorkoutMath.pickerTargetIndex(weights, 450.0)], 0.0)
+        assertEquals(12.5, weights[WorkoutMath.pickerTargetIndex(weights, 12.5)], 0.0)
+
+        val legPressReps = WorkoutMath.repOptions(150)
+        assertEquals(150, legPressReps.size)
+        assertEquals(149, WorkoutMath.pickerTargetIndex(legPressReps, 150))
+        val curlReps = WorkoutMath.repOptions(10)
+        assertEquals(100, curlReps.size)
+        assertEquals(9, WorkoutMath.pickerTargetIndex(curlReps, 10))
+        assertEquals(10, curlReps[WorkoutMath.pickerTargetIndex(curlReps, 10)])
+    }
+
+    @Test
+    fun pickerTargetIndexStaysInsideTheList() {
+        val reps = WorkoutMath.repOptions(null)
+        assertEquals(reps.lastIndex, WorkoutMath.pickerTargetIndex(reps, 150))
+        assertEquals(0, WorkoutMath.pickerTargetIndex(reps, 0))
+        assertEquals(0, WorkoutMath.pickerTargetIndex(emptyList<Int>(), 10))
+        assertEquals(0, WorkoutMath.pickerTargetIndex(emptyList<Double>(), 12.5))
+        val weights = WorkoutMath.weightOptions(5.0, null)
+        assertEquals(weights.lastIndex, WorkoutMath.pickerTargetIndex(weights, 10_000.0))
+        assertEquals(0, WorkoutMath.pickerTargetIndex(weights, -5.0))
+    }
+
+    // FitText size picking (a line 10 px wide per sp, so 16sp is 160 px).
+    private val widthAt: (Float) -> Int = { size -> (size * 10).toInt() }
+
+    @Test
+    fun fitTextKeepsTheFullSizeWhenTheLineFits() {
+        var calls = 0
+        val size = WorkoutMath.fitTextSize(16f, 10f, 0.5f, 200) { calls++; widthAt(it) }
+        assertEquals(16f, size, 0f)
+        assertEquals(1, calls)
+    }
+
+    @Test
+    fun fitTextStepsDownToTheLargestSizeThatFits() {
+        assertEquals(14.5f, WorkoutMath.fitTextSize(16f, 10f, 0.5f, 145, widthAt), 0f)
+        assertEquals(14f, WorkoutMath.fitTextSize(16f, 10f, 0.5f, 144, widthAt), 0f)
+    }
+
+    @Test
+    fun fitTextNeverGoesBelowTheMinimum() {
+        assertEquals(10f, WorkoutMath.fitTextSize(16f, 10f, 0.5f, 20, widthAt), 0f)
+        assertEquals(10f, WorkoutMath.fitTextSize(16f, 10f, 0.5f, 0, widthAt), 0f)
+    }
+
+    @Test
+    fun fitTextLeavesSmallOrStepLessStylesAlone() {
+        assertEquals(9f, WorkoutMath.fitTextSize(9f, 10f, 0.5f, 1) { error("not measured") }, 0f)
+        assertEquals(16f, WorkoutMath.fitTextSize(16f, 10f, 0f, 1) { error("not measured") }, 0f)
+    }
 }

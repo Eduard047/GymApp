@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -27,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +38,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.MeasurePolicy
+import androidx.compose.ui.layout.Measurable
+import androidx.compose.ui.layout.MeasureResult
+import androidx.compose.ui.layout.MeasureScope
+import androidx.compose.ui.layout.IntrinsicMeasurable
+import androidx.compose.ui.layout.IntrinsicMeasureScope
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.constrainWidth
+import androidx.compose.ui.unit.constrainHeight
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.semantics.text
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -52,15 +67,17 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.takeOrElse
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -405,21 +422,75 @@ private fun FitText(
     color: Color = Color.Unspecified
 ) {
     val textColor = color.takeOrElse { style.color.takeOrElse { LocalContentColor.current } }
-    val maxSize = style.fontSize
-    BasicText(
-        text = text,
-        modifier = modifier,
-        style = style.copy(color = textColor, textAlign = textAlign),
-        maxLines = 1,
-        softWrap = false,
-        overflow = TextOverflow.Ellipsis,
-        autoSize = if (maxSize.isSpecified && maxSize > FIT_TEXT_MIN_SIZE) {
-            TextAutoSize.StepBased(minFontSize = FIT_TEXT_MIN_SIZE, maxFontSize = maxSize, stepSize = 0.5.sp)
-        } else {
-            null
+    val baseStyle = style.copy(color = textColor, textAlign = textAlign)
+    val measurer = rememberTextMeasurer()
+    // Written while measuring, read while drawing: the line is laid out once per measure pass.
+    val laidOut = remember { mutableStateOf<TextLayoutResult?>(null) }
+    // A plain Layout rather than BoxWithConstraints: Wear buttons ask their label for intrinsic
+    // sizes, which a SubcomposeLayout (BoxWithConstraints, lazy lists) cannot answer and crashes.
+    // The size is chosen from the width this text really gets: the largest step (0.5sp) at or
+    // below [style]'s size whose single line fits, so a value that fits keeps its full size and
+    // only an overflowing one shrinks. Min constraints are kept, so a filled width still aligns
+    // by [textAlign].
+    val policy = remember(text, baseStyle, measurer) {
+        object : MeasurePolicy {
+            fun layoutAt(constraints: Constraints): TextLayoutResult {
+                val fontSize = fitFontSize(
+                    text, baseStyle, if (constraints.hasBoundedWidth) constraints.maxWidth else null, measurer
+                )
+                return measurer.measure(
+                    text = text,
+                    style = baseStyle.copy(fontSize = fontSize),
+                    overflow = TextOverflow.Ellipsis,
+                    softWrap = false,
+                    maxLines = 1,
+                    constraints = Constraints(minWidth = constraints.minWidth, maxWidth = constraints.maxWidth)
+                )
+            }
+
+            override fun MeasureScope.measure(measurables: List<Measurable>, constraints: Constraints): MeasureResult {
+                val result = layoutAt(constraints)
+                laidOut.value = result
+                val width = constraints.constrainWidth(result.size.width)
+                val height = constraints.constrainHeight(result.size.height)
+                return layout(width, height) {}
+            }
+
+            // One unbroken line at full size, as Text with maxLines = 1 reports it.
+            private fun fullWidth(): Int =
+                measurer.measure(text = text, style = baseStyle, softWrap = false, maxLines = 1).size.width
+
+            override fun IntrinsicMeasureScope.minIntrinsicWidth(measurables: List<IntrinsicMeasurable>, height: Int) =
+                fullWidth()
+
+            override fun IntrinsicMeasureScope.maxIntrinsicWidth(measurables: List<IntrinsicMeasurable>, height: Int) =
+                fullWidth()
+
+            override fun IntrinsicMeasureScope.minIntrinsicHeight(measurables: List<IntrinsicMeasurable>, width: Int) =
+                layoutAt(Constraints(maxWidth = width.coerceAtLeast(0))).size.height
+
+            override fun IntrinsicMeasureScope.maxIntrinsicHeight(measurables: List<IntrinsicMeasurable>, width: Int) =
+                layoutAt(Constraints(maxWidth = width.coerceAtLeast(0))).size.height
         }
+    }
+    Layout(
+        modifier = modifier
+            .semantics { this.text = AnnotatedString(text) }
+            .drawBehind { laidOut.value?.let { drawText(it) } },
+        measurePolicy = policy
     )
 }
+
+/** Largest size from [style]'s own down to [FIT_TEXT_MIN_SIZE] at which [text] fits [maxWidthPx]. */
+private fun fitFontSize(text: String, style: TextStyle, maxWidthPx: Int?, measurer: TextMeasurer): TextUnit {
+    val maxSize = style.fontSize
+    if (maxWidthPx == null || !maxSize.isSp || maxSize <= FIT_TEXT_MIN_SIZE) return maxSize
+    return WorkoutMath.fitTextSize(maxSize.value, FIT_TEXT_MIN_SIZE.value, FIT_TEXT_STEP, maxWidthPx) { size ->
+        measurer.measure(text = text, style = style.copy(fontSize = size.sp), maxLines = 1, softWrap = false).size.width
+    }.sp
+}
+
+private const val FIT_TEXT_STEP = 0.5f
 
 private val FIT_TEXT_MIN_SIZE = 10.sp
 
@@ -909,31 +980,26 @@ private fun SetEntryScreen(
     val weightOptions = remember(state.weightStepKg, target.weight) {
         WorkoutMath.weightOptions(state.weightStepKg, target.weight)
     }
-    val weightState = rememberPickerState(
-        initialNumberOfOptions = weightOptions.size,
-        initiallySelectedIndex = WorkoutMath.closestIndex(weightOptions, target.weight),
-        shouldRepeatOptions = false
-    )
     val repOptions = remember(target.reps) { WorkoutMath.repOptions(target.reps) }
-    val repsState = rememberPickerState(
-        initialNumberOfOptions = repOptions.size,
-        initiallySelectedIndex = WorkoutMath.repIndex(repOptions, target.reps),
-        shouldRepeatOptions = false
-    )
-    // The picker states are saveable and outlive a change of their option lists (another exercise
-    // picked, next target changed). When the count differs, resize the wheel and move it to the
-    // target; reads below are clamped for the frame before this runs.
-    LaunchedEffect(weightOptions) {
-        if (weightOptions.isNotEmpty() && weightState.numberOfOptions != weightOptions.size) {
-            weightState.numberOfOptions = weightOptions.size
-            weightState.scrollToOption(WorkoutMath.closestIndex(weightOptions, target.weight))
-        }
+    // The picker states are saveable, so a wheel left on one exercise would come back on the next
+    // one at its old position: a same-length weight grid stayed at 450 kg, and shrinking the reps
+    // list (1..150 -> 1..100) moved the wheel to an unrelated row. Each exercise / target / list
+    // size gets its own state that opens on the target; scrolling changes none of these keys, so
+    // the wheel keeps the user's value while they stay on the same exercise. Reads below stay
+    // clamped (optionAt) in case a restored state still holds an index from a longer list.
+    val weightState = key(exercise, target, weightOptions.size) {
+        rememberPickerState(
+            initialNumberOfOptions = weightOptions.size.coerceAtLeast(1),
+            initiallySelectedIndex = WorkoutMath.pickerTargetIndex(weightOptions, target.weight),
+            shouldRepeatOptions = false
+        )
     }
-    LaunchedEffect(repOptions) {
-        if (repOptions.isNotEmpty() && repsState.numberOfOptions != repOptions.size) {
-            repsState.numberOfOptions = repOptions.size
-            repsState.scrollToOption(WorkoutMath.repIndex(repOptions, target.reps))
-        }
+    val repsState = key(exercise, target, repOptions.size) {
+        rememberPickerState(
+            initialNumberOfOptions = repOptions.size.coerceAtLeast(1),
+            initiallySelectedIndex = WorkoutMath.pickerTargetIndex(repOptions, target.reps),
+            shouldRepeatOptions = false
+        )
     }
     var selectedColumn by remember { mutableIntStateOf(0) }
     val weightLabel = stringResource(R.string.label_weight)
@@ -1475,9 +1541,14 @@ private data class SummaryCell(
 
 @Composable
 private fun MetricRow(left: SummaryCell, right: SummaryCell) {
-    // A large text size widens the cells into the round bezel near the top and bottom of the
-    // list ("Подходь"); an extra side inset keeps them inside it.
-    val inset = if (LocalConfiguration.current.isScreenRound && isLargeText()) 8.dp else 0.dp
+    // On a round screen a row scrolled toward the top or bottom of the list meets the bezel, which
+    // cut the first digit of a value ("104 уд/мин") even at the default text size. A side inset
+    // keeps every row inside the circle; a large text size gets a little more ("Подходь").
+    val inset = when {
+        !LocalConfiguration.current.isScreenRound -> 0.dp
+        isLargeText() -> 12.dp
+        else -> 8.dp
+    }
     // A fixed gap keeps two long labels ("Сред. пульс" / "Макс. пульс") apart on narrow screens.
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = inset),
@@ -1499,7 +1570,14 @@ private fun Metric(cell: SummaryCell, modifier: Modifier) {
         modifier = modifier.clearAndSetSemantics { contentDescription = "$spokenLabel, $spokenValue" },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(value, style = MaterialTheme.typography.titleLarge.tabular(), maxLines = 1)
+        // A value steps its size down to fit its half of the row ("102 уд/мин", "135 000 кг" at a
+        // large text size on 192dp) instead of being clipped at the cell edge.
+        FitText(
+            value,
+            modifier = Modifier.fillMaxWidth(),
+            style = MaterialTheme.typography.titleLarge.tabular(),
+            textAlign = TextAlign.Center
+        )
         if (isLargeText()) {
             FitText(label, style = MaterialTheme.typography.labelSmall, color = WatchColors.TextSecondary)
         } else {

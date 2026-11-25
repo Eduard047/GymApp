@@ -181,6 +181,29 @@ object WorkoutMath {
      */
     fun clampIndex(index: Int, size: Int): Int = if (size <= 0) 0 else index.coerceIn(0, size - 1)
 
+    /** Where the weight wheel opens for [target]: the closest option, inside the list. */
+    fun pickerTargetIndex(options: List<Double>, target: Double): Int =
+        clampIndex(closestIndex(options, target), options.size)
+
+    /** Where the reps wheel opens for [target]: its option (clamped to the ends), inside the list. */
+    fun pickerTargetIndex(options: List<Int>, target: Int): Int =
+        clampIndex(repIndex(options, target), options.size)
+
+    /**
+     * Type size for one line that must fit [maxWidthPx]: [maxSize] itself when it fits, else the
+     * largest step of [step] below it that fits, never below [minSize]. [widthAt] measures the
+     * line at a size; it is not called for sizes the answer does not depend on.
+     */
+    fun fitTextSize(maxSize: Float, minSize: Float, step: Float, maxWidthPx: Int, widthAt: (Float) -> Int): Float {
+        if (maxSize <= minSize || step <= 0f) return maxSize
+        var size = maxSize
+        while (size > minSize) {
+            if (widthAt(size) <= maxWidthPx) return size
+            size -= step
+        }
+        return minSize
+    }
+
     /** Option at [index] clamped to the list; null only when the list is empty. */
     fun <T> optionAt(options: List<T>, index: Int): T? = options.getOrNull(clampIndex(index, options.size))
 
