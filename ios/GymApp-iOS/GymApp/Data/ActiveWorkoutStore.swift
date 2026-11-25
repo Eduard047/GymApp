@@ -301,7 +301,7 @@ final class ActiveWorkoutStore: ObservableObject {
               WorkoutAdaptation.preservesCompleted(source, candidate) else { throw ActiveWorkoutStoreError.invalidDraft }
         try liveSlotReservationStore.assertOrdinaryStartAllowed()
         guard draft == source else { throw ActiveWorkoutStoreError.staleDraft }
-        return try mutate(draftID: source.id, expectedRevision: source.revision, now: Date()) { current in
+        return try mutate(draftID: source.id, expectedRevision: source.revision, now: Date()) { current, _ in
             current.exercises = candidate.exercises
         }
     }
@@ -319,7 +319,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             let location = try Self.setLocation(setID: setID, in: candidate)
             try Self.validate(weight: weight, reps: reps)
             candidate.exercises[location.exercise].sets[location.set].weight = weight == 0 ? 0.0 : weight
@@ -339,7 +339,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             let location = try Self.setLocation(setID: setID, in: candidate)
             let set = candidate.exercises[location.exercise].sets[location.set]
             guard set.completedAt == nil else {
@@ -377,7 +377,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             let unfinishedLocations = candidate.exercises.indices.flatMap { exerciseIndex in
                 candidate.exercises[exerciseIndex].sets.indices.compactMap { setIndex in
                     candidate.exercises[exerciseIndex].sets[setIndex].isCompleted
@@ -436,7 +436,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             guard let exerciseIndex = candidate.exercises.firstIndex(where: {
                 $0.id == exerciseBlockID
             }) else {
@@ -472,7 +472,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             try Self.pauseTiming(in: &candidate, at: now, restSeconds: seconds)
         }
     }
@@ -504,7 +504,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             var timing = Self.normalizedTiming(in: candidate, at: now)
             // No running rest (it just ended): adjusting is a quiet no-op, like Android.
             // The expired deadline is already folded back into active time by normalization.
@@ -525,7 +525,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             var timing = Self.normalizedTiming(in: candidate, at: now)
             if timing.restingUntil != nil {
                 timing.restingUntil = nil
@@ -548,7 +548,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             guard candidate.undoableSetID == setID else {
                 throw ActiveWorkoutStoreError.setIsNotLatest
             }
@@ -583,7 +583,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             let location = try Self.setLocation(setID: setID, in: candidate)
             guard candidate.exercises[location.exercise].sets[location.set].completedAt != nil else {
                 throw ActiveWorkoutStoreError.setNotRecorded
@@ -617,7 +617,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             guard !setIDs.isEmpty, Set(setIDs).count == setIDs.count else {
                 throw ActiveWorkoutStoreError.invalidDraft
             }
@@ -661,7 +661,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             guard let exerciseIndex = candidate.exercises.firstIndex(where: {
                 $0.id == exerciseBlockID
             }) else {
@@ -703,7 +703,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             let location = try Self.setLocation(setID: setID, in: candidate)
             guard candidate.exercises[location.exercise].sets.count > 1 else {
                 throw ActiveWorkoutStoreError.lastSetRequired
@@ -741,7 +741,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             guard !set.isCompleted else { throw ActiveWorkoutStoreError.setAlreadyCompleted }
             guard let exerciseIndex = candidate.exercises.firstIndex(where: {
                 $0.id == exerciseBlockID
@@ -796,7 +796,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             guard !candidate.exercises.contains(where: { block in
                 block.exerciseID == storedExercise.id
                     || (storedExercise.catalogKey != nil
@@ -881,7 +881,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             guard let index = candidate.exercises.firstIndex(where: { $0.id == exerciseBlockID }) else {
                 throw ActiveWorkoutStoreError.exerciseUnavailable
             }
@@ -955,7 +955,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             guard let exerciseIndex = candidate.exercises.firstIndex(where: {
                 $0.id == exerciseBlockID
             }) else {
@@ -1036,7 +1036,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             let block = candidate.exercises.remove(at: index)
             candidate.exercises.insert(block, at: targetIndex)
         }
@@ -1069,7 +1069,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
-        ) { candidate in
+        ) { candidate, now in
             candidate.note = normalized
         }
     }
@@ -1107,7 +1107,7 @@ final class ActiveWorkoutStore: ObservableObject {
             draftID: current.id,
             expectedRevision: current.revision,
             now: max(now, current.lastModifiedAt)
-        ) { candidate in
+        ) { candidate, now in
             for index in candidate.exercises.indices {
                 if let replacement = replacements[candidate.exercises[index].id] {
                     candidate.exercises[index].exerciseID = replacement
@@ -1149,7 +1149,7 @@ final class ActiveWorkoutStore: ObservableObject {
                 expectedRevision: current.revision,
                 now: preparedAt,
                 allowCommitTransition: true
-            ) { candidate in
+            ) { candidate, now in
                 guard candidate.commitIntent == nil else {
                     throw ActiveWorkoutStoreError.workoutFinishing
                 }
@@ -1184,7 +1184,7 @@ final class ActiveWorkoutStore: ObservableObject {
         expectedRevision: UInt64,
         now: Date,
         allowCommitTransition: Bool = false,
-        mutation: (inout ActiveWorkoutDraft) throws -> Void
+        mutation: (inout ActiveWorkoutDraft, _ now: Date) throws -> Void
     ) throws -> ActiveWorkoutDraft {
         guard !writesBlocked else { throw ActiveWorkoutStoreError.storageUnavailable }
         var candidate = try currentDraft(
@@ -1194,7 +1194,11 @@ final class ActiveWorkoutStore: ObservableObject {
         guard allowCommitTransition || candidate.commitIntent == nil else {
             throw ActiveWorkoutStoreError.workoutFinishing
         }
-        try mutation(&candidate)
+        // The device clock can move backwards mid-workout. Every timestamp a mutation
+        // writes (lastModifiedAt, completedAt, activeSince, restingUntil) comes from this
+        // monotonic `now`, so the draft stays valid without loosening the validator.
+        let now = max(now, candidate.lastModifiedAt)
+        try mutation(&candidate, now)
         if candidate.timing != nil {
             candidate.timing = Self.normalizedTiming(in: candidate, at: now)
         }

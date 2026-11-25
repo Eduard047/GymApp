@@ -1122,6 +1122,85 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertEqual(context.active.draft, undone)
     }
 
+    func testMutationsSurviveDeviceClockMovingBackwardsAndKeepTimestampsMonotonic() throws {
+        let context = try makeContext(account: "active-clock-backwards")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let sets = [
+            ActiveWorkoutSet(weight: 60, reps: 8),
+            ActiveWorkoutSet(weight: 60, reps: 9),
+            ActiveWorkoutSet(weight: 60, reps: 10)
+        ]
+        let started = try startSets(context, sets: sets, now: startedAt)
+        let latest = startedAt.addingTimeInterval(20 * 60)
+        let recorded = try context.active.recordSet(
+            draftID: started.id, setID: sets[0].id, expectedRevision: started.revision,
+            restSeconds: 90, now: latest
+        )
+        XCTAssertEqual(recorded.lastModifiedAt, latest)
+
+        // The device clock jumps back ten minutes mid-workout.
+        let earlier = latest.addingTimeInterval(-10 * 60)
+        var previous = recorded
+        func assertMonotonic(_ draft: ActiveWorkoutDraft, file: StaticString = #filePath, line: UInt = #line) {
+            XCTAssertGreaterThanOrEqual(draft.lastModifiedAt, previous.lastModifiedAt, file: file, line: line)
+            XCTAssertEqual(draft.lastModifiedAt, latest, file: file, line: line)
+            XCTAssertEqual(draft.revision, previous.revision + 1, file: file, line: line)
+            previous = draft
+        }
+
+        let logged = try context.active.recordSet(
+            draftID: started.id, setID: sets[1].id, expectedRevision: previous.revision, now: earlier
+        )
+        assertMonotonic(logged)
+        XCTAssertEqual(logged.exercises[0].sets[1].completedAt, latest)
+
+        let undone = try context.active.undoLatestRecordedSet(
+            draftID: started.id, setID: sets[1].id, expectedRevision: previous.revision, now: earlier
+        )
+        assertMonotonic(undone)
+        XCTAssertNil(undone.exercises[0].sets[1].completedAt)
+
+        let resting = try context.active.beginRest(
+            draftID: started.id, expectedRevision: previous.revision, seconds: 60, now: earlier
+        )
+        assertMonotonic(resting)
+        XCTAssertEqual(resting.timing?.restingUntil, latest.addingTimeInterval(60))
+
+        let rested = try context.active.endRest(
+            draftID: started.id, expectedRevision: previous.revision, now: earlier
+        )
+        assertMonotonic(rested)
+        XCTAssertNil(rested.timing?.restingUntil)
+        XCTAssertEqual(rested.timing?.activeSince, latest)
+
+        let appended = try context.active.appendSet(
+            draftID: started.id, exerciseBlockID: started.exercises[0].id, weight: 60, reps: 11,
+            expectedRevision: previous.revision, isSolo: { true }, now: earlier
+        )
+        assertMonotonic(appended)
+        let appendedSetID = try XCTUnwrap(appended.exercises[0].sets.last?.id)
+
+        let deleted = try context.active.deleteSet(
+            draftID: started.id, setID: appendedSetID, expectedRevision: previous.revision,
+            isSolo: { true }, now: earlier
+        )
+        assertMonotonic(deleted)
+        XCTAssertEqual(deleted.exercises[0].sets.map(\.id), sets.map(\.id))
+
+        let reopened = ActiveWorkoutStore(
+            accountStorageKey: context.history.accountStorageKey,
+            workoutStorageURL: context.history.storageURL
+        )
+        XCTAssertEqual(reopened.draft, deleted, "the persisted draft still passes validation")
+
+        let finished = try context.active.finish(
+            draftID: started.id, expectedRevision: previous.revision, into: context.history, now: earlier
+        )
+        XCTAssertEqual(finished.exercises.first?.sets.count, 1)
+        XCTAssertEqual(finished.durationSeconds, 20 * 60, "finish never goes back before the last change")
+        XCTAssertNil(context.active.draft)
+    }
+
     // MARK: Undo of any recorded set and of a log-all batch
 
     private func startThreeSets(
