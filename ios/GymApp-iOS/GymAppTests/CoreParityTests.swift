@@ -1665,6 +1665,165 @@ final class CoreParityTests: XCTestCase {
         XCTAssertNil(auth.message)
     }
 
+    func testLocalProfileOpenedDuringSignInIsKeptAndLateCloudSessionRejected() async throws {
+        let gate = AuthResponseGate()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "sign-in-local-profile-race")
+        let auth = AuthService(keychain: keychain, urlSession: urlSession, defaults: defaults)
+        let cloudJSON = #"{"access_token":"late-access","refresh_token":"late-refresh","expires_in":3600,"user":{"id":"00000000-0000-0000-0000-000000000031","email":"athlete@example.com","user_metadata":{"display_name":"Athlete"}}}"#
+        AuthURLProtocolStub.handler = { request in
+            gate.arriveAndWait()
+            return try AuthURLProtocolStub.response(for: request, json: cloudJSON)
+        }
+        defer {
+            gate.release()
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+            try? auth.clearSession()
+        }
+
+        let signIn = Task { await auth.signIn(email: "athlete@example.com", password: "Password9") }
+        let arrived = await gate.waitForArrival()
+        XCTAssertTrue(arrived)
+        try auth.continueOffline(displayName: "Garage")
+        let local = try XCTUnwrap(auth.session)
+        gate.release()
+        await signIn.value
+
+        XCTAssertEqual(auth.session, local)
+        XCTAssertNil(auth.session?.cloud)
+        XCTAssertTrue(auth.messageIsError)
+        XCTAssertEqual(auth.message, AuthServiceError.sessionChanged.errorDescription)
+        XCTAssertNil(try keychain.read(account: "current-session"))
+        let relaunched = AuthService(keychain: keychain, urlSession: urlSession, defaults: defaults)
+        XCTAssertEqual(relaunched.session, local)
+    }
+
+    func testLocalProfileOpenedDuringAuthCallbackIsKeptAndLateCloudSessionRejected() async throws {
+        let gate = AuthResponseGate()
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "auth-callback-local-profile-race")
+        let auth = AuthService(keychain: keychain, urlSession: urlSession, defaults: defaults)
+        let cloudJSON = #"{"access_token":"late-access","refresh_token":"late-refresh","expires_in":3600,"user":{"id":"00000000-0000-0000-0000-000000000032","email":"ed@example.com","user_metadata":{"display_name":"Eduard"}}}"#
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            if request.url?.path == "/auth/v1/token" {
+                gate.arriveAndWait()
+                return try AuthURLProtocolStub.response(for: request, json: cloudJSON)
+            }
+            return try AuthURLProtocolStub.response(for: request, json: "{}")
+        }
+        defer {
+            gate.release()
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+            try? auth.clearSession()
+        }
+
+        await auth.requestPasswordReset(email: "ed@example.com")
+        let callback = try recoveryCallbackURL(from: recorder)
+        let exchange = Task { await auth.handleOpenURL(callback) }
+        let arrived = await gate.waitForArrival()
+        XCTAssertTrue(arrived)
+        try auth.continueOffline(displayName: "Garage")
+        let local = try XCTUnwrap(auth.session)
+        gate.release()
+        await exchange.value
+
+        XCTAssertEqual(auth.session, local)
+        XCTAssertFalse(auth.needsPasswordUpdate)
+        XCTAssertTrue(auth.messageIsError)
+        XCTAssertEqual(auth.message, AuthServiceError.sessionChanged.errorDescription)
+        XCTAssertNil(try keychain.read(account: "current-session"))
+        let relaunched = AuthService(keychain: keychain, urlSession: urlSession, defaults: defaults)
+        XCTAssertEqual(relaunched.session, local)
+    }
+
+    func testAuthCallbackSessionForDifferentEmailIsRejected() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "auth-callback-email-mismatch")
+        let auth = AuthService(keychain: keychain, urlSession: urlSession, defaults: defaults)
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            if request.url?.path == "/auth/v1/token" {
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"{"access_token":"other-access","refresh_token":"other-refresh","expires_in":3600,"user":{"id":"00000000-0000-0000-0000-000000000033","email":"other@example.com","user_metadata":{"display_name":"Other"}}}"#
+                )
+            }
+            return try AuthURLProtocolStub.response(for: request, json: "{}")
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+            try? auth.clearSession()
+        }
+
+        await auth.requestPasswordReset(email: "ed@example.com")
+        await auth.handleOpenURL(try recoveryCallbackURL(from: recorder))
+
+        XCTAssertNil(auth.session)
+        XCTAssertFalse(auth.needsPasswordUpdate)
+        XCTAssertTrue(auth.messageIsError)
+        XCTAssertEqual(auth.message, AuthServiceError.callbackNotExpected.errorDescription)
+        XCTAssertNil(try keychain.read(account: "current-session"))
+    }
+
+    func testAuthCallbackAcceptsSameEmailWithDifferentCase() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "auth-callback-email-case")
+        let auth = AuthService(keychain: keychain, urlSession: urlSession, defaults: defaults)
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            if request.url?.path == "/auth/v1/token" {
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"{"access_token":"case-access","refresh_token":"case-refresh","expires_in":3600,"user":{"id":"00000000-0000-0000-0000-000000000034","email":"Ed@Example.COM","user_metadata":{"display_name":"Eduard"}}}"#
+                )
+            }
+            return try AuthURLProtocolStub.response(for: request, json: "{}")
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+            try? auth.clearSession()
+        }
+
+        await auth.requestPasswordReset(email: "ed@example.com")
+        await auth.handleOpenURL(try recoveryCallbackURL(from: recorder))
+
+        XCTAssertEqual(auth.session?.cloud?.userID, "00000000-0000-0000-0000-000000000034")
+        XCTAssertTrue(auth.needsPasswordUpdate)
+        XCTAssertFalse(auth.messageIsError)
+    }
+
+    private func recoveryCallbackURL(from recorder: AuthRequestRecorder) throws -> URL {
+        let recoverRequest = try XCTUnwrap(recorder.requests.first(where: { $0.url?.path == "/auth/v1/recover" }))
+        let recoverURL = try XCTUnwrap(recoverRequest.url)
+        let recoverQuery = try XCTUnwrap(URLComponents(url: recoverURL, resolvingAgainstBaseURL: false))
+        let redirect = try XCTUnwrap(recoverQuery.queryItems?.first(where: { $0.name == "redirect_to" })?.value)
+        let redirectComponents = try XCTUnwrap(URLComponents(string: redirect))
+        let state = try XCTUnwrap(redirectComponents.queryItems?.first(where: { $0.name == "state" })?.value)
+        return try XCTUnwrap(
+            URL(string: "https://gymapptracker.com/auth/ios-callback.html?state=\(state)&purpose=recovery&code=test-auth-code")
+        )
+    }
+
     func testPasswordRecoveryCompletesPKCEExchangeAndUpdatesPassword() async throws {
         let recorder = AuthRequestRecorder()
         let configuration = URLSessionConfiguration.ephemeral
@@ -21207,6 +21366,28 @@ private func garminIdempotentCreateResponse(
         for: request,
         json: try XCTUnwrap(String(data: data, encoding: .utf8))
     )
+}
+
+/// Holds one stubbed auth response until the test has changed the session.
+private final class AuthResponseGate: @unchecked Sendable {
+    private let arrived = DispatchSemaphore(value: 0)
+    private let released = DispatchSemaphore(value: 0)
+
+    func arriveAndWait() {
+        arrived.signal()
+        _ = released.wait(timeout: .now() + 10)
+    }
+
+    func release() {
+        released.signal()
+    }
+
+    func waitForArrival() async -> Bool {
+        let arrived = self.arrived
+        return await Task.detached {
+            arrived.wait(timeout: .now() + 10) == .success
+        }.value
+    }
 }
 
 private final class AuthRequestRecorder: @unchecked Sendable {

@@ -578,12 +578,15 @@ final class AuthService: ObservableObject {
             guard GymLoginPasswordPolicy.accepts(password) else {
                 throw AuthServiceError.loginPasswordTooLong
             }
+            let expectedRevision = self.sessionRevision
             let object = try await self.requestJSON(
                 path: "/auth/v1/token?grant_type=password",
                 method: "POST",
                 body: ["email": cleanEmail, "password": password]
             )
             let cloud = try self.parseCloudSession(object)
+            // A local profile opened while the request ran must not be replaced.
+            try self.requireUnchangedSignedOutSession(since: expectedRevision)
             try self.persist(.cloud(cloud), requiresPasswordUpdate: false)
             self.message = nil
         }
@@ -624,6 +627,7 @@ final class AuthService: ObservableObject {
             )
             do {
                 let redirect = AuthCallbackRouting.percentEncodedQueryValue(transaction.redirectURL)
+                let expectedRevision = self.sessionRevision
                 let object = try await self.requestJSON(
                     path: "/auth/v1/signup?redirect_to=\(redirect)",
                     method: "POST",
@@ -637,6 +641,7 @@ final class AuthService: ObservableObject {
                 )
                 if let token = object["access_token"] as? String, !token.isEmpty {
                     let cloud = try self.parseCloudSession(object)
+                    try self.requireUnchangedSignedOutSession(since: expectedRevision)
                     try self.persist(.cloud(cloud), requiresPasswordUpdate: false)
                     try self.clearPendingAuthTransaction()
                     signedIn = true
@@ -900,6 +905,7 @@ final class AuthService: ObservableObject {
                     <= Self.maximumAuthorizationCodeBytes else {
                 throw AuthServiceError.malformedResponse
             }
+            let expectedRevision = self.sessionRevision
             let object = try await self.requestJSON(
                 path: "/auth/v1/token?grant_type=pkce",
                 method: "POST",
@@ -909,6 +915,12 @@ final class AuthService: ObservableObject {
                 ]
             )
             let cloud = try self.parseCloudSession(object)
+            try self.requireUnchangedSignedOutSession(since: expectedRevision)
+            // Same rule as Android completePKCEAuthCallback: the returned account
+            // must be the one this device asked to confirm or recover.
+            guard Self.normalizedCallbackEmail(cloud.email) == transaction.email else {
+                throw AuthServiceError.callbackNotExpected
+            }
             let requiresPasswordUpdate = transaction.kind == .recovery
             try self.persist(
                 .cloud(cloud),
@@ -1167,6 +1179,19 @@ final class AuthService: ObservableObject {
             message = friendlyMessage(error)
         }
         isLoading = false
+    }
+
+    /// Rejects a late sign-in/callback result when any account (for example a
+    /// local profile) was opened, or the session otherwise changed, while the
+    /// network request was in flight.
+    private func requireUnchangedSignedOutSession(since expectedRevision: UInt64) throws {
+        guard session == nil, sessionRevision == expectedRevision else {
+            throw AuthServiceError.sessionChanged
+        }
+    }
+
+    private static func normalizedCallbackEmail(_ email: String) -> String {
+        email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     private func persist(

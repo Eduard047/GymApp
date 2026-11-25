@@ -625,6 +625,7 @@ public struct AuthView: View {
                         Text(AuthCompactCopy.continueOffline(languageCode: languageCode))
                     }
                     .buttonStyle(GymPrimaryButtonStyle(fillColor: GymTheme.brandFill))
+                    .disabled(authService.isLoading)
 
                     Button {
                         showOfflineSheet = false
@@ -662,6 +663,7 @@ public struct AuthView: View {
                                 }
                             }
                             .buttonStyle(GymSecondaryButtonStyle())
+                            .disabled(authService.isLoading)
                             .accessibilityHint(
                                 gymText(
                                     "Opens this saved offline profile",
@@ -739,6 +741,8 @@ public struct AuthView: View {
     }
 
     private func continueOffline() {
+        // A cloud sign-in or email link may still be completing; never race it.
+        guard !authService.isLoading else { return }
         do {
             try authService.continueOffline(displayName: offlineDisplayName)
             offlineMessage = nil
@@ -751,6 +755,7 @@ public struct AuthView: View {
     }
 
     private func resumeOfflineProfile(_ profileID: String) {
+        guard !authService.isLoading else { return }
         do {
             try authService.continueOffline(profileID: profileID)
             offlineMessage = nil
