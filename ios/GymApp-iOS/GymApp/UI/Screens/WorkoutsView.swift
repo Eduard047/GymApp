@@ -2365,7 +2365,9 @@ public struct WorkoutsView: View {
     }
 
     private func weeklyTrainingDayStrip(_ summary: WeeklyTrainingSummary) -> some View {
-        HStack(spacing: 8) {
+        // Bottom alignment keeps the day dots on one line when large Dynamic Type
+        // scales individual labels down by different amounts.
+        HStack(alignment: .bottom, spacing: 8) {
             ForEach(0 ..< 7, id: \.self) { offset in
                 let day = calendar.date(
                     byAdding: .day,
@@ -2381,6 +2383,11 @@ public struct WorkoutsView: View {
                                 ? GymTheme.primary
                                 : GymTheme.textSecondary
                         )
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        // One shared cap keeps all seven labels the same size; the
+                        // scale factor only kicks in on unusually narrow columns.
+                        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                     Circle()
                         .fill(completed ? GymTheme.secondary : GymTheme.surfaceVariant)
                         .frame(width: 14, height: 14)
@@ -2392,7 +2399,7 @@ public struct WorkoutsView: View {
                             }
                         }
                 }
-                .frame(maxWidth: .infinity, minHeight: 44)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .bottom)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(
                     gymFormattedDate(
@@ -2645,7 +2652,7 @@ public struct WorkoutsView: View {
                 }
             }
 
-            HStack(spacing: 8) {
+            HStack(alignment: .bottom, spacing: 8) {
                 ForEach(0 ..< 7, id: \.self) { offset in
                     let day = calendar.date(
                         byAdding: .day,
@@ -2657,6 +2664,9 @@ public struct WorkoutsView: View {
                         Text(weeklyDaySymbol(day))
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(GymTheme.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                         Circle()
                             .fill(completed ? GymTheme.secondary : GymTheme.surfaceVariant)
                             .frame(width: 14, height: 14)
@@ -2668,7 +2678,7 @@ public struct WorkoutsView: View {
                                 }
                             }
                     }
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .bottom)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(
                         gymFormattedDate(day, date: .long, time: .omitted, languageCode: languageCode)

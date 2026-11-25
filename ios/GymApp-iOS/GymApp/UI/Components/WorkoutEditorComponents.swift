@@ -861,109 +861,112 @@ struct ExerciseMediaSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                Text(gymExerciseName(rawExerciseName, catalogKey: catalogKey))
-                    .font(.title2.bold())
+            // Scrolls so the medium detent lays the heading out below the title bar
+            // instead of letting the oversized stack overflow upward under it.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(gymExerciseName(rawExerciseName, catalogKey: catalogKey))
+                        .font(.title2.bold())
 
-                ZStack {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(GymTheme.surfaceVariant)
-                    if let image = customImage ?? bundledImages[safe: frameIndex] {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .id(customImage == nil ? frameIndex : -1)
-                            .transition(.opacity)
-                            .padding(8)
-                    } else {
-                        Image(systemName: "figure.strengthtraining.traditional")
-                            .font(.system(size: 52))
-                            .foregroundStyle(GymTheme.textSecondary)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(GymTheme.surfaceVariant)
+                        if let image = customImage ?? bundledImages[safe: frameIndex] {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFit()
+                                .id(customImage == nil ? frameIndex : -1)
+                                .transition(.opacity)
+                                .padding(8)
+                        } else {
+                            Image(systemName: "figure.strengthtraining.traditional")
+                                .font(.system(size: 52))
+                                .foregroundStyle(GymTheme.textSecondary)
+                        }
                     }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 240)
-                .animation(reduceMotion ? nil : GymMotion.gentle, value: frameIndex)
-                .accessibilityLabel(
-                    gymText(
-                        "Exercise preview",
-                        "Демонстрація вправи",
-                        "Демонстрация упражнения",
-                        languageCode: gymCurrentLanguageCode()
-                    )
-                )
-                .accessibilityHint(
-                    gymText(
-                        "Shows the start and finish positions.",
-                        "Показує початкове та кінцеве положення.",
-                        "Показывает начальное и конечное положение.",
-                        languageCode: gymCurrentLanguageCode()
-                    )
-                )
-
-                if let errorMessage {
-                    Text(errorMessage)
-                        .font(.footnote)
-                        .foregroundStyle(GymTheme.error)
-                }
-
-                if editable {
-                    PhotosPicker(selection: $selectedItem, matching: .images) {
-                        Label(
-                            gymText(
-                                "Choose your image",
-                                "Обрати своє фото",
-                                "Выбрать своё фото",
-                                languageCode: gymCurrentLanguageCode()
-                            ),
-                            systemImage: "photo.on.rectangle.angled"
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 240)
+                    .animation(reduceMotion ? nil : GymMotion.gentle, value: frameIndex)
+                    .accessibilityLabel(
+                        gymText(
+                            "Exercise preview",
+                            "Демонстрація вправи",
+                            "Демонстрация упражнения",
+                            languageCode: gymCurrentLanguageCode()
                         )
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(GymPrimaryButtonStyle())
+                    )
+                    .accessibilityHint(
+                        gymText(
+                            "Shows the start and finish positions.",
+                            "Показує початкове та кінцеве положення.",
+                            "Показывает начальное и конечное положение.",
+                            languageCode: gymCurrentLanguageCode()
+                        )
+                    )
 
-                    if ExerciseMediaStore.shouldShowRemovePhoto(hasCustomImage: customImage != nil) {
-                        Button {
-                            do {
-                                try ExerciseMediaStore.deleteCustomImage(
-                                    ownerKey: ownerKey,
-                                    exerciseID: exerciseID
-                                )
-                                customImage = nil
-                                errorMessage = nil
-                            } catch {
-                                errorMessage = gymText(
-                                    "Couldn’t remove this image. Try again.",
-                                    "Не вдалося видалити фото. Спробуйте ще раз.",
-                                    "Не удалось удалить фото. Попробуйте ещё раз.",
-                                    languageCode: gymCurrentLanguageCode()
-                                )
-                            }
-                        } label: {
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(GymTheme.error)
+                    }
+
+                    if editable {
+                        PhotosPicker(selection: $selectedItem, matching: .images) {
                             Label(
-                                bundledImages.isEmpty
-                                    ? gymText(
-                                        "Remove photo",
-                                        "Видалити фото",
-                                        "Удалить фото",
-                                        languageCode: gymCurrentLanguageCode()
-                                    )
-                                    : gymText(
-                                        "Restore built-in preview",
-                                        "Повернути вбудовану демонстрацію",
-                                        "Вернуть встроенную демонстрацию",
-                                        languageCode: gymCurrentLanguageCode()
-                                    ),
-                                systemImage: "arrow.uturn.backward"
+                                gymText(
+                                    "Choose your image",
+                                    "Обрати своє фото",
+                                    "Выбрать своё фото",
+                                    languageCode: gymCurrentLanguageCode()
+                                ),
+                                systemImage: "photo.on.rectangle.angled"
                             )
                             .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(GymSecondaryButtonStyle())
+                        .buttonStyle(GymPrimaryButtonStyle())
+
+                        if ExerciseMediaStore.shouldShowRemovePhoto(hasCustomImage: customImage != nil) {
+                            Button {
+                                do {
+                                    try ExerciseMediaStore.deleteCustomImage(
+                                        ownerKey: ownerKey,
+                                        exerciseID: exerciseID
+                                    )
+                                    customImage = nil
+                                    errorMessage = nil
+                                } catch {
+                                    errorMessage = gymText(
+                                        "Couldn’t remove this image. Try again.",
+                                        "Не вдалося видалити фото. Спробуйте ще раз.",
+                                        "Не удалось удалить фото. Попробуйте ещё раз.",
+                                        languageCode: gymCurrentLanguageCode()
+                                    )
+                                }
+                            } label: {
+                                Label(
+                                    bundledImages.isEmpty
+                                        ? gymText(
+                                            "Remove photo",
+                                            "Видалити фото",
+                                            "Удалить фото",
+                                            languageCode: gymCurrentLanguageCode()
+                                        )
+                                        : gymText(
+                                            "Restore built-in preview",
+                                            "Повернути вбудовану демонстрацію",
+                                            "Вернуть встроенную демонстрацию",
+                                            languageCode: gymCurrentLanguageCode()
+                                        ),
+                                    systemImage: "arrow.uturn.backward"
+                                )
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(GymSecondaryButtonStyle())
+                        }
                     }
                 }
-                Spacer(minLength: 0)
+                .padding(18)
             }
-            .padding(18)
             .navigationTitle(
                 gymText(
                     "Exercise preview",
