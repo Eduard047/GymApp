@@ -20,6 +20,7 @@ import com.example.gymapp.R
 import com.example.gymapp.analytics.GymFirebaseApp
 import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.CloudAuthManager
+import com.example.gymapp.util.withAppLanguage
 import com.google.android.gms.tasks.Task
 import com.google.firebase.messaging.FirebaseMessaging
 import java.security.MessageDigest
@@ -799,12 +800,15 @@ internal class AndroidPushManager(
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        // Recreating the channel with the same id only renames it, so each call (also from
+        // MainActivity.onResume after a language change) keeps the name in the in-app language.
+        val localized = applicationContext.withAppLanguage()
         val channel = NotificationChannel(
             PUSH_CHANNEL_ID,
-            applicationContext.getString(R.string.push_channel_name),
+            localized.getString(R.string.push_channel_name),
             NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
-            description = applicationContext.getString(R.string.push_channel_description)
+            description = localized.getString(R.string.push_channel_description)
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
         applicationContext.getSystemService(NotificationManager::class.java)
@@ -824,10 +828,11 @@ internal class AndroidPushManager(
     private fun showNotification(payload: PushPayload) {
         if (!isPayloadBoundToCurrentSession(payload)) return
         val (title, body) = notificationCopyResources(payload)
+        val localized = applicationContext.withAppLanguage()
         val notification = NotificationCompat.Builder(applicationContext, PUSH_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_gymapp)
-            .setContentTitle(applicationContext.getString(title))
-            .setContentText(applicationContext.getString(body))
+            .setContentTitle(localized.getString(title))
+            .setContentText(localized.getString(body))
             .setCategory(NotificationCompat.CATEGORY_SOCIAL)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
