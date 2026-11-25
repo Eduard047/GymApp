@@ -704,8 +704,16 @@ private fun LazyListScope.liveWorkoutLobby(
                 Text(
                     formattedStringResource(
                         R.string.live_workout_plan_summary,
-                        invitation.summary.exerciseCount,
-                        invitation.summary.setCount
+                        formattedPluralStringResource(
+                            R.plurals.live_workout_plan_exercises,
+                            invitation.summary.exerciseCount,
+                            invitation.summary.exerciseCount
+                        ),
+                        formattedPluralStringResource(
+                            R.plurals.live_workout_plan_sets,
+                            invitation.summary.setCount,
+                            invitation.summary.setCount
+                        )
                     ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -810,7 +818,7 @@ private fun RefreshSocialCard(isLoading: Boolean, pendingInvites: Int, onRefresh
                 )
                 Text(
                     text = if (pendingInvites > 0) {
-                        formattedStringResource(R.string.workout_invites_pending_count, pendingInvites)
+                        formattedPluralStringResource(R.plurals.workout_invites_pending_count, pendingInvites, pendingInvites)
                     } else {
                         stringResource(R.string.friends_synced_supporting)
                     },
@@ -854,7 +862,7 @@ private fun TrainingCircleCard(
                         style = MaterialTheme.typography.titleLarge
                     )
                     Text(
-                        text = formattedStringResource(R.string.friends_confirmed_count, dashboard.friends.size),
+                        text = formattedPluralStringResource(R.plurals.friends_confirmed_count, dashboard.friends.size, dashboard.friends.size),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -870,8 +878,9 @@ private fun TrainingCircleCard(
 
             if (dashboard.self.statsAvailable) {
                 Text(
-                    text = formattedStringResource(
-                        R.string.friend_stats_summary,
+                    text = formattedPluralStringResource(
+                        R.plurals.friend_stats_summary,
+                        dashboard.self.workouts ?: 0,
                         dashboard.self.xp ?: 0,
                         dashboard.self.level ?: 1,
                         dashboard.self.workouts ?: 0
@@ -1035,8 +1044,9 @@ private fun RankedProfileRow(
                 }
             }
             Text(
-                text = formattedStringResource(
-                    R.string.friend_stats_summary,
+                text = formattedPluralStringResource(
+                    R.plurals.friend_stats_summary,
+                    profile.workouts,
                     profile.xp,
                     profile.level,
                     profile.workouts
@@ -1259,8 +1269,9 @@ private fun FriendRankingCard(place: Int, friend: SocialFriend, onOpen: () -> Un
                     )
                     Text(
                         text = if (friend.statsAvailable) {
-                            formattedStringResource(
-                                R.string.friend_stats_summary,
+                            formattedPluralStringResource(
+                                R.plurals.friend_stats_summary,
+                                friend.workouts ?: 0,
                                 friend.xp ?: 0,
                                 friend.level ?: 1,
                                 friend.workouts ?: 0

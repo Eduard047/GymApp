@@ -785,8 +785,9 @@ private fun HeatmapDayCell(
     val ringColor = HeatStepColors.ring()
     val emptyOutline = HeatStepColors.emptyOutline()
     val accessibilityDescription = if (day.isCurrentMonth) {
-        formattedStringResource(
-            R.string.activity_heatmap_day_a11y,
+        formattedPluralStringResource(
+            R.plurals.activity_heatmap_day_a11y,
+            day.sessionCount,
             day.dayLabel,
             day.sessionCount,
             day.totalVolume.toInt()

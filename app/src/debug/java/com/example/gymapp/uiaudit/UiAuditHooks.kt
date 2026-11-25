@@ -245,7 +245,7 @@ object UiAuditHooks {
         "weekly-evidence" to { nav, app ->
             if (openProgress(nav, app, "weekly-evidence")) {
                 awaitNode(string(nav, R.string.training_weekly_review))
-                step("weekly-evidence", "insight row", formatMatcher(nav, R.string.training_rep_comparison))
+                step("weekly-evidence", "insight row", pluralFormatMatcher(nav, R.plurals.training_rep_comparison))
             }
         },
         "activity-heatmap" to { nav, app ->
@@ -641,6 +641,20 @@ object UiAuditHooks {
     /** Matches a localized format string (e.g. "Delete set %1$d for %2$s") against any argument values. */
     private fun formatMatcher(nav: NavHostController, id: Int): (String) -> Boolean =
         formatMatcher(nav.context, id)
+
+    /** Matches any quantity form of a plurals template (1, 2 and 5 cover one/few/many/other). */
+    private fun pluralFormatMatcher(nav: NavHostController, id: Int): (String) -> Boolean {
+        val resources = nav.context.resources
+        val regexes = listOf(1, 2, 5).map { quantity ->
+            Regex(
+                resources.getQuantityString(id, quantity)
+                    .split(Regex("%(\\d+\\$)?\\.?\\d*[sdf]"))
+                    .joinToString(".*") { Regex.escape(it) },
+                RegexOption.DOT_MATCHES_ALL
+            )
+        }
+        return { text -> regexes.any { it.matches(text) } }
+    }
 
     private fun formatMatcher(context: Context, id: Int): (String) -> Boolean {
         val regex = Regex(

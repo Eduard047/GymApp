@@ -609,7 +609,7 @@ private fun ProgressSessionHistoryCard(
             }
 
             Text(
-                text = "${formattedStringResource(R.string.progress_reps_value, totalReps)} • " +
+                text = "${formattedPluralStringResource(R.plurals.progress_reps_value, totalReps, totalReps)} • " +
                     formattedStringResource(
                         R.string.stats_volume,
                         formatVolumeTotal(totalVolume, Locale.getDefault())

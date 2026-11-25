@@ -37,7 +37,10 @@
     <string name="leaderboard_loading_action">Loading</string>
     <string name="leaderboard_refresh_action">Refresh progress</string>
     <string name="leaderboard_empty">No synced progress yet.</string>
-    <string name="leaderboard_row_detail">Level %1$d · %2$d workouts</string>
+    <plurals name="leaderboard_row_detail">
+        <item quantity="one">Level %1$d · %2$d workout</item>
+        <item quantity="other">Level %1$d · %2$d workouts</item>
+    </plurals>
 
     <string name="friend_details_title">Friend details</string>
     <string name="friends_hero_title">Your training circle</string>
@@ -72,17 +75,26 @@
     <string name="friends_ranking_eyebrow">Friends</string>
     <string name="friends_ranking_title">Progress among friends</string>
     <string name="friends_ranking_supporting">Friends with shared synced XP appear first. This is not a verified global rating.</string>
-    <string name="friends_confirmed_count">%1$d confirmed friends</string>
+    <plurals name="friends_confirmed_count">
+        <item quantity="one">%1$d confirmed friend</item>
+        <item quantity="other">%1$d confirmed friends</item>
+    </plurals>
     <string name="friend_open_short">Open</string>
     <string name="friends_connect_title">Your friend code</string>
     <string name="friends_connect_supporting">Copy or share it, or add someone with their private code.</string>
     <string name="friends_add_action">Add a friend</string>
     <string name="friends_empty_title">No friends yet</string>
     <string name="friends_empty_supporting">Share your code or send a request with a friend code.</string>
-    <string name="friend_stats_summary">%1$d XP · level %2$d · %3$d workouts</string>
+    <plurals name="friend_stats_summary">
+        <item quantity="one">%1$d XP · level %2$d · %3$d workout</item>
+        <item quantity="other">%1$d XP · level %2$d · %3$d workouts</item>
+    </plurals>
     <string name="friend_metric_level">Level %1$d</string>
     <string name="friend_metric_xp">%1$d XP</string>
-    <string name="friend_metric_workouts">%1$d workouts</string>
+    <plurals name="friend_metric_workouts">
+        <item quantity="one">%1$d workout</item>
+        <item quantity="other">%1$d workouts</item>
+    </plurals>
     <string name="friend_train_eyebrow">Train together</string>
     <string name="friend_train_title">Start from this friend</string>
     <string name="friend_train_supporting">Choose a saved workout to send or build a new synchronized live session.</string>
@@ -149,7 +161,10 @@
     <string name="friend_records_empty_supporting">No shared exercise record is available yet.</string>
     <string name="friend_record_best_weight">Highest logged weight: %1$s kg</string>
     <string name="friend_record_best_repetitions">Most logged reps in one set: %1$d</string>
-    <string name="friend_record_meta">Logged across %1$d workouts · last on %2$s</string>
+    <plurals name="friend_record_meta">
+        <item quantity="one">Logged across %1$d workout · last on %2$s</item>
+        <item quantity="other">Logged across %1$d workouts · last on %2$s</item>
+    </plurals>
     <string name="friend_manage_title">Manage friendship</string>
     <string name="friend_manage_supporting">Removing revokes friend access. Blocking also prevents new requests and invites.</string>
     <string name="friend_remove_action">Remove friend</string>
@@ -165,7 +180,10 @@
     <string name="workout_invites_incoming_title">Workout plans sent to you</string>
     <string name="workout_invites_outgoing_title">Workout plans you sent</string>
     <string name="workout_invites_independent_copy">An invite copies this plan. After either person starts, both workouts stay independent; this is not live set sync.</string>
-    <string name="workout_invites_pending_count">%1$d workout invites waiting</string>
+    <plurals name="workout_invites_pending_count">
+        <item quantity="one">%1$d workout invite waiting</item>
+        <item quantity="other">%1$d workout invites waiting</item>
+    </plurals>
     <string name="workout_invites_load_failed">Could not load workout invites.</string>
     <string name="workout_invite_summary">%1$s · %2$s</string>
     <string name="workout_invite_status_pending">Waiting for a response</string>
@@ -700,7 +718,10 @@
         <item quantity="one">%1$d exercise</item>
         <item quantity="other">%1$d exercises</item>
     </plurals>
-    <string name="exercise_workout_count_compact">%1$d workouts</string>
+    <plurals name="exercise_workout_count_compact">
+        <item quantity="one">%1$d workout</item>
+        <item quantity="other">%1$d workouts</item>
+    </plurals>
     <string name="exercise_muscles_title">Muscles worked</string>
     <string name="cd_collapse_exercise">Collapse exercise</string>
     <string name="cd_expand_exercise">Expand exercise</string>
@@ -743,7 +764,10 @@
     <string name="action_discard_shared_link">Discard link</string>
     <string name="shared_workout_preview_title">Workout from a friend</string>
     <string name="shared_workout_preview_summary">%1$s · %2$s. Nothing will be saved until you start or save it.</string>
-    <string name="shared_workout_more_exercises">+%1$d more exercises</string>
+    <plurals name="shared_workout_more_exercises">
+        <item quantity="one">+%1$d more exercise</item>
+        <item quantity="other">+%1$d more exercises</item>
+    </plurals>
     <string name="action_open_shared_workout_in_app">Open as draft</string>
     <string name="action_open_shared_workout_on_web">Open on website</string>
     <string name="message_add_set_failed">Could not log the set. Rest was not started.</string>
@@ -791,7 +815,10 @@
     <string name="missions_progress_value">%1$d / %2$d</string>
     <string name="missions_overall_progress">Daily %1$d/%2$d finished. Weekly %3$d/%4$d finished. Monthly %5$d/%6$d finished.</string>
     <string name="missions_xp_progress">Mission points from completed goals: %1$d</string>
-    <string name="missions_xp_reward">+%1$d points</string>
+    <plurals name="missions_xp_reward">
+        <item quantity="one">+%1$d point</item>
+        <item quantity="other">+%1$d points</item>
+    </plurals>
     <string name="missions_section_progress">%1$d / %2$d done</string>
     <string name="missions_status_completed">Completed</string>
     <string name="missions_status_in_progress">In progress</string>
@@ -832,7 +859,10 @@
     <string name="activity_heatmap_legend">Stronger blue means more training volume that day.</string>
     <string name="activity_heatmap_less">Less</string>
     <string name="activity_heatmap_more">More</string>
-    <string name="activity_heatmap_day_a11y">%1$s. %2$d sessions. Volume %3$d kg.</string>
+    <plurals name="activity_heatmap_day_a11y">
+        <item quantity="one">%1$s. %2$d session. Volume %3$d kg.</item>
+        <item quantity="other">%1$s. %2$d sessions. Volume %3$d kg.</item>
+    </plurals>
     <string name="achievements_title">Achievements</string>
     <string name="achievement_rarity_common">Common</string>
     <string name="achievement_rarity_uncommon">Uncommon</string>
@@ -1042,7 +1072,7 @@
     <string name="smart_alternatives_title">Similar exercises</string>
     <string name="smart_alternatives_for">Instead of %1$s</string>
     <string name="smart_alternatives_empty">No safe similar exercise is available in your current catalog.</string>
-    <string name="smart_alternative_prescription">%1$d sets · %2$d reps · RIR %3$d–%4$d</string>
+    <string name="smart_alternative_prescription">%1$s · %2$s · RIR %3$d–%4$d</string>
     <string name="smart_alternative_select">Use this exercise</string>
     <string name="smart_alternative_same_movement">same movement</string>
     <string name="smart_alternative_same_muscles">same muscles</string>
@@ -1060,7 +1090,10 @@
     <string name="smart_reason_no_history">No saved history yet, so this starts with a clean baseline.</string>
     <string name="smart_reason_last_strong">Last session was stable across the sets.</string>
     <string name="smart_reason_last_unstable">Recent reps or volume dipped, so the plan stays conservative.</string>
-    <string name="smart_reason_recent_break">%1$d days since this exercise, so the load is adjusted down.</string>
+    <plurals name="smart_reason_recent_break">
+        <item quantity="one">%1$d day since this exercise, so the load is adjusted down.</item>
+        <item quantity="other">%1$d days since this exercise, so the load is adjusted down.</item>
+    </plurals>
     <string name="smart_reason_volume_up">Recent volume is trending up.</string>
     <string name="smart_reason_volume_dropped">Recent volume dropped compared with the previous session.</string>
     <string name="smart_reason_plateau">Several sessions stayed near the same top weight.</string>
@@ -1106,7 +1139,10 @@
     <string name="progress_strength_gain">+%1$s kg this month</string>
     <string name="progress_strength_loss">−%1$s kg this month</string>
     <string name="progress_info_action">About this section</string>
-    <string name="progress_reps_value">%1$d reps</string>
+    <plurals name="progress_reps_value">
+        <item quantity="one">%1$d rep</item>
+        <item quantity="other">%1$d reps</item>
+    </plurals>
     <string name="progress_session_max_weight_inline">Max %1$s kg</string>
     <string name="progress_session_volume_inline">Vol %1$s kg</string>
     <string name="chart_no_data">Add sets to see chart.</string>
@@ -1224,8 +1260,14 @@
     <string name="garmin_metric_duration">Duration</string>
     <string name="garmin_metric_watch_session">watch session</string>
     <string name="garmin_metric_logged">Logged</string>
-    <string name="garmin_metric_sets_value">%1$d sets</string>
-    <string name="garmin_metric_exercises_value">%1$d exercises</string>
+    <plurals name="garmin_metric_sets_value">
+        <item quantity="one">%1$d set</item>
+        <item quantity="other">%1$d sets</item>
+    </plurals>
+    <plurals name="garmin_metric_exercises_value">
+        <item quantity="one">%1$d exercise</item>
+        <item quantity="other">%1$d exercises</item>
+    </plurals>
     <string name="garmin_synced_sets_hint">Synced sets are grouped below. Open Edit workout to correct weight or reps, add an exercise, or delete a wrong set.</string>
     <string name="garmin_note_derived_sets_hint">Imported or edited notes do not prove watch origin. Saved sets are grouped below for review.</string>
     <string name="garmin_metrics_title">Garmin strength metrics</string>
@@ -1269,7 +1311,10 @@
     <string name="garmin_set_hr_overview_title">Heart rate by saved set</string>
     <string name="garmin_set_hr_overview_range">%1$d–%2$d bpm</string>
     <string name="garmin_set_hr_overview_supporting">Discrete start, peak, and end readings only. Missing sets stay empty; this is not a continuous heart-rate trace.</string>
-    <string name="garmin_set_hr_overview_accessibility">%1$d sets with heart-rate samples, from %2$d to %3$d bpm</string>
+    <plurals name="garmin_set_hr_overview_accessibility">
+        <item quantity="one">%1$d set with heart-rate samples, from %2$d to %3$d bpm</item>
+        <item quantity="other">%1$d sets with heart-rate samples, from %2$d to %3$d bpm</item>
+    </plurals>
     <string name="garmin_metric_avg_short">Avg %1$d</string>
     <string name="garmin_metric_max_short">Max %1$d</string>
     <string name="garmin_metric_hr_intensity">HR intensity</string>
@@ -1289,7 +1334,10 @@
     <string name="garmin_set_interval_calories">Gym %1$s kcal · Garmin %2$s kcal</string>
     <string name="garmin_set_interval_zones">HR zones (seconds): %1$s</string>
     <string name="garmin_set_interval_no_zones">No valid heart-rate zone samples for this set.</string>
-    <string name="garmin_set_intervals_omitted">%1$d additional interval rows were omitted from the note to keep the workout safely importable.</string>
+    <plurals name="garmin_set_intervals_omitted">
+        <item quantity="one">%1$d additional interval row was omitted from the note to keep the workout safely importable.</item>
+        <item quantity="other">%1$d additional interval rows were omitted from the note to keep the workout safely importable.</item>
+    </plurals>
     <string name="garmin_watch_insights_title">Watch insights</string>
     <string name="garmin_watch_insights_supporting">Built only from the bounded measurements actually saved by the watch. Missing signals stay hidden.</string>
     <string name="garmin_workout_rhythm_title">Workout rhythm</string>
@@ -1303,10 +1351,16 @@
     <string name="garmin_zone_time_value">%1$s · %2$d%%</string>
     <string name="garmin_detection_confidence">Set signal</string>
     <string name="garmin_detection_confidence_value">%1$d%%</string>
-    <string name="garmin_sets_with_evidence">%1$d sets measured</string>
+    <plurals name="garmin_sets_with_evidence">
+        <item quantity="one">%1$d set measured</item>
+        <item quantity="other">%1$d sets measured</item>
+    </plurals>
     <string name="garmin_recovery_hr_drop">HR drop</string>
     <string name="garmin_recovery_hr_drop_value">↓%1$d bpm</string>
-    <string name="garmin_recovery_median_sets">median · %1$d readings</string>
+    <plurals name="garmin_recovery_median_sets">
+        <item quantity="one">median · %1$d reading</item>
+        <item quantity="other">median · %1$d readings</item>
+    </plurals>
     <string name="garmin_review_low_confidence_sets">Review %1$s: the watch recorded a low set-detection signal.</string>
     <string name="garmin_detection_confidence_explainer">Set signal describes how clearly the watch detector saw movement and heart-rate evidence. It is not a guarantee that the exercise itself was identified correctly.</string>
     <string name="garmin_set_confidence_value">Signal %1$d%%</string>
@@ -1412,7 +1466,10 @@
     <string name="exercise_picker_create_error_limit">You\'ve reached the exercise limit.</string>
     <string name="exercise_search_no_results">No matching exercises</string>
     <string name="exercise_search_no_results_supporting">Try another name, body area, or muscle group.</string>
-    <string name="exercise_search_result_count">%1$d exercises</string>
+    <plurals name="exercise_search_result_count">
+        <item quantity="one">%1$d exercise</item>
+        <item quantity="other">%1$d exercises</item>
+    </plurals>
     <string name="exercise_search_match_alias">Also known as: %1$s</string>
     <string name="exercise_search_match_approximate">Close name match: %1$s</string>
     <string name="exercise_search_match_muscle">Muscle match: %1$s</string>
@@ -1426,7 +1483,10 @@
     <string name="exercise_card_mapped_count">%1$d mapped</string>
     <string name="exercise_card_auto_mapping">Auto mapping</string>
     <string name="exercise_card_muscle_groups">Muscle groups</string>
-    <string name="exercise_load_option_count">%1$d weights</string>
+    <plurals name="exercise_load_option_count">
+        <item quantity="one">%1$d weight</item>
+        <item quantity="other">%1$d weights</item>
+    </plurals>
     <string name="exercise_load_profile_action">Weight steps</string>
     <string name="exercise_load_profile_eyebrow">Machine setup</string>
     <string name="exercise_load_profile_supporting">Enter the exact weights available on this machine. Smart Coach will only recommend these positions; manual workout weights and history stay unchanged.</string>
@@ -1552,7 +1612,15 @@
     <string name="live_workout_connection_polling">Realtime is unavailable; secure polling is active.</string>
     <string name="live_workout_connection_offline">Offline. Local updates stay queued for an exact retry.</string>
     <string name="live_workout_invited_by">%1$s invited you</string>
-    <string name="live_workout_plan_summary">%1$d exercises · %2$d sets</string>
+    <string name="live_workout_plan_summary">%1$s · %2$s</string>
+    <plurals name="live_workout_plan_exercises">
+        <item quantity="one">%1$d exercise</item>
+        <item quantity="other">%1$d exercises</item>
+    </plurals>
+    <plurals name="live_workout_plan_sets">
+        <item quantity="one">%1$d set</item>
+        <item quantity="other">%1$d sets</item>
+    </plurals>
     <string name="live_workout_with_friend">With %1$s</string>
     <string name="live_workout_status_waiting">Waiting for your friend to respond.</string>
     <string name="live_workout_status_ready">Refreshing the shared workout state…</string>
@@ -1683,7 +1751,10 @@
         <item quantity="one">%1$d of %2$d workout</item>
         <item quantity="other">%1$d of %2$d workouts</item>
     </plurals>
-    <string name="training_rep_comparison">%1$.2f kg · %2$d → %3$d reps</string>
+    <plurals name="training_rep_comparison">
+        <item quantity="one">%1$.2f kg · %2$d → %3$d rep</item>
+        <item quantity="other">%1$.2f kg · %2$d → %3$d reps</item>
+    </plurals>
     <string name="training_insufficient_history">Comparison with previous weeks appears after a couple of weeks of training.</string>
     <string name="training_unchanged_reps">Best reps at matching weights are unchanged.</string>
     <string name="training_week_workouts">Workouts this week</string>

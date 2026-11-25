@@ -37,7 +37,12 @@
     <string name="leaderboard_loading_action">Загрузка</string>
     <string name="leaderboard_refresh_action">Обновить прогресс</string>
     <string name="leaderboard_empty">Синхронизированного прогресса пока нет.</string>
-    <string name="leaderboard_row_detail">Уровень %1$d · %2$d тренировок</string>
+    <plurals name="leaderboard_row_detail">
+        <item quantity="one">Уровень %1$d · %2$d тренировка</item>
+        <item quantity="few">Уровень %1$d · %2$d тренировки</item>
+        <item quantity="many">Уровень %1$d · %2$d тренировок</item>
+        <item quantity="other">Уровень %1$d · %2$d тренировки</item>
+    </plurals>
 
     <string name="friend_details_title">Данные друга</string>
     <string name="friends_hero_title">Тренировочный круг</string>
@@ -72,17 +77,32 @@
     <string name="friends_ranking_eyebrow">Друзья</string>
     <string name="friends_ranking_title">Прогресс среди друзей</string>
     <string name="friends_ranking_supporting">Сначала показаны друзья с открытым синхронизированным XP. Это не проверенный общий рейтинг.</string>
-    <string name="friends_confirmed_count">Подтверждённых друзей: %1$d</string>
+    <plurals name="friends_confirmed_count">
+        <item quantity="one">Подтверждённых друзей: %1$d</item>
+        <item quantity="few">Подтверждённых друзей: %1$d</item>
+        <item quantity="many">Подтверждённых друзей: %1$d</item>
+        <item quantity="other">Подтверждённых друзей: %1$d</item>
+    </plurals>
     <string name="friend_open_short">Открыть</string>
     <string name="friends_connect_title">Ваш код друга</string>
     <string name="friends_connect_supporting">Код можно скопировать и отправить либо добавить друга по его приватному коду.</string>
     <string name="friends_add_action">Добавить друга</string>
     <string name="friends_empty_title">Друзей пока нет</string>
     <string name="friends_empty_supporting">Можно поделиться своим кодом или отправить заявку по коду друга.</string>
-    <string name="friend_stats_summary">%1$d XP · уровень %2$d · %3$d тренировок</string>
+    <plurals name="friend_stats_summary">
+        <item quantity="one">%1$d XP · уровень %2$d · %3$d тренировка</item>
+        <item quantity="few">%1$d XP · уровень %2$d · %3$d тренировки</item>
+        <item quantity="many">%1$d XP · уровень %2$d · %3$d тренировок</item>
+        <item quantity="other">%1$d XP · уровень %2$d · %3$d тренировки</item>
+    </plurals>
     <string name="friend_metric_level">Уровень %1$d</string>
     <string name="friend_metric_xp">%1$d XP</string>
-    <string name="friend_metric_workouts">%1$d тренировок</string>
+    <plurals name="friend_metric_workouts">
+        <item quantity="one">%1$d тренировка</item>
+        <item quantity="few">%1$d тренировки</item>
+        <item quantity="many">%1$d тренировок</item>
+        <item quantity="other">%1$d тренировки</item>
+    </plurals>
     <string name="friend_train_eyebrow">Тренироваться вместе</string>
     <string name="friend_train_title">Начать с этого друга</string>
     <string name="friend_train_supporting">Можно выбрать сохранённую тренировку для отправки или создать новую синхронизированную совместную тренировку.</string>
@@ -149,7 +169,12 @@
     <string name="friend_records_empty_supporting">Общих рекордов в упражнениях пока нет.</string>
     <string name="friend_record_best_weight">Максимальный записанный вес: %1$s кг</string>
     <string name="friend_record_best_repetitions">Максимум записанных повторений в подходе: %1$d</string>
-    <string name="friend_record_meta">В %1$d тренировках · последний раз %2$s</string>
+    <plurals name="friend_record_meta">
+        <item quantity="one">В %1$d тренировке · последний раз %2$s</item>
+        <item quantity="few">В %1$d тренировках · последний раз %2$s</item>
+        <item quantity="many">В %1$d тренировках · последний раз %2$s</item>
+        <item quantity="other">В %1$d тренировках · последний раз %2$s</item>
+    </plurals>
     <string name="friend_manage_title">Управление дружбой</string>
     <string name="friend_manage_supporting">Удаление отзывает доступ друга. Блокировка также запрещает новые заявки и приглашения.</string>
     <string name="friend_remove_action">Удалить из друзей</string>
@@ -165,7 +190,12 @@
     <string name="workout_invites_incoming_title">Планы тренировок для вас</string>
     <string name="workout_invites_outgoing_title">Отправленные вами планы</string>
     <string name="workout_invites_independent_copy">Приглашение копирует план. После старта каждый ведёт независимую тренировку; это не живая синхронизация подходов.</string>
-    <string name="workout_invites_pending_count">Ждут %1$d приглашений на тренировку</string>
+    <plurals name="workout_invites_pending_count">
+        <item quantity="one">Ждёт %1$d приглашение на тренировку</item>
+        <item quantity="few">Ждут %1$d приглашения на тренировку</item>
+        <item quantity="many">Ждут %1$d приглашений на тренировку</item>
+        <item quantity="other">Ждут %1$d приглашения на тренировку</item>
+    </plurals>
     <string name="workout_invites_load_failed">Не удалось загрузить приглашения на тренировки.</string>
     <string name="workout_invite_summary">%1$s · %2$s</string>
     <string name="workout_invite_status_pending">Ждёт ответа</string>
@@ -243,7 +273,7 @@
     <string name="auth_continue_offline_supporting">Тренировки будут храниться только на этом устройстве. Можно оставить имя «Local» или указать имя профиля.</string>
     <string name="auth_offline_consequence">Тренировки хранятся только на этом устройстве, пока вы их не экспортируете; облачная синхронизация и восстановление недоступны.</string>
     <string name="auth_local_profile_name">Имя профиля</string>
-    <string name="auth_local_default_name">Local</string>
+    <string name="auth_local_default_name">Локальный</string>
     <string name="auth_local_profile_name_hint">Необязательно; по умолчанию Local</string>
     <string name="auth_secure_account">Безопасная учетная запись</string>
     <string name="auth_privacy_policy">Политика конфиденциальности</string>
@@ -724,7 +754,12 @@
         <item quantity="many">%1$d упражнений</item>
         <item quantity="other">%1$d упражнения</item>
     </plurals>
-    <string name="exercise_workout_count_compact">Тренировок: %1$d</string>
+    <plurals name="exercise_workout_count_compact">
+        <item quantity="one">Тренировок: %1$d</item>
+        <item quantity="few">Тренировок: %1$d</item>
+        <item quantity="many">Тренировок: %1$d</item>
+        <item quantity="other">Тренировок: %1$d</item>
+    </plurals>
     <string name="exercise_muscles_title">Задействованные мышцы</string>
     <string name="cd_collapse_exercise">Свернуть упражнение</string>
     <string name="cd_expand_exercise">Развернуть упражнение</string>
@@ -767,7 +802,12 @@
     <string name="action_discard_shared_link">Удалить ссылку</string>
     <string name="shared_workout_preview_title">Тренировка от друга</string>
     <string name="shared_workout_preview_summary">%1$s · %2$s. Ничего не сохранится, пока вы не начнёте или не сохраните тренировку.</string>
-    <string name="shared_workout_more_exercises">Ещё упражнений: %1$d</string>
+    <plurals name="shared_workout_more_exercises">
+        <item quantity="one">Ещё упражнений: %1$d</item>
+        <item quantity="few">Ещё упражнений: %1$d</item>
+        <item quantity="many">Ещё упражнений: %1$d</item>
+        <item quantity="other">Ещё упражнений: %1$d</item>
+    </plurals>
     <string name="action_open_shared_workout_in_app">Открыть как черновик</string>
     <string name="action_open_shared_workout_on_web">Открыть на сайте</string>
     <string name="message_add_set_failed">Не удалось записать подход. Таймер отдыха не запущен.</string>
@@ -815,7 +855,12 @@
     <string name="missions_progress_value">%1$d / %2$d</string>
     <string name="missions_overall_progress">Ежедневных завершено %1$d/%2$d. Недельных завершено %3$d/%4$d. Месячных завершено %5$d/%6$d.</string>
     <string name="missions_xp_progress">Баллы миссий за выполненные цели: %1$d</string>
-    <string name="missions_xp_reward">+%1$d баллов</string>
+    <plurals name="missions_xp_reward">
+        <item quantity="one">+%1$d балл</item>
+        <item quantity="few">+%1$d балла</item>
+        <item quantity="many">+%1$d баллов</item>
+        <item quantity="other">+%1$d балла</item>
+    </plurals>
     <string name="missions_section_progress">%1$d / %2$d выполнено</string>
     <string name="missions_status_completed">Выполнено</string>
     <string name="missions_status_in_progress">В процессе</string>
@@ -858,7 +903,12 @@
     <string name="activity_heatmap_legend">Чем насыщеннее синий, тем больше объём тренировок за день.</string>
     <string name="activity_heatmap_less">Меньше</string>
     <string name="activity_heatmap_more">Больше</string>
-    <string name="activity_heatmap_day_a11y">%1$s. Тренировок: %2$d. Объём: %3$d кг.</string>
+    <plurals name="activity_heatmap_day_a11y">
+        <item quantity="one">%1$s. Тренировок: %2$d. Объём: %3$d кг.</item>
+        <item quantity="few">%1$s. Тренировок: %2$d. Объём: %3$d кг.</item>
+        <item quantity="many">%1$s. Тренировок: %2$d. Объём: %3$d кг.</item>
+        <item quantity="other">%1$s. Тренировок: %2$d. Объём: %3$d кг.</item>
+    </plurals>
     <string name="achievements_title">Достижения</string>
     <string name="achievement_rarity_common">Обычный</string>
     <string name="achievement_rarity_uncommon">Необычный</string>
@@ -1084,7 +1134,7 @@
     <string name="smart_alternatives_title">Похожие упражнения</string>
     <string name="smart_alternatives_for">Замена для: %1$s</string>
     <string name="smart_alternatives_empty">В текущем списке нет подходящей безопасной замены.</string>
-    <string name="smart_alternative_prescription">%1$d подхода · %2$d повторов · RIR %3$d–%4$d</string>
+    <string name="smart_alternative_prescription">%1$s · %2$s · RIR %3$d–%4$d</string>
     <string name="smart_alternative_select">Выбрать это упражнение</string>
     <string name="smart_alternative_same_movement">то же движение</string>
     <string name="smart_alternative_same_muscles">те же мышцы</string>
@@ -1102,7 +1152,12 @@
     <string name="smart_reason_no_history">Истории ещё нет, поэтому это первая аккуратная база.</string>
     <string name="smart_reason_last_strong">Последняя тренировка была стабильна по подходам.</string>
     <string name="smart_reason_last_unstable">Повторы или объём просели, поэтому план осторожен.</string>
-    <string name="smart_reason_recent_break">%1$d дней без этого упражнения, поэтому вес скорректирован вниз.</string>
+    <plurals name="smart_reason_recent_break">
+        <item quantity="one">%1$d день без этого упражнения, поэтому вес скорректирован вниз.</item>
+        <item quantity="few">%1$d дня без этого упражнения, поэтому вес скорректирован вниз.</item>
+        <item quantity="many">%1$d дней без этого упражнения, поэтому вес скорректирован вниз.</item>
+        <item quantity="other">%1$d дня без этого упражнения, поэтому вес скорректирован вниз.</item>
+    </plurals>
     <string name="smart_reason_volume_up">Последний объём идёт вверх.</string>
     <string name="smart_reason_volume_dropped">Последний объём ниже предыдущей тренировки.</string>
     <string name="smart_reason_plateau">Несколько тренировок держались у одного максимального веса.</string>
@@ -1148,7 +1203,12 @@
     <string name="progress_strength_gain">+%1$s кг за месяц</string>
     <string name="progress_strength_loss">−%1$s кг за месяц</string>
     <string name="progress_info_action">Пояснение</string>
-    <string name="progress_reps_value">%1$d повт</string>
+    <plurals name="progress_reps_value">
+        <item quantity="one">%1$d повт</item>
+        <item quantity="few">%1$d повт</item>
+        <item quantity="many">%1$d повт</item>
+        <item quantity="other">%1$d повт</item>
+    </plurals>
     <string name="progress_session_max_weight_inline">Макс %1$s кг</string>
     <string name="progress_session_volume_inline">Объём %1$s кг</string>
     <string name="chart_no_data">Добавьте подходы, чтобы увидеть график.</string>
@@ -1266,8 +1326,18 @@
     <string name="garmin_metric_duration">Длительность</string>
     <string name="garmin_metric_watch_session">тренировка с часов</string>
     <string name="garmin_metric_logged">Записано</string>
-    <string name="garmin_metric_sets_value">%1$d подходов</string>
-    <string name="garmin_metric_exercises_value">Упражнений: %1$d</string>
+    <plurals name="garmin_metric_sets_value">
+        <item quantity="one">%1$d подход</item>
+        <item quantity="few">%1$d подхода</item>
+        <item quantity="many">%1$d подходов</item>
+        <item quantity="other">%1$d подхода</item>
+    </plurals>
+    <plurals name="garmin_metric_exercises_value">
+        <item quantity="one">Упражнений: %1$d</item>
+        <item quantity="few">Упражнений: %1$d</item>
+        <item quantity="many">Упражнений: %1$d</item>
+        <item quantity="other">Упражнений: %1$d</item>
+    </plurals>
     <string name="garmin_synced_sets_hint">Синхронизированные подходы сгруппированы ниже. Откройте режим редактирования, чтобы исправить вес или повторы, добавить упражнение либо удалить ошибочный подход.</string>
     <string name="garmin_note_derived_sets_hint">Импортированная или изменённая заметка не подтверждает происхождение с часов. Сохранённые подходы сгруппированы ниже для проверки.</string>
     <string name="garmin_metrics_title">Метрики силовой тренировки Garmin</string>
@@ -1319,7 +1389,12 @@
     <string name="garmin_set_hr_overview_title">Пульс по сохранённым подходам</string>
     <string name="garmin_set_hr_overview_range">%1$d–%2$d уд/мин</string>
     <string name="garmin_set_hr_overview_supporting">Только отдельные измерения в начале, на пике и в конце. Пропущенные подходы остаются пустыми; это не непрерывный график пульса.</string>
-    <string name="garmin_set_hr_overview_accessibility">Подходов с измерениями пульса: %1$d, диапазон от %2$d до %3$d уд/мин</string>
+    <plurals name="garmin_set_hr_overview_accessibility">
+        <item quantity="one">Подходов с измерениями пульса: %1$d, диапазон от %2$d до %3$d уд/мин</item>
+        <item quantity="few">Подходов с измерениями пульса: %1$d, диапазон от %2$d до %3$d уд/мин</item>
+        <item quantity="many">Подходов с измерениями пульса: %1$d, диапазон от %2$d до %3$d уд/мин</item>
+        <item quantity="other">Подходов с измерениями пульса: %1$d, диапазон от %2$d до %3$d уд/мин</item>
+    </plurals>
     <string name="garmin_metric_avg_short">Сред. %1$d</string>
     <string name="garmin_metric_max_short">Макс. %1$d</string>
     <string name="garmin_metric_hr_intensity">Интенсивность</string>
@@ -1339,7 +1414,12 @@
     <string name="garmin_set_interval_calories">Gym %1$s ккал · Garmin %2$s ккал</string>
     <string name="garmin_set_interval_zones">Зоны пульса (секунды): %1$s</string>
     <string name="garmin_set_interval_no_zones">Для этого подхода нет корректных измерений зоны пульса.</string>
-    <string name="garmin_set_intervals_omitted">Ещё %1$d строк отрезков не вошли в заметку, чтобы тренировка гарантированно импортировалась.</string>
+    <plurals name="garmin_set_intervals_omitted">
+        <item quantity="one">Ещё %1$d строка отрезков не вошла в заметку, чтобы тренировка гарантированно импортировалась.</item>
+        <item quantity="few">Ещё %1$d строки отрезков не вошли в заметку, чтобы тренировка гарантированно импортировалась.</item>
+        <item quantity="many">Ещё %1$d строк отрезков не вошли в заметку, чтобы тренировка гарантированно импортировалась.</item>
+        <item quantity="other">Ещё %1$d строки отрезков не вошли в заметку, чтобы тренировка гарантированно импортировалась.</item>
+    </plurals>
     <string name="garmin_watch_insights_title">Данные с часов</string>
     <string name="garmin_watch_insights_supporting">Здесь только ограниченные и проверенные измерения, действительно сохранённые часами. Отсутствующие сигналы не додумываются.</string>
     <string name="garmin_workout_rhythm_title">Ритм тренировки</string>
@@ -1353,10 +1433,20 @@
     <string name="garmin_zone_time_value">%1$s · %2$d%%</string>
     <string name="garmin_detection_confidence">Сигнал подходов</string>
     <string name="garmin_detection_confidence_value">%1$d%%</string>
-    <string name="garmin_sets_with_evidence">измерено подходов: %1$d</string>
+    <plurals name="garmin_sets_with_evidence">
+        <item quantity="one">измерено подходов: %1$d</item>
+        <item quantity="few">измерено подходов: %1$d</item>
+        <item quantity="many">измерено подходов: %1$d</item>
+        <item quantity="other">измерено подходов: %1$d</item>
+    </plurals>
     <string name="garmin_recovery_hr_drop">Снижение пульса</string>
     <string name="garmin_recovery_hr_drop_value">↓%1$d уд/мин</string>
-    <string name="garmin_recovery_median_sets">медиана · измерений: %1$d</string>
+    <plurals name="garmin_recovery_median_sets">
+        <item quantity="one">медиана · измерений: %1$d</item>
+        <item quantity="few">медиана · измерений: %1$d</item>
+        <item quantity="many">медиана · измерений: %1$d</item>
+        <item quantity="other">медиана · измерений: %1$d</item>
+    </plurals>
     <string name="garmin_review_low_confidence_sets">Проверьте %1$s: часы записали слабый сигнал определения подхода.</string>
     <string name="garmin_detection_confidence_explainer">Сигнал подхода показывает, насколько уверенно детектор видел движение и изменение пульса. Это не гарантия правильного определения самого упражнения.</string>
     <string name="garmin_set_confidence_value">Сигнал %1$d%%</string>
@@ -1470,7 +1560,12 @@
     <string name="exercise_picker_create_error_limit">Достигнут лимит упражнений.</string>
     <string name="exercise_search_no_results">Упражнений не найдено</string>
     <string name="exercise_search_no_results_supporting">Попробуйте другое название, часть тела или группу мышц.</string>
-    <string name="exercise_search_result_count">Упражнений: %1$d</string>
+    <plurals name="exercise_search_result_count">
+        <item quantity="one">Упражнений: %1$d</item>
+        <item quantity="few">Упражнений: %1$d</item>
+        <item quantity="many">Упражнений: %1$d</item>
+        <item quantity="other">Упражнений: %1$d</item>
+    </plurals>
     <string name="exercise_search_match_alias">Также известно как: %1$s</string>
     <string name="exercise_search_match_approximate">Похожее название: %1$s</string>
     <string name="exercise_search_match_muscle">Совпадение по мышце: %1$s</string>
@@ -1484,7 +1579,12 @@
     <string name="exercise_card_mapped_count">Сопоставлено: %1$d</string>
     <string name="exercise_card_auto_mapping">Автосопоставление</string>
     <string name="exercise_card_muscle_groups">Группы мышц</string>
-    <string name="exercise_load_option_count">Весов: %1$d</string>
+    <plurals name="exercise_load_option_count">
+        <item quantity="one">Весов: %1$d</item>
+        <item quantity="few">Весов: %1$d</item>
+        <item quantity="many">Весов: %1$d</item>
+        <item quantity="other">Весов: %1$d</item>
+    </plurals>
     <string name="exercise_load_profile_action">Шаг веса</string>
     <string name="exercise_load_profile_eyebrow">Настройка тренажера</string>
     <string name="exercise_load_profile_supporting">Укажите точные веса, доступные на этом тренажёре. Умный тренер будет рекомендовать только эти положения; ручные веса и история не изменятся.</string>
@@ -1610,7 +1710,19 @@
     <string name="live_workout_connection_polling">Realtime недоступен; работает безопасный опрос.</string>
     <string name="live_workout_connection_offline">Нет сети. Локальные изменения ждут точного повтора.</string>
     <string name="live_workout_invited_by">%1$s приглашает вас</string>
-    <string name="live_workout_plan_summary">Упражнений: %1$d · подходов: %2$d</string>
+    <string name="live_workout_plan_summary">%1$s · %2$s</string>
+    <plurals name="live_workout_plan_exercises">
+        <item quantity="one">Упражнений: %1$d</item>
+        <item quantity="few">Упражнений: %1$d</item>
+        <item quantity="many">Упражнений: %1$d</item>
+        <item quantity="other">Упражнений: %1$d</item>
+    </plurals>
+    <plurals name="live_workout_plan_sets">
+        <item quantity="one">подходов: %1$d</item>
+        <item quantity="few">подходов: %1$d</item>
+        <item quantity="many">подходов: %1$d</item>
+        <item quantity="other">подходов: %1$d</item>
+    </plurals>
     <string name="live_workout_with_friend">Вместе с %1$s</string>
     <string name="live_workout_status_waiting">Ожидаем ответ друга.</string>
     <string name="live_workout_status_ready">Обновляем состояние совместной тренировки…</string>
@@ -1743,7 +1855,12 @@
         <item quantity="many">%1$d из %2$d тренировок</item>
         <item quantity="other">%1$d из %2$d тренировок</item>
     </plurals>
-    <string name="training_rep_comparison">%1$.2f кг · %2$d → %3$d повторений</string>
+    <plurals name="training_rep_comparison">
+        <item quantity="one">%1$.2f кг · %2$d → %3$d повторение</item>
+        <item quantity="few">%1$.2f кг · %2$d → %3$d повторения</item>
+        <item quantity="many">%1$.2f кг · %2$d → %3$d повторений</item>
+        <item quantity="other">%1$.2f кг · %2$d → %3$d повторения</item>
+    </plurals>
     <string name="training_insufficient_history">Сравнение с прошлыми неделями появится после пары недель тренировок.</string>
     <string name="training_unchanged_reps">Лучшие повторы с тем же весом не изменились.</string>
     <string name="training_week_workouts">Тренировки этой недели</string>

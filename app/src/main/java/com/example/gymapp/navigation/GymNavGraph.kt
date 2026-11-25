@@ -2975,8 +2975,9 @@ internal fun GymAppRoot(
                                     filledIcon = filledIcon,
                                     badgeCount = tabWorkoutInviteCount,
                                     badgeDescription = if (tabWorkoutInviteCount > 0) {
-                                        formattedStringResource(
-                                            R.string.workout_invites_pending_count,
+                                        formattedPluralStringResource(
+                                            R.plurals.workout_invites_pending_count,
+                                            tabWorkoutInviteCount,
                                             tabWorkoutInviteCount
                                         )
                                     } else {
@@ -5485,7 +5486,7 @@ private fun SharedWorkoutPreviewDialog(
     val visibleNames = exerciseNames.take(6).joinToString(separator = " • ")
     val hiddenCount = (exerciseNames.size - 6).coerceAtLeast(0)
     val extra = if (hiddenCount > 0) {
-        "\n" + formattedStringResource(R.string.shared_workout_more_exercises, hiddenCount)
+        "\n" + formattedPluralStringResource(R.plurals.shared_workout_more_exercises, hiddenCount, hiddenCount)
     } else {
         ""
     }

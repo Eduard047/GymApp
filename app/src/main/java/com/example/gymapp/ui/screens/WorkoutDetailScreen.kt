@@ -1396,8 +1396,9 @@ private fun GarminWatchInsightsCard(metrics: GarminWorkoutMetrics) {
                                 R.string.garmin_detection_confidence_value,
                                 summary.averageConfidence
                             ),
-                            helper = formattedStringResource(
-                                R.string.garmin_sets_with_evidence,
+                            helper = formattedPluralStringResource(
+                                R.plurals.garmin_sets_with_evidence,
+                                summary.measuredSetCount,
                                 summary.measuredSetCount
                             ),
                             modifier = Modifier.weight(1f)
@@ -1410,8 +1411,9 @@ private fun GarminWatchInsightsCard(metrics: GarminWorkoutMetrics) {
                                 R.string.garmin_recovery_hr_drop_value,
                                 summary.medianHeartRateDrop
                             ),
-                            helper = formattedStringResource(
-                                R.string.garmin_recovery_median_sets,
+                            helper = formattedPluralStringResource(
+                                R.plurals.garmin_recovery_median_sets,
+                                summary.measuredSetCount,
                                 summary.measuredSetCount
                             ),
                             modifier = Modifier.weight(1f)
@@ -1464,8 +1466,9 @@ private fun GarminSetHeartRateOverview(points: List<GarminSetHeartRateChartPoint
     val endColor = MaterialTheme.colorScheme.secondary
     val rangeColor = MaterialTheme.colorScheme.outline
     val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
-    val accessibilityDescription = formattedStringResource(
-        R.string.garmin_set_hr_overview_accessibility,
+    val accessibilityDescription = formattedPluralStringResource(
+        R.plurals.garmin_set_hr_overview_accessibility,
+        points.size,
         points.size,
         minimumReading,
         maximumReading
@@ -1834,8 +1837,9 @@ private fun GarminSetIntervalsCard(metrics: GarminWorkoutMetrics) {
                 }
             if (metrics.omittedSetIntervalCount > 0) {
                 Text(
-                    text = formattedStringResource(
-                        R.string.garmin_set_intervals_omitted,
+                    text = formattedPluralStringResource(
+                        R.plurals.garmin_set_intervals_omitted,
+                        metrics.omittedSetIntervalCount,
                         metrics.omittedSetIntervalCount
                     ),
                     style = MaterialTheme.typography.bodySmall,

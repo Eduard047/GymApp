@@ -1844,8 +1844,14 @@ private fun SmartWorkoutAlternativeCard(
                     Text(
                         text = formattedStringResource(
                             R.string.smart_alternative_prescription,
-                            alternative.recommendation.sets.size,
-                            alternative.recommendation.sets.firstOrNull()?.reps ?: 0,
+                            formattedPluralStringResource(
+                                R.plurals.saved_workout_set_count,
+                                alternative.recommendation.sets.size,
+                                alternative.recommendation.sets.size
+                            ),
+                            (alternative.recommendation.sets.firstOrNull()?.reps ?: 0).let { reps ->
+                                formattedPluralStringResource(R.plurals.saved_workout_rep_count, reps, reps)
+                            },
                             alternative.recommendation.targetRir.first,
                             alternative.recommendation.targetRir.last
                         ),

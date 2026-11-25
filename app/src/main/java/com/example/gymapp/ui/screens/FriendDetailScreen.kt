@@ -731,8 +731,9 @@ private fun ExerciseRecordCard(record: SocialExerciseRecord) {
                 )
             }
             Text(
-                formattedStringResource(
-                    R.string.friend_record_meta,
+                formattedPluralStringResource(
+                    R.plurals.friend_record_meta,
+                    record.workoutCount,
                     record.workoutCount,
                     localizedFriendActivityDay(record.lastWorkoutDay)
                 ),

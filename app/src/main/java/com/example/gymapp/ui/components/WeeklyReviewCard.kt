@@ -163,8 +163,9 @@ fun WeeklyReviewCard(
                     row {
                         GroupedRow(
                             title = localizedExerciseName(insight.current.exerciseName),
-                            subtitle = formattedStringResource(
-                                R.string.training_rep_comparison,
+                            subtitle = formattedPluralStringResource(
+                                R.plurals.training_rep_comparison,
+                                insight.current.reps,
                                 insight.current.weight,
                                 insight.previous.reps,
                                 insight.current.reps
