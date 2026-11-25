@@ -1931,13 +1931,14 @@ struct AddWorkoutView: View {
             return
         }
 
+        let latestSessionDates = store.latestSessionDateByExercise()
         let candidates = store.exercises
             .map { exercise in
                 (
                     exercise,
                     Set(MuscleMappingEngine.defaultContributions(for: exercise.name).map(\.muscleID))
                         .intersection(preset.targetMuscles).count,
-                    store.exerciseHistory(exerciseID: exercise.id).first?.sessionDate ?? .distantPast
+                    latestSessionDates[exercise.id] ?? .distantPast
                 )
             }
             .filter { $0.1 > 0 }

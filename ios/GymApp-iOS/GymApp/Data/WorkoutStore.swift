@@ -320,6 +320,9 @@ public final class WorkoutStore: ObservableObject {
     // historical/future data while excluding values that cannot round-trip safely.
     private static let minimumSupportedTimestampMilliseconds: Int64 = -62_135_769_600_000
     private static let maximumSupportedTimestampMilliseconds: Int64 = 64_092_211_200_000
+    /// Size cap for this account's own local envelope file only. Backup import/export,
+    /// cloud upload and watch payloads keep their own, smaller limits.
+    static let maximumLocalStoreFileBytes = 32 * 1_024 * 1_024
     private static let maximumOwnerFieldBytes = 512
     private static let maximumCatalogKeyBytes = 256
     private static let maximumAppNameBytes = 128
@@ -2196,6 +2199,20 @@ public final class WorkoutStore: ObservableObject {
         through endDate: Date? = nil
     ) -> [ExerciseHistoryEntry] {
         historyEntries(exerciseID: exerciseID, from: startDate, through: endDate)
+    }
+
+    /// Newest session date per exercise in one pass over the workouts. Matches
+    /// `exerciseHistory(exerciseID:).first?.sessionDate`: only blocks with at least one
+    /// set count, and exercises without such a block are absent.
+    public func latestSessionDateByExercise() -> [UUID: Date] {
+        var latest: [UUID: Date] = [:]
+        for workout in workouts {
+            for block in workout.exercises where !block.sets.isEmpty {
+                if let current = latest[block.exerciseID], !(workout.date > current) { continue }
+                latest[block.exerciseID] = workout.date
+            }
+        }
+        return latest
     }
 
     public func lastWeight(exerciseID: UUID, before date: Date? = nil) -> Double? {
@@ -4084,7 +4101,7 @@ public final class WorkoutStore: ObservableObject {
         )
         do {
             var data = try Self.localEncoder().encode(envelope)
-            if data.count > BackupImportLimits.standard.maximumFileBytes, workoutCloudSyncState != nil {
+            if data.count > Self.maximumLocalStoreFileBytes, workoutCloudSyncState != nil {
                 // The merge baseline duplicates the history. When both no longer fit,
                 // keep the history and fall back to the whole-history sync choice.
                 var trimmed = envelope
@@ -4092,7 +4109,7 @@ public final class WorkoutStore: ObservableObject {
                 data = try Self.localEncoder().encode(trimmed)
                 workoutCloudSyncState = nil
             }
-            guard data.count <= BackupImportLimits.standard.maximumFileBytes else {
+            guard data.count <= Self.maximumLocalStoreFileBytes else {
                 throw WorkoutStoreError.persistenceFailure(
                     "The protected account envelope is too large."
                 )
@@ -4130,13 +4147,13 @@ public final class WorkoutStore: ObservableObject {
             let resourceValues = try url.resourceValues(forKeys: [.fileSizeKey])
             guard let fileSize = resourceValues.fileSize,
                   fileSize >= 0,
-                  fileSize <= BackupImportLimits.standard.maximumFileBytes else {
+                  fileSize <= Self.maximumLocalStoreFileBytes else {
                 throw WorkoutStoreError.corruptStore(
                     "The protected account envelope is too large."
                 )
             }
             let data = try Data(contentsOf: url, options: .mappedIfSafe)
-            guard data.count <= BackupImportLimits.standard.maximumFileBytes else {
+            guard data.count <= Self.maximumLocalStoreFileBytes else {
                 throw WorkoutStoreError.corruptStore(
                     "The protected account envelope is too large."
                 )

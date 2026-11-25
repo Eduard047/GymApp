@@ -2632,9 +2632,11 @@ final class AppState: ObservableObject {
 
     func exportBackup() throws -> Data {
         guard isAccountReady else { throw WorkoutStoreError.storageAccountMismatch }
+        // Compact JSON: pretty printing more than doubles the file and pushes large
+        // histories past the import size limit, so the export could not be restored.
         return try workoutStore.exportManualBackupData(
             owner: backupOwner,
-            prettyPrinted: true
+            prettyPrinted: false
         )
     }
 
