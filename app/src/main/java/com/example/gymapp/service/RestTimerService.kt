@@ -52,6 +52,8 @@ class RestTimerService : Service() {
     )
     private var countdownJob: Job? = null
     private var remainingSeconds: Int = 0
+    /** Wall-clock deadline scheduled when this rest started; identifies the rest once it ends. */
+    private var restDeadlineWallMillis: Long? = null
     private val notificationManager by lazy { getSystemService(NotificationManager::class.java) }
 
     override fun onCreate() {
@@ -94,7 +96,7 @@ class RestTimerService : Service() {
         if (seconds > 0) {
             val endsAt = System.currentTimeMillis() + seconds * 1_000L
             notifySafely(NOTIFICATION_RUNNING_ID, buildHandedOffNotification(endsAt, seconds))
-            scheduleFinishedAlarm(this, endsAt)
+            scheduleFinishedAlarm(this, endsAt, restDeadline = restDeadlineWallMillis ?: endsAt)
         }
         stopSelf()
     }
@@ -117,7 +119,9 @@ class RestTimerService : Service() {
         // Backstop: if the system kills the process mid-rest the countdown below dies with it, so
         // an alarm still posts the finished alert. onTimerFinished cancels it on the normal path.
         finishedAlertPosted.set(false)
-        scheduleFinishedAlarm(this, System.currentTimeMillis() + durationSeconds * 1_000L)
+        val deadline = System.currentTimeMillis() + durationSeconds * 1_000L
+        restDeadlineWallMillis = deadline
+        scheduleFinishedAlarm(this, deadline, restDeadline = deadline)
 
         remainingSeconds = durationSeconds
         RestTimerState.update(remainingSeconds)
@@ -155,9 +159,11 @@ class RestTimerService : Service() {
         // The activity may be gone while the process lives on: refresh the ongoing workout
         // notification here too. Not in serviceScope, which stopSelf() cancels right away.
         val appContext = applicationContext
+        val endedRestDeadline = restDeadlineWallMillis
+        restDeadlineWallMillis = null
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                refreshActiveWorkoutNotificationAfterRest(appContext)
+                refreshActiveWorkoutNotificationAfterRest(appContext, endedRestDeadline)
             } catch (_: Exception) {
                 // A failed refresh leaves the previous notification; the app reposts it when opened.
             }
@@ -170,6 +176,7 @@ class RestTimerService : Service() {
         countdownJob = null
         cancelFinishedAlarm(this)
         remainingSeconds = 0
+        restDeadlineWallMillis = null
         RestTimerState.update(0)
         cancelNotification(NOTIFICATION_FINISHED_ID)
         cancelNotification(NOTIFICATION_RUNNING_ID)
@@ -281,6 +288,7 @@ class RestTimerService : Service() {
         private const val ACTION_STOP = "com.setforge.gymapp.action.REST_TIMER_STOP"
         private const val ACTION_DISMISS_ALERT = "com.setforge.gymapp.action.REST_TIMER_DISMISS_ALERT"
         private const val EXTRA_DURATION_SECONDS = "extra_duration_seconds"
+        internal const val EXTRA_REST_DEADLINE = "extra_rest_deadline"
 
         private const val ALERT_PREFERENCES_NAME = "rest_timer_alert"
         private const val KEY_FINISHED_EXERCISE = "finished_exercise"
@@ -304,7 +312,8 @@ class RestTimerService : Service() {
             val appContext = context.applicationContext
             // Arm the alert before the service starts, so it still fires if the start is refused.
             finishedAlertPosted.set(false)
-            scheduleFinishedAlarm(appContext, System.currentTimeMillis() + seconds * 1_000L)
+            val deadline = System.currentTimeMillis() + seconds * 1_000L
+            scheduleFinishedAlarm(appContext, deadline, restDeadline = deadline)
             val intent = Intent(appContext, RestTimerService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_DURATION_SECONDS, seconds)
@@ -421,16 +430,24 @@ class RestTimerService : Service() {
             )
         }
 
-        private fun finishedAlarmIntent(context: Context): PendingIntent = PendingIntent.getBroadcast(
-            context,
-            REQUEST_FINISHED_ALARM,
-            Intent(context, RestTimerAlarmReceiver::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        private fun finishedAlarmIntent(context: Context, restDeadline: Long? = null): PendingIntent =
+            PendingIntent.getBroadcast(
+                context,
+                REQUEST_FINISHED_ALARM,
+                Intent(context, RestTimerAlarmReceiver::class.java).apply {
+                    restDeadline?.let { putExtra(EXTRA_REST_DEADLINE, it) }
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
 
-        private fun scheduleFinishedAlarm(context: Context, endsAt: Long) {
+        /**
+         * [endsAt] is the wall-clock time the rest ends from now and sets the trigger; [restDeadline]
+         * is the deadline scheduled when the rest started, carried so the receiver can tell that
+         * rest ended even after a wall-clock change.
+         */
+        private fun scheduleFinishedAlarm(context: Context, endsAt: Long, restDeadline: Long) {
             val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
-            val pendingIntent = finishedAlarmIntent(context)
+            val pendingIntent = finishedAlarmIntent(context, restDeadline)
             // Exact alarms need a permission the app does not request, so fall back to the
             // closest allowed time when it is missing.
             // Trigger on the elapsed-realtime clock so a manual or network wall-clock change during
@@ -491,8 +508,12 @@ class RestTimerAlarmReceiver : BroadcastReceiver() {
             }
             try {
                 // The process may have died mid-rest: switch the ongoing workout notification from
-                // the rest countdown to the next set, since no app screen refreshes it now.
-                refreshActiveWorkoutNotificationAfterRest(appContext)
+                // the rest countdown to the next set, since no app screen refreshes it now. The
+                // alarm counts elapsed time, so the rest it carries has ended whatever the wall
+                // clock says.
+                val endedRestDeadline = intent.getLongExtra(RestTimerService.EXTRA_REST_DEADLINE, -1L)
+                    .takeIf { it > 0L }
+                refreshActiveWorkoutNotificationAfterRest(appContext, endedRestDeadline)
             } catch (_: Exception) {
                 // A failed refresh leaves the previous notification; the app reposts it when opened.
             } finally {

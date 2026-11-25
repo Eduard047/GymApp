@@ -80,11 +80,23 @@ internal sealed interface RestEndedNotificationRefresh {
 internal const val REST_ENDED_DEADLINE_TOLERANCE_MILLIS = 1_000L
 
 /**
+ * How far the workout's rest deadline may be from the deadline the timer service scheduled for the
+ * same rest. Both are taken from the wall clock when the rest starts or is adjusted, a moment
+ * apart; a newer rest ends at least the 5 s minimum rest later.
+ */
+internal const val REST_ENDED_SAME_REST_TOLERANCE_MILLIS = 3_000L
+
+/**
  * Decides how a rest end posted by the timer service or its backstop alarm refreshes the ongoing
  * workout notification, so it never stays on "Resting" with a countdown running into negative
  * time when no app screen is open. A rest deadline is kept only when it belongs to this account
  * and workout and is clearly still ahead (a new rest started meanwhile); otherwise the
  * notification switches to the next set.
+ *
+ * [endedRestDeadline] is the wall-clock deadline the timer service scheduled for the rest that
+ * just ended. The service and its alarm count on the monotonic clock, so when the workout's rest
+ * deadline is that same rest it has ended even if the wall clock was moved back during the rest
+ * and the deadline still looks ahead.
  */
 internal fun restEndedNotificationRefresh(
     currentAccountKey: String?,
@@ -92,7 +104,8 @@ internal fun restEndedNotificationRefresh(
     timerSessionStartedAt: Long?,
     timerRestEndsAt: Long?,
     activeWorkoutStartedAt: Long?,
-    nowMillis: Long
+    nowMillis: Long,
+    endedRestDeadline: Long? = null
 ): RestEndedNotificationRefresh {
     if (currentAccountKey == null) return RestEndedNotificationRefresh.Skip
     if (timerAccountKey != null && timerAccountKey != currentAccountKey) return RestEndedNotificationRefresh.Skip
@@ -101,7 +114,13 @@ internal fun restEndedNotificationRefresh(
         ?.takeIf {
             timerAccountKey == currentAccountKey &&
                 timerSessionStartedAt == activeWorkoutStartedAt &&
+                !isSameRest(it, endedRestDeadline) &&
                 it > nowMillis + REST_ENDED_DEADLINE_TOLERANCE_MILLIS
         }
     return RestEndedNotificationRefresh.Post(stillRunning)
 }
+
+private fun isSameRest(restEndsAt: Long, endedRestDeadline: Long?): Boolean =
+    endedRestDeadline != null &&
+        restEndsAt in
+        (endedRestDeadline - REST_ENDED_SAME_REST_TOLERANCE_MILLIS)..(endedRestDeadline + REST_ENDED_SAME_REST_TOLERANCE_MILLIS)

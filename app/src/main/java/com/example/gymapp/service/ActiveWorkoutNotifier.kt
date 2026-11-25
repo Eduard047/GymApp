@@ -386,10 +386,14 @@ private fun postActiveWorkoutNotification(
  * backstop alarm. The app screen only refreshes it while it is composed, so after the process
  * died the notification would otherwise stay on "Resting" with a countdown running past zero.
  * Uses the same account and session checks as the notification buttons and does nothing when
- * no account is signed in or the rest belonged to another account. Disk I/O: call off the main
- * thread.
+ * no account is signed in or the rest belonged to another account. [endedRestDeadline] is the
+ * wall-clock deadline the timer service scheduled for the rest that ended, so that rest counts as
+ * over even after a wall-clock change. Disk I/O: call off the main thread.
  */
-internal suspend fun refreshActiveWorkoutNotificationAfterRest(context: Context) {
+internal suspend fun refreshActiveWorkoutNotificationAfterRest(
+    context: Context,
+    endedRestDeadline: Long? = null
+) {
     val app = context.gymApplication
     val session = app.cloudAuthManager.authState.value.session ?: return
     val accountKey = restTimerAccountKey(session) ?: return
@@ -403,7 +407,8 @@ internal suspend fun refreshActiveWorkoutNotificationAfterRest(context: Context)
             timerSessionStartedAt = timer?.sessionStartedAt,
             timerRestEndsAt = timer?.restEndsAt,
             activeWorkoutStartedAt = details?.activeWorkout?.startedAt,
-            nowMillis = System.currentTimeMillis()
+            nowMillis = System.currentTimeMillis(),
+            endedRestDeadline = endedRestDeadline
         )
     ) {
         RestEndedNotificationRefresh.Skip -> Unit
