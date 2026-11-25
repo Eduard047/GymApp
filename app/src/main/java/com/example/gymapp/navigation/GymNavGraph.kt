@@ -2153,19 +2153,24 @@ internal fun GymAppRoot(
             workouts = stats.workouts,
             workoutDurations = workoutDurationSyncItems(canonicalState)
         )
-        check(isSameCloudSessionGeneration(
-            session,
-            authManager.authState.value.session
-        )) { "Cloud account changed while confirming the sync baseline." }
-        check(cloudSyncBaselineStore.write(session.userId, stateDigest)) {
-            "Could not persist the cloud sync baseline. Automatic upload is paused."
+        // The server has committed this snapshot. Record both baselines even if the caller is
+        // cancelled now (for example the bounded logout flush), so the next sign-in does not take
+        // the conflict path for a write that already landed. Only local work runs here.
+        withContext(NonCancellable) {
+            check(isSameCloudSessionGeneration(
+                session,
+                authManager.authState.value.session
+            )) { "Cloud account changed while confirming the sync baseline." }
+            check(cloudSyncBaselineStore.write(session.userId, stateDigest)) {
+                "Could not persist the cloud sync baseline. Automatic upload is paused."
+            }
+            recordWorkoutMergeBaselineFromState(
+                session = session,
+                state = state,
+                digest = stateDigest,
+                forgetChangesThrough = snapshotTakenAt
+            )
         }
-        recordWorkoutMergeBaselineFromState(
-            session = session,
-            state = state,
-            digest = stateDigest,
-            forgetChangesThrough = snapshotTakenAt
-        )
         activityOnlyCloudBaseline?.let { baseline ->
             activityOnlyCloudBaseline = syncActivityOnlyFromBaseline(
                 session = session,
