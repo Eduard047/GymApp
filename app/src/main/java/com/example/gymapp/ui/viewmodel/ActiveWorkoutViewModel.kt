@@ -195,6 +195,19 @@ data class ActiveWorkoutAddExerciseCatalog(
 )
 
 /** Catalog exercises that are not already part of the running workout (by name or catalog key). */
+/**
+ * [runCatching] for coroutine code: failures become a [Result], but a [CancellationException]
+ * is rethrown so a cancelled scope stops instead of reporting "changed" and updating state.
+ */
+internal inline fun <T> runCatchingUnlessCancelled(block: () -> T): Result<T> =
+    try {
+        Result.success(block())
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        Result.failure(error)
+    }
+
 internal fun activeWorkoutExercisesAvailableToAdd(
     catalog: List<ExerciseEntity>,
     details: ActiveWorkoutDetails?
@@ -1675,7 +1688,7 @@ class ActiveWorkoutViewModel(
         ) return
         operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
         viewModelScope.launch {
-            val outcome = runCatching {
+            val outcome = runCatchingUnlessCancelled {
                 persistActiveWorkoutMutationAndReconcileRest(
                     persist = {
                         repository.addActiveWorkoutSet(
@@ -1999,7 +2012,7 @@ class ActiveWorkoutViewModel(
         val revision = checkNotNull(snapshot).activeWorkout.revision
         operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
         viewModelScope.launch {
-            val result = runCatching { move(revision) }.getOrNull()
+            val result = runCatchingUnlessCancelled { move(revision) }.getOrNull()
             operationState.update {
                 val message = if (result == null) {
                     R.string.active_workout_changed

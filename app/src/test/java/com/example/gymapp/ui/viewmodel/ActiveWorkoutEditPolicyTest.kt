@@ -13,9 +13,11 @@ import com.example.gymapp.data.repository.DeleteActiveWorkoutSetResult
 import com.example.gymapp.data.repository.MoveActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.RemoveActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.UpdateActiveWorkoutNoteResult
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -396,5 +398,14 @@ class ActiveWorkoutEditPolicyTest {
         assertFalse(activeWorkoutNoteEditorOpen(requested = true, canEditNote = false))
         assertFalse(activeWorkoutNoteEditorOpen(requested = false, canEditNote = true))
         assertFalse(activeWorkoutNoteEditorOpen(requested = false, canEditNote = false))
+    }
+
+    @Test
+    fun activeWorkoutMutationCatchRethrowsCancellationButWrapsFailures() {
+        assertThrows(CancellationException::class.java) {
+            runCatchingUnlessCancelled<Int> { throw CancellationException("scope cancelled") }
+        }
+        assertTrue(runCatchingUnlessCancelled<Int> { throw IllegalStateException("db") }.isFailure)
+        assertEquals(7, runCatchingUnlessCancelled { 7 }.getOrNull())
     }
 }

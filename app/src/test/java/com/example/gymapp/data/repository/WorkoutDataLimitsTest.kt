@@ -155,4 +155,26 @@ class WorkoutDataLimitsTest {
             )
         )
     }
+
+    @Test
+    fun finishedActiveWorkoutDurationIsClampedInsteadOfRejected() {
+        val start = 1_750_000_000_000L
+        val day = 24L * 60L * 60L * 1_000L
+        val max = WorkoutDataLimits.MAX_WORKOUT_DURATION_SECONDS
+
+        // An 8-day-old workout (or a clock jump forward) still finishes, at the 7-day maximum.
+        assertEquals(max, WorkoutDataLimits.clampedActiveWorkoutDurationSeconds(start, start + 8L * day))
+        assertTrue(WorkoutDataLimits.isValidWorkoutDuration(max))
+        // A clock moved back before the start saves zero seconds.
+        assertEquals(0L, WorkoutDataLimits.clampedActiveWorkoutDurationSeconds(start, start - 5_000L))
+        assertEquals(0L, WorkoutDataLimits.clampedActiveWorkoutDurationSeconds(start, start))
+        // Normal workouts keep whole seconds, truncated.
+        assertEquals(3_600L, WorkoutDataLimits.clampedActiveWorkoutDurationSeconds(start, start + 3_600_999L))
+        assertEquals(max, WorkoutDataLimits.clampedActiveWorkoutDurationSeconds(start, start + max * 1_000L))
+        // Corrupt extremes never overflow into a negative duration.
+        assertEquals(max, WorkoutDataLimits.clampedActiveWorkoutDurationSeconds(Long.MIN_VALUE, Long.MAX_VALUE))
+        // Strict validation for imported/synced data is unchanged.
+        assertFalse(WorkoutDataLimits.isValidWorkoutDuration(max + 1L))
+        assertFalse(WorkoutDataLimits.isValidWorkoutDuration(-1L))
+    }
 }

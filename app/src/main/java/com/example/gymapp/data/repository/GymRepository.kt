@@ -3309,12 +3309,12 @@ class GymRepository(
                 "This account has reached the total set limit."
             }
 
-            val durationSeconds = ((currentTimeMillis() - details.activeWorkout.startedAt)
-                .coerceAtLeast(0L) / 1_000L).also { duration ->
-                require(WorkoutDataLimits.isValidWorkoutDuration(duration)) {
-                    "Active workout duration is outside the supported range."
-                }
-            }
+            // Clamp rather than reject: a workout left open past 7 days (or a clock jump) must
+            // still finish, as on iOS; otherwise only Discard would remain.
+            val durationSeconds = WorkoutDataLimits.clampedActiveWorkoutDurationSeconds(
+                startedAtMillis = details.activeWorkout.startedAt,
+                nowMillis = currentTimeMillis()
+            )
             val sessionId = insertValidatedWorkoutSession(
                 date = details.activeWorkout.date,
                 note = details.activeWorkout.note,

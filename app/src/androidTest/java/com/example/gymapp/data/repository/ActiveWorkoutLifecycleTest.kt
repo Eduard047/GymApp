@@ -551,6 +551,48 @@ class ActiveWorkoutLifecycleTest {
         }
     }
 
+    @Test
+    fun workoutLeftOpenLongerThanSevenDaysFinishesWithClampedDuration() = runBlocking {
+        withDatabase("active-workout-stale-finish") { database, repository ->
+            val exerciseId = repository.addExercise("Synthetic stale press")
+            assertEquals(
+                StartActiveWorkoutResult.Started,
+                repository.startActiveWorkout(
+                    NOW,
+                    null,
+                    listOf(
+                        WorkoutExerciseDraft(
+                            exerciseId = exerciseId,
+                            sets = listOf(WorkoutSetDraft(weight = 40.0, reps = 8))
+                        )
+                    )
+                )
+            )
+            val setId = checkNotNull(repository.getActiveWorkoutSnapshot())
+                .exercises.single().sets.single().id
+            assertTrue(
+                repository.recordActiveWorkoutSet(setId, 0L, 40.0, 8) is
+                    RecordActiveWorkoutSetResult.Recorded
+            )
+            val eightDaysLater = GymRepository(
+                database,
+                currentTimeMillis = { NOW + 8L * 24L * 60L * 60L * 1_000L }
+            )
+            val finished = eightDaysLater.finishActiveWorkout(1L)
+            assertTrue(finished is FinishActiveWorkoutResult.Finished)
+            val session = checkNotNull(
+                database.workoutDao().getSessionDetailsSnapshot(
+                    (finished as FinishActiveWorkoutResult.Finished).sessionId
+                )
+            )
+            assertEquals(
+                WorkoutDataLimits.MAX_WORKOUT_DURATION_SECONDS,
+                session.session.durationSeconds
+            )
+            assertNull(eightDaysLater.getActiveWorkoutSnapshot())
+        }
+    }
+
     private suspend fun withDatabase(
         prefix: String,
         block: suspend (GymDatabase, GymRepository) -> Unit

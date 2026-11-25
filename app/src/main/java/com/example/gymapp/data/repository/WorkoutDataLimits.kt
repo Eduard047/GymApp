@@ -48,6 +48,19 @@ object WorkoutDataLimits {
     fun isValidWorkoutDuration(durationSeconds: Long): Boolean =
         durationSeconds in 0L..MAX_WORKOUT_DURATION_SECONDS
 
+    /**
+     * Whole seconds of a locally finished active workout, clamped to `0..7 days` so a forgotten
+     * workout (or a clock jump) can still be saved instead of failing forever. Matches iOS
+     * `gymElapsedWholeSeconds`. Imported/synced durations keep strict [isValidWorkoutDuration].
+     */
+    fun clampedActiveWorkoutDurationSeconds(startedAtMillis: Long, nowMillis: Long): Long {
+        if (nowMillis <= startedAtMillis) return 0L
+        val elapsedMillis = nowMillis - startedAtMillis
+        // Overflow (corrupt timestamps) wraps negative; treat it as the maximum.
+        if (elapsedMillis < 0L) return MAX_WORKOUT_DURATION_SECONDS
+        return (elapsedMillis / 1_000L).coerceAtMost(MAX_WORKOUT_DURATION_SECONDS)
+    }
+
     fun canAddSets(existingCount: Int, incomingCount: Int): Boolean =
         existingCount >= 0 && incomingCount >= 0 &&
             existingCount.toLong() + incomingCount.toLong() <= MAX_TOTAL_SETS.toLong()
